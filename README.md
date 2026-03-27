@@ -37,23 +37,25 @@ Decode throughput is independent of encode thread count - architectural property
 ## Key Properties
 
 - Bit-perfect compression (SHA-256 verified on every run)
-- Global-context encoding (full corpus, not per-block)
+- Global-analysis encoding with block-local decode representation
 - Parallel block decode (scales independently of encode threading)
 - Deterministic output
 - Single-file C++17, libzstd only
 
 ## Core Idea
-
 Standard LZ77 codecs face a tradeoff:
 - Global context gives better ratio but requires sequential decode
 - Independent blocks enable parallel decode but lose ratio
 
 ACEAPEX v2 separates these responsibilities:
-- **Encode**: global context, full match search across entire input
+- **Encode**: global analysis, full match search across entire input
 - **Decode**: block-parallel reconstruction via precomputed per-block stream offsets
 
+Cross-block LZ77 matches are resolved into block-local form at encode time.
+Decode-time back-references do not cross block boundaries.
+This is "global analysis, local decode" — not true global LZ77 decode dependency.
 Each decode block knows its exact offset in the global compressed stream.
-No cross-block decode dependency. Ratio is preserved. Decode scales with cores.
+Decode scales with cores. Ratio is preserved.
 
 ## Build
 ```bash
