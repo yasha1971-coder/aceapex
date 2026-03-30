@@ -9,14 +9,15 @@
 #include <algorithm>
 #include <zstd.h>
  
-// ACEAPEX v2 — Key innovation:
+// ACEAPEX v3 — v2 + lazy matching for better ratio
+//
 // Global zstd compression (full context = best ratio)
 // + Per-block stream offsets (parallel LZ77 decode = max speed)
 // This combination has never been done before.
  
-#define HASH_SIZE    0xFFFFF
+#define HASH_SIZE    0x1FFF
 #define MAX_DIST     (128 * 1024 * 1024)
-#define BLOCK_SIZE   (2 * 1024 * 1024)
+#define BLOCK_SIZE   (32 * 1024)
 #define MAX_THREADS  16
 #define BLOCK_MARKER 0xFF
 #define ZSTD_LEVEL   22
@@ -132,6 +133,30 @@ static void compress_block(const uint8_t* src, size_t src_size,
                 }
             }
         }
+        // Lazy matching: if pos+1 gives better match, emit literal at pos
+        if (c_len >= 6 && c_len < 64 && pos+13 < bend) {
+            uint32_t h1=((*(uint32_t*)(src+pos+1)*0x9E3779B1u)>>10)&HASH_SIZE;
+            int32_t mp1=(ht->epoch[h1]==ht->cur_epoch)?ht->pos[h1]:-1;
+            if (mp1>=0 && (size_t)mp1>=bstart && (size_t)mp1<pos+1) {
+                uint32_t dist1=(uint32_t)(pos+1-mp1);
+                if (dist1<MAX_DIST && dist1!=rep[0]) {
+                    uint32_t mlen1=min_match_len(dist1);
+                    uint32_t maxl1=(uint32_t)(bend-pos-1);
+                    if (pos+9<=bend && *(uint64_t*)(src+pos+1)==*(uint64_t*)(src+mp1)) {
+                        uint32_t l1=8;
+                        while (l1<maxl1 && src[pos+1+l1]==src[mp1+l1] && l1<65535) l1++;
+                        if (l1 >= mlen1 && l1 > c_len + 1) {
+                            // pos+1 is better — take literal at pos, match at pos+1
+                            if (lit_i < lit_cap) {
+                                res->lit_buf[lit_i++]=src[pos]; lit_run++; miss++;
+                                pos++;
+                                c_len=l1; c_off=dist1; c_rep=-1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         if (c_len >= 6) {
             flush_lit(); if (ov) break; miss=0;
             uint32_t lv=c_len-6;
@@ -154,7 +179,7 @@ static void compress_block(const uint8_t* src, size_t src_size,
         }
         if (lit_i>=lit_cap) { ov=1; break; }
         res->lit_buf[lit_i++]=src[pos++]; lit_run++; miss++;
-        if (miss>=4 && pos+12<bend) {
+        if (miss>=1 && pos+12<bend) {
             uint32_t hh=((*(uint32_t*)(src+pos)*0x9E3779B1u)>>10)&HASH_SIZE;
             ht->pos[hh]=(int32_t)pos; ht->epoch[hh]=ht->cur_epoch;
             if (lit_i>=lit_cap) { ov=1; break; }
@@ -334,23 +359,25 @@ struct DecArgs {
     const uint8_t* len; const uint8_t* cmd;
     const BlockOffsets* boffs;
     uint8_t* dst; size_t dst_size;
-    size_t bid; size_t block_size;
+    size_t bid_start; size_t bid_end;
+    size_t block_size;
 };
  
 static void* dec_worker(void* arg) {
     DecArgs* a = (DecArgs*)arg;
-    size_t b = a->bid;
-    const BlockOffsets& bo = a->boffs[b];
-    size_t bstart = b * a->block_size;
-    size_t bsize  = a->dst_size > bstart ?
-                    std::min(a->block_size, a->dst_size - bstart) : 0;
-    if (bsize > 0)
-        decompress_streams(
-            a->dst + bstart, bsize,
-            a->lit + bo.lit_off, bo.lit_sz,
-            a->off + bo.off_off, bo.off_sz,
-            a->len + bo.len_off, bo.len_sz,
-            a->cmd + bo.cmd_off, bo.cmd_sz);
+    for (size_t b = a->bid_start; b < a->bid_end; b++) {
+        const BlockOffsets& bo = a->boffs[b];
+        size_t bstart = b * a->block_size;
+        size_t bsize  = a->dst_size > bstart ?
+                        std::min(a->block_size, a->dst_size - bstart) : 0;
+        if (bsize > 0)
+            decompress_streams(
+                a->dst + bstart, bsize,
+                a->lit + bo.lit_off, bo.lit_sz,
+                a->off + bo.off_off, bo.off_sz,
+                a->len + bo.len_off, bo.len_sz,
+                a->cmd + bo.cmd_off, bo.cmd_sz);
+    }
     return nullptr;
 }
  
@@ -417,20 +444,28 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads,
     return true;
 }
  
-// Parallel decode from global streams
+// Parallel decode from global streams — batched by thread count
 static double parallel_decode(
     const uint8_t* lit, const uint8_t* off,
     const uint8_t* len, const uint8_t* cmd,
     const BlockOffsets* boffs, size_t num_blocks,
-    uint8_t* dst, size_t dst_size, size_t block_size)
+    uint8_t* dst, size_t dst_size, size_t block_size,
+    int nthreads = 0)
 {
-    std::vector<DecArgs> dargs(num_blocks);
-    for(size_t b=0;b<num_blocks;b++)
-        dargs[b]={lit,off,len,cmd,boffs,dst,dst_size,b,block_size};
+    if (nthreads <= 0) nthreads = 8;
+    // Cap threads to num_blocks
+    size_t nt = std::min((size_t)nthreads, num_blocks);
+    std::vector<DecArgs> dargs(nt);
+    size_t blocks_per_thread = (num_blocks + nt - 1) / nt;
+    for(size_t t=0;t<nt;t++) {
+        size_t bstart = t * blocks_per_thread;
+        size_t bend   = std::min(bstart + blocks_per_thread, num_blocks);
+        dargs[t]={lit,off,len,cmd,boffs,dst,dst_size,bstart,bend,block_size};
+    }
     double t0=now_sec();
-    std::vector<pthread_t> dpts(num_blocks);
-    for(size_t b=0;b<num_blocks;b++) pthread_create(&dpts[b],nullptr,dec_worker,&dargs[b]);
-    for(size_t b=0;b<num_blocks;b++) pthread_join(dpts[b],nullptr);
+    std::vector<pthread_t> dpts(nt);
+    for(size_t t=0;t<nt;t++) pthread_create(&dpts[t],nullptr,dec_worker,&dargs[t]);
+    for(size_t t=0;t<nt;t++) pthread_join(dpts[t],nullptr);
     return now_sec()-t0;
 }
  
@@ -582,7 +617,7 @@ static int do_test(const char* in_path, int threads) {
     char sha_hex[65]; sha256_hex(src,src_size,sha_hex);
  
     fprintf(stderr,"\n  ====================================================\n");
-    fprintf(stderr,"  ACEAPEX v2 TEST REPORT\n");
+    fprintf(stderr,"  ACEAPEX v3 BATCHED TEST REPORT\n");
     fprintf(stderr,"  ====================================================\n");
     fprintf(stderr,"  Original:   %14zu bytes\n",src_size);
     fprintf(stderr,"  Compressed: %14zu bytes\n",total_z);
