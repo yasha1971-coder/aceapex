@@ -8,6 +8,16 @@
 #include <vector>
 #include <algorithm>
 #include <zstd.h>
+// Windows compatibility
+#ifdef _WIN32
+#include <malloc.h>
+static inline void* aligned_alloc(size_t align, size_t size) {
+    return _aligned_malloc(size, align);
+}
+static inline void aligned_free(void* ptr) { _aligned_free(ptr); }
+#else
+static inline void aligned_free(void* ptr) { free(ptr); }
+#endif
  
 // ACEAPEX v3 — v2 + lazy matching for better ratio
 //
