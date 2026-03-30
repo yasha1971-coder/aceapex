@@ -61,6 +61,27 @@ This is "global analysis, local decode" — not true global LZ77 decode dependen
 - Single-file C++17, libzstd only
 - Research-grade code, not a production library
 
+## Download
+
+| Platform | File | Size |
+|----------|------|------|
+| Linux x64 | [aceapex](aceapex) | ~42KB |
+| Windows x64 | [aceapex.exe](aceapex.exe) | ~2MB |
+
+Linux usage:
+```bash
+./aceapex.sh compress myfile.txt
+./aceapex.sh decompress myfile.txt.aet
+./aceapex.sh test myfile.txt
+```
+
+Windows usage:
+```cmd
+aceapex.exe c --in myfile.txt --out myfile.txt.aet --threads 8
+aceapex.exe d --in myfile.txt.aet --out myfile.txt
+aceapex.exe t --in myfile.txt --threads 8
+```
+
 ## Build
 ```bash
 sudo apt-get install -y libzstd-dev g++
