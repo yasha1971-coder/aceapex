@@ -576,7 +576,7 @@ static int do_decompress(const char* in_path, const char* out_path) {
     FILE* fout=fopen(out_path,"wb");
     if (fout) { fwrite(dst,1,hdr.orig_size,fout); fclose(fout); }
     fprintf(stderr,"  Decode: %.2f MB/s  (%.3fs)\n",hdr.orig_size/dec_time/1e6,dec_time);
-    fprintf(stderr,"  Status: %s\n",ok?"✅ BIT-PERFECT":"❌ HASH MISMATCH");
+    fprintf(stderr,"  Status: %s\n",ok?"BIT-PERFECT":"HASH MISMATCH");
  
     free(lit); free(off); free(len); free(cmd); free(dst);
     return ok?0:1;
@@ -635,7 +635,7 @@ static int do_test(const char* in_path, int threads) {
     fprintf(stderr,"  Encode: %.2f MB/s  (%.3fs)\n",src_size/enc_time/1e6,enc_time);
     fprintf(stderr,"  Decode: %.2f MB/s  (%.3fs)\n",src_size/dec_time/1e6,dec_time);
     fprintf(stderr,"  SHA256: %.16s...\n",sha_hex);
-    fprintf(stderr,"  Status: %s\n",ok?"✅ BIT-PERFECT":"❌ HASH MISMATCH");
+    fprintf(stderr,"  Status: %s\n",ok?"BIT-PERFECT":"HASH MISMATCH");
     fprintf(stderr,"  ====================================================\n");
  
     free(src); free(dst);
@@ -647,7 +647,7 @@ static int do_test(const char* in_path, int threads) {
  
 int main(int argc, char** argv) {
     if (argc < 2) {
-        fprintf(stderr,"ACEAPEX v2 — Global compress + Parallel decode\n\n"
+        fprintf(stderr,"ACEAPEX v2 - Global compress + Parallel decode\n\n"
             "Usage:\n  %s c --in <f> --out <f.aet> [--threads N]\n"
             "  %s d --in <f.aet> --out <f>\n  %s t --in <f> [--threads N]\n",
             argv[0],argv[0],argv[0]);
