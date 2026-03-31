@@ -40,3 +40,28 @@
 | world192.txt | 3.64x | 1365 | 3398 |
 | bible.txt | 3.51x | 1089 | 4012 |
 | alice29.txt | 2.77x | 280 | 507 |
+
+## Decode Scaling (enwik9, AMD EPYC 4344P)
+
+| Encode Threads | Encode MB/s | Decode MB/s |
+|----------------|-------------|-------------|
+| 1 | 212 | 11558 |
+| 2 | 429 | 11636 |
+| 4 | 827 | 11777 |
+| 8 | 1566 | 11719 |
+| 16 | 2104 | 11525 |
+
+**Key property: decode throughput is constant (~11,600 MB/s) regardless of encode thread count.**
+This is an architectural property, not an optimization artifact.
+
+## Context vs Oodle (public data)
+
+| Codec | Ratio | Decode MB/s | Notes |
+|-------|-------|-------------|-------|
+| Oodle Selkie | ~2.6x | 10000+ | fastest Oodle, lowest ratio |
+| Oodle Kraken | ~3.6x | 2000-4000 | default PS5, balanced |
+| Oodle Leviathan | ~4.1x | 600-1200 | highest ratio, slower decode |
+| **ACEAPEX** | **3.896x** | **11600** | ratio near Kraken, speed beyond Selkie |
+
+Oodle figures from public blog posts by Charles Bloom (cbloomrants.blogspot.com).
+Direct comparison on same hardware not available — Oodle SDK is proprietary.
