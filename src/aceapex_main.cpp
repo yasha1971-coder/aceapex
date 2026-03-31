@@ -449,7 +449,7 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads,
         free(results[b].lit_buf); free(results[b].off_buf);
         free(results[b].len_buf); free(results[b].cmd_buf);
     }
-    for(int i=0;i<threads;i++) free(htabs[i]);
+    for(int i=0;i<threads;i++) aligned_free(htabs[i]);
     free(htabs); free(results); free(wargs); free(pts);
     return true;
 }
