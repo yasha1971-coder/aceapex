@@ -30,7 +30,7 @@ static inline void aligned_free(void* ptr) { free(ptr); }
 #define BLOCK_SIZE   (32 * 1024)
 #define MAX_THREADS  16
 #define BLOCK_MARKER 0xFF
-#define ZSTD_LEVEL   22
+#define ZSTD_LEVEL 22
  
 struct BlockResult {
     uint8_t* lit_buf; uint8_t* off_buf;
@@ -189,7 +189,7 @@ static void compress_block(const uint8_t* src, size_t src_size,
         }
         if (lit_i>=lit_cap) { ov=1; break; }
         res->lit_buf[lit_i++]=src[pos++]; lit_run++; miss++;
-        if (miss>=1 && pos+12<bend) {
+        if (miss>=4 && pos+12<bend) {
             uint32_t hh=((*(uint32_t*)(src+pos)*0x9E3779B1u)>>10)&HASH_SIZE;
             ht->pos[hh]=(int32_t)pos; ht->epoch[hh]=ht->cur_epoch;
             if (lit_i>=lit_cap) { ov=1; break; }
@@ -341,7 +341,11 @@ static void sha256_hex(const uint8_t* data, size_t len, char out[65]) {
  
 static uint8_t* zstd_comp(const uint8_t* src, size_t sz, size_t& out_sz, int lv) {
     size_t b=ZSTD_compressBound(sz); uint8_t* buf=(uint8_t*)malloc(b);
-    out_sz=ZSTD_compress(buf,b,src,sz,lv);
+    ZSTD_CCtx* cctx=ZSTD_createCCtx();
+    ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, lv);
+    ZSTD_CCtx_setParameter(cctx, ZSTD_c_nbWorkers, 2);
+    out_sz=ZSTD_compress2(cctx,buf,b,src,sz);
+    ZSTD_freeCCtx(cctx);
     if (ZSTD_isError(out_sz)) { free(buf); out_sz=0; return nullptr; }
     return buf;
 }
@@ -420,9 +424,7 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads,
         wargs[i].thread_id=i; wargs[i].htab=htabs[i]; wargs[i].pool=&pool;
         pthread_create(&pts[i],nullptr,worker_func,&wargs[i]);
     }
-    double t0=now_sec();
     for(int i=0;i<threads;i++) pthread_join(pts[i],nullptr);
-    enc_time=now_sec()-t0;
  
     // Calculate totals and per-block offsets
     total_lit=0; total_off=0; total_len=0; total_cmd=0;
@@ -495,17 +497,36 @@ static int do_compress(const char* in_path, const char* out_path, int threads) {
     uint8_t *raw_lit,*raw_off,*raw_len,*raw_cmd;
     size_t total_lit,total_off,total_len,total_cmd,num_blocks;
     double enc_time;
+    double t_enc_start=now_sec();
     encode_file(src,src_size,threads,boffs,
                 raw_lit,total_lit,raw_off,total_off,
                 raw_len,total_len,raw_cmd,total_cmd,
                 enc_time,num_blocks);
  
+    fprintf(stderr,"[DBG] streams: lit=%zuMB off=%zuMB len=%zuMB cmd=%zuMB total=%zuMB\n",
+        total_lit/1024/1024, total_off/1024/1024, total_len/1024/1024, total_cmd/1024/1024,
+        (total_lit+total_off+total_len+total_cmd)/1024/1024);
     // Global zstd compression — full context = best ratio
     size_t zlit_sz,zoff_sz,zlen_sz,zcmd_sz;
-    uint8_t* zlit=zstd_comp(raw_lit,total_lit,zlit_sz,ZSTD_LEVEL);
-    uint8_t* zoff=zstd_comp(raw_off,total_off,zoff_sz,ZSTD_LEVEL);
-    uint8_t* zlen=zstd_comp(raw_len,total_len,zlen_sz,ZSTD_LEVEL);
-    uint8_t* zcmd=zstd_comp(raw_cmd,total_cmd,zcmd_sz,ZSTD_LEVEL);
+    // Parallel zstd compression of 4 streams
+    uint8_t* zlit=nullptr; uint8_t* zoff=nullptr;
+    uint8_t* zlen=nullptr; uint8_t* zcmd=nullptr;
+    zlit_sz=0; zoff_sz=0; zlen_sz=0; zcmd_sz=0;
+    struct ZArg { uint8_t* in; size_t in_sz; uint8_t** out; size_t* out_sz; int level; };
+    auto zworker=[](void* a) -> void* {
+        ZArg* z=(ZArg*)a;
+        *z->out=zstd_comp(z->in,z->in_sz,*z->out_sz,z->level);
+        return nullptr;
+    };
+    ZArg za[4]={
+        {raw_lit,total_lit,&zlit,&zlit_sz,ZSTD_LEVEL},
+        {raw_off,total_off,&zoff,&zoff_sz,ZSTD_LEVEL},
+        {raw_len,total_len,&zlen,&zlen_sz,ZSTD_LEVEL},
+        {raw_cmd,total_cmd,&zcmd,&zcmd_sz,ZSTD_LEVEL}
+    };
+    pthread_t zpts[4];
+    for(int i=0;i<4;i++) pthread_create(&zpts[i],nullptr,zworker,&za[i]);
+    for(int i=0;i<4;i++) pthread_join(zpts[i],nullptr);
     size_t total_z=zlit_sz+zoff_sz+zlen_sz+zcmd_sz;
  
     AetHeader hdr;
@@ -527,6 +548,7 @@ static int do_compress(const char* in_path, const char* out_path, int threads) {
     fprintf(stderr,"  Original:   %14zu bytes\n",src_size);
     fprintf(stderr,"  Compressed: %14zu bytes\n",total_z);
     fprintf(stderr,"  Ratio:  %.5fx\n",(double)src_size/total_z);
+    enc_time=now_sec()-t_enc_start;
     fprintf(stderr,"  Encode: %.2f MB/s  (%.3fs)\n",src_size/enc_time/1e6,enc_time);
     fprintf(stderr,"  SHA256: %s\n",sha_hex);
  
@@ -597,6 +619,7 @@ static int do_test(const char* in_path, int threads) {
     uint8_t *raw_lit,*raw_off,*raw_len,*raw_cmd;
     size_t total_lit,total_off,total_len,total_cmd,num_blocks;
     double enc_time;
+    double t_enc_start=now_sec();
     encode_file(src,src_size,threads,boffs,
                 raw_lit,total_lit,raw_off,total_off,
                 raw_len,total_len,raw_cmd,total_cmd,
@@ -604,10 +627,25 @@ static int do_test(const char* in_path, int threads) {
  
     // Global zstd — full context
     size_t zlit_sz,zoff_sz,zlen_sz,zcmd_sz;
-    uint8_t* zlit=zstd_comp(raw_lit,total_lit,zlit_sz,ZSTD_LEVEL);
-    uint8_t* zoff=zstd_comp(raw_off,total_off,zoff_sz,ZSTD_LEVEL);
-    uint8_t* zlen=zstd_comp(raw_len,total_len,zlen_sz,ZSTD_LEVEL);
-    uint8_t* zcmd=zstd_comp(raw_cmd,total_cmd,zcmd_sz,ZSTD_LEVEL);
+    // Parallel zstd compression of 4 streams
+    uint8_t* zlit=nullptr; uint8_t* zoff=nullptr;
+    uint8_t* zlen=nullptr; uint8_t* zcmd=nullptr;
+    zlit_sz=0; zoff_sz=0; zlen_sz=0; zcmd_sz=0;
+    struct ZArg { uint8_t* in; size_t in_sz; uint8_t** out; size_t* out_sz; int level; };
+    auto zworker=[](void* a) -> void* {
+        ZArg* z=(ZArg*)a;
+        *z->out=zstd_comp(z->in,z->in_sz,*z->out_sz,z->level);
+        return nullptr;
+    };
+    ZArg za[4]={
+        {raw_lit,total_lit,&zlit,&zlit_sz,ZSTD_LEVEL},
+        {raw_off,total_off,&zoff,&zoff_sz,ZSTD_LEVEL},
+        {raw_len,total_len,&zlen,&zlen_sz,ZSTD_LEVEL},
+        {raw_cmd,total_cmd,&zcmd,&zcmd_sz,ZSTD_LEVEL}
+    };
+    pthread_t zpts[4];
+    for(int i=0;i<4;i++) pthread_create(&zpts[i],nullptr,zworker,&za[i]);
+    for(int i=0;i<4;i++) pthread_join(zpts[i],nullptr);
     size_t total_z=zlit_sz+zoff_sz+zlen_sz+zcmd_sz;
  
     // Decompress global streams
@@ -632,6 +670,7 @@ static int do_test(const char* in_path, int threads) {
     fprintf(stderr,"  Original:   %14zu bytes\n",src_size);
     fprintf(stderr,"  Compressed: %14zu bytes\n",total_z);
     fprintf(stderr,"  Ratio:  %.5fx   BPB: %.4f\n",(double)src_size/total_z,total_z*8.0/src_size);
+    enc_time=now_sec()-t_enc_start;
     fprintf(stderr,"  Encode: %.2f MB/s  (%.3fs)\n",src_size/enc_time/1e6,enc_time);
     fprintf(stderr,"  Decode: %.2f MB/s  (%.3fs)\n",src_size/dec_time/1e6,dec_time);
     fprintf(stderr,"  SHA256: %.16s...\n",sha_hex);
