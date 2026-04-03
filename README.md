@@ -8,19 +8,20 @@ Global analysis at encode time. Parallel block decode at runtime.
 | Metric | Value |
 |--------|-------|
 | Ratio | 3.896x |
-| Encode | 1582 MB/s |
 | Decode | **11609 MB/s** |
 | Verification | SHA-256 bit-perfect |
 
-## Head-to-Head (same machine, same dataset, 8 threads)
+**Note:** Encode speed was incorrectly measured in earlier versions.
+The timer covered only the LZ77 pass, not the zstd entropy coding step.
+Corrected benchmarks in progress.
 
-| Codec | Ratio | Encode | Decode |
-|-------|-------|--------|--------|
-| LZ4 -9 | 2.794x | 55 MB/s | 2703 MB/s |
-| zstd -3 | 3.187x | 1613 MB/s | 1379 MB/s |
-| zstd -9 | 3.759x | 245 MB/s | 1429 MB/s |
-| zstd -19 | 4.245x | 13 MB/s | 1420 MB/s |
-| **ACEAPEX** | **3.896x** | **1582 MB/s** | **11609 MB/s** |
+## Head-to-Head — Decode Speed (enwik9, 8 threads)
+
+| Codec | Ratio | Decode |
+|-------|-------|--------|
+| zstd -9 | 3.759x | 1429 MB/s |
+| zstd -19 | 4.245x | 1420 MB/s |
+| **ACEAPEX** | **3.896x** | **11609 MB/s** |
 
 All results SHA-256 bit-perfect verified.
 
