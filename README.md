@@ -60,10 +60,12 @@ This is "global analysis, local decode" — not true global LZ77 decode dependen
 
 ## Download
 
-| Platform | File | Size |
-|----------|------|------|
-| Linux x64 | [aceapex](aceapex) | ~42KB |
-| Windows x64 | [aceapex.exe](aceapex.exe) | ~2MB |
+Binaries available in [GitHub Releases](https://github.com/yasha1971-coder/aceapex/releases/tag/v1.0.0-beta):
+
+| Platform | File |
+|----------|------|
+| Linux x64 | aceapex-linux-x64 |
+| Windows x64 | aceapex-windows-x64.exe |
 
 Linux usage:
 ```bash
