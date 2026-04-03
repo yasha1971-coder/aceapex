@@ -65,3 +65,13 @@ This is an architectural property, not an optimization artifact.
 
 Oodle figures from public blog posts by Charles Bloom (cbloomrants.blogspot.com).
 Direct comparison on same hardware not available — Oodle SDK is proprietary.
+
+## Real Game Assets (H1Emu Launcher, BIT-PERFECT)
+
+| File | Size | Ratio | Encode MB/s | Decode MB/s |
+|------|------|-------|-------------|-------------|
+| H1Emu Launcher.dll | 279MB | 3.25x | 1825 | 10830 |
+| Microsoft.Windows.SDK.NET.dll | 23MB | 4.98x | 1986 | 6461 |
+| H1Emu Launcher.pdb | 2.9MB | 3.72x | 1780 | 3776 |
+| H1Emu Launcher.exe | 265KB | 2.96x | 1004 | 563 |
+| blender-5.1-splash (1.6GB raw) | 1.6GB | 3.21x | 2291 | 13022 |
