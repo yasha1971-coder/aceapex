@@ -35,10 +35,6 @@ All results SHA-256 bit-perfect verified.
 | alice29.txt | 2.77x | 280 MB/s | 507 MB/s |
 
 
-## Demo
-
-[![ACEAPEX Demo](https://img.youtube.com/vi/zcX6IL2Veao/0.jpg)](https://www.youtube.com/watch?v=zcX6IL2Veao)
-
 ## Core Idea
 
 Standard LZ77 codecs face a tradeoff:
