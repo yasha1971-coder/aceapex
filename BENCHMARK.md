@@ -75,3 +75,13 @@ Direct comparison on same hardware not available — Oodle SDK is proprietary.
 | H1Emu Launcher.pdb | 2.9MB | 3.72x | 1780 | 3776 |
 | H1Emu Launcher.exe | 265KB | 2.96x | 1004 | 563 |
 | blender-5.1-splash (1.6GB raw) | 1.6GB | 3.21x | 2291 | 13022 |
+
+## Single-thread decode (H1Emu Launcher.dll, 279MB)
+
+| Threads | Encode MB/s | Decode MB/s |
+|---------|-------------|-------------|
+| 1 | 254 | 10513 |
+| 8 | 1825 | 10830 |
+
+Decode throughput is nearly constant regardless of thread count.
+This is an architectural property of the block layout — not a tuning artifact.
