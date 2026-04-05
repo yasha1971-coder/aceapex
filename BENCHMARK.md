@@ -14,7 +14,7 @@ Full pipeline numbers below include entropy coding.
 
 | Variant | Ratio | Encode MB/s | Decode MB/s | Notes |
 |---------|-------|-------------|-------------|-------|
-| A (zstd-22) | 3.896x | 2.5 | 196 | best ratio |
+| A (zstd-22) | 3.896x | 2.5 | 227 | best ratio |
 | B (FSE chunked) | 2.227x | 121 | 281 | best encode speed |
 
 All results SHA-256 bit-perfect verified.
