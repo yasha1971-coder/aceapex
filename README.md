@@ -1,40 +1,18 @@
 # ACEAPEX
 
-High-throughput lossless compression.  
-Global analysis at encode time. Parallel block decode at runtime.
+High-throughput lossless compression. Global analysis at encode time. Parallel block decode at runtime.
 
-## Key Result (enwik9, 1GB, AMD EPYC 4344P, 8 threads)
+## Benchmarks (enwik9, 1GB, AMD EPYC 4344P, 8 threads, wall clock)
 
-| Metric | Value |
-|--------|-------|
-| Ratio | 3.896x |
-| Decode | **11609 MB/s** |
-| Verification | SHA-256 bit-perfect |
-
-**Note:** Encode speed was incorrectly measured in earlier versions.
-The timer covered only the LZ77 pass, not the zstd entropy coding step.
-Corrected benchmarks in progress.
-
-## Head-to-Head — Decode Speed (enwik9, 8 threads)
-
-| Codec | Ratio | Decode |
-|-------|-------|--------|
-| zstd -9 | 3.759x | 1429 MB/s |
-| zstd -19 | 4.245x | 1420 MB/s |
-| **ACEAPEX** | **3.896x** | **11609 MB/s** |
+| Variant | Ratio | Encode | Decode |
+|---------|-------|--------|--------|
+| A (zstd-22) | 3.896x | 2.5 MB/s | 227 MB/s |
+| B (FSE chunked) | 2.227x | 121 MB/s | 281 MB/s |
 
 All results SHA-256 bit-perfect verified.
 
-## Canterbury Corpus (bit-perfect)
-
-| File | Ratio | Encode | Decode |
-|------|-------|--------|--------|
-| kennedy.xls | 14.69x | 1639 MB/s | 2588 MB/s |
-| ptt5 | 10.20x | 1754 MB/s | 2816 MB/s |
-| E.coli | 3.95x | 1344 MB/s | 4915 MB/s |
-| bible.txt | 3.51x | 1089 MB/s | 4012 MB/s |
-| alice29.txt | 2.77x | 280 MB/s | 507 MB/s |
-
+Note: internal LZ77 reconstruction phase runs at ~11,600 MB/s,
+but full pipeline (including entropy coding) is shown above.
 
 ## Core Idea
 
@@ -43,12 +21,11 @@ Standard LZ77 codecs face a tradeoff:
 - Independent blocks enable parallel decode but lose ratio
 
 ACEAPEX separates these responsibilities:
-- **Encode**: global analysis, full match search across entire input
-- **Decode**: block-parallel reconstruction via precomputed per-block stream offsets
+- **Encode:** global analysis, full match search across entire input
+- **Decode:** block-parallel reconstruction via precomputed per-block stream offsets
 
-Cross-block LZ77 matches are resolved into block-local form at encode time.  
-Decode-time back-references do not cross block boundaries.  
-This is "global analysis, local decode" — not true global LZ77 decode dependency.
+Cross-block LZ77 matches are resolved into block-local form at encode time.
+This is "global analysis, local decode".
 
 ## Key Properties
 
@@ -60,31 +37,18 @@ This is "global analysis, local decode" — not true global LZ77 decode dependen
 
 ## Download
 
-Binaries available in [GitHub Releases](https://github.com/yasha1971-coder/aceapex/releases/tag/v1.0.0-beta):
+Binaries in [GitHub Releases](https://github.com/yasha1971-coder/aceapex/releases):
 
 | Platform | File |
 |----------|------|
 | Linux x64 | aceapex-linux-x64 |
 | Windows x64 | aceapex-windows-x64.exe |
 
-Linux usage:
-```bash
-./aceapex.sh compress myfile.txt
-./aceapex.sh decompress myfile.txt.aet
-./aceapex.sh test myfile.txt
-```
-
-Windows usage:
-```cmd
-aceapex.exe c --in myfile.txt --out myfile.txt.aet --threads 8
-aceapex.exe d --in myfile.txt.aet --out myfile.txt
-aceapex.exe t --in myfile.txt --threads 8
-```
-
 ## Build
 ```bash
 sudo apt-get install -y libzstd-dev g++
-bash build.sh
+g++ -O3 -march=native -funroll-loops -std=c++17 \
+    -o aceapex src/aceapex_main.cpp -lpthread -lzstd
 ```
 
 ## Usage
@@ -94,17 +58,9 @@ bash build.sh
 ./aceapex t --in myfile --threads 8
 ```
 
-## Reproduce
-```bash
-bash scripts/run_bench.sh ./aceapex /path/to/enwik9
-```
-
-enwik9: http://mattmahoney.net/dc/enwik9.zip
-
 ## Status
 
-Research-grade. No claims of universality.  
-One data point on a tradeoff curve.
+Research-grade. No claims of universality. One data point on a tradeoff curve.
 
 ## License
 
