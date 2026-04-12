@@ -472,6 +472,50 @@ static void fse_chunked_decomp(const uint8_t* src, size_t orig_sz, uint8_t* dst)
 }
  
 // Parallel entropy encode — 4 streams simultaneously
+static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
+    const int NW=4; size_t csz=(sz+NW-1)/NW;
+    struct ZW{const uint8_t*in;size_t isz;uint8_t*out;size_t osz;size_t cap;};
+    ZW zws[NW];
+    for(int t=0;t<NW;t++){
+        size_t off=(size_t)t*csz,isz=(t<NW-1)?csz:sz-off;
+        zws[t]={src+off,isz,nullptr,0,ZSTD_compressBound(isz)+8};
+        zws[t].out=(uint8_t*)malloc(zws[t].cap);}
+    auto zfn=[](void*a)->void*{ZW*z=(ZW*)a;
+        ZSTD_CCtx*ctx=ZSTD_createCCtx();
+        ZSTD_CCtx_setParameter(ctx,ZSTD_c_compressionLevel,3);
+        z->osz=ZSTD_compress2(ctx,z->out,z->cap,z->in,z->isz);
+        ZSTD_freeCCtx(ctx); return nullptr;};
+    pthread_t pts[NW];
+    for(int t=0;t<NW;t++) pthread_create(&pts[t],nullptr,zfn,&zws[t]);
+    for(int t=0;t<NW;t++) pthread_join(pts[t],nullptr);
+    size_t hdrsz=8+NW*8,totalsz=hdrsz;
+    for(int t=0;t<NW;t++) totalsz+=zws[t].osz;
+    uint8_t* res=(uint8_t*)malloc(totalsz);
+    *(uint64_t*)res=sz|(uint64_t(1)<<62);
+    uint64_t* zsz=(uint64_t*)(res+8); uint8_t* p=res+hdrsz;
+    for(int t=0;t<NW;t++){zsz[t]=zws[t].osz;memcpy(p,zws[t].out,zws[t].osz);p+=zws[t].osz;free(zws[t].out);}
+    out_sz=totalsz; return res;
+}
+static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_sz) {
+    uint64_t h=*(const uint64_t*)src;
+    orig_sz=h & ~(uint64_t(1)<<62);
+    uint8_t* out=(uint8_t*)malloc(orig_sz);
+    if(!(h & (uint64_t(1)<<62))){fse_chunked_decomp(src,orig_sz,out);return out;}
+    const int NW=4; const uint64_t* zsz=(const uint64_t*)(src+8);
+    const uint8_t* p0=src+8+NW*8;
+    size_t csz=(orig_sz+NW-1)/NW;
+    struct DW{uint8_t*out;size_t raw;const uint8_t*in;size_t isz;};
+    DW dws[NW]; const uint8_t* p=p0;
+    for(int t=0;t<NW;t++){
+        size_t off=(size_t)t*csz,raw=(t<NW-1)?csz:orig_sz-off;
+        dws[t]={out+off,raw,p,zsz[t]}; p+=zsz[t];}
+    auto dfn=[](void*a)->void*{DW*d=(DW*)a;
+        ZSTD_decompress(d->out,d->raw,d->in,d->isz); return nullptr;};
+    pthread_t pts[NW];
+    for(int t=0;t<NW;t++) pthread_create(&pts[t],nullptr,dfn,&dws[t]);
+    for(int t=0;t<NW;t++) pthread_join(pts[t],nullptr);
+    return out;
+}
 static void entropy_encode(
     const uint8_t* raw_lit, size_t total_lit,
     const uint8_t* raw_off, size_t total_off,
@@ -505,15 +549,14 @@ static void entropy_encode(
         *e->osz=total;
         return nullptr;
     };
-    EA ea[4]={
-        {raw_lit,total_lit,&zlit,&zlit_sz},
+    EA ea[3]={
         {raw_off,total_off,&zoff,&zoff_sz},
         {raw_len,total_len,&zlen,&zlen_sz},
         {raw_cmd,total_cmd,&zcmd,&zcmd_sz}
     };
-    pthread_t epts[4];
-    for(int i=0;i<4;i++) pthread_create(&epts[i],nullptr,ew,&ea[i]);
-    for(int i=0;i<4;i++) pthread_join(epts[i],nullptr);
+    pthread_t epts[3];
+    for(int i=0;i<3;i++) pthread_create(&epts[i],nullptr,ew,&ea[i]);
+    for(int i=0;i<3;i++) pthread_join(epts[i],nullptr);
 }
  
 static int do_compress(const char* in_path, const char* out_path, int threads) {
@@ -537,6 +580,7 @@ static int do_compress(const char* in_path, const char* out_path, int threads) {
  
     size_t zlit_sz,zoff_sz,zlen_sz,zcmd_sz;
     uint8_t *zlit,*zoff,*zlen,*zcmd;
+    zlit=lit_compress(raw_lit,total_lit,zlit_sz);
     entropy_encode(raw_lit,total_lit,raw_off,total_off,raw_len,total_len,raw_cmd,total_cmd,
                    zlit,zlit_sz,zoff,zoff_sz,zlen,zlen_sz,zcmd,zcmd_sz);
  
@@ -588,12 +632,11 @@ static int do_decompress(const char* in_path, const char* out_path) {
     uint8_t* zcmd=(uint8_t*)malloc(hdr.zcmd_sz); fread(zcmd,1,hdr.zcmd_sz,fin);
     fclose(fin);
  
-    size_t lit_sz=*(uint64_t*)zlit;
     size_t off_sz=*(uint64_t*)zoff;
     size_t len_sz=*(uint64_t*)zlen;
     size_t cmd_sz=*(uint64_t*)zcmd;
  
-    uint8_t* lit=(uint8_t*)malloc(lit_sz); fse_chunked_decomp(zlit,lit_sz,lit);
+    size_t lit_sz=0; uint8_t* lit=lit_decompress(zlit,hdr.zlit_sz,lit_sz);
     uint8_t* off=(uint8_t*)malloc(off_sz); fse_chunked_decomp(zoff,off_sz,off);
     uint8_t* len=(uint8_t*)malloc(len_sz); fse_chunked_decomp(zlen,len_sz,len);
     uint8_t* cmd=(uint8_t*)malloc(cmd_sz); fse_chunked_decomp(zcmd,cmd_sz,cmd);
@@ -634,17 +677,17 @@ static int do_test(const char* in_path, int threads) {
  
     size_t zlit_sz,zoff_sz,zlen_sz,zcmd_sz;
     uint8_t *zlit,*zoff,*zlen,*zcmd;
+    zlit=lit_compress(raw_lit,total_lit,zlit_sz);
     entropy_encode(raw_lit,total_lit,raw_off,total_off,raw_len,total_len,raw_cmd,total_cmd,
                    zlit,zlit_sz,zoff,zoff_sz,zlen,zlen_sz,zcmd,zcmd_sz);
  
     size_t total_z=zlit_sz+zoff_sz+zlen_sz+zcmd_sz;
  
-    size_t lit_sz=*(uint64_t*)zlit;
     size_t off_sz=*(uint64_t*)zoff;
     size_t len_sz=*(uint64_t*)zlen;
     size_t cmd_sz=*(uint64_t*)zcmd;
  
-    uint8_t* lit=(uint8_t*)malloc(lit_sz); fse_chunked_decomp(zlit,lit_sz,lit);
+    size_t lit_sz=0; uint8_t* lit=lit_decompress(zlit,zlit_sz,lit_sz);
     uint8_t* off=(uint8_t*)malloc(off_sz); fse_chunked_decomp(zoff,off_sz,off);
     uint8_t* len=(uint8_t*)malloc(len_sz); fse_chunked_decomp(zlen,len_sz,len);
     uint8_t* cmd=(uint8_t*)malloc(cmd_sz); fse_chunked_decomp(zcmd,cmd_sz,cmd);
