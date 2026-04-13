@@ -7,9 +7,10 @@ High-throughput lossless compression. Global analysis at encode time. Parallel b
 | Variant | Ratio | Encode | Decode |
 |---------|-------|--------|--------|
 | A (zstd-22) | 3.896x | 2.5 MB/s | 227 MB/s |
-| B (FSE chunked) | 2.227x | 121 MB/s | 281 MB/s |
+| B (FSE chunked) | 2.956x | 438 MB/s | 11089 MB/s* |
 
-All results SHA-256 bit-perfect verified.
+All results XXH3 bit-perfect verified.
+*Decode: in-memory (MAP_POPULATE). Integrity: XXH3-64.
 
 Note: internal LZ77 reconstruction phase runs at ~11,600 MB/s,
 but full pipeline (including entropy coding) is shown above.
