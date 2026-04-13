@@ -564,7 +564,16 @@ static int do_compress(const char* in_path, const char* out_path, int threads) {
     if (!fin) { fprintf(stderr,"Cannot open: %s\n",in_path); return 1; }
     fseek(fin,0,SEEK_END); size_t src_size=(size_t)ftell(fin); fseek(fin,0,SEEK_SET);
     uint8_t* src=(uint8_t*)malloc(src_size);
+    double t_fread=now_sec();
     if (fread(src,1,src_size,fin)!=src_size) { fprintf(stderr,"Read error\n"); return 1; }
+    t_fread=now_sec()-t_fread;
+    // Запускаем SHA256 параллельно с encode
+    struct ShaArg { const uint8_t* d; size_t n; uint8_t out[32]; };
+    ShaArg sha_arg={src,src_size,{}};
+    pthread_t sha_thr;
+    pthread_create(&sha_thr,nullptr,[](void*a)->void*{
+        ShaArg*s=(ShaArg*)a; sha256(s->d,s->n,s->out); return nullptr;
+    },&sha_arg);
     fclose(fin);
     fprintf(stderr,"[*] Compress: %s (%.2f MB) threads=%d\n",in_path,src_size/1e6,threads);
     double t_total_c=now_sec();
@@ -580,9 +589,14 @@ static int do_compress(const char* in_path, const char* out_path, int threads) {
  
     size_t zlit_sz,zoff_sz,zlen_sz,zcmd_sz;
     uint8_t *zlit,*zoff,*zlen,*zcmd;
+    double t_lz=enc_time;
+    double t1=now_sec();
     zlit=lit_compress(raw_lit,total_lit,zlit_sz);
+    double t_lit=now_sec()-t1;
+    double t2=now_sec();
     entropy_encode(raw_lit,total_lit,raw_off,total_off,raw_len,total_len,raw_cmd,total_cmd,
                    zlit,zlit_sz,zoff,zoff_sz,zlen,zlen_sz,zcmd,zcmd_sz);
+    double t_fse=now_sec()-t2;
  
     size_t total_z=zlit_sz+zoff_sz+zlen_sz+zcmd_sz;
  
@@ -590,7 +604,12 @@ static int do_compress(const char* in_path, const char* out_path, int threads) {
     memcpy(hdr.magic,"ACEPX2\0\0",8);
     hdr.version=2; hdr.orig_size=(uint64_t)src_size;
     hdr.block_size=(uint32_t)BLOCK_SIZE; hdr.num_blocks=(uint32_t)num_blocks;
-    sha256(src,src_size,hdr.sha256);
+    double t_sha256=now_sec();
+    pthread_join(sha_thr,nullptr);
+    memcpy(hdr.sha256,sha_arg.out,32);
+    t_sha256=now_sec()-t_sha256;
+    char sha_hex[65];
+    for(int i=0;i<32;i++) sprintf(sha_hex+i*2,"%02x",hdr.sha256[i]); sha_hex[64]=0;
     hdr.zlit_sz=zlit_sz; hdr.zoff_sz=zoff_sz;
     hdr.zlen_sz=zlen_sz; hdr.zcmd_sz=zcmd_sz;
  
@@ -600,12 +619,18 @@ static int do_compress(const char* in_path, const char* out_path, int threads) {
     fwrite(zlit,1,zlit_sz,fout); fwrite(zoff,1,zoff_sz,fout);
     fwrite(zlen,1,zlen_sz,fout); fwrite(zcmd,1,zcmd_sz,fout);
     fclose(fout);
- 
-    char sha_hex[65]; sha256_hex(src,src_size,sha_hex);
     fprintf(stderr,"  Original:   %14zu bytes\n",src_size);
     fprintf(stderr,"  Compressed: %14zu bytes\n",total_z);
     fprintf(stderr,"  Ratio:  %.5fx\n",(double)src_size/total_z);
+    double t3=now_sec();
+    double t_sha=t3-t_total_c-t_lz-t_lit-t_fse; // approx
     double real_enc=now_sec()-t_total_c;
+    fprintf(stderr,"  Phase LZ77:    %.3fs\n",t_lz);
+    fprintf(stderr,"  Phase lit/zstd:%.3fs\n",t_lit);
+    fprintf(stderr,"  Phase FSE:     %.3fs\n",t_fse);
+    fprintf(stderr,"  Phase fread:   %.3fs\n",t_fread);
+    fprintf(stderr,"  Phase sha256:  %.3fs\n",t_sha256);
+    fprintf(stderr,"  Phase other:   %.3fs\n",real_enc-t_lz-t_lit-t_fse-t_fread-t_sha256);
     fprintf(stderr,"  Encode: %.2f MB/s  (%.3fs)\n",src_size/real_enc/1e6,real_enc);
     fprintf(stderr,"  SHA256: %s\n",sha_hex);
  
