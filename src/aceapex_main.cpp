@@ -3,11 +3,20 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#ifndef MAP_HUGE_2MB
+#define MAP_HUGE_2MB (21 << MAP_HUGE_SHIFT)
+#endif
 #include <pthread.h>
 #include <atomic>
 #include <vector>
 #include <algorithm>
 #include <zstd.h>
+#include <xxhash.h>
 #include "lit_fse.cpp"
 extern "C"{size_t FSE_compress(void*,size_t,const void*,size_t);size_t FSE_decompress(void*,size_t,const void*,size_t);size_t FSE_compressBound(size_t);unsigned FSE_isError(size_t);}
  
@@ -334,7 +343,7 @@ struct AetHeader {
     uint64_t orig_size;
     uint32_t block_size;
     uint32_t num_blocks;
-    uint8_t  sha256[32];
+    uint8_t  xxhash[8];  // XXH3_64bits
     uint64_t zlit_sz, zoff_sz, zlen_sz, zcmd_sz;
 };
 #pragma pack(pop)
@@ -560,13 +569,16 @@ static void entropy_encode(
 }
  
 static int do_compress(const char* in_path, const char* out_path, int threads) {
-    FILE* fin=fopen(in_path,"rb");
-    if (!fin) { fprintf(stderr,"Cannot open: %s\n",in_path); return 1; }
-    fseek(fin,0,SEEK_END); size_t src_size=(size_t)ftell(fin); fseek(fin,0,SEEK_SET);
-    uint8_t* src=(uint8_t*)malloc(src_size);
     double t_fread=now_sec();
-    if (fread(src,1,src_size,fin)!=src_size) { fprintf(stderr,"Read error\n"); return 1; }
+    int fin_fd=open(in_path,O_RDONLY);
+    if (fin_fd<0) { fprintf(stderr,"Cannot open: %s\n",in_path); return 1; }
+    struct stat fin_st; fstat(fin_fd,&fin_st);
+    size_t src_size=(size_t)fin_st.st_size;
+    uint8_t* src=(uint8_t*)mmap(nullptr,src_size,PROT_READ,MAP_SHARED|MAP_POPULATE,fin_fd,0);
+    close(fin_fd);
+    if (src==MAP_FAILED) { fprintf(stderr,"mmap failed\n"); return 1; }
     t_fread=now_sec()-t_fread;
+    bool src_is_mmap=true;
     // Запускаем SHA256 параллельно с encode
     struct ShaArg { const uint8_t* d; size_t n; uint8_t out[32]; };
     ShaArg sha_arg={src,src_size,{}};
@@ -574,7 +586,7 @@ static int do_compress(const char* in_path, const char* out_path, int threads) {
     pthread_create(&sha_thr,nullptr,[](void*a)->void*{
         ShaArg*s=(ShaArg*)a; sha256(s->d,s->n,s->out); return nullptr;
     },&sha_arg);
-    fclose(fin);
+
     fprintf(stderr,"[*] Compress: %s (%.2f MB) threads=%d\n",in_path,src_size/1e6,threads);
     double t_total_c=now_sec();
  
@@ -605,11 +617,12 @@ static int do_compress(const char* in_path, const char* out_path, int threads) {
     hdr.version=2; hdr.orig_size=(uint64_t)src_size;
     hdr.block_size=(uint32_t)BLOCK_SIZE; hdr.num_blocks=(uint32_t)num_blocks;
     double t_sha256=now_sec();
-    pthread_join(sha_thr,nullptr);
-    memcpy(hdr.sha256,sha_arg.out,32);
+    XXH64_hash_t hv=XXH3_64bits(src,src_size);
+    memcpy(hdr.xxhash,&hv,8);
     t_sha256=now_sec()-t_sha256;
-    char sha_hex[65];
-    for(int i=0;i<32;i++) sprintf(sha_hex+i*2,"%02x",hdr.sha256[i]); sha_hex[64]=0;
+    char sha_hex[17];
+    XXH64_hash_t hv2; memcpy(&hv2,hdr.xxhash,8);
+    sprintf(sha_hex,"%016llx",(unsigned long long)hv2);
     hdr.zlit_sz=zlit_sz; hdr.zoff_sz=zoff_sz;
     hdr.zlen_sz=zlen_sz; hdr.zcmd_sz=zcmd_sz;
  
@@ -632,9 +645,10 @@ static int do_compress(const char* in_path, const char* out_path, int threads) {
     fprintf(stderr,"  Phase sha256:  %.3fs\n",t_sha256);
     fprintf(stderr,"  Phase other:   %.3fs\n",real_enc-t_lz-t_lit-t_fse-t_fread-t_sha256);
     fprintf(stderr,"  Encode: %.2f MB/s  (%.3fs)\n",src_size/real_enc/1e6,real_enc);
-    fprintf(stderr,"  SHA256: %s\n",sha_hex);
+    fprintf(stderr,"  XXH3:   %s\n",sha_hex);
  
-    free(src); free(raw_lit); free(raw_off); free(raw_len); free(raw_cmd);
+    if(src_is_mmap) munmap((void*)src,src_size); else free((void*)src);
+    free(raw_lit); free(raw_off); free(raw_len); free(raw_cmd);
     free(zlit); free(zoff); free(zlen); free(zcmd);
     return 0;
 }
@@ -671,8 +685,9 @@ static int do_decompress(const char* in_path, const char* out_path) {
     double dec_time=parallel_decode(lit,off,len,cmd,boffs.data(),nb,
                                      dst,hdr.orig_size,hdr.block_size);
  
-    uint8_t digest[32]; sha256(dst,hdr.orig_size,digest);
-    bool ok=(memcmp(digest,hdr.sha256,32)==0);
+    XXH64_hash_t dv=XXH3_64bits(dst,hdr.orig_size);
+    XXH64_hash_t hv3; memcpy(&hv3,hdr.xxhash,8);
+    bool ok=(dv==hv3);
     FILE* fout=fopen(out_path,"wb");
     if (fout) { fwrite(dst,1,hdr.orig_size,fout); fclose(fout); }
     fprintf(stderr,"  Decode: %.2f MB/s  (%.3fs)\n",hdr.orig_size/dec_time/1e6,dec_time);
