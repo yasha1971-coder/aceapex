@@ -42,3 +42,20 @@ NVMe read speed: 8.5 GB/s. Pure CPU decode: ~11 GB/s.
 | zstd -3 | 2.84x | ~500 MB/s | ~1800 MB/s |
 | zstd -19 | ~3.33x | ~13 MB/s | ~900 MB/s |
 | **ACEAPEX** | **2.956x** | **438 MB/s** | **11089 MB/s** |
+
+## Silesia Corpus (all files, 8 threads, BIT-PERFECT)
+
+| File | Size | Ratio | Encode MB/s | Decode MB/s |
+|------|------|-------|-------------|-------------|
+| dickens | 9.7MB | 2.62x | 316 | 9712 |
+| mozilla | 51MB | 2.57x | 471 | 8538 |
+| mr | 9.9MB | 2.84x | 421 | 11957 |
+| nci | 33MB | 10.31x | 873 | 9973 |
+| ooffice | 6.1MB | 1.86x | 341 | 8656 |
+| osdb | 9.9MB | 2.54x | 424 | 9214 |
+| reymont | 6.5MB | 2.98x | 385 | 7001 |
+| samba | 21MB | 3.85x | 569 | 8050 |
+| sao | 7.3MB | 1.30x | 285 | 12406 |
+| webster | 40MB | 3.03x | 448 | 8926 |
+| x-ray | 8.5MB | 1.39x | 286 | 10412 |
+| xml | 5.2MB | 6.18x | 632 | 8082 |
