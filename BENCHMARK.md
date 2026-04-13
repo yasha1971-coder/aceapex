@@ -8,31 +8,37 @@ CPU: AMD EPYC 4344P 8-core | RAM: 32GB | NVMe: 8.5 GB/s read
 | Metric | Value | Notes |
 |--------|-------|-------|
 | Ratio | 2.956x | BPB: 2.706 |
-| Encode | 121 MB/s | 8 threads |
-| Encode | 77 MB/s | 1 thread |
-| Decode | 11100 MB/s | 8 threads, in-memory (MAP_POPULATE) |
-| Status | ✅ BIT-PERFECT | SHA256 verified |
+| Encode | 438 MB/s | 8 threads, mmap input |
+| Encode | 160 MB/s | 1 thread |
+| Decode | 11089 MB/s | in-memory (MAP_POPULATE) |
+| Hash | XXH3-64 | integrity check |
+| Status | ✅ BIT-PERFECT | |
 
-SHA256: 159b85351e5f76e60cbe32e04c677847a9ecba3adc79addab6f4c6c7aa3744bc
-
-## Thread scaling (encode, enwik8)
+## Thread scaling (encode, enwik9)
 | Threads | MB/s | Speedup |
 |---------|------|---------|
-| 1 | 77 | 1.0x |
-| 2 | 94 | 1.2x |
-| 4 | 107 | 1.4x |
-| 8 | 115 | 1.5x |
+| 1 | 160 | 1.0x |
+| 2 | 246 | 1.5x |
+| 4 | 282 | 1.8x |
+| 8 | 438 | 2.7x |
 
-Note: Poor scaling due to RAM bandwidth contention.
-Input (1GB) exceeds L3 cache (32MB).
+## Pipeline timing (enwik9, 8 threads)
+| Phase | Time |
+|-------|------|
+| mmap input | 0.82s |
+| LZ77 match | 0.69s |
+| lit/zstd-3 | 0.76s |
+| FSE off/len/cmd | 0.07s |
+| XXH3 integrity | 0.04s |
+| **Total** | **2.28s** |
 
 ## Decode note
-Decode uses mmap with MAP_POPULATE — file is pre-loaded into RAM
-before timing starts. NVMe read speed: 8.5 GB/s.
-Pure CPU decode throughput (no I/O): ~11 GB/s.
+Decode uses mmap with MAP_POPULATE — file pre-loaded into RAM.
+NVMe read speed: 8.5 GB/s. Pure CPU decode: ~11 GB/s.
 
-## Pipeline
-- LZ77 match finding: hash chain, epoch-based invalidation
-- Literals: zstd-3 (4 parallel threads)
-- Offsets/lengths/commands: FSE chunked (3 parallel threads)
-- Decode: parallel blocks, mmap output
+## vs Industry (enwik9)
+| Compressor | Ratio | Encode | Decode |
+|-----------|-------|--------|--------|
+| zstd -3 | 2.84x | ~500 MB/s | ~1800 MB/s |
+| zstd -19 | ~3.33x | ~13 MB/s | ~900 MB/s |
+| **ACEAPEX** | **2.956x** | **438 MB/s** | **11089 MB/s** |
