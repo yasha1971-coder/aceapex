@@ -22,7 +22,7 @@ extern "C"{size_t FSE_compress(void*,size_t,const void*,size_t);size_t FSE_decom
  
 #define HASH_SIZE    0x1FFF
 #define MAX_DIST     (128 * 1024 * 1024)
-#define BLOCK_SIZE   (32 * 1024)
+#define BLOCK_SIZE   (1 * 1024 * 1024)
 #define MAX_THREADS  16
 #define BLOCK_MARKER 0xFF
 #define ZSTD_LEVEL   22
