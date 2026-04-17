@@ -16,6 +16,9 @@
 #include <vector>
 #include <algorithm>
 #include <zstd.h>
+#define XXH_STATIC_LINKING_ONLY
+#define XXH_IMPLEMENTATION
+#define XXH_NAMESPACE ACEAPEX_
 #include <xxhash.h>
 #include "lit_fse.cpp"
 extern "C"{size_t FSE_compress(void*,size_t,const void*,size_t);size_t FSE_decompress(void*,size_t,const void*,size_t);size_t FSE_compressBound(size_t);unsigned FSE_isError(size_t);}
@@ -393,7 +396,7 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads,
  
     ThreadHashTable** htabs=(ThreadHashTable**)calloc(threads,sizeof(void*));
     for(int i=0;i<threads;i++) {
-        htabs[i]=(ThreadHashTable*)aligned_alloc(64,sizeof(ThreadHashTable));
+        posix_memalign((void**)(&htabs[i]),64,sizeof(ThreadHashTable));
         memset(htabs[i]->epoch,0,sizeof(htabs[i]->epoch));
         htabs[i]->cur_epoch=0;
     }
@@ -617,11 +620,11 @@ static int do_compress(const char* in_path, const char* out_path, int threads) {
     hdr.version=2; hdr.orig_size=(uint64_t)src_size;
     hdr.block_size=(uint32_t)BLOCK_SIZE; hdr.num_blocks=(uint32_t)num_blocks;
     double t_sha256=now_sec();
-    XXH64_hash_t hv=XXH3_64bits(src,src_size);
+    uint64_t hv=ACEAPEX_XXH3_64bits(src,src_size);
     memcpy(hdr.xxhash,&hv,8);
     t_sha256=now_sec()-t_sha256;
     char sha_hex[17];
-    XXH64_hash_t hv2; memcpy(&hv2,hdr.xxhash,8);
+    uint64_t hv2; memcpy(&hv2,hdr.xxhash,8);
     sprintf(sha_hex,"%016llx",(unsigned long long)hv2);
     hdr.zlit_sz=zlit_sz; hdr.zoff_sz=zoff_sz;
     hdr.zlen_sz=zlen_sz; hdr.zcmd_sz=zcmd_sz;
@@ -685,8 +688,8 @@ static int do_decompress(const char* in_path, const char* out_path) {
     double dec_time=parallel_decode(lit,off,len,cmd,boffs.data(),nb,
                                      dst,hdr.orig_size,hdr.block_size);
  
-    XXH64_hash_t dv=XXH3_64bits(dst,hdr.orig_size);
-    XXH64_hash_t hv3; memcpy(&hv3,hdr.xxhash,8);
+    uint64_t dv=ACEAPEX_XXH3_64bits(dst,hdr.orig_size);
+    uint64_t hv3; memcpy(&hv3,hdr.xxhash,8);
     bool ok=(dv==hv3);
     FILE* fout=fopen(out_path,"wb");
     if (fout) { fwrite(dst,1,hdr.orig_size,fout); fclose(fout); }
