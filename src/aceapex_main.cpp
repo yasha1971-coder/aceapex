@@ -16,10 +16,13 @@
 #include <vector>
 #include <algorithm>
 #include <zstd.h>
-#define XXH_STATIC_LINKING_ONLY
-#define XXH_IMPLEMENTATION
-#define XXH_NAMESPACE ACEAPEX_
-#include <xxhash.h>
+// Portable XXH3: works with -lxxhash or zstd internal headers
+#ifdef ZSTD_XXH3_64bits
+  #define OUR_XXH3_64bits ZSTD_XXH3_64bits
+#else
+  #include <xxhash.h>
+  #define OUR_XXH3_64bits XXH3_64bits
+#endif
 #include "lit_fse.cpp"
 extern "C"{size_t FSE_compress(void*,size_t,const void*,size_t);size_t FSE_decompress(void*,size_t,const void*,size_t);size_t FSE_compressBound(size_t);unsigned FSE_isError(size_t);}
  
@@ -620,7 +623,7 @@ static int do_compress(const char* in_path, const char* out_path, int threads) {
     hdr.version=2; hdr.orig_size=(uint64_t)src_size;
     hdr.block_size=(uint32_t)BLOCK_SIZE; hdr.num_blocks=(uint32_t)num_blocks;
     double t_sha256=now_sec();
-    uint64_t hv=ACEAPEX_XXH3_64bits(src,src_size);
+    uint64_t hv=OUR_XXH3_64bits(src,src_size);
     memcpy(hdr.xxhash,&hv,8);
     t_sha256=now_sec()-t_sha256;
     char sha_hex[17];
@@ -688,7 +691,7 @@ static int do_decompress(const char* in_path, const char* out_path) {
     double dec_time=parallel_decode(lit,off,len,cmd,boffs.data(),nb,
                                      dst,hdr.orig_size,hdr.block_size);
  
-    uint64_t dv=ACEAPEX_XXH3_64bits(dst,hdr.orig_size);
+    uint64_t dv=OUR_XXH3_64bits(dst,hdr.orig_size);
     uint64_t hv3; memcpy(&hv3,hdr.xxhash,8);
     bool ok=(dv==hv3);
     FILE* fout=fopen(out_path,"wb");
