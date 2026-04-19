@@ -2,55 +2,58 @@
 
 ## Hardware
 
-AMD EPYC 4344P 8-Core (Zen 4) | 125 GB DDR5 | NVMe RAID1 8.5 GB/s read
+AMD EPYC 4344P 8-Core (Zen 4) | 125 GB DDR5 | NVMe RAID1
 
 ## enwik9 (1,000,000,000 bytes, 8 threads)
 
-| Metric       | Value          |
-| ------------ | -------------- |
-| Ratio        | 2.973x         |
-| Compress     | 485 MB/s       |
-| Decompress   | 11299 MB/s     |
-| Integrity    | XXH3-64        |
-| Status       | ✅ BIT-PERFECT  |
+| Metric       | Value                                      |
+| ------------ | ------------------------------------------ |
+| Ratio        | 2.973x                                     |
+| Encode       | 485 MB/s (wall clock)                      |
+| Decode       | 4.2 GB/s algorithmic / 2.3 GB/s wall clock |
+| Integrity    | XXH3-64                                    |
 
-## Pipeline (enwik9, 8 threads)
+Note: algorithmic speed excludes file I/O. Wall clock includes
+full pipeline: file read, entropy decompress, LZ77 decode.
 
-| Phase           | Time      |
-| --------------- | --------- |
-| mmap input      | 0.82s     |
-| LZ77 match      | 0.69s     |
-| lit / zstd-3    | 0.76s     |
-| FSE off/len/cmd | 0.07s     |
-| XXH3 integrity  | 0.04s     |
-| **Total**       | **2.06s** |
+## Pipeline (enwik9, encode, 8 threads)
 
-## vs Industry (enwik9)
+| Phase           | Time  |
+| --------------- | ----- |
+| mmap input      | 0.51s |
+| LZ77 match      | 0.62s |
+| lit / zstd-3    | 0.73s |
+| FSE off/len/cmd | 0.06s |
+| XXH3 integrity  | 0.03s |
+| **Total**       | **1.95s** |
 
-| Compressor   | Ratio  | Compress  | Decompress |
-| ------------ | ------ | --------- | ---------- |
-| zstd -3      | 2.84x  | ~500 MB/s | ~1800 MB/s |
-| zstd -19     | ~3.33x | ~13 MB/s  | ~900 MB/s  |
-| **ACEAPEX**  | **2.973x** | **485 MB/s** | **11299 MB/s** |
+## Pipeline (enwik9, decode, 8 threads)
 
-## Silesia Corpus (all files, 8 threads, BIT-PERFECT)
+| Phase                    | Time  |
+| ------------------------ | ----- |
+| lit + fse (parallel)     | 0.138s |
+| LZ77 reconstruct         | 0.091s |
+| **Total algorithmic**    | **0.241s** |
 
-| File    | Size  | Ratio  | Compress MB/s | Decompress MB/s |
-| ------- | ----- | ------ | ------------- | --------------- |
-| dickens | 9.7MB | 2.62x  | 323           | 7132            |
-| mozilla | 51MB  | 2.59x  | 566           | 7705            |
-| mr      | 9.9MB | 2.84x  | 391           | 7709            |
-| nci     | 33MB  | 10.83x | 1316          | 9485            |
-| ooffice | 6.1MB | 1.86x  | 337           | 6607            |
-| osdb    | 9.9MB | 2.52x  | 440           | 6410            |
-| reymont | 6.5MB | 2.99x  | 396           | 5961            |
-| samba   | 21MB  | 3.91x  | 679           | 7323            |
-| sao     | 7.3MB | 1.30x  | 303           | 11633           |
-| webster | 40MB  | 3.03x  | 482           | 7401            |
-| x-ray   | 8.5MB | 1.39x  | 278           | 7884            |
-| xml     | 5.2MB | 6.82x  | 682           | 5327            |
+## Silesia Corpus (8 threads)
 
-## Notes
+| File    | Size    | Ratio   | Encode     | Decode          |
+| ------- | ------- | ------- | ---------- | --------------- |
+| dickens | 9.7 MB  | 2.616x  | ~320 MB/s  | 2.4 GB/s alg.  |
+| mozilla | 51 MB   | 2.656x  | ~560 MB/s  | 3.6 GB/s alg.  |
+| nci     | 33 MB   | 11.041x | ~1300 MB/s | 6.2 GB/s alg.  |
+| samba   | 21 MB   | 3.972x  | ~670 MB/s  | 3.9 GB/s alg.  |
+| xml     | 5.2 MB  | 6.931x  | ~680 MB/s  | 3.3 GB/s alg.  |
+| webster | 41 MB   | 3.032x  | ~480 MB/s  | 3.6 GB/s alg.  |
 
-Decompress uses mmap with MAP_POPULATE — data pre-loaded into RAM.
-NVMe read speed: 8.5 GB/s. Pure CPU decode: ~11 GB/s.
+## Measurement Notes
+
+Algorithmic speed = data size / algorithm time (excludes file I/O).
+This is the standard methodology used by lzbench and similar tools.
+Wall clock includes all I/O and system overhead.
+
+## Build
+
+    sudo apt-get install -y libzstd-dev g++
+    git clone https://github.com/yasha1971-coder/aceapex
+    cd aceapex && make
