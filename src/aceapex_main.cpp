@@ -712,7 +712,7 @@ static int do_decompress(const char* in_path, const char* out_path) {
     FILE* fout=fopen(out_path,"wb");
     if (fout) { fwrite(dst,1,hdr.orig_size,fout); fclose(fout); }
     fprintf(stderr,"  Decode: %.2f MB/s  (%.3fs)\n",hdr.orig_size/dec_time/1e6,dec_time);
-    fprintf(stderr,"  Status: %s\n",ok?"✅ BIT-PERFECT":"❌ HASH MISMATCH");
+    if(!ok) fprintf(stderr,"  Status: ❌ HASH MISMATCH\n");
  
     free(lit); free(off); free(len); free(cmd); free(dst);
     return ok?0:1;
