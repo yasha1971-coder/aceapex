@@ -4,30 +4,37 @@
 #include <vector>
 #include <pthread.h>
 #include <algorithm>
-extern "C" {
-size_t FSE_compress(void*,size_t,const void*,size_t);
-size_t FSE_decompress(void*,size_t,const void*,size_t);
-size_t FSE_compressBound(size_t);
-unsigned FSE_isError(size_t);
+#include <zstd.h>
+
+static size_t LIT_compress(void* dst, size_t dstCap, const void* src, size_t srcSize) {
+    return ZSTD_compress(dst, dstCap, src, srcSize, 1);
+}
+static size_t LIT_decompress(void* dst, size_t dstCap, const void* src, size_t srcSize) {
+    return ZSTD_decompress(dst, dstCap, src, srcSize);
+}
+static size_t LIT_compressBound(size_t srcSize) {
+    return ZSTD_compressBound(srcSize);
+}
+static unsigned LIT_isError(size_t code) {
+    return ZSTD_isError(code);
 }
 
-// Header: [uint32_t nc][uint32_t pad][nc x uint64_t raw_size][nc x uint64_t comp_size][chunks...]
 struct FseJob { const uint8_t*in; size_t isz; uint8_t*out; size_t osz; };
 static void* fse_worker(void* a){
     FseJob* j=(FseJob*)a;
-    size_t r=FSE_compress(j->out,FSE_compressBound(j->isz),j->in,j->isz);
-    if(FSE_isError(r)||r==0){ memcpy(j->out,j->in,j->isz); j->osz=j->isz|(size_t(1)<<62); }
+    size_t r=LIT_compress(j->out,LIT_compressBound(j->isz),j->in,j->isz);
+    if(LIT_isError(r)||r==0){ memcpy(j->out,j->in,j->isz); j->osz=j->isz|(size_t(1)<<62); }
     else j->osz=r;
     return nullptr;
 }
 
 static uint8_t* fse_comp(const uint8_t* src,size_t sz,size_t& out_sz,int nc=16){
-    if(sz<(size_t)nc*65536){ // too small — single FSE
-        size_t cap=FSE_compressBound(sz)+16;
+    if(sz<(size_t)nc*65536){
+        size_t cap=LIT_compressBound(sz)+16;
         uint8_t* buf=(uint8_t*)malloc(cap);
         *(uint64_t*)buf=sz;
-        size_t csz=FSE_compress(buf+8,cap-8,src,sz);
-        if(FSE_isError(csz)||csz==0){ *(uint64_t*)buf=sz|(uint64_t(1)<<63); memcpy(buf+8,src,sz); out_sz=sz+8; }
+        size_t csz=LIT_compress(buf+8,cap-8,src,sz);
+        if(LIT_isError(csz)||csz==0){ *(uint64_t*)buf=sz|(uint64_t(1)<<63); memcpy(buf+8,src,sz); out_sz=sz+8; }
         else out_sz=csz+8;
         return buf;
     }
@@ -36,13 +43,12 @@ static uint8_t* fse_comp(const uint8_t* src,size_t sz,size_t& out_sz,int nc=16){
     std::vector<uint8_t*> bufs(nc);
     for(int i=0;i<nc;i++){
         size_t off=i*csz, isz=std::min(csz,sz-off);
-        bufs[i]=(uint8_t*)malloc(FSE_compressBound(isz)+8);
+        bufs[i]=(uint8_t*)malloc(LIT_compressBound(isz)+8);
         jobs[i]={src+off,isz,bufs[i],0};
     }
     std::vector<pthread_t> pts(nc);
     for(int i=0;i<nc;i++) pthread_create(&pts[i],nullptr,fse_worker,&jobs[i]);
     for(int i=0;i<nc;i++) pthread_join(pts[i],nullptr);
-    // Build container: [4:nc][4:pad][nc*8:raw_sizes][nc*8:comp_sizes][data...]
     size_t hdr=8+nc*16;
     size_t total=hdr;
     for(int i=0;i<nc;i++) total+=(jobs[i].osz&~(size_t(1)<<62));
@@ -62,12 +68,12 @@ static uint8_t* fse_comp(const uint8_t* src,size_t sz,size_t& out_sz,int nc=16){
 
 static uint8_t* fse_decomp(const uint8_t* src,size_t sz,size_t& orig_sz){
     uint32_t nc=*(const uint32_t*)src;
-    if(nc==0||nc>256){ // single mode
+    if(nc==0||nc>256){
         orig_sz=*(const uint64_t*)src&~(uint64_t(1)<<63);
         int raw=(*(const uint64_t*)src>>63)&1;
         uint8_t* out=(uint8_t*)malloc(orig_sz);
         if(raw) memcpy(out,src+8,orig_sz);
-        else FSE_decompress(out,orig_sz,src+8,sz-8);
+        else LIT_decompress(out,orig_sz,src+8,sz-8);
         return out;
     }
     const uint64_t* rsz=(const uint64_t*)(src+8);
@@ -82,7 +88,7 @@ static uint8_t* fse_decomp(const uint8_t* src,size_t sz,size_t& orig_sz){
         int is_raw=(c>>63)&1;
         size_t comp_sz=c&~(uint64_t(1)<<63);
         if(is_raw) memcpy(out+off,p,raw_sz);
-        else FSE_decompress(out+off,raw_sz,p,comp_sz);
+        else LIT_decompress(out+off,raw_sz,p,comp_sz);
         off+=raw_sz; p+=comp_sz;
     }
     return out;

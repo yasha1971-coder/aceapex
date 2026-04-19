@@ -21,7 +21,7 @@
 #include "xxhash.h"
 #define OUR_CHECKSUM(buf,sz) XXH3_64bits(buf,sz)
 #include "lit_fse.cpp"
-extern "C"{size_t FSE_compress(void*,size_t,const void*,size_t);size_t FSE_decompress(void*,size_t,const void*,size_t);size_t FSE_compressBound(size_t);unsigned FSE_isError(size_t);}
+
  
 #define HASH_SIZE    0x1FFF
 #define MAX_DIST     (128 * 1024 * 1024)
@@ -478,7 +478,7 @@ static void fse_chunked_decomp(const uint8_t* src, size_t orig_sz, uint8_t* dst)
     for (size_t i = 0; i < nc; i++) {
         size_t raw = std::min(CHUNK, orig_sz - off);
         if (cs[i] >> 63) { memcpy(dst+off, p, raw); p += raw; }
-        else { FSE_decompress(dst+off, raw, p, cs[i]); p += cs[i]; }
+        else { ZSTD_decompress(dst+off, raw, p, cs[i]); p += cs[i]; }
         off += raw;
     }
 }
@@ -553,9 +553,9 @@ static void entropy_encode(
         for(size_t i=0;i<nc;i++){
             size_t off=i*CHUNK;
             size_t isz=std::min(CHUNK,e->isz-off);
-            size_t b=FSE_compressBound(isz)+4;
-            size_t r=FSE_compress(p,b,e->in+off,isz);
-            if(!r||FSE_isError(r)){memcpy(p,e->in+off,isz);csizes[i]=isz|(uint64_t(1)<<63);total+=isz;p+=isz;}
+            size_t b=ZSTD_compressBound(isz)+4;
+            size_t r=ZSTD_compress(p,b,e->in+off,isz,1);
+            if(!r||ZSTD_isError(r)){memcpy(p,e->in+off,isz);csizes[i]=isz|(uint64_t(1)<<63);total+=isz;p+=isz;}
             else{csizes[i]=r;total+=r;p+=r;}
         }
         *e->osz=total;
