@@ -16,7 +16,9 @@
 #include <vector>
 #include <algorithm>
 #include <zstd.h>
-#include <xxhash.h>
+#define XXH_STATIC_LINKING_ONLY
+#define XXH_IMPLEMENTATION
+#include "xxhash.h"
 #define OUR_CHECKSUM(buf,sz) XXH3_64bits(buf,sz)
 #include "lit_fse.cpp"
 extern "C"{size_t FSE_compress(void*,size_t,const void*,size_t);size_t FSE_decompress(void*,size_t,const void*,size_t);size_t FSE_compressBound(size_t);unsigned FSE_isError(size_t);}
