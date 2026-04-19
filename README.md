@@ -2,25 +2,14 @@
 
 High-throughput lossless compression. Global analysis at encode time. Parallel block decode at runtime.
 
-## Benchmarks (enwik9, 1GB, AMD EPYC 4344P 8-Core Zen 4, 8 threads, wall clock)
+## Benchmarks (enwik9, 1GB, AMD EPYC 4344P 8-Core Zen 4, 8 threads)
 
-| Metric     | Value          |
-| ---------- | -------------- |
-| Ratio      | 2.973x         |
-| Encode     | 485 MB/s       |
-| Decode     | 11299 MB/s*    |
-| Integrity  | XXH3-64        |
-| Status     | BIT-PERFECT    |
-
-*Decode: in-memory (MAP_POPULATE). Full pipeline including entropy coding.
-
-## vs Industry (enwik9)
-
-| Compressor  | Ratio  | Encode    | Decode      |
-| ----------- | ------ | --------- | ----------- |
-| zstd -3     | 2.84x  | ~500 MB/s | ~1800 MB/s  |
-| zstd -19    | ~3.33x | ~13 MB/s  | ~900 MB/s   |
-| ACEAPEX     | 2.973x | 485 MB/s  | 11299 MB/s  |
+| Metric     | Value                                    |
+| ---------- | ---------------------------------------- |
+| Ratio      | 2.973x                                   |
+| Encode     | 485 MB/s (wall clock)                    |
+| Decode     | 4.2 GB/s algorithmic / 2.3 GB/s wall clock |
+| Integrity  | XXH3-64, verified on every run           |
 
 Full Silesia corpus results: [BENCHMARK.md](BENCHMARK.md)
 
@@ -34,20 +23,18 @@ ACEAPEX separates these responsibilities:
 - Encode: global analysis, full match search across entire input
 - Decode: block-parallel reconstruction via precomputed per-block stream offsets
 
-Cross-block LZ77 matches are resolved into block-local form at encode time.
-
 ## Key Properties
 
-- Bit-perfect (XXH3-64 verified on every run)
-- Global-analysis encoding with block-local decode representation
+- Bit-perfect lossless
 - Parallel block decode, scales with cores
-- Single-file C++17, libzstd only
+- No zstd source required — libzstd-dev only
+- Single-file C++17
 
 ## Build
 
     sudo apt-get install -y libzstd-dev g++
-    g++ -O3 -march=native -funroll-loops -std=c++17 \
-        -o aceapex src/aceapex_main.cpp -lpthread -lzstd
+    git clone https://github.com/yasha1971-coder/aceapex
+    cd aceapex && make
 
 ## Usage
 
@@ -57,7 +44,8 @@ Cross-block LZ77 matches are resolved into block-local form at encode time.
 
 ## Status
 
-Research-grade. One data point on a tradeoff curve.
+Research-grade. Measurement corrections ongoing — harder than
+expected to get right without prior experience in this field.
 
 ## License
 
