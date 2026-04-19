@@ -678,15 +678,33 @@ static int do_decompress(const char* in_path, const char* out_path) {
     size_t len_sz=*(uint64_t*)zlen;
     size_t cmd_sz=*(uint64_t*)zcmd;
  
-    size_t lit_sz=0; uint8_t* lit=lit_decompress(zlit,hdr.zlit_sz,lit_sz);
-    uint8_t* off=(uint8_t*)malloc(off_sz); fse_chunked_decomp(zoff,off_sz,off);
-    uint8_t* len=(uint8_t*)malloc(len_sz); fse_chunked_decomp(zlen,len_sz,len);
-    uint8_t* cmd=(uint8_t*)malloc(cmd_sz); fse_chunked_decomp(zcmd,cmd_sz,cmd);
+    double dec_time=now_sec();
+    double t_lit=now_sec();
+    // Run lit + fse decompress in parallel
+    size_t lit_sz=0; uint8_t* lit=nullptr;
+    uint8_t* off=(uint8_t*)malloc(off_sz);
+    uint8_t* len=(uint8_t*)malloc(len_sz);
+    uint8_t* cmd=(uint8_t*)malloc(cmd_sz);
+    struct LitArg{const uint8_t*s;size_t sz;uint8_t**out;size_t*osz;};
+    LitArg larg={zlit,hdr.zlit_sz,&lit,&lit_sz};
+    auto litfn=[](void*a)->void*{LitArg*l=(LitArg*)a;
+        *l->out=lit_decompress(l->s,l->sz,*l->osz); return nullptr;};
+    struct FD{const uint8_t*s;size_t sz;uint8_t*d;};
+    FD fds[3]={{zoff,off_sz,off},{zlen,len_sz,len},{zcmd,cmd_sz,cmd}};
+    auto fdfn=[](void*a)->void*{FD*f=(FD*)a;
+        size_t orig=*(const uint64_t*)f->s&~(uint64_t(1)<<63);
+        fse_chunked_decomp(f->s,orig,f->d); return nullptr;};
+    pthread_t fpts[4];
+    pthread_create(&fpts[0],nullptr,litfn,&larg);
+    for(int i=0;i<3;i++) pthread_create(&fpts[i+1],nullptr,fdfn,&fds[i]);
+    for(int i=0;i<4;i++) pthread_join(fpts[i],nullptr);
+    double t_fse=now_sec()-t_lit;
+    t_lit=t_fse;
     free(zlit); free(zoff); free(zlen); free(zcmd);
- 
     uint8_t* dst=(uint8_t*)malloc(hdr.orig_size);
-    double dec_time=parallel_decode(lit,off,len,cmd,boffs.data(),nb,
-                                     dst,hdr.orig_size,hdr.block_size);
+    double t_lz=now_sec(); parallel_decode(lit,off,len,cmd,boffs.data(),nb,dst,hdr.orig_size,hdr.block_size); t_lz=now_sec()-t_lz;
+    dec_time=now_sec()-dec_time;
+    fprintf(stderr,"  Phase lit:  %.3fs\n  Phase fse:  %.3fs\n  Phase lz77: %.3fs\n",t_lit,t_fse,t_lz);
  
     uint64_t dv=OUR_CHECKSUM(dst,hdr.orig_size);
     uint64_t hv3; memcpy(&hv3,hdr.xxhash,8);
