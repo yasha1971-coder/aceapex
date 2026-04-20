@@ -4,12 +4,12 @@ High-throughput lossless compression. Global analysis at encode time. Parallel b
 
 ## Benchmarks (enwik9, 1GB, AMD EPYC 4344P 8-Core Zen 4, 8 threads)
 
-| Metric     | Value                                    |
-| ---------- | ---------------------------------------- |
-| Ratio      | 2.973x                                   |
-| Encode     | 485 MB/s (wall clock)                    |
-| Decode     | 4.2 GB/s algorithmic / 2.3 GB/s wall clock |
-| Integrity  | XXH3-64, verified on every run           |
+| Metric     | Value                                      |
+| ---------- | ------------------------------------------ |
+| Ratio      | 2.997x                                     |
+| Encode     | 392 MB/s (wall clock)                      |
+| Decode     | 4.2 GB/s algorithmic / 1.7 GB/s wall clock |
+| Integrity  | XXH3-64, verified on every run             |
 
 Full Silesia corpus results: [BENCHMARK.md](BENCHMARK.md)
 
@@ -27,6 +27,7 @@ ACEAPEX separates these responsibilities:
 
 - Bit-perfect lossless
 - Parallel block decode, scales with cores
+- Adaptive hash table — sizes to input for optimal cache usage
 - No zstd source required — libzstd-dev only
 - Single-file C++17
 
@@ -44,8 +45,7 @@ ACEAPEX separates these responsibilities:
 
 ## Status
 
-Research-grade. Measurement corrections ongoing — harder than
-expected to get right without prior experience in this field.
+Research-grade. Measurement corrections ongoing.
 
 ## License
 
