@@ -87,3 +87,19 @@ CodecRatioEncode MB/sDecode MB/szstd -93.759x2451429ACEAPEX v23.747x80310460
 ACEAPEX v2 achieves approximately the same ratio as zstd -9 on this benchmark,
 with 3.3x faster encode and 7.3x faster decode on this hardware.
 These results are for enwik9 specifically. Performance on other data types varies.
+## XML regression — known issue (April 21, 2026)
+
+Intermediate hash inserts during match (c_len < 32, step = 1 + (c_len>>3))
+improve enwik9 +0.046x but regress xml -0.135x.
+
+Root cause: for xml with long repeated patterns, inserting intermediate
+positions overwrites useful prev chain entries, breaking subsequent match
+finding.
+
+Fix ideas:
+- Skip insert when slot already has recent entry (epoch == cur_epoch)
+- Use separate "fill" table for intermediate positions
+- Only insert when match was found at that position previously
+
+Files affected: xml (6.931x → 6.796x)
+Files improved: enwik9, mozilla, nci, samba, webster
