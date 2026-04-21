@@ -201,6 +201,14 @@ static void compress_block(const uint8_t* src, size_t src_size,
                 wv(res->off_buf,off_i,c_off,off_cap,ov,2); if(ov) break;
                 rep[3]=rep[2]; rep[2]=rep[1]; rep[1]=rep[0]; rep[0]=c_off;
             }
+            // Insert intermediate positions for short matches only
+            if (c_len < 32) {
+              uint32_t step=1+(c_len>>3);
+              for(size_t ii=1;ii<c_len&&pos+ii+4<bend;ii+=step){
+                uint32_t hh=((*(uint32_t*)(src+pos+ii)*0x9E3779B1u)>>10)&ht->hash_mask;
+                ht->prev[hh]=ht->pos[hh]; ht->pos[hh]=(int32_t)(pos+ii); ht->epoch[hh]=ht->cur_epoch;
+              }
+            }
             pos+=c_len; continue;
         }
         if (lit_i>=lit_cap) { ov=1; break; }

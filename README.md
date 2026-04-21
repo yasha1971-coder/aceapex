@@ -6,8 +6,8 @@ High-throughput lossless compression. Global analysis at encode time. Parallel b
 
 | Metric     | Value                                      |
 | ---------- | ------------------------------------------ |
-| Ratio      | 2.997x                                     |
-| Encode     | 392 MB/s (wall clock)                      |
+| Ratio      | 3.019x                                     |
+| Encode     | 393 MB/s (wall clock)                      |
 | Decode     | 4.2 GB/s algorithmic / 1.7 GB/s wall clock |
 | Integrity  | XXH3-64, verified on every run             |
 
@@ -27,7 +27,7 @@ ACEAPEX separates these responsibilities:
 
 - Bit-perfect lossless
 - Parallel block decode, scales with cores
-- Adaptive hash table — sizes to input for optimal cache usage
+- Adaptive hash table with prev chain match finder
 - No zstd source required — libzstd-dev only
 - Single-file C++17
 
