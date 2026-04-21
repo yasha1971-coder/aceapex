@@ -103,3 +103,20 @@ Fix ideas:
 
 Files affected: xml (6.931x → 6.796x)
 Files improved: enwik9, mozilla, nci, samba, webster
+
+## XML regression — known issue (April 21, 2026)
+
+Intermediate hash inserts during match (c_len < 32, step = 1 + (c_len>>3))
+improve enwik9 +0.046x but regress xml -0.135x.
+
+Root cause: for xml with long repeated patterns, inserting intermediate
+positions overwrites useful prev chain entries, breaking subsequent match
+finding.
+
+Fix ideas:
+- Skip insert when slot already has recent entry (epoch == cur_epoch)
+- Use separate "fill" table for intermediate positions
+- Only insert when match was found at that position previously
+
+Files affected: xml (6.931x → 6.796x)
+Files improved: enwik9, mozilla, nci, samba, webster
