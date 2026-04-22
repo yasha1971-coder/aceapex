@@ -6,8 +6,8 @@ High-throughput lossless compression. Global analysis at encode time. Parallel b
 
 | Metric     | Value                                      |
 | ---------- | ------------------------------------------ |
-| Ratio      | 3.019x                                     |
-| Encode     | 393 MB/s (wall clock)                      |
+| Ratio      | 3.021x                                     |
+| Encode     | 401 MB/s (wall clock)                      |
 | Decode     | 4.2 GB/s algorithmic / 1.7 GB/s wall clock |
 | Integrity  | XXH3-64, verified on every run             |
 
