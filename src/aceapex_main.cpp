@@ -182,6 +182,27 @@ static void compress_block(const uint8_t* src, size_t src_size,
                     }
                 }
             }
+            // Lazy check pos+2
+            if (c_len >= 6 && c_len < 64 && pos+14 < bend) {
+                uint32_t h2=((*(uint32_t*)(src+pos+2)*0x9E3779B1u)>>10)&ht->hash_mask;
+                int32_t mp2=(ht->epoch[h2]==ht->cur_epoch)?ht->pos[h2]:-1;
+                if (mp2>=0 && (size_t)mp2>=bstart && (size_t)mp2<pos+2) {
+                    uint32_t dist2=(uint32_t)(pos+2-mp2);
+                    if (dist2<MAX_DIST && dist2!=rep[0]) {
+                        uint32_t maxl2=(uint32_t)(bend-pos-2);
+                        if (pos+10<=bend && *(uint64_t*)(src+pos+2)==*(uint64_t*)(src+mp2)) {
+                            uint32_t l2=8;
+                            while (l2<maxl2 && src[pos+2+l2]==src[mp2+l2] && l2<65535) l2++;
+                            if (l2 >= 6 && l2 > c_len + 2 && lit_i+1 < lit_cap) {
+                                res->lit_buf[lit_i++]=src[pos]; lit_run++; miss++;
+                                res->lit_buf[lit_i++]=src[pos+1]; lit_run++;
+                                pos+=2;
+                                c_len=l2; c_off=dist2; c_rep=-1;
+                            }
+                        }
+                    }
+                }
+            }
         }
         if (c_len >= 6) {
             flush_lit(); if (ov) break; miss=0;
@@ -201,6 +222,7 @@ static void compress_block(const uint8_t* src, size_t src_size,
                 wv(res->off_buf,off_i,c_off,off_cap,ov,2); if(ov) break;
                 rep[3]=rep[2]; rep[2]=rep[1]; rep[1]=rep[0]; rep[0]=c_off;
             }
+            // Insert intermediate positions for short matches only
             // Insert intermediate positions for short matches only
             if (c_len < 32) {
               uint32_t step=1+(c_len>>3);
