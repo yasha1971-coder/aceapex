@@ -52,10 +52,10 @@ struct WorkerArgs {
 struct ThreadHashTable {
     int32_t*  pos;
     uint32_t* epoch;
-    int32_t*  prev;
+    int32_t*  chain;
     uint32_t  cur_epoch;
     uint32_t  hash_mask;
-    int       use_chain;
+    uint32_t  chain_mask;
 };
  
 struct BlockOffsets {
@@ -80,6 +80,41 @@ static inline uint32_t min_match_len(uint32_t dist) {
     return 12;
 }
  
+
+struct Match { uint32_t len, off; int rep; };
+static inline int find_matches(const uint8_t* src, size_t pos, size_t bstart, size_t bend,
+                                ThreadHashTable* ht, uint32_t* rep, Match* out, int maxout) {
+    int n = 0;
+    uint32_t maxl = (uint32_t)(bend - pos);
+    for (int i = 0; i < 4 && n < maxout; i++) {
+        uint32_t d = rep[i]; if (pos < bstart+d) continue;
+        if (*(uint32_t*)(src+pos)!=*(uint32_t*)(src+pos-d)) continue;
+        uint32_t l=4; while(l<maxl&&src[pos+l]==src[pos-d+l]&&l<65535) l++;
+        if (l>=6) out[n++]={l,d,i};
+    }
+    uint32_t h=((*(uint32_t*)(src+pos)*0x9E3779B1u)>>10)&ht->hash_mask;
+    int32_t head=(ht->epoch[h]==ht->cur_epoch)?ht->pos[h]:-1;
+    ht->pos[h]=(int32_t)pos; ht->epoch[h]=ht->cur_epoch;
+    if (head>=0) ht->chain[pos & ht->chain_mask]=head;
+    int32_t cur=head; int attempts=32;
+    while(cur>=(int32_t)bstart && attempts-->0 && n<maxout) {
+        uint32_t dist=(uint32_t)(pos-cur); if(dist>=MAX_DIST) break;
+        bool is_rep=false; for(int r=0;r<4;r++) if(dist==rep[r]){is_rep=true;break;}
+        if(!is_rep){
+            uint32_t mlen=min_match_len(dist);
+            if(pos+8<=bend&&*(uint64_t*)(src+pos)==*(uint64_t*)(src+cur)){
+                uint32_t l=8; while(l<maxl&&src[pos+l]==src[cur+l]&&l<65535) l++;
+                if(l>=mlen) out[n++]={l,dist,-1};
+            } else if(*(uint32_t*)(src+pos)==*(uint32_t*)(src+cur)){
+                uint32_t l=4; while(l<maxl&&src[pos+l]==src[cur+l]&&l<65535) l++;
+                if(l>=mlen) out[n++]={l,dist,-1};
+            }
+        }
+        int32_t nxt=ht->chain[cur & ht->chain_mask];
+        if(nxt<0||nxt>=cur) break; cur=nxt;
+    }
+    return n;
+}
 static void compress_block(const uint8_t* src, size_t src_size,
                             size_t bstart, size_t bend,
                             ThreadHashTable* ht, BlockResult* res) {
@@ -113,54 +148,8 @@ static void compress_block(const uint8_t* src, size_t src_size,
  
     while (pos + 12 < bend && !ov) {
         uint32_t c_len=0, c_off=0; int c_rep=-1;
-        bool do_rep = (miss < 16) || (miss < 64 && (miss&1)==0) || (miss>=64 && (miss&3)==0);
-        if (do_rep) {
-            for (int i=0; i<4; i++) {
-                uint32_t d=rep[i];
-                if (pos < bstart+d) continue;
-                if (*(uint32_t*)(src+pos) != *(uint32_t*)(src+pos-d)) continue;
-                uint32_t l=4, maxl=(uint32_t)(bend-pos);
-                while (l<maxl && src[pos+l]==src[pos-d+l] && l<65535) l++;
-                if (l>=6 && l>c_len) { c_len=l; c_off=d; c_rep=i; }
-            }
-        }
-        uint32_t h=((*(uint32_t*)(src+pos)*0x9E3779B1u)>>10)&ht->hash_mask;
-        int32_t mp=(ht->epoch[h]==ht->cur_epoch)?ht->pos[h]:-1;
-        int32_t mp_prev=(ht->use_chain&&ht->epoch[h]==ht->cur_epoch&&ht->prev[h]>=0)?ht->prev[h]:-1;
-        ht->prev[h]=ht->pos[h]; ht->pos[h]=(int32_t)pos; ht->epoch[h]=ht->cur_epoch;
-        if (mp>=0 && (size_t)mp>=bstart && (size_t)mp<pos) {
-            uint32_t dist=(uint32_t)(pos-mp);
-            if (dist<MAX_DIST && dist!=rep[0]) {
-                uint32_t mlen=min_match_len(dist);
-                uint32_t maxl=(uint32_t)(bend-pos);
-                if (pos+8<=bend && *(uint64_t*)(src+pos)==*(uint64_t*)(src+mp)) {
-                    uint32_t l=8;
-                    while (l<maxl && src[pos+l]==src[mp+l] && l<65535) l++;
-                    if (l>=mlen && l>c_len) { c_len=l; c_off=dist; c_rep=-1; }
-                } else if (*(uint32_t*)(src+pos)==*(uint32_t*)(src+mp)) {
-                    uint32_t l=4;
-                    while (l<maxl && src[pos+l]==src[mp+l] && l<65535) l++;
-                    if (l>=mlen && dist<4096 && l>c_len) { c_len=l; c_off=dist; c_rep=-1; }
-                }
-            }
-        }
-        // Check prev chain entry
-        if (mp_prev>=0 && (size_t)mp_prev>=bstart && (size_t)mp_prev<pos) {
-            uint32_t dist2=(uint32_t)(pos-mp_prev);
-            if (dist2<MAX_DIST && dist2!=rep[0]) {
-                uint32_t mlen2=min_match_len(dist2);
-                uint32_t maxl=(uint32_t)(bend-pos);
-                if (pos+8<=bend && *(uint64_t*)(src+pos)==*(uint64_t*)(src+mp_prev)) {
-                    uint32_t l=8;
-                    while (l<maxl && src[pos+l]==src[mp_prev+l] && l<65535) l++;
-                    if (l>=mlen2 && l>c_len) { c_len=l; c_off=dist2; c_rep=-1; }
-                } else if (*(uint32_t*)(src+pos)==*(uint32_t*)(src+mp_prev)) {
-                    uint32_t l=4;
-                    while (l<maxl && src[pos+l]==src[mp_prev+l] && l<65535) l++;
-                    if (l>=mlen2 && dist2<4096 && l>c_len) { c_len=l; c_off=dist2; c_rep=-1; }
-                }
-            }
-        }
+        Match matches[36]; int nm=find_matches(src,pos,bstart,bend,ht,rep,matches,36);
+        for(int mi=0;mi<nm;mi++) if(matches[mi].len>c_len){c_len=matches[mi].len;c_off=matches[mi].off;c_rep=matches[mi].rep;}
         if (c_len >= 6 && c_len < 64 && pos+13 < bend) {
             uint32_t h1=((*(uint32_t*)(src+pos+1)*0x9E3779B1u)>>10)&ht->hash_mask;
             int32_t mp1=(ht->epoch[h1]==ht->cur_epoch)?ht->pos[h1]:-1;
@@ -228,7 +217,7 @@ static void compress_block(const uint8_t* src, size_t src_size,
               uint32_t step=1+(c_len>>3);
               for(size_t ii=1;ii<c_len&&pos+ii+4<bend;ii+=step){
                 uint32_t hh=((*(uint32_t*)(src+pos+ii)*0x9E3779B1u)>>10)&ht->hash_mask;
-                ht->prev[hh]=ht->pos[hh]; ht->pos[hh]=(int32_t)(pos+ii); ht->epoch[hh]=ht->cur_epoch;
+                ht->chain[(pos+ii)&ht->chain_mask]=ht->pos[hh]; ht->pos[hh]=(int32_t)(pos+ii); ht->epoch[hh]=ht->cur_epoch;
               }
             }
             pos+=c_len; continue;
@@ -448,19 +437,19 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads,
     // Adaptive hash size
     uint32_t hash_log = (src_size < 16*1024*1024) ? 13 :
                         (src_size < 128*1024*1024) ? 15 : 17;
-    int use_chain = (src_size >= 32*1024*1024) ? 1 : 0;
     uint32_t hash_mask = (1u << hash_log) - 1;
     size_t ht_sz = (hash_mask+1);
+    uint32_t chain_mask = (1u<<20)-1;
     ThreadHashTable** htabs=(ThreadHashTable**)calloc(threads,sizeof(ThreadHashTable*));
     for(int i=0;i<threads;i++) {
         htabs[i]=(ThreadHashTable*)calloc(1,sizeof(ThreadHashTable));
         htabs[i]->pos  =(int32_t*) calloc(ht_sz,sizeof(int32_t));
         htabs[i]->epoch=(uint32_t*)calloc(ht_sz,sizeof(uint32_t));
-        htabs[i]->prev =(int32_t*) malloc(ht_sz*sizeof(int32_t));
-        memset(htabs[i]->prev,-1,ht_sz*sizeof(int32_t));
+        htabs[i]->chain=(int32_t*) malloc(((size_t)chain_mask+1)*sizeof(int32_t));
+        memset(htabs[i]->chain,-1,((size_t)chain_mask+1)*sizeof(int32_t));
         htabs[i]->cur_epoch=0;
         htabs[i]->hash_mask=hash_mask;
-        htabs[i]->use_chain=use_chain;
+        htabs[i]->chain_mask=chain_mask;
     }
     BlockResult* results=(BlockResult*)calloc(num_blocks,sizeof(BlockResult));
     PoolState pool;
@@ -502,7 +491,7 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads,
         free(results[b].len_buf); free(results[b].cmd_buf);
     }
     for(int i=0;i<threads;i++) {
-        free(htabs[i]->pos); free(htabs[i]->epoch); free(htabs[i]->prev);
+        free(htabs[i]->pos); free(htabs[i]->epoch); free(htabs[i]->chain);
         free(htabs[i]);
     }
     free(htabs); free(results); free(wargs); free(pts);
