@@ -56,6 +56,7 @@ struct ThreadHashTable {
     uint32_t  cur_epoch;
     uint32_t  hash_mask;
     uint32_t  chain_mask;
+    int       max_attempts;
 };
  
 struct BlockOffsets {
@@ -84,6 +85,7 @@ static inline uint32_t min_match_len(uint32_t dist) {
 struct Match { uint32_t len, off; int rep; };
 static inline int find_matches(const uint8_t* src, size_t pos, size_t bstart, size_t bend,
                                 ThreadHashTable* ht, uint32_t* rep, Match* out, int maxout) {
+    int max_attempts = ht->max_attempts;
     int n = 0;
     uint32_t maxl = (uint32_t)(bend - pos);
     for (int i = 0; i < 4 && n < maxout; i++) {
@@ -96,7 +98,7 @@ static inline int find_matches(const uint8_t* src, size_t pos, size_t bstart, si
     int32_t head=(ht->epoch[h]==ht->cur_epoch)?ht->pos[h]:-1;
     ht->pos[h]=(int32_t)pos; ht->epoch[h]=ht->cur_epoch;
     if (head>=0) ht->chain[pos & ht->chain_mask]=head;
-    int32_t cur=head; int attempts=32;
+    int32_t cur=head; int attempts=max_attempts;
     while(cur>=(int32_t)bstart && attempts-->0 && n<maxout) {
         uint32_t dist=(uint32_t)(pos-cur); if(dist>=MAX_DIST) break;
         bool is_rep=false; for(int r=0;r<4;r++) if(dist==rep[r]){is_rep=true;break;}
@@ -423,7 +425,7 @@ static void* dec_worker(void* arg) {
     return nullptr;
 }
  
-static bool encode_file(const uint8_t* src, size_t src_size, int threads,
+static bool encode_file(const uint8_t* src, size_t src_size, int threads, int level,
     std::vector<BlockOffsets>& boffs,
     uint8_t*& raw_lit, size_t& total_lit,
     uint8_t*& raw_off, size_t& total_off,
@@ -450,6 +452,7 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads,
         htabs[i]->cur_epoch=0;
         htabs[i]->hash_mask=hash_mask;
         htabs[i]->chain_mask=chain_mask;
+        htabs[i]->max_attempts=(level>=2)?32:4;
     }
     BlockResult* results=(BlockResult*)calloc(num_blocks,sizeof(BlockResult));
     PoolState pool;
@@ -625,7 +628,7 @@ static void entropy_encode(
     for(int i=0;i<3;i++) pthread_join(epts[i],nullptr);
 }
  
-static int do_compress(const char* in_path, const char* out_path, int threads) {
+static int do_compress(const char* in_path, const char* out_path, int threads, int level=2) {
     double t_fread=now_sec();
     int fin_fd=open(in_path,O_RDONLY);
     if (fin_fd<0) { fprintf(stderr,"Cannot open: %s\n",in_path); return 1; }
@@ -651,7 +654,7 @@ static int do_compress(const char* in_path, const char* out_path, int threads) {
     uint8_t *raw_lit,*raw_off,*raw_len,*raw_cmd;
     size_t total_lit,total_off,total_len,total_cmd,num_blocks;
     double enc_time;
-    encode_file(src,src_size,threads,boffs,
+    encode_file(src,src_size,threads,level,boffs,
                 raw_lit,total_lit,raw_off,total_off,
                 raw_len,total_len,raw_cmd,total_cmd,
                 enc_time,num_blocks);
@@ -772,7 +775,7 @@ static int do_decompress(const char* in_path, const char* out_path) {
     return ok?0:1;
 }
  
-static int do_test(const char* in_path, int threads) {
+static int do_test(const char* in_path, int threads, int level=2) {
     FILE* fin=fopen(in_path,"rb");
     if (!fin) { fprintf(stderr,"Cannot open: %s\n",in_path); return 1; }
     fseek(fin,0,SEEK_END); size_t src_size=(size_t)ftell(fin); fseek(fin,0,SEEK_SET);
@@ -785,7 +788,7 @@ static int do_test(const char* in_path, int threads) {
     uint8_t *raw_lit,*raw_off,*raw_len,*raw_cmd;
     size_t total_lit,total_off,total_len,total_cmd,num_blocks;
     double enc_time;
-    encode_file(src,src_size,threads,boffs,
+    encode_file(src,src_size,threads,level,boffs,
                 raw_lit,total_lit,raw_off,total_off,
                 raw_len,total_len,raw_cmd,total_cmd,
                 enc_time,num_blocks);
@@ -844,15 +847,17 @@ int main(int argc, char** argv) {
             argv[0],argv[0],argv[0]);
         return 1;
     }
-    const char* cmd=argv[1]; const char* in=nullptr; const char* out=nullptr; int thr=8;
+    const char* cmd=argv[1]; const char* in=nullptr; const char* out=nullptr; int thr=8; int level=2;
     for(int i=2;i<argc;i++) {
         if (!strcmp(argv[i],"--in")&&i+1<argc) in=argv[++i];
         else if (!strcmp(argv[i],"--out")&&i+1<argc) out=argv[++i];
         else if (!strcmp(argv[i],"--threads")&&i+1<argc) thr=atoi(argv[++i]);
+        else if (!strcmp(argv[i],"--level")&&i+1<argc) level=atoi(argv[++i]);
+        else if (!strcmp(argv[i],"--fast")) level=1;
     }
     if (!in) { fprintf(stderr,"--in required\n"); return 1; }
-    if (!strcmp(cmd,"c")) { if (!out) { fprintf(stderr,"--out required\n"); return 1; } return do_compress(in,out,thr); }
+    if (!strcmp(cmd,"c")) { if (!out) { fprintf(stderr,"--out required\n"); return 1; } return do_compress(in,out,thr,level); }
     if (!strcmp(cmd,"d")) { if (!out) { fprintf(stderr,"--out required\n"); return 1; } return do_decompress(in,out); }
-    if (!strcmp(cmd,"t")) return do_test(in,thr);
+    if (!strcmp(cmd,"t")) return do_test(in,thr,level);
     return 1;
 }
