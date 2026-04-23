@@ -1,35 +1,44 @@
 # ACEAPEX
 
-High-throughput lossless compression. Global analysis at encode time. Parallel block decode at runtime.
+Lossless compression with parallel block decode.
 
-## Benchmarks (enwik9, 1GB, AMD EPYC 4344P 8-Core Zen 4, 8 threads)
+## Benchmarks (enwik9, 1GB, AMD EPYC 4344P 8-Core Zen 4)
 
-| Metric     | Value                                      |
-| ---------- | ------------------------------------------ |
-| Ratio      | 3.037x                                     |
-| Encode     | 307 MB/s (wall clock)                      |
-| Decode     | 4.2 GB/s algorithmic / 1.7 GB/s wall clock |
-| Integrity  | XXH3-64, verified on every run             |
+| Metric       | Value                    |
+| ------------ | ------------------------ |
+| Ratio        | 3.037x                   |
+| Encode       | 307 MB/s (8 threads)     |
+| Decode       | 4.3 GB/s algorithmic (8 threads) |
+| Decode T-1   | 796 MB/s (single thread) |
+| Integrity    | XXH3-64: 1f0533f6be5d8e95 |
 
-Full Silesia corpus results: [BENCHMARK.md](BENCHMARK.md)
+Decode scales 5.4x on 8 cores (68% efficiency, bottlenecked by DDR5 bandwidth).
 
 ## Core Idea
 
 Standard LZ77 codecs face a tradeoff:
-- Global context gives better ratio but requires sequential decode
-- Independent blocks enable parallel decode but lose ratio
+- Global context → better ratio but sequential decode
+- Independent blocks → parallel decode but worse ratio
 
 ACEAPEX separates these responsibilities:
-- Encode: global analysis, full match search across entire input
-- Decode: block-parallel reconstruction via precomputed per-block stream offsets
+- **Encode:** global match search, hash chain depth 32
+- **Decode:** block-parallel via per-block offset index in header
 
-## Key Properties
+The .acpx format stores a block offset table — parallel decode is a format feature, not an implementation hack.
 
-- Bit-perfect lossless
-- Parallel block decode, scales with cores
-- Adaptive hash table with prev chain match finder
-- No zstd source required — libzstd-dev only
-- Single-file C++17
+## Silesia Corpus (8 threads)
+
+| File    | Ratio   | vs zstd -3 |
+| ------- | ------- | ---------- |
+| nci     | 11.681x | better     |
+| xml     | 7.747x  | better     |
+| samba   | 4.138x  | better     |
+| webster | 3.214x  | better     |
+| enwik9  | 3.037x  | comparable |
+| mozilla | 2.710x  | comparable |
+| dickens | 2.596x  | worse      |
+
+All files BIT-PERFECT (MD5 verified).
 
 ## Build
 
@@ -39,13 +48,14 @@ ACEAPEX separates these responsibilities:
 
 ## Usage
 
-    ./aceapex c --in myfile --out myfile.aet --threads 8
-    ./aceapex d --in myfile.aet --out myfile_restored
-    ./aceapex t --in myfile --threads 8
+    ./aceapex c --in myfile --out myfile.acpx --threads 8
+    ./aceapex d --in myfile.acpx --out myfile_restored
 
-## Status
+## Honest Status
 
-Research-grade. Measurement corrections ongoing.
+Research-grade. Encode is slow (307 MB/s) due to chain depth 32.
+Designed for "compress once, decompress many times" workloads.
+Not a drop-in replacement for zstd.
 
 ## License
 
