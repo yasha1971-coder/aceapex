@@ -30,3 +30,16 @@ Algorithmic speed = data size / algorithm time (excludes file I/O).
 Wall clock includes all I/O and system overhead.
 All files BIT-PERFECT verified via MD5.
 dickens regression: known trade-off from chain depth, documented in TECHNICAL_NOTE.md
+
+## Compression Levels (enwik9, 8 threads)
+
+| Mode       | Ratio  | Encode   | Decode alg. |
+| ---------- | ------ | -------- | ----------- |
+| --fast     | 3.030x | 344 MB/s | 4.2 GB/s    |
+| --level 2  | 3.037x | 307 MB/s | 4.2 GB/s    |
+
+## Single-core Decode
+
+Decode T-1: 796 MB/s (taskset -c 0)
+Decode T-8: 4.2 GB/s algorithmic
+Scaling: 5.4x on 8 cores, 68% efficiency (DDR5 bandwidth bound)
