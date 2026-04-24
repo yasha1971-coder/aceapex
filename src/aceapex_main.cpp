@@ -714,6 +714,7 @@ static int do_compress(const char* in_path, const char* out_path, int threads, i
 }
  
 static int do_decompress(const char* in_path, const char* out_path) {
+    double t_wall=now_sec();
     FILE* fin=fopen(in_path,"rb");
     if (!fin) { fprintf(stderr,"Cannot open: %s\n",in_path); return 1; }
     AetHeader hdr;
@@ -768,7 +769,9 @@ static int do_decompress(const char* in_path, const char* out_path) {
     bool ok=(dv==hv3);
     FILE* fout=fopen(out_path,"wb");
     if (fout) { fwrite(dst,1,hdr.orig_size,fout); fclose(fout); }
+    double wall=now_sec()-t_wall;
     fprintf(stderr,"  Decode: %.2f MB/s  (%.3fs, algorithmic)\n",hdr.orig_size/dec_time/1e6,dec_time);
+    fprintf(stderr,"  Decode wall: %.2f MB/s  (%.3fs, wall clock)\n",hdr.orig_size/wall/1e6,wall);
     if(!ok) fprintf(stderr,"  Status: ❌ HASH MISMATCH\n");
  
     free(lit); free(off); free(len); free(cmd); free(dst);
@@ -839,6 +842,7 @@ static int do_test(const char* in_path, int threads, int level=2) {
     return ok?0:1;
 }
  
+#ifndef ACEAPEX_NO_MAIN
 int main(int argc, char** argv) {
     if (argc < 2) {
         fprintf(stderr,"ACEAPEX v3 FSE — Global FSE + Parallel decode\n\n"
@@ -861,3 +865,4 @@ int main(int argc, char** argv) {
     if (!strcmp(cmd,"t")) return do_test(in,thr,level);
     return 1;
 }
+#endif // ACEAPEX_NO_MAIN
