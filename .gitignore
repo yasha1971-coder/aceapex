@@ -1,0 +1,13 @@
+aceapex
+aceapex.exe
+aceapex_asan
+aceapex_dbg
+aceapex_lzbench.o
+*.o
+build/
+zstd/
+zstd_src/
+fse_patch.py
+src/lit_chunked.cpp
+src/order1_fse.cpp
+src/order1_transform.cpp
