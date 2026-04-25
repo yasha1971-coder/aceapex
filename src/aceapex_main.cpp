@@ -24,7 +24,7 @@
 
  
 #define HASH_SIZE    0xFFFF
-#define MAX_DIST     (128 * 1024 * 1024)
+#define MAX_DIST     (2 * 1024 * 1024)
 #define BLOCK_SIZE   (1 * 1024 * 1024)
 #define MAX_THREADS  16
 #define BLOCK_MARKER 0xFF
