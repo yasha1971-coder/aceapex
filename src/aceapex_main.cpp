@@ -639,15 +639,14 @@ static void entropy_encode(
  
 static int do_compress(const char* in_path, const char* out_path, int threads, int level=2) {
     double t_fread=now_sec();
-    int fin_fd=open(in_path,O_RDONLY);
-    if (fin_fd<0) { fprintf(stderr,"Cannot open: %s\n",in_path); return 1; }
-    struct stat fin_st; fstat(fin_fd,&fin_st);
-    size_t src_size=(size_t)fin_st.st_size;
-    uint8_t* src=(uint8_t*)mmap(nullptr,src_size,PROT_READ,MAP_SHARED|MAP_POPULATE,fin_fd,0);
-    close(fin_fd);
-    if (src==MAP_FAILED) { fprintf(stderr,"mmap failed\n"); return 1; }
+    FILE* fin_r=fopen(in_path,"rb");
+    if (!fin_r) { fprintf(stderr,"Cannot open: %s\n",in_path); return 1; }
+    fseek(fin_r,0,SEEK_END); size_t src_size=(size_t)ftell(fin_r); fseek(fin_r,0,SEEK_SET);
+    uint8_t* src=(uint8_t*)malloc(src_size);
+    if (!src) { fprintf(stderr,"malloc failed\n"); fclose(fin_r); return 1; }
+    fread(src,1,src_size,fin_r); fclose(fin_r);
     t_fread=now_sec()-t_fread;
-    bool src_is_mmap=true;
+    bool src_is_mmap=false;
     // Запускаем SHA256 параллельно с encode
     struct ShaArg { const uint8_t* d; size_t n; uint8_t out[32]; };
     ShaArg sha_arg={src,src_size,{}};
