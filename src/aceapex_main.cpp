@@ -29,6 +29,15 @@
 #define MAX_THREADS  16
 #define BLOCK_MARKER 0xFF
 #define ZSTD_LEVEL   22
+
+static size_t get_runtime_block_size() {
+    const char* e = getenv("ACE_BLOCK_SIZE_KB");
+    if (!e || !*e) return (size_t)BLOCK_SIZE;
+    long kb = strtol(e, nullptr, 10);
+    if (kb < 64) kb = 64;
+    if (kb > 16384) kb = 16384;
+    return (size_t)kb * 1024;
+}
  
 struct BlockResult {
     uint8_t* lit_buf; uint8_t* off_buf;
@@ -39,7 +48,7 @@ struct BlockResult {
  
 struct PoolState {
     const uint8_t* src; size_t src_size;
-    size_t num_blocks; BlockResult* results;
+    size_t num_blocks; size_t block_size; BlockResult* results;
     std::atomic<size_t> next_block;
 };
  
@@ -250,7 +259,7 @@ static void* worker_func(void* arg) {
     while (true) {
         size_t bid=ps->next_block.fetch_add(1);
         if (bid>=ps->num_blocks) break;
-        size_t bstart=bid*BLOCK_SIZE, bend=bstart+BLOCK_SIZE;
+        size_t bstart=bid*ps->block_size, bend=bstart+ps->block_size;
         if (bend>ps->src_size) bend=ps->src_size;
         compress_block(ps->src,ps->src_size,bstart,bend,wa->htab,&ps->results[bid]);
     }
@@ -425,7 +434,7 @@ static void* dec_worker(void* arg) {
     return nullptr;
 }
  
-static bool encode_file(const uint8_t* src, size_t src_size, int threads, int level,
+static bool encode_file(const uint8_t* src, size_t src_size, int threads, int level, size_t block_size,
     std::vector<BlockOffsets>& boffs,
     uint8_t*& raw_lit, size_t& total_lit,
     uint8_t*& raw_off, size_t& total_off,
@@ -433,7 +442,7 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
     uint8_t*& raw_cmd, size_t& total_cmd,
     double& enc_time, size_t& num_blocks)
 {
-    num_blocks = (src_size + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    num_blocks = (src_size + block_size - 1) / block_size;
     boffs.resize(num_blocks);
  
     // Adaptive hash size
@@ -457,7 +466,7 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
     BlockResult* results=(BlockResult*)calloc(num_blocks,sizeof(BlockResult));
     PoolState pool;
     pool.src=src; pool.src_size=src_size;
-    pool.num_blocks=num_blocks; pool.results=results;
+    pool.num_blocks=num_blocks; pool.block_size=block_size; pool.results=results;
     pool.next_block.store(0);
     WorkerArgs* wargs=(WorkerArgs*)calloc(threads,sizeof(WorkerArgs));
     pthread_t* pts=(pthread_t*)calloc(threads,sizeof(pthread_t));
@@ -654,7 +663,7 @@ static int do_compress(const char* in_path, const char* out_path, int threads, i
     uint8_t *raw_lit,*raw_off,*raw_len,*raw_cmd;
     size_t total_lit,total_off,total_len,total_cmd,num_blocks;
     double enc_time;
-    encode_file(src,src_size,threads,level,boffs,
+    encode_file(src,src_size,threads,level,get_runtime_block_size(),boffs,
                 raw_lit,total_lit,raw_off,total_off,
                 raw_len,total_len,raw_cmd,total_cmd,
                 enc_time,num_blocks);
@@ -675,7 +684,7 @@ static int do_compress(const char* in_path, const char* out_path, int threads, i
     AetHeader hdr;
     memcpy(hdr.magic,"ACEPX2\0\0",8);
     hdr.version=2; hdr.orig_size=(uint64_t)src_size;
-    hdr.block_size=(uint32_t)BLOCK_SIZE; hdr.num_blocks=(uint32_t)num_blocks;
+    hdr.block_size=(uint32_t)block_size; hdr.num_blocks=(uint32_t)num_blocks;
     double t_sha256=now_sec();
     uint64_t hv=OUR_CHECKSUM(src,src_size);
     memcpy(hdr.xxhash,&hv,8);
@@ -791,7 +800,7 @@ static int do_test(const char* in_path, int threads, int level=2) {
     uint8_t *raw_lit,*raw_off,*raw_len,*raw_cmd;
     size_t total_lit,total_off,total_len,total_cmd,num_blocks;
     double enc_time;
-    encode_file(src,src_size,threads,level,boffs,
+    encode_file(src,src_size,threads,level,get_runtime_block_size(),boffs,
                 raw_lit,total_lit,raw_off,total_off,
                 raw_len,total_len,raw_cmd,total_cmd,
                 enc_time,num_blocks);
@@ -815,7 +824,7 @@ static int do_test(const char* in_path, int threads, int level=2) {
  
     uint8_t* dst=(uint8_t*)malloc(src_size);
     double dec_time=parallel_decode(lit,off,len,cmd,boffs.data(),num_blocks,
-                                     dst,src_size,(size_t)BLOCK_SIZE);
+                                     dst,src_size,block_size);
  
     uint8_t digest_orig[32], digest_dec[32];
     sha256(src,src_size,digest_orig); sha256(dst,src_size,digest_dec);
