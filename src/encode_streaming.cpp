@@ -2,7 +2,7 @@
 #include "aceapex_main.cpp"
 
 static const size_t HISTORY_SIZE = 1 * 1024 * 1024;
-static const size_t CHUNK_SIZE   = 1 * 1024 * 1024;
+static const size_t CHUNK_SIZE   = 4 * 1024 * 1024;
 
 int encode_streaming_file(const char* in_path, const char* out_path, int level) {
     FILE* fin = fopen(in_path, "rb");
