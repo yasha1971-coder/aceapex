@@ -107,25 +107,37 @@ int acepx3_encode(const char* in_path, const char* out_path, int level, int thre
     return 0;
 }
 
-int acepx3_decode(const char* in_path, const char* out_path) {
+struct V3DecChunk {
+    uint8_t *l,*o,*n,*c;
+    size_t ls,os,ns,cs,raw_size;
+    uint8_t* dst;
+};
+
+static void* v3_dec_worker(void* arg) {
+    V3DecChunk* ch=(V3DecChunk*)arg;
+    decompress_streams(ch->dst,ch->raw_size,
+        ch->l,ch->ls,ch->o,ch->os,
+        ch->n,ch->ns,ch->c,ch->cs);
+    return nullptr;
+}
+
+int acepx3_decode(const char* in_path, const char* out_path, int threads=8) {
     FILE* fin=fopen(in_path,"rb");
     if (!fin) { fprintf(stderr,"Cannot open\n"); return 1; }
 
     V3Header fhdr; fread(&fhdr,sizeof(fhdr),1,fin);
     if (memcmp(fhdr.magic,"ACEPX3\0\0",8)!=0) {
-        fprintf(stderr,"Bad magic — not ACEPX3\n"); fclose(fin); return 1;
+        fprintf(stderr,"Bad magic\n"); fclose(fin); return 1;
     }
-    fprintf(stderr,"[*] ACEPX3 decode: %u chunks\n",fhdr.num_chunks);
+    uint32_t nb=fhdr.num_chunks;
 
-    FILE* fout=fopen(out_path,"wb");
-    uint8_t* dst=(uint8_t*)malloc(fhdr.chunk_size+65536);
+    // Read all chunks into memory
+    std::vector<V3DecChunk> chunks(nb);
+    uint8_t* dst_buf=(uint8_t*)malloc(fhdr.orig_size+65536);
+    size_t out_pos=0;
 
-    for(uint32_t ci=0;ci<fhdr.num_chunks;ci++) {
+    for(uint32_t ci=0;ci<nb;ci++) {
         V3Chunk chdr; fread(&chdr,sizeof(chdr),1,fin);
-        if (chdr.magic!=0x434B4E48) {
-            fprintf(stderr,"Bad chunk magic at %u\n",ci); break;
-        }
-
         uint8_t* zl=(uint8_t*)malloc(chdr.lit_size);
         uint8_t* zo=(uint8_t*)malloc(chdr.off_size);
         uint8_t* zn=(uint8_t*)malloc(chdr.len_size);
@@ -134,19 +146,43 @@ int acepx3_decode(const char* in_path, const char* out_path) {
         fread(zo,1,chdr.off_size,fin);
         fread(zn,1,chdr.len_size,fin);
         fread(zc,1,chdr.cmd_size,fin);
-
-        size_t os=*(uint64_t*)zo, ns=*(uint64_t*)zn, cs=*(uint64_t*)zc;
+        size_t os=*(uint64_t*)zo,ns=*(uint64_t*)zn,cs=*(uint64_t*)zc;
         size_t ls=0; uint8_t* l=lit_decompress(zl,chdr.lit_size,ls);
         uint8_t* o=(uint8_t*)malloc(os); fse_chunked_decomp(zo,os,o);
         uint8_t* n=(uint8_t*)malloc(ns); fse_chunked_decomp(zn,ns,n);
         uint8_t* c=(uint8_t*)malloc(cs); fse_chunked_decomp(zc,cs,c);
         free(zl);free(zo);free(zn);free(zc);
-
-        decompress_streams(dst,chdr.raw_size,l,ls,o,os,n,ns,c,cs);
-        fwrite(dst,1,chdr.raw_size,fout);
-        free(l);free(o);free(n);free(c);
+        chunks[ci]={l,o,n,c,ls,os,ns,cs,chdr.raw_size,dst_buf+out_pos};
+        out_pos+=chdr.raw_size;
     }
-    free(dst); fclose(fin); fclose(fout);
+    fclose(fin);
+
+    // Parallel decode
+    int nt=std::min((int)nb,threads);
+    std::vector<pthread_t> pts(nt);
+    std::atomic<int> next(0);
+    struct PArg { std::vector<V3DecChunk>*ch; std::atomic<int>*nx; int nb; };
+    PArg pa={&chunks,&next,(int)nb};
+    for(int t=0;t<nt;t++) {
+        pthread_create(&pts[t],nullptr,[](void*a)->void*{
+            PArg*p=(PArg*)a;
+            while(true){
+                int i=p->nx->fetch_add(1);
+                if(i>=(int)p->nb) break;
+                v3_dec_worker(&(*p->ch)[i]);
+            }
+            return nullptr;
+        },&pa);
+    }
+    for(int t=0;t<nt;t++) pthread_join(pts[t],nullptr);
+
+    // Write output
+    FILE* fout=fopen(out_path,"wb");
+    fwrite(dst_buf,1,out_pos,fout);
+    fclose(fout);
+
+    for(auto& ch:chunks){free(ch.l);free(ch.o);free(ch.n);free(ch.c);}
+    free(dst_buf);
     return 0;
 }
 
@@ -160,6 +196,6 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i],"--threads")&&i+1<argc) threads=atoi(argv[++i]);
     }
     if (!in||!out) { fprintf(stderr,"Usage: %s c|d --in <in> --out <out>\n",argv[0]); return 1; }
-    if (!strcmp(cmd,"d")) return acepx3_decode(in,out);
+    if (!strcmp(cmd,"d")) return acepx3_decode(in,out,threads);
     return acepx3_encode(in,out,level,threads);
 }
