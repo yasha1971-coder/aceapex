@@ -2,60 +2,43 @@
 
 Lossless compression with parallel block decode.
 
-## Benchmarks (enwik9, 1GB, AMD EPYC 4344P 8-Core Zen 4)
+## Benchmarks (lzbench, in-memory, AMD EPYC 4344P)
 
-| Metric       | Value                    |
-| ------------ | ------------------------ |
-| Ratio        | 3.037x                   |
-| Encode       | 307 MB/s (8 threads)     |
-| Decode       | 4.3 GB/s algorithmic (8 threads) |
-| Decode T-1   | 796 MB/s (single thread) |
-| Integrity    | XXH3-64: 1f0533f6be5d8e95 |
+| Compressor | Compress | Decompress | Ratio | File |
+|------------|----------|------------|-------|------|
+| zstd -3    | 1071 MB/s | 3383 MB/s | 8.45% | nci |
+| aceapex -2 -I8 | 885 MB/s | 10200 MB/s | 8.56% | nci |
+| zstd -3    | 856 MB/s | 3293 MB/s | 11.89% | xml |
+| aceapex -2 -I8 | 885 MB/s | 4697 MB/s | 12.93% | xml |
 
-Decode scales 5.4x on 8 cores (68% efficiency, bottlenecked by DDR5 bandwidth).
+All results BIT-PERFECT (MD5 verified).
 
-## Core Idea
+## Two formats
 
-Standard LZ77 codecs face a tradeoff:
-- Global context → better ratio but sequential decode
-- Independent blocks → parallel decode but worse ratio
-
-ACEAPEX separates these responsibilities:
-- **Encode:** global match search, hash chain depth 32
-- **Decode:** block-parallel via per-block offset index in header
-
-The .acpx format stores a block offset table — parallel decode is a format feature, not an implementation hack.
-
-## Silesia Corpus (8 threads)
-
-| File    | Ratio   | vs zstd -3 |
-| ------- | ------- | ---------- |
-| nci     | 11.681x | better     |
-| xml     | 7.747x  | better     |
-| samba   | 4.138x  | better     |
-| webster | 3.214x  | better     |
-| enwik9  | 3.037x  | comparable |
-| mozilla | 2.710x  | comparable |
-| dickens | 2.596x  | worse      |
-
-All files BIT-PERFECT (MD5 verified).
+**ACEPX2** (v1.0) — maximum throughput, 2.8GB RAM encode
+**ACEPX3** (v2-dev) — streaming, 23MB RAM encode, parallel decode
 
 ## Build
 
     sudo apt-get install -y libzstd-dev g++
     git clone https://github.com/yasha1971-coder/aceapex
-    cd aceapex && make
+    cd aceapex && bash build.sh
 
 ## Usage
 
-    ./aceapex c --in myfile --out myfile.acpx --threads 8
-    ./aceapex d --in myfile.acpx --out myfile_restored
+    ./aceapex c --in file --out file.acpx --threads 8
+    ./aceapex d --in file.acpx --out file_restored
 
-## Honest Status
+## v2-dev branch
 
-Research-grade. Encode is slow (307 MB/s) due to chain depth 32.
-Designed for "compress once, decompress many times" workloads.
-Not a drop-in replacement for zstd.
+Streaming encode (23MB RAM), C API, Python bindings, ACEPX3 format.
+See [v2-dev](https://github.com/yasha1971-coder/aceapex/tree/v2-dev)
+
+## Honest status
+
+Research-grade. Encode slower than zstd. 
+Decode 3-5x faster than zstd on structured data.
+Built with Claude AI assistance.
 
 ## License
 
