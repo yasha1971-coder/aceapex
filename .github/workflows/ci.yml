@@ -1,0 +1,18 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install deps
+      run: sudo apt-get install -y libzstd-dev g++
+    - name: Build
+      run: bash build.sh
+    - name: Test BIT-PERFECT
+      run: |
+        dd if=/dev/urandom of=/tmp/test.bin bs=1M count=10 2>/dev/null
+        ./aceapex c --in /tmp/test.bin --out /tmp/test.acpx --threads 2
+        ./aceapex d --in /tmp/test.acpx --out /tmp/test_out
+        md5sum /tmp/test.bin /tmp/test_out
+        diff /tmp/test.bin /tmp/test_out && echo "BIT-PERFECT OK"
