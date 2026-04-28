@@ -6,9 +6,6 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
-#ifndef MAP_POPULATE
-#define MAP_POPULATE 0
-#endif
 #include <sys/stat.h>
 #include <sys/types.h>
 #ifndef MAP_HUGE_2MB
@@ -28,7 +25,6 @@
  
 #define HASH_SIZE    0xFFFF
 #define MAX_DIST     (128 * 1024 * 1024)
-#define WINDOW_LIMIT (1 * 1024 * 1024)
 #define BLOCK_SIZE   (1 * 1024 * 1024)
 #define MAX_THREADS  16
 #define BLOCK_MARKER 0xFF
@@ -104,7 +100,7 @@ static inline int find_matches(const uint8_t* src, size_t pos, size_t bstart, si
     if (head>=0) ht->chain[pos & ht->chain_mask]=head;
     int32_t cur=head; int attempts=max_attempts;
     while(cur>=(int32_t)bstart && attempts-->0 && n<maxout) {
-        uint32_t dist=(uint32_t)(pos-cur); if(dist>=WINDOW_LIMIT) break;
+        uint32_t dist=(uint32_t)(pos-cur); if(dist>=MAX_DIST) break;
         bool is_rep=false; for(int r=0;r<4;r++) if(dist==rep[r]){is_rep=true;break;}
         if(!is_rep){
             uint32_t mlen=min_match_len(dist);
