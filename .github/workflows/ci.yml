@@ -1,0 +1,22 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: sudo apt-get update && sudo apt-get install -y build-essential libzstd-dev pkg-config
+
+    - name: Build
+      run: make
+
+    - name: Test BIT-PERFECT
+      run: |
+        dd if=/dev/urandom of=/tmp/test.bin bs=1M count=10 2>/dev/null
+        ./aceapex c --in /tmp/test.bin --out /tmp/test.acpx --threads 2
+        ./aceapex d --in /tmp/test.acpx --out /tmp/test_out
+        diff /tmp/test.bin /tmp/test_out && echo "BIT-PERFECT OK"
