@@ -6,10 +6,9 @@ add_compile_options(-O3 -funroll-loops)
 
 find_package(Threads REQUIRED)
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(ZSTD REQUIRED libzstd)
+pkg_check_modules(ZSTD REQUIRED IMPORTED_TARGET libzstd)
 
 add_executable(aceapex src/aceapex_main.cpp)
-target_include_directories(aceapex PRIVATE ${ZSTD_INCLUDE_DIRS})
-target_link_libraries(aceapex PRIVATE Threads::Threads ${ZSTD_LIBRARIES})
+target_link_libraries(aceapex PRIVATE Threads::Threads PkgConfig::ZSTD)
 
 install(TARGETS aceapex DESTINATION bin)
