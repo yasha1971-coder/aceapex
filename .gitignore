@@ -11,3 +11,4 @@ fse_patch.py
 src/lit_chunked.cpp
 src/order1_fse.cpp
 src/order1_transform.cpp
+libaceapex.so
