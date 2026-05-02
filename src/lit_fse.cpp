@@ -4,7 +4,7 @@
 #include <vector>
 #include <pthread.h>
 #include <algorithm>
-#include <zstd.h>
+#include "../zstd/lib/zstd.h"
 
 static size_t LIT_compress(void* dst, size_t dstCap, const void* src, size_t srcSize) {
     return ZSTD_compress(dst, dstCap, src, srcSize, 1);
@@ -60,7 +60,7 @@ static uint8_t* fse_comp(const uint8_t* src,size_t sz,size_t& out_sz,int nc=16){
     for(int i=0;i<nc;i++){
         rsz[i]=jobs[i].isz;
         size_t actual=jobs[i].osz&~(uint64_t(1)<<62);
-        csz2[i]=(jobs[i].osz>>62)&1 ? actual|(uint64_t(1)<<63) : actual;
+        csz2[i]=((uint64_t)jobs[i].osz>>62)&1 ? actual|(uint64_t(1)<<63) : actual;
         memcpy(p,bufs[i],actual); p+=actual; free(bufs[i]);
     }
     out_sz=total; return res;
