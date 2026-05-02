@@ -22,9 +22,11 @@
 #include <atomic>
 #include <vector>
 #include <algorithm>
-#include <zstd.h>
+#include "../zstd/lib/zstd.h"
 #define XXH_STATIC_LINKING_ONLY
+#ifndef ACEAPEX_NO_XXH
 #define XXH_IMPLEMENTATION
+#endif
 #include "xxhash.h"
 #define OUR_CHECKSUM(buf,sz) XXH3_64bits(buf,sz)
 #include "lit_fse.cpp"
@@ -134,6 +136,9 @@ static void compress_block(const uint8_t* src, size_t src_size,
     res->len_buf = (uint8_t*)malloc(cap * 6);
     res->cmd_buf = (uint8_t*)malloc(cap + cap/4 + 4);
     res->overflow = 0;
+    if (!res->lit_buf || !res->off_buf || !res->len_buf || !res->cmd_buf) {
+        res->overflow = 99; return;
+    }
     size_t lit_cap=cap, off_cap=cap*6, len_cap=cap*6, cmd_cap=cap+cap/4+4;
  
     ht->cur_epoch++;
@@ -344,6 +349,7 @@ static void sha256(const uint8_t* data, size_t len, uint8_t out[32]) {
     auto ror=[](uint32_t x,int n){ return (x>>n)|(x<<(32-n)); };
     size_t total=(len+9+63)&~63ULL;
     uint8_t* buf=(uint8_t*)calloc(total,1);
+    if(!buf) return;
     memcpy(buf,data,len); buf[len]=0x80;
     uint64_t bits=(uint64_t)len*8;
     for(int i=0;i<8;i++) buf[total-1-i]=(uint8_t)(bits>>(i*8));
@@ -383,6 +389,7 @@ static void sha256_hex(const uint8_t* data, size_t len, char out[65]) {
  
 static uint8_t* zstd_comp(const uint8_t* src, size_t sz, size_t& out_sz, int lv) {
     size_t b=ZSTD_compressBound(sz); uint8_t* buf=(uint8_t*)malloc(b);
+    if(!buf){out_sz=0;return nullptr;}
     out_sz=ZSTD_compress(buf,b,src,sz,lv);
     if (ZSTD_isError(out_sz)) { free(buf); out_sz=0; return nullptr; }
     return buf;
@@ -450,11 +457,14 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
     size_t ht_sz = (hash_mask+1);
     uint32_t chain_mask = (1u<<20)-1;
     ThreadHashTable** htabs=(ThreadHashTable**)calloc(threads,sizeof(ThreadHashTable*));
+    if(!htabs){enc_time=0;return false;}
     for(int i=0;i<threads;i++) {
         htabs[i]=(ThreadHashTable*)calloc(1,sizeof(ThreadHashTable));
+        if(!htabs[i]){enc_time=0;return false;}
         htabs[i]->pos  =(int32_t*) calloc(ht_sz,sizeof(int32_t));
         htabs[i]->epoch=(uint32_t*)calloc(ht_sz,sizeof(uint32_t));
         htabs[i]->chain=(int32_t*) malloc(((size_t)chain_mask+1)*sizeof(int32_t));
+        if(!htabs[i]->pos||!htabs[i]->epoch||!htabs[i]->chain){enc_time=0;return false;}
         memset(htabs[i]->chain,-1,((size_t)chain_mask+1)*sizeof(int32_t));
         htabs[i]->cur_epoch=0;
         htabs[i]->hash_mask=hash_mask;
@@ -462,12 +472,14 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
         htabs[i]->max_attempts=(level>=2)?32:4;
     }
     BlockResult* results=(BlockResult*)calloc(num_blocks,sizeof(BlockResult));
+    if(!results){enc_time=0;return false;}
     PoolState pool;
     pool.src=src; pool.src_size=src_size;
     pool.num_blocks=num_blocks; pool.results=results;
     pool.next_block.store(0);
     WorkerArgs* wargs=(WorkerArgs*)calloc(threads,sizeof(WorkerArgs));
     pthread_t* pts=(pthread_t*)calloc(threads,sizeof(pthread_t));
+    if(!wargs||!pts){free(results);enc_time=0;return false;}
     for(int i=0;i<threads;i++) {
         wargs[i].thread_id=i; wargs[i].htab=htabs[i]; wargs[i].pool=&pool;
         pthread_create(&pts[i],nullptr,worker_func,&wargs[i]);
@@ -478,6 +490,7 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
  
     total_lit=0; total_off=0; total_len=0; total_cmd=0;
     for(size_t b=0;b<num_blocks;b++) {
+        if(results[b].overflow==99) { free(results); return 1; }
         boffs[b].lit_off=total_lit; boffs[b].lit_sz=results[b].lit_size;
         boffs[b].off_off=total_off; boffs[b].off_sz=results[b].off_size;
         boffs[b].len_off=total_len; boffs[b].len_sz=results[b].len_size;
@@ -490,6 +503,7 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
     raw_off=(uint8_t*)malloc(total_off);
     raw_len=(uint8_t*)malloc(total_len);
     raw_cmd=(uint8_t*)malloc(total_cmd);
+    if(!raw_lit||!raw_off||!raw_len||!raw_cmd){free(results);return 1;}
  
     size_t li=0,oi=0,ni=0,ci=0;
     for(size_t b=0;b<num_blocks;b++) {
@@ -555,9 +569,11 @@ static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
     for(int t=0;t<NW;t++){
         size_t off=(size_t)t*csz,isz=(t<NW-1)?csz:sz-off;
         zws[t]={src+off,isz,nullptr,0,ZSTD_compressBound(isz)+8};
-        zws[t].out=(uint8_t*)malloc(zws[t].cap);}
+        zws[t].out=(uint8_t*)malloc(zws[t].cap);
+        if(!zws[t].out){out_sz=0;return nullptr;}}
     auto zfn=[](void*a)->void*{ZW*z=(ZW*)a;
         ZSTD_CCtx*ctx=ZSTD_createCCtx();
+        if(!ctx){z->osz=ZSTD_CONTENTSIZE_ERROR; return nullptr;}
         ZSTD_CCtx_setParameter(ctx,ZSTD_c_compressionLevel,3);
         z->osz=ZSTD_compress2(ctx,z->out,z->cap,z->in,z->isz);
         ZSTD_freeCCtx(ctx); return nullptr;};
@@ -567,6 +583,7 @@ static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
     size_t hdrsz=8+NW*8,totalsz=hdrsz;
     for(int t=0;t<NW;t++) totalsz+=zws[t].osz;
     uint8_t* res=(uint8_t*)malloc(totalsz);
+    if(!res){out_sz=0;return nullptr;}
     *(uint64_t*)res=sz|(uint64_t(1)<<62);
     uint64_t* zsz=(uint64_t*)(res+8); uint8_t* p=res+hdrsz;
     for(int t=0;t<NW;t++){zsz[t]=zws[t].osz;memcpy(p,zws[t].out,zws[t].osz);p+=zws[t].osz;free(zws[t].out);}
@@ -576,6 +593,7 @@ static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_s
     uint64_t h=*(const uint64_t*)src;
     orig_sz=h & ~(uint64_t(1)<<62);
     uint8_t* out=(uint8_t*)malloc(orig_sz);
+    if(!out) return nullptr;
     if(!(h & (uint64_t(1)<<62))){fse_chunked_decomp(src,orig_sz,out);return out;}
     const int NW=4; const uint64_t* zsz=(const uint64_t*)(src+8);
     const uint8_t* p0=src+8+NW*8;
@@ -584,7 +602,7 @@ static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_s
     DW dws[NW]; const uint8_t* p=p0;
     for(int t=0;t<NW;t++){
         size_t off=(size_t)t*csz,raw=(t<NW-1)?csz:orig_sz-off;
-        dws[t]={out+off,raw,p,zsz[t]}; p+=zsz[t];}
+        dws[t]={out+off,raw,p,(size_t)zsz[t]}; p+=(size_t)zsz[t];}
     auto dfn=[](void*a)->void*{DW*d=(DW*)a;
         ZSTD_decompress(d->out,d->raw,d->in,d->isz); return nullptr;};
     pthread_t pts[NW];
@@ -610,6 +628,7 @@ static void entropy_encode(
         size_t hdrsz=8+nc*8;
         size_t cap=hdrsz+e->isz+nc*64;
         *e->out=(uint8_t*)malloc(cap);
+        if(!*e->out) return nullptr;
         *(uint64_t*)*e->out=e->isz;
         uint64_t* csizes=(uint64_t*)(*e->out+8);
         uint8_t* p=*e->out+hdrsz;
@@ -734,7 +753,7 @@ static int do_compress(const char* in_path, const char* out_path, int threads, i
     return 0;
 }
  
-static int do_decompress(const char* in_path, const char* out_path, int threads=8) {
+static int do_decompress(const char* in_path, const char* out_path) {
     double t_wall=now_sec();
     FILE* fin=fopen(in_path,"rb");
     if (!fin) { fprintf(stderr,"Cannot open: %s\n",in_path); return 1; }
@@ -747,10 +766,13 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
     std::vector<BlockOffsets> boffs(nb);
     fread(boffs.data(),sizeof(BlockOffsets),nb,fin);
  
-    uint8_t* zlit=(uint8_t*)malloc(hdr.zlit_sz); fread(zlit,1,hdr.zlit_sz,fin);
-    uint8_t* zoff=(uint8_t*)malloc(hdr.zoff_sz); fread(zoff,1,hdr.zoff_sz,fin);
-    uint8_t* zlen=(uint8_t*)malloc(hdr.zlen_sz); fread(zlen,1,hdr.zlen_sz,fin);
-    uint8_t* zcmd=(uint8_t*)malloc(hdr.zcmd_sz); fread(zcmd,1,hdr.zcmd_sz,fin);
+    uint8_t* zlit=(uint8_t*)malloc(hdr.zlit_sz);
+    uint8_t* zoff=(uint8_t*)malloc(hdr.zoff_sz);
+    uint8_t* zlen=(uint8_t*)malloc(hdr.zlen_sz);
+    uint8_t* zcmd=(uint8_t*)malloc(hdr.zcmd_sz);
+    if(!zlit||!zoff||!zlen||!zcmd){free(zlit);free(zoff);free(zlen);free(zcmd);fclose(fin);return 1;}
+    fread(zlit,1,hdr.zlit_sz,fin); fread(zoff,1,hdr.zoff_sz,fin);
+    fread(zlen,1,hdr.zlen_sz,fin); fread(zcmd,1,hdr.zcmd_sz,fin);
     fclose(fin);
  
     size_t off_sz=*(uint64_t*)zoff;
@@ -765,7 +787,7 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
     uint8_t* len=(uint8_t*)malloc(len_sz);
     uint8_t* cmd=(uint8_t*)malloc(cmd_sz);
     struct LitArg{const uint8_t*s;size_t sz;uint8_t**out;size_t*osz;};
-    LitArg larg={zlit,hdr.zlit_sz,&lit,&lit_sz};
+    LitArg larg={zlit,(size_t)hdr.zlit_sz,&lit,&lit_sz};
     auto litfn=[](void*a)->void*{LitArg*l=(LitArg*)a;
         *l->out=lit_decompress(l->s,l->sz,*l->osz); return nullptr;};
     struct FD{const uint8_t*s;size_t sz;uint8_t*d;};
@@ -781,7 +803,8 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
     t_lit=t_fse;
     free(zlit); free(zoff); free(zlen); free(zcmd);
     uint8_t* dst=(uint8_t*)malloc(hdr.orig_size);
-    double t_lz=now_sec(); parallel_decode(lit,off,len,cmd,boffs.data(),nb,dst,hdr.orig_size,hdr.block_size,threads); t_lz=now_sec()-t_lz;
+    if(!dst){free(lit);free(off);free(len);free(cmd);return 1;}
+    double t_lz=now_sec(); parallel_decode(lit,off,len,cmd,boffs.data(),nb,dst,hdr.orig_size,hdr.block_size); t_lz=now_sec()-t_lz;
     dec_time=now_sec()-dec_time;
     fprintf(stderr,"  Phase lit:  %.3fs\n  Phase fse:  %.3fs\n  Phase lz77: %.3fs\n",t_lit,t_fse,t_lz);
  
@@ -830,11 +853,14 @@ static int do_test(const char* in_path, int threads, int level=2) {
     size_t cmd_sz=*(uint64_t*)zcmd;
  
     size_t lit_sz=0; uint8_t* lit=lit_decompress(zlit,zlit_sz,lit_sz);
-    uint8_t* off=(uint8_t*)malloc(off_sz); fse_chunked_decomp(zoff,off_sz,off);
-    uint8_t* len=(uint8_t*)malloc(len_sz); fse_chunked_decomp(zlen,len_sz,len);
-    uint8_t* cmd=(uint8_t*)malloc(cmd_sz); fse_chunked_decomp(zcmd,cmd_sz,cmd);
- 
+    uint8_t* off=(uint8_t*)malloc(off_sz);
+    uint8_t* len=(uint8_t*)malloc(len_sz);
+    uint8_t* cmd=(uint8_t*)malloc(cmd_sz);
     uint8_t* dst=(uint8_t*)malloc(src_size);
+    if(!off||!len||!cmd||!dst){free(off);free(len);free(cmd);free(dst);return ACEAPEX_ERR_MEMORY;}
+    fse_chunked_decomp(zoff,off_sz,off);
+    fse_chunked_decomp(zlen,len_sz,len);
+    fse_chunked_decomp(zcmd,cmd_sz,cmd);
     double dec_time=parallel_decode(lit,off,len,cmd,boffs.data(),num_blocks,
                                      dst,src_size,(size_t)BLOCK_SIZE);
  
@@ -882,7 +908,7 @@ int main(int argc, char** argv) {
     }
     if (!in) { fprintf(stderr,"--in required\n"); return 1; }
     if (!strcmp(cmd,"c")) { if (!out) { fprintf(stderr,"--out required\n"); return 1; } return do_compress(in,out,thr,level); }
-    if (!strcmp(cmd,"d")) { if (!out) { fprintf(stderr,"--out required\n"); return 1; } return do_decompress(in,out,threads); }
+    if (!strcmp(cmd,"d")) { if (!out) { fprintf(stderr,"--out required\n"); return 1; } return do_decompress(in,out); }
     if (!strcmp(cmd,"t")) return do_test(in,thr,level);
     return 1;
 }
