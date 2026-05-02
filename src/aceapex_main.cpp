@@ -786,6 +786,7 @@ static int do_decompress(const char* in_path, const char* out_path) {
     uint8_t* off=(uint8_t*)malloc(off_sz);
     uint8_t* len=(uint8_t*)malloc(len_sz);
     uint8_t* cmd=(uint8_t*)malloc(cmd_sz);
+    if(!off||!len||!cmd){free(off);free(len);free(cmd);free(zlit);free(zoff);free(zlen);free(zcmd);return 1;}
     struct LitArg{const uint8_t*s;size_t sz;uint8_t**out;size_t*osz;};
     LitArg larg={zlit,(size_t)hdr.zlit_sz,&lit,&lit_sz};
     auto litfn=[](void*a)->void*{LitArg*l=(LitArg*)a;
@@ -799,6 +800,7 @@ static int do_decompress(const char* in_path, const char* out_path) {
     pthread_create(&fpts[0],nullptr,litfn,&larg);
     for(int i=0;i<3;i++) pthread_create(&fpts[i+1],nullptr,fdfn,&fds[i]);
     for(int i=0;i<4;i++) pthread_join(fpts[i],nullptr);
+    if(!lit){free(off);free(len);free(cmd);free(zlit);free(zoff);free(zlen);free(zcmd);return 1;}
     double t_fse=now_sec()-t_lit;
     t_lit=t_fse;
     free(zlit); free(zoff); free(zlen); free(zcmd);
@@ -827,6 +829,7 @@ static int do_test(const char* in_path, int threads, int level=2) {
     if (!fin) { fprintf(stderr,"Cannot open: %s\n",in_path); return 1; }
     fseek(fin,0,SEEK_END); size_t src_size=(size_t)ftell(fin); fseek(fin,0,SEEK_SET);
     uint8_t* src=(uint8_t*)malloc(src_size);
+    if(!src){fclose(fin);return 1;}
     fread(src,1,src_size,fin); fclose(fin);
     fprintf(stderr,"[*] Test: %s (%.2f MB) threads=%d\n",in_path,src_size/1e6,threads);
     double t_total_t=now_sec();
@@ -853,11 +856,12 @@ static int do_test(const char* in_path, int threads, int level=2) {
     size_t cmd_sz=*(uint64_t*)zcmd;
  
     size_t lit_sz=0; uint8_t* lit=lit_decompress(zlit,zlit_sz,lit_sz);
+    if(!lit) return 1;
     uint8_t* off=(uint8_t*)malloc(off_sz);
     uint8_t* len=(uint8_t*)malloc(len_sz);
     uint8_t* cmd=(uint8_t*)malloc(cmd_sz);
     uint8_t* dst=(uint8_t*)malloc(src_size);
-    if(!off||!len||!cmd||!dst){free(off);free(len);free(cmd);free(dst);return ACEAPEX_ERR_MEMORY;}
+    if(!off||!len||!cmd||!dst){free(lit);free(off);free(len);free(cmd);free(dst);return ACEAPEX_ERR_MEMORY;}
     fse_chunked_decomp(zoff,off_sz,off);
     fse_chunked_decomp(zlen,len_sz,len);
     fse_chunked_decomp(zcmd,cmd_sz,cmd);
