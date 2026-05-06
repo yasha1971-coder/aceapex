@@ -32,7 +32,7 @@ static uint8_t* fse_comp(const uint8_t* src,size_t sz,size_t& out_sz,int nc=16){
     if(sz<(size_t)nc*65536){
         size_t cap=LIT_compressBound(sz)+16;
         uint8_t* buf=(uint8_t*)malloc(cap);
-        if(!buf){j->osz=0;return nullptr;}
+        if(!buf){out_sz=0;return nullptr;}
         *(uint64_t*)buf=sz;
         size_t csz=LIT_compress(buf+8,cap-8,src,sz);
         if(LIT_isError(csz)||csz==0){ *(uint64_t*)buf=sz|(uint64_t(1)<<63); memcpy(buf+8,src,sz); out_sz=sz+8; }

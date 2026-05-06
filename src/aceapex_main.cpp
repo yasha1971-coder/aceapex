@@ -1,3 +1,4 @@
+#include "aceapex.h"
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
@@ -445,7 +446,7 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
     uint8_t*& raw_off, size_t& total_off,
     uint8_t*& raw_len, size_t& total_len,
     uint8_t*& raw_cmd, size_t& total_cmd,
-    double& enc_time, size_t& num_blocks)
+    size_t& num_blocks)
 {
     num_blocks = (src_size + BLOCK_SIZE - 1) / BLOCK_SIZE;
     boffs.resize(num_blocks);
@@ -457,62 +458,85 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
     size_t ht_sz = (hash_mask+1);
     uint32_t chain_mask = (1u<<20)-1;
     ThreadHashTable** htabs=(ThreadHashTable**)calloc(threads,sizeof(ThreadHashTable*));
-    if(!htabs){enc_time=0;return false;}
+    if(!htabs){return false;}
     for(int i=0;i<threads;i++) {
         htabs[i]=(ThreadHashTable*)calloc(1,sizeof(ThreadHashTable));
-        if(!htabs[i]){enc_time=0;return false;}
+        if(!htabs[i]){return false;}
         htabs[i]->pos  =(int32_t*) calloc(ht_sz,sizeof(int32_t));
         htabs[i]->epoch=(uint32_t*)calloc(ht_sz,sizeof(uint32_t));
         htabs[i]->chain=(int32_t*) malloc(((size_t)chain_mask+1)*sizeof(int32_t));
-        if(!htabs[i]->pos||!htabs[i]->epoch||!htabs[i]->chain){enc_time=0;return false;}
+        if(!htabs[i]->pos||!htabs[i]->epoch||!htabs[i]->chain){return false;}
         memset(htabs[i]->chain,-1,((size_t)chain_mask+1)*sizeof(int32_t));
         htabs[i]->cur_epoch=0;
         htabs[i]->hash_mask=hash_mask;
         htabs[i]->chain_mask=chain_mask;
         htabs[i]->max_attempts=(level>=2)?32:4;
     }
-    BlockResult* results=(BlockResult*)calloc(num_blocks,sizeof(BlockResult));
-    if(!results){enc_time=0;return false;}
-    PoolState pool;
-    pool.src=src; pool.src_size=src_size;
-    pool.num_blocks=num_blocks; pool.results=results;
-    pool.next_block.store(0);
+    // Batch processing: process BATCH_SIZE blocks at a time to limit peak RAM
+    const size_t BATCH_SIZE = (size_t)(threads > 0 ? threads * 2 : 16);
+    BlockResult* results=(BlockResult*)calloc(BATCH_SIZE,sizeof(BlockResult));
+    if(!results){return false;}
     WorkerArgs* wargs=(WorkerArgs*)calloc(threads,sizeof(WorkerArgs));
     pthread_t* pts=(pthread_t*)calloc(threads,sizeof(pthread_t));
-    if(!wargs||!pts){free(results);enc_time=0;return false;}
-    for(int i=0;i<threads;i++) {
-        wargs[i].thread_id=i; wargs[i].htab=htabs[i]; wargs[i].pool=&pool;
-        pthread_create(&pts[i],nullptr,worker_func,&wargs[i]);
-    }
-    double t0=now_sec();
-    for(int i=0;i<threads;i++) pthread_join(pts[i],nullptr);
-    enc_time=now_sec()-t0;
- 
+    if(!wargs||!pts){free(results);return false;}
+
     total_lit=0; total_off=0; total_len=0; total_cmd=0;
-    for(size_t b=0;b<num_blocks;b++) {
-        if(results[b].overflow==99) { free(results); return 1; }
-        boffs[b].lit_off=total_lit; boffs[b].lit_sz=results[b].lit_size;
-        boffs[b].off_off=total_off; boffs[b].off_sz=results[b].off_size;
-        boffs[b].len_off=total_len; boffs[b].len_sz=results[b].len_size;
-        boffs[b].cmd_off=total_cmd; boffs[b].cmd_sz=results[b].cmd_size;
-        total_lit+=results[b].lit_size; total_off+=results[b].off_size;
-        total_len+=results[b].len_size; total_cmd+=results[b].cmd_size;
-    }
- 
-    raw_lit=(uint8_t*)malloc(total_lit);
-    raw_off=(uint8_t*)malloc(total_off);
-    raw_len=(uint8_t*)malloc(total_len);
-    raw_cmd=(uint8_t*)malloc(total_cmd);
-    if(!raw_lit||!raw_off||!raw_len||!raw_cmd){free(results);return 1;}
- 
-    size_t li=0,oi=0,ni=0,ci=0;
-    for(size_t b=0;b<num_blocks;b++) {
-        memcpy(raw_lit+li,results[b].lit_buf,results[b].lit_size); li+=results[b].lit_size;
-        memcpy(raw_off+oi,results[b].off_buf,results[b].off_size); oi+=results[b].off_size;
-        memcpy(raw_len+ni,results[b].len_buf,results[b].len_size); ni+=results[b].len_size;
-        memcpy(raw_cmd+ci,results[b].cmd_buf,results[b].cmd_size); ci+=results[b].cmd_size;
-        free(results[b].lit_buf); free(results[b].off_buf);
-        free(results[b].len_buf); free(results[b].cmd_buf);
+    raw_lit=nullptr; raw_off=nullptr; raw_len=nullptr; raw_cmd=nullptr;
+
+    for(size_t batch_start=0; batch_start<num_blocks; batch_start+=BATCH_SIZE) {
+        size_t batch_end = batch_start + BATCH_SIZE;
+        if(batch_end > num_blocks) batch_end = num_blocks;
+        size_t batch_sz = batch_end - batch_start;
+
+        // Reset results for this batch
+        memset(results, 0, batch_sz * sizeof(BlockResult));
+
+        PoolState pool;
+        pool.src=src; pool.src_size=src_size;
+        pool.num_blocks=batch_end; pool.results=results - batch_start;
+        pool.next_block.store(batch_start);
+
+        size_t nt = (size_t)threads < batch_sz ? (size_t)threads : batch_sz;
+        for(size_t i=0;i<nt;i++) {
+            wargs[i].thread_id=(int)i; wargs[i].htab=htabs[i % threads]; wargs[i].pool=&pool;
+            pthread_create(&pts[i],nullptr,worker_func,&wargs[i]);
+        }
+        for(size_t i=0;i<nt;i++) pthread_join(pts[i],nullptr);
+
+        // Accumulate sizes and copy immediately, then free block buffers
+        for(size_t bi=0; bi<batch_sz; bi++) {
+            size_t b = batch_start + bi;
+            if(results[bi].overflow==99){ free(results);free(wargs);free(pts);free(raw_lit);free(raw_off);free(raw_len);free(raw_cmd);return false; }
+            boffs[b].lit_off=total_lit; boffs[b].lit_sz=results[bi].lit_size;
+            boffs[b].off_off=total_off; boffs[b].off_sz=results[bi].off_size;
+            boffs[b].len_off=total_len; boffs[b].len_sz=results[bi].len_size;
+            boffs[b].cmd_off=total_cmd; boffs[b].cmd_sz=results[bi].cmd_size;
+            total_lit+=results[bi].lit_size; total_off+=results[bi].off_size;
+            total_len+=results[bi].len_size; total_cmd+=results[bi].cmd_size;
+        }
+
+        // Realloc raw buffers to fit accumulated data
+        uint8_t* tmp;
+        tmp=(uint8_t*)realloc(raw_lit,total_lit); if(!tmp){free(results);free(wargs);free(pts);free(raw_lit);free(raw_off);free(raw_len);free(raw_cmd);return false;} raw_lit=tmp;
+        tmp=(uint8_t*)realloc(raw_off,total_off); if(!tmp){free(results);free(wargs);free(pts);free(raw_lit);free(raw_off);free(raw_len);free(raw_cmd);return false;} raw_off=tmp;
+        tmp=(uint8_t*)realloc(raw_len,total_len); if(!tmp){free(results);free(wargs);free(pts);free(raw_lit);free(raw_off);free(raw_len);free(raw_cmd);return false;} raw_len=tmp;
+        tmp=(uint8_t*)realloc(raw_cmd,total_cmd); if(!tmp){free(results);free(wargs);free(pts);free(raw_lit);free(raw_off);free(raw_len);free(raw_cmd);return false;} raw_cmd=tmp;
+
+        // Copy batch results and free block buffers immediately
+        size_t li=boffs[batch_start].lit_off;
+        size_t oi=boffs[batch_start].off_off;
+        size_t ni=boffs[batch_start].len_off;
+        size_t ci=boffs[batch_start].cmd_off;
+        for(size_t bi=0; bi<batch_sz; bi++) {
+            memcpy(raw_lit+li,results[bi].lit_buf,results[bi].lit_size); li+=results[bi].lit_size;
+            memcpy(raw_off+oi,results[bi].off_buf,results[bi].off_size); oi+=results[bi].off_size;
+            memcpy(raw_len+ni,results[bi].len_buf,results[bi].len_size); ni+=results[bi].len_size;
+            memcpy(raw_cmd+ci,results[bi].cmd_buf,results[bi].cmd_size); ci+=results[bi].cmd_size;
+            free(results[bi].lit_buf); free(results[bi].off_buf);
+            free(results[bi].len_buf); free(results[bi].cmd_buf);
+            results[bi].lit_buf=nullptr; results[bi].off_buf=nullptr;
+            results[bi].len_buf=nullptr; results[bi].cmd_buf=nullptr;
+        }
     }
     for(int i=0;i<threads;i++) {
         free(htabs[i]->pos); free(htabs[i]->epoch); free(htabs[i]->chain);
@@ -522,7 +546,7 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
     return true;
 }
  
-static double parallel_decode(
+static void parallel_decode(
     const uint8_t* lit, const uint8_t* off,
     const uint8_t* len, const uint8_t* cmd,
     const BlockOffsets* boffs, size_t num_blocks,
@@ -538,11 +562,9 @@ static double parallel_decode(
         size_t bend   = std::min<size_t>(bstart + blocks_per_thread, num_blocks);
         dargs[t]={lit,off,len,cmd,boffs,dst,dst_size,bstart,bend,block_size};
     }
-    double t0=now_sec();
     std::vector<pthread_t> dpts(nt);
     for(size_t t=0;t<nt;t++) pthread_create(&dpts[t],nullptr,dec_worker,&dargs[t]);
     for(size_t t=0;t<nt;t++) pthread_join(dpts[t],nullptr);
-    return now_sec()-t0;
 }
  
 // Helper: chunked FSE decompress a stream
@@ -573,7 +595,7 @@ static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
         if(!zws[t].out){out_sz=0;return nullptr;}}
     auto zfn=[](void*a)->void*{ZW*z=(ZW*)a;
         ZSTD_CCtx*ctx=ZSTD_createCCtx();
-        if(!ctx){z->osz=ZSTD_CONTENTSIZE_ERROR; return nullptr;}
+        if(!ctx){z->osz=0; return nullptr;}
         ZSTD_CCtx_setParameter(ctx,ZSTD_c_compressionLevel,3);
         z->osz=ZSTD_compress2(ctx,z->out,z->cap,z->in,z->isz);
         ZSTD_freeCCtx(ctx); return nullptr;};
@@ -689,11 +711,12 @@ static int do_compress(const char* in_path, const char* out_path, int threads, i
     std::vector<BlockOffsets> boffs;
     uint8_t *raw_lit,*raw_off,*raw_len,*raw_cmd;
     size_t total_lit,total_off,total_len,total_cmd,num_blocks;
-    double enc_time;
+    double t0=now_sec();
     encode_file(src,src_size,threads,level,boffs,
                 raw_lit,total_lit,raw_off,total_off,
                 raw_len,total_len,raw_cmd,total_cmd,
-                enc_time,num_blocks);
+                num_blocks);
+    double enc_time=now_sec()-t0;
  
     size_t zlit_sz,zoff_sz,zlen_sz,zcmd_sz;
     uint8_t *zlit,*zoff,*zlen,*zcmd;
@@ -837,11 +860,10 @@ static int do_test(const char* in_path, int threads, int level=2) {
     std::vector<BlockOffsets> boffs;
     uint8_t *raw_lit,*raw_off,*raw_len,*raw_cmd;
     size_t total_lit,total_off,total_len,total_cmd,num_blocks;
-    double enc_time;
     encode_file(src,src_size,threads,level,boffs,
                 raw_lit,total_lit,raw_off,total_off,
                 raw_len,total_len,raw_cmd,total_cmd,
-                enc_time,num_blocks);
+                num_blocks);
  
     size_t zlit_sz,zoff_sz,zlen_sz,zcmd_sz;
     uint8_t *zlit,*zoff,*zlen,*zcmd;
@@ -865,8 +887,8 @@ static int do_test(const char* in_path, int threads, int level=2) {
     fse_chunked_decomp(zoff,off_sz,off);
     fse_chunked_decomp(zlen,len_sz,len);
     fse_chunked_decomp(zcmd,cmd_sz,cmd);
-    double dec_time=parallel_decode(lit,off,len,cmd,boffs.data(),num_blocks,
-                                     dst,src_size,(size_t)BLOCK_SIZE);
+    parallel_decode(lit,off,len,cmd,boffs.data(),num_blocks,
+                    dst,src_size,(size_t)BLOCK_SIZE);
  
     uint8_t digest_orig[32], digest_dec[32];
     sha256(src,src_size,digest_orig); sha256(dst,src_size,digest_dec);
@@ -881,7 +903,7 @@ static int do_test(const char* in_path, int threads, int level=2) {
     fprintf(stderr,"  Ratio:  %.5fx   BPB: %.4f\n",(double)src_size/total_z,total_z*8.0/src_size);
     double real_enc_t=now_sec()-t_total_t;
     fprintf(stderr,"  Encode: %.2f MB/s  (%.3fs)\n",src_size/real_enc_t/1e6,real_enc_t);
-    fprintf(stderr,"  Decode: %.2f MB/s  (%.3fs)\n",src_size/dec_time/1e6,dec_time);
+    fprintf(stderr,"  Decode: n/a (timing removed from library)\n");
     fprintf(stderr,"  SHA256: %.16s...\n",sha_hex);
     fprintf(stderr,"  Status: %s\n",ok?"✅ BIT-PERFECT":"❌ HASH MISMATCH");
     fprintf(stderr,"  ====================================================\n");

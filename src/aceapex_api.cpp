@@ -21,10 +21,8 @@ int64_t aceapex_compress(
     std::vector<BlockOffsets> boffs;
     uint8_t *rl,*ro,*rn,*rc;
     size_t tl,to,tn,tc,nb;
-    double et;
-
     if (!encode_file((const uint8_t*)src,src_size,threads,level,
-                     boffs,rl,tl,ro,to,rn,tn,rc,tc,et,nb))
+                     boffs,rl,tl,ro,to,rn,tn,rc,tc,nb))
         return ACEAPEX_ERR_MEMORY;
 
     size_t zls,zos,zns,zcs;
@@ -75,18 +73,22 @@ int64_t aceapex_decompress(
     memcpy(boffs.data(),p,hdr.num_blocks*sizeof(BlockOffsets));
     p+=hdr.num_blocks*sizeof(BlockOffsets);
     uint8_t* zl=(uint8_t*)malloc(hdr.zlit_sz);
-    memcpy(zl,p,hdr.zlit_sz); p+=hdr.zlit_sz;
     uint8_t* zo=(uint8_t*)malloc(hdr.zoff_sz);
-    memcpy(zo,p,hdr.zoff_sz); p+=hdr.zoff_sz;
     uint8_t* zn=(uint8_t*)malloc(hdr.zlen_sz);
-    memcpy(zn,p,hdr.zlen_sz); p+=hdr.zlen_sz;
     uint8_t* zc=(uint8_t*)malloc(hdr.zcmd_sz);
+    if(!zl||!zo||!zn||!zc){free(zl);free(zo);free(zn);free(zc);return ACEAPEX_ERR_MEMORY;}
+    memcpy(zl,p,hdr.zlit_sz); p+=hdr.zlit_sz;
+    memcpy(zo,p,hdr.zoff_sz); p+=hdr.zoff_sz;
+    memcpy(zn,p,hdr.zlen_sz); p+=hdr.zlen_sz;
     memcpy(zc,p,hdr.zcmd_sz);
     size_t os=*(uint64_t*)zo,ns=*(uint64_t*)zn,cs=*(uint64_t*)zc;
     size_t ls=0; uint8_t* l=lit_decompress(zl,hdr.zlit_sz,ls);
-    uint8_t* o=(uint8_t*)malloc(os); fse_chunked_decomp(zo,os,o);
-    uint8_t* n=(uint8_t*)malloc(ns); fse_chunked_decomp(zn,ns,n);
-    uint8_t* c=(uint8_t*)malloc(cs); fse_chunked_decomp(zc,cs,c);
+    if(!l){free(zl);free(zo);free(zn);free(zc);return ACEAPEX_ERR_MEMORY;}
+    uint8_t* o=(uint8_t*)malloc(os);
+    uint8_t* n=(uint8_t*)malloc(ns);
+    uint8_t* c=(uint8_t*)malloc(cs);
+    if(!o||!n||!c){free(o);free(n);free(c);free(zl);free(zo);free(zn);free(zc);return ACEAPEX_ERR_MEMORY;}
+    fse_chunked_decomp(zo,os,o); fse_chunked_decomp(zn,ns,n); fse_chunked_decomp(zc,cs,c);
     free(zl);free(zo);free(zn);free(zc);
     parallel_decode(l,o,n,c,boffs.data(),hdr.num_blocks,
                     (uint8_t*)dst,hdr.orig_size,hdr.block_size);
