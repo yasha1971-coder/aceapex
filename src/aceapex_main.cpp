@@ -1,16 +1,21 @@
+#include "aceapex.h"
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
+#ifndef _WIN32
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
 #ifndef MAP_POPULATE
 #define MAP_POPULATE 0
 #endif
+#endif
+#ifndef _WIN32
 #include <sys/stat.h>
 #include <sys/types.h>
+#endif
 #ifndef MAP_HUGE_2MB
 #define MAP_HUGE_2MB (21 << MAP_HUGE_SHIFT)
 #endif
@@ -18,9 +23,11 @@
 #include <atomic>
 #include <vector>
 #include <algorithm>
-#include <zstd.h>
+#include "../zstd/lib/zstd.h"
 #define XXH_STATIC_LINKING_ONLY
+#ifndef ACEAPEX_NO_XXH
 #define XXH_IMPLEMENTATION
+#endif
 #include "xxhash.h"
 #define OUR_CHECKSUM(buf,sz) XXH3_64bits(buf,sz)
 #include "lit_fse.cpp"
@@ -28,7 +35,6 @@
  
 #define HASH_SIZE    0xFFFF
 #define MAX_DIST     (128 * 1024 * 1024)
-#define WINDOW_LIMIT (1 * 1024 * 1024)
 #define BLOCK_SIZE   (1 * 1024 * 1024)
 #define MAX_THREADS  16
 #define BLOCK_MARKER 0xFF
@@ -104,7 +110,7 @@ static inline int find_matches(const uint8_t* src, size_t pos, size_t bstart, si
     if (head>=0) ht->chain[pos & ht->chain_mask]=head;
     int32_t cur=head; int attempts=max_attempts;
     while(cur>=(int32_t)bstart && attempts-->0 && n<maxout) {
-        uint32_t dist=(uint32_t)(pos-cur); if(dist>=WINDOW_LIMIT) break;
+        uint32_t dist=(uint32_t)(pos-cur); if(dist>=MAX_DIST) break;
         bool is_rep=false; for(int r=0;r<4;r++) if(dist==rep[r]){is_rep=true;break;}
         if(!is_rep){
             uint32_t mlen=min_match_len(dist);
@@ -131,11 +137,14 @@ static void compress_block(const uint8_t* src, size_t src_size,
     res->len_buf = (uint8_t*)malloc(cap * 6);
     res->cmd_buf = (uint8_t*)malloc(cap + cap/4 + 4);
     res->overflow = 0;
+    if (!res->lit_buf || !res->off_buf || !res->len_buf || !res->cmd_buf) {
+        res->overflow = 99; return;
+    }
     size_t lit_cap=cap, off_cap=cap*6, len_cap=cap*6, cmd_cap=cap+cap/4+4;
  
     ht->cur_epoch++;
     if (ht->cur_epoch == 0) {
-        memset(ht->epoch, 0, sizeof(ht->epoch)); ht->cur_epoch = 1;
+        memset(ht->epoch, 0, (ht->hash_mask+1)*sizeof(uint32_t)); ht->cur_epoch = 1;
     }
  
     size_t lit_i=0, off_i=0, len_i=0, cmd_i=0, pos=bstart;
@@ -341,6 +350,7 @@ static void sha256(const uint8_t* data, size_t len, uint8_t out[32]) {
     auto ror=[](uint32_t x,int n){ return (x>>n)|(x<<(32-n)); };
     size_t total=(len+9+63)&~63ULL;
     uint8_t* buf=(uint8_t*)calloc(total,1);
+    if(!buf) return;
     memcpy(buf,data,len); buf[len]=0x80;
     uint64_t bits=(uint64_t)len*8;
     for(int i=0;i<8;i++) buf[total-1-i]=(uint8_t)(bits>>(i*8));
@@ -380,6 +390,7 @@ static void sha256_hex(const uint8_t* data, size_t len, char out[65]) {
  
 static uint8_t* zstd_comp(const uint8_t* src, size_t sz, size_t& out_sz, int lv) {
     size_t b=ZSTD_compressBound(sz); uint8_t* buf=(uint8_t*)malloc(b);
+    if(!buf){out_sz=0;return nullptr;}
     out_sz=ZSTD_compress(buf,b,src,sz,lv);
     if (ZSTD_isError(out_sz)) { free(buf); out_sz=0; return nullptr; }
     return buf;
@@ -417,7 +428,7 @@ static void* dec_worker(void* arg) {
         const BlockOffsets& bo = a->boffs[b];
         size_t bstart = b * a->block_size;
         size_t bsize  = a->dst_size > bstart ?
-                        std::min(a->block_size, a->dst_size - bstart) : 0;
+                        std::min<size_t>((size_t)a->block_size, a->dst_size - bstart) : 0;
         if (bsize > 0)
             decompress_streams(
                 a->dst + bstart, bsize,
@@ -435,7 +446,7 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
     uint8_t*& raw_off, size_t& total_off,
     uint8_t*& raw_len, size_t& total_len,
     uint8_t*& raw_cmd, size_t& total_cmd,
-    double& enc_time, size_t& num_blocks)
+    size_t& num_blocks)
 {
     num_blocks = (src_size + BLOCK_SIZE - 1) / BLOCK_SIZE;
     boffs.resize(num_blocks);
@@ -447,55 +458,85 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
     size_t ht_sz = (hash_mask+1);
     uint32_t chain_mask = (1u<<20)-1;
     ThreadHashTable** htabs=(ThreadHashTable**)calloc(threads,sizeof(ThreadHashTable*));
+    if(!htabs){return false;}
     for(int i=0;i<threads;i++) {
         htabs[i]=(ThreadHashTable*)calloc(1,sizeof(ThreadHashTable));
+        if(!htabs[i]){return false;}
         htabs[i]->pos  =(int32_t*) calloc(ht_sz,sizeof(int32_t));
         htabs[i]->epoch=(uint32_t*)calloc(ht_sz,sizeof(uint32_t));
         htabs[i]->chain=(int32_t*) malloc(((size_t)chain_mask+1)*sizeof(int32_t));
+        if(!htabs[i]->pos||!htabs[i]->epoch||!htabs[i]->chain){return false;}
         memset(htabs[i]->chain,-1,((size_t)chain_mask+1)*sizeof(int32_t));
         htabs[i]->cur_epoch=0;
         htabs[i]->hash_mask=hash_mask;
         htabs[i]->chain_mask=chain_mask;
         htabs[i]->max_attempts=(level>=2)?32:4;
     }
-    BlockResult* results=(BlockResult*)calloc(num_blocks,sizeof(BlockResult));
-    PoolState pool;
-    pool.src=src; pool.src_size=src_size;
-    pool.num_blocks=num_blocks; pool.results=results;
-    pool.next_block.store(0);
+    // Batch processing: process BATCH_SIZE blocks at a time to limit peak RAM
+    const size_t BATCH_SIZE = (size_t)(threads > 0 ? threads * 2 : 16);
+    BlockResult* results=(BlockResult*)calloc(BATCH_SIZE,sizeof(BlockResult));
+    if(!results){return false;}
     WorkerArgs* wargs=(WorkerArgs*)calloc(threads,sizeof(WorkerArgs));
     pthread_t* pts=(pthread_t*)calloc(threads,sizeof(pthread_t));
-    for(int i=0;i<threads;i++) {
-        wargs[i].thread_id=i; wargs[i].htab=htabs[i]; wargs[i].pool=&pool;
-        pthread_create(&pts[i],nullptr,worker_func,&wargs[i]);
-    }
-    double t0=now_sec();
-    for(int i=0;i<threads;i++) pthread_join(pts[i],nullptr);
-    enc_time=now_sec()-t0;
- 
+    if(!wargs||!pts){free(results);return false;}
+
     total_lit=0; total_off=0; total_len=0; total_cmd=0;
-    for(size_t b=0;b<num_blocks;b++) {
-        boffs[b].lit_off=total_lit; boffs[b].lit_sz=results[b].lit_size;
-        boffs[b].off_off=total_off; boffs[b].off_sz=results[b].off_size;
-        boffs[b].len_off=total_len; boffs[b].len_sz=results[b].len_size;
-        boffs[b].cmd_off=total_cmd; boffs[b].cmd_sz=results[b].cmd_size;
-        total_lit+=results[b].lit_size; total_off+=results[b].off_size;
-        total_len+=results[b].len_size; total_cmd+=results[b].cmd_size;
-    }
- 
-    raw_lit=(uint8_t*)malloc(total_lit);
-    raw_off=(uint8_t*)malloc(total_off);
-    raw_len=(uint8_t*)malloc(total_len);
-    raw_cmd=(uint8_t*)malloc(total_cmd);
- 
-    size_t li=0,oi=0,ni=0,ci=0;
-    for(size_t b=0;b<num_blocks;b++) {
-        memcpy(raw_lit+li,results[b].lit_buf,results[b].lit_size); li+=results[b].lit_size;
-        memcpy(raw_off+oi,results[b].off_buf,results[b].off_size); oi+=results[b].off_size;
-        memcpy(raw_len+ni,results[b].len_buf,results[b].len_size); ni+=results[b].len_size;
-        memcpy(raw_cmd+ci,results[b].cmd_buf,results[b].cmd_size); ci+=results[b].cmd_size;
-        free(results[b].lit_buf); free(results[b].off_buf);
-        free(results[b].len_buf); free(results[b].cmd_buf);
+    raw_lit=nullptr; raw_off=nullptr; raw_len=nullptr; raw_cmd=nullptr;
+
+    for(size_t batch_start=0; batch_start<num_blocks; batch_start+=BATCH_SIZE) {
+        size_t batch_end = batch_start + BATCH_SIZE;
+        if(batch_end > num_blocks) batch_end = num_blocks;
+        size_t batch_sz = batch_end - batch_start;
+
+        // Reset results for this batch
+        memset(results, 0, batch_sz * sizeof(BlockResult));
+
+        PoolState pool;
+        pool.src=src; pool.src_size=src_size;
+        pool.num_blocks=batch_end; pool.results=results - batch_start;
+        pool.next_block.store(batch_start);
+
+        size_t nt = (size_t)threads < batch_sz ? (size_t)threads : batch_sz;
+        for(size_t i=0;i<nt;i++) {
+            wargs[i].thread_id=(int)i; wargs[i].htab=htabs[i % threads]; wargs[i].pool=&pool;
+            pthread_create(&pts[i],nullptr,worker_func,&wargs[i]);
+        }
+        for(size_t i=0;i<nt;i++) pthread_join(pts[i],nullptr);
+
+        // Accumulate sizes and copy immediately, then free block buffers
+        for(size_t bi=0; bi<batch_sz; bi++) {
+            size_t b = batch_start + bi;
+            if(results[bi].overflow==99){ free(results);free(wargs);free(pts);free(raw_lit);free(raw_off);free(raw_len);free(raw_cmd);return false; }
+            boffs[b].lit_off=total_lit; boffs[b].lit_sz=results[bi].lit_size;
+            boffs[b].off_off=total_off; boffs[b].off_sz=results[bi].off_size;
+            boffs[b].len_off=total_len; boffs[b].len_sz=results[bi].len_size;
+            boffs[b].cmd_off=total_cmd; boffs[b].cmd_sz=results[bi].cmd_size;
+            total_lit+=results[bi].lit_size; total_off+=results[bi].off_size;
+            total_len+=results[bi].len_size; total_cmd+=results[bi].cmd_size;
+        }
+
+        // Realloc raw buffers to fit accumulated data
+        uint8_t* tmp;
+        tmp=(uint8_t*)realloc(raw_lit,total_lit); if(!tmp){free(results);free(wargs);free(pts);free(raw_lit);free(raw_off);free(raw_len);free(raw_cmd);return false;} raw_lit=tmp;
+        tmp=(uint8_t*)realloc(raw_off,total_off); if(!tmp){free(results);free(wargs);free(pts);free(raw_lit);free(raw_off);free(raw_len);free(raw_cmd);return false;} raw_off=tmp;
+        tmp=(uint8_t*)realloc(raw_len,total_len); if(!tmp){free(results);free(wargs);free(pts);free(raw_lit);free(raw_off);free(raw_len);free(raw_cmd);return false;} raw_len=tmp;
+        tmp=(uint8_t*)realloc(raw_cmd,total_cmd); if(!tmp){free(results);free(wargs);free(pts);free(raw_lit);free(raw_off);free(raw_len);free(raw_cmd);return false;} raw_cmd=tmp;
+
+        // Copy batch results and free block buffers immediately
+        size_t li=boffs[batch_start].lit_off;
+        size_t oi=boffs[batch_start].off_off;
+        size_t ni=boffs[batch_start].len_off;
+        size_t ci=boffs[batch_start].cmd_off;
+        for(size_t bi=0; bi<batch_sz; bi++) {
+            memcpy(raw_lit+li,results[bi].lit_buf,results[bi].lit_size); li+=results[bi].lit_size;
+            memcpy(raw_off+oi,results[bi].off_buf,results[bi].off_size); oi+=results[bi].off_size;
+            memcpy(raw_len+ni,results[bi].len_buf,results[bi].len_size); ni+=results[bi].len_size;
+            memcpy(raw_cmd+ci,results[bi].cmd_buf,results[bi].cmd_size); ci+=results[bi].cmd_size;
+            free(results[bi].lit_buf); free(results[bi].off_buf);
+            free(results[bi].len_buf); free(results[bi].cmd_buf);
+            results[bi].lit_buf=nullptr; results[bi].off_buf=nullptr;
+            results[bi].len_buf=nullptr; results[bi].cmd_buf=nullptr;
+        }
     }
     for(int i=0;i<threads;i++) {
         free(htabs[i]->pos); free(htabs[i]->epoch); free(htabs[i]->chain);
@@ -505,7 +546,7 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
     return true;
 }
  
-static double parallel_decode(
+static void parallel_decode(
     const uint8_t* lit, const uint8_t* off,
     const uint8_t* len, const uint8_t* cmd,
     const BlockOffsets* boffs, size_t num_blocks,
@@ -513,19 +554,17 @@ static double parallel_decode(
     int nthreads = 0)
 {
     if (nthreads <= 0) nthreads = 8;
-    size_t nt = std::min((size_t)nthreads, num_blocks);
+    size_t nt = std::min<size_t>((size_t)nthreads, num_blocks);
     std::vector<DecArgs> dargs(nt);
     size_t blocks_per_thread = (num_blocks + nt - 1) / nt;
     for(size_t t=0;t<nt;t++) {
         size_t bstart = t * blocks_per_thread;
-        size_t bend   = std::min(bstart + blocks_per_thread, num_blocks);
+        size_t bend   = std::min<size_t>(bstart + blocks_per_thread, num_blocks);
         dargs[t]={lit,off,len,cmd,boffs,dst,dst_size,bstart,bend,block_size};
     }
-    double t0=now_sec();
     std::vector<pthread_t> dpts(nt);
     for(size_t t=0;t<nt;t++) pthread_create(&dpts[t],nullptr,dec_worker,&dargs[t]);
     for(size_t t=0;t<nt;t++) pthread_join(dpts[t],nullptr);
-    return now_sec()-t0;
 }
  
 // Helper: chunked FSE decompress a stream
@@ -537,7 +576,7 @@ static void fse_chunked_decomp(const uint8_t* src, size_t orig_sz, uint8_t* dst)
     const uint8_t* p = src + 8 + nc * 8;
     size_t off = 0;
     for (size_t i = 0; i < nc; i++) {
-        size_t raw = std::min(CHUNK, orig_sz - off);
+        size_t raw = std::min<size_t>(CHUNK, orig_sz - off);
         if (cs[i] >> 63) { memcpy(dst+off, p, raw); p += raw; }
         else { ZSTD_decompress(dst+off, raw, p, cs[i]); p += cs[i]; }
         off += raw;
@@ -552,9 +591,11 @@ static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
     for(int t=0;t<NW;t++){
         size_t off=(size_t)t*csz,isz=(t<NW-1)?csz:sz-off;
         zws[t]={src+off,isz,nullptr,0,ZSTD_compressBound(isz)+8};
-        zws[t].out=(uint8_t*)malloc(zws[t].cap);}
+        zws[t].out=(uint8_t*)malloc(zws[t].cap);
+        if(!zws[t].out){out_sz=0;return nullptr;}}
     auto zfn=[](void*a)->void*{ZW*z=(ZW*)a;
         ZSTD_CCtx*ctx=ZSTD_createCCtx();
+        if(!ctx){z->osz=0; return nullptr;}
         ZSTD_CCtx_setParameter(ctx,ZSTD_c_compressionLevel,3);
         z->osz=ZSTD_compress2(ctx,z->out,z->cap,z->in,z->isz);
         ZSTD_freeCCtx(ctx); return nullptr;};
@@ -564,6 +605,7 @@ static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
     size_t hdrsz=8+NW*8,totalsz=hdrsz;
     for(int t=0;t<NW;t++) totalsz+=zws[t].osz;
     uint8_t* res=(uint8_t*)malloc(totalsz);
+    if(!res){out_sz=0;return nullptr;}
     *(uint64_t*)res=sz|(uint64_t(1)<<62);
     uint64_t* zsz=(uint64_t*)(res+8); uint8_t* p=res+hdrsz;
     for(int t=0;t<NW;t++){zsz[t]=zws[t].osz;memcpy(p,zws[t].out,zws[t].osz);p+=zws[t].osz;free(zws[t].out);}
@@ -573,6 +615,7 @@ static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_s
     uint64_t h=*(const uint64_t*)src;
     orig_sz=h & ~(uint64_t(1)<<62);
     uint8_t* out=(uint8_t*)malloc(orig_sz);
+    if(!out) return nullptr;
     if(!(h & (uint64_t(1)<<62))){fse_chunked_decomp(src,orig_sz,out);return out;}
     const int NW=4; const uint64_t* zsz=(const uint64_t*)(src+8);
     const uint8_t* p0=src+8+NW*8;
@@ -581,7 +624,7 @@ static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_s
     DW dws[NW]; const uint8_t* p=p0;
     for(int t=0;t<NW;t++){
         size_t off=(size_t)t*csz,raw=(t<NW-1)?csz:orig_sz-off;
-        dws[t]={out+off,raw,p,zsz[t]}; p+=zsz[t];}
+        dws[t]={out+off,raw,p,(size_t)zsz[t]}; p+=(size_t)zsz[t];}
     auto dfn=[](void*a)->void*{DW*d=(DW*)a;
         ZSTD_decompress(d->out,d->raw,d->in,d->isz); return nullptr;};
     pthread_t pts[NW];
@@ -607,13 +650,14 @@ static void entropy_encode(
         size_t hdrsz=8+nc*8;
         size_t cap=hdrsz+e->isz+nc*64;
         *e->out=(uint8_t*)malloc(cap);
+        if(!*e->out) return nullptr;
         *(uint64_t*)*e->out=e->isz;
         uint64_t* csizes=(uint64_t*)(*e->out+8);
         uint8_t* p=*e->out+hdrsz;
         size_t total=hdrsz;
         for(size_t i=0;i<nc;i++){
             size_t off=i*CHUNK;
-            size_t isz=std::min(CHUNK,e->isz-off);
+            size_t isz=std::min<size_t>(CHUNK,e->isz-off);
             size_t b=ZSTD_compressBound(isz)+4;
             size_t r=ZSTD_compress(p,b,e->in+off,isz,1);
             if(!r||ZSTD_isError(r)){memcpy(p,e->in+off,isz);csizes[i]=isz|(uint64_t(1)<<63);total+=isz;p+=isz;}
@@ -634,6 +678,15 @@ static void entropy_encode(
  
 static int do_compress(const char* in_path, const char* out_path, int threads, int level=2) {
     double t_fread=now_sec();
+#ifdef _WIN32
+    FILE* fin_w=fopen(in_path,"rb");
+    if(!fin_w){fprintf(stderr,"Cannot open: %s\n",in_path);return 1;}
+    fseek(fin_w,0,SEEK_END); size_t src_size=(size_t)ftell(fin_w); fseek(fin_w,0,SEEK_SET);
+    uint8_t* src=(uint8_t*)malloc(src_size);
+    if(!src){fprintf(stderr,"malloc failed\n");fclose(fin_w);return 1;}
+    fread(src,1,src_size,fin_w); fclose(fin_w);
+    bool src_is_mmap=false;
+#else
     int fin_fd=open(in_path,O_RDONLY);
     if (fin_fd<0) { fprintf(stderr,"Cannot open: %s\n",in_path); return 1; }
     struct stat fin_st; fstat(fin_fd,&fin_st);
@@ -641,8 +694,9 @@ static int do_compress(const char* in_path, const char* out_path, int threads, i
     uint8_t* src=(uint8_t*)mmap(nullptr,src_size,PROT_READ,MAP_SHARED|MAP_POPULATE,fin_fd,0);
     close(fin_fd);
     if (src==MAP_FAILED) { fprintf(stderr,"mmap failed\n"); return 1; }
-    t_fread=now_sec()-t_fread;
     bool src_is_mmap=true;
+#endif
+    t_fread=now_sec()-t_fread;
     // Запускаем SHA256 параллельно с encode
     struct ShaArg { const uint8_t* d; size_t n; uint8_t out[32]; };
     ShaArg sha_arg={src,src_size,{}};
@@ -657,11 +711,12 @@ static int do_compress(const char* in_path, const char* out_path, int threads, i
     std::vector<BlockOffsets> boffs;
     uint8_t *raw_lit,*raw_off,*raw_len,*raw_cmd;
     size_t total_lit,total_off,total_len,total_cmd,num_blocks;
-    double enc_time;
+    double t0=now_sec();
     encode_file(src,src_size,threads,level,boffs,
                 raw_lit,total_lit,raw_off,total_off,
                 raw_len,total_len,raw_cmd,total_cmd,
-                enc_time,num_blocks);
+                num_blocks);
+    double enc_time=now_sec()-t0;
  
     size_t zlit_sz,zoff_sz,zlen_sz,zcmd_sz;
     uint8_t *zlit,*zoff,*zlen,*zcmd;
@@ -700,7 +755,7 @@ static int do_compress(const char* in_path, const char* out_path, int threads, i
     fprintf(stderr,"  Compressed: %14zu bytes\n",total_z);
     fprintf(stderr,"  Ratio:  %.5fx\n",(double)src_size/total_z);
     double t3=now_sec();
-    double t_sha=t3-t_total_c-t_lz-t_lit-t_fse; // approx
+    (void)(t3-t_total_c-t_lz-t_lit-t_fse);
     double real_enc=now_sec()-t_total_c;
     fprintf(stderr,"  Phase LZ77:    %.3fs\n",t_lz);
     fprintf(stderr,"  Phase lit/zstd:%.3fs\n",t_lit);
@@ -711,7 +766,11 @@ static int do_compress(const char* in_path, const char* out_path, int threads, i
     fprintf(stderr,"  Encode: %.2f MB/s  (%.3fs)\n",src_size/real_enc/1e6,real_enc);
     fprintf(stderr,"  XXH3:   %s\n",sha_hex);
  
+    #ifdef _WIN32
+    free((void*)src);
+#else
     if(src_is_mmap) munmap((void*)src,src_size); else free((void*)src);
+#endif
     free(raw_lit); free(raw_off); free(raw_len); free(raw_cmd);
     free(zlit); free(zoff); free(zlen); free(zcmd);
     return 0;
@@ -730,10 +789,13 @@ static int do_decompress(const char* in_path, const char* out_path) {
     std::vector<BlockOffsets> boffs(nb);
     fread(boffs.data(),sizeof(BlockOffsets),nb,fin);
  
-    uint8_t* zlit=(uint8_t*)malloc(hdr.zlit_sz); fread(zlit,1,hdr.zlit_sz,fin);
-    uint8_t* zoff=(uint8_t*)malloc(hdr.zoff_sz); fread(zoff,1,hdr.zoff_sz,fin);
-    uint8_t* zlen=(uint8_t*)malloc(hdr.zlen_sz); fread(zlen,1,hdr.zlen_sz,fin);
-    uint8_t* zcmd=(uint8_t*)malloc(hdr.zcmd_sz); fread(zcmd,1,hdr.zcmd_sz,fin);
+    uint8_t* zlit=(uint8_t*)malloc(hdr.zlit_sz);
+    uint8_t* zoff=(uint8_t*)malloc(hdr.zoff_sz);
+    uint8_t* zlen=(uint8_t*)malloc(hdr.zlen_sz);
+    uint8_t* zcmd=(uint8_t*)malloc(hdr.zcmd_sz);
+    if(!zlit||!zoff||!zlen||!zcmd){free(zlit);free(zoff);free(zlen);free(zcmd);fclose(fin);return 1;}
+    fread(zlit,1,hdr.zlit_sz,fin); fread(zoff,1,hdr.zoff_sz,fin);
+    fread(zlen,1,hdr.zlen_sz,fin); fread(zcmd,1,hdr.zcmd_sz,fin);
     fclose(fin);
  
     size_t off_sz=*(uint64_t*)zoff;
@@ -747,8 +809,9 @@ static int do_decompress(const char* in_path, const char* out_path) {
     uint8_t* off=(uint8_t*)malloc(off_sz);
     uint8_t* len=(uint8_t*)malloc(len_sz);
     uint8_t* cmd=(uint8_t*)malloc(cmd_sz);
+    if(!off||!len||!cmd){free(off);free(len);free(cmd);free(zlit);free(zoff);free(zlen);free(zcmd);return 1;}
     struct LitArg{const uint8_t*s;size_t sz;uint8_t**out;size_t*osz;};
-    LitArg larg={zlit,hdr.zlit_sz,&lit,&lit_sz};
+    LitArg larg={zlit,(size_t)hdr.zlit_sz,&lit,&lit_sz};
     auto litfn=[](void*a)->void*{LitArg*l=(LitArg*)a;
         *l->out=lit_decompress(l->s,l->sz,*l->osz); return nullptr;};
     struct FD{const uint8_t*s;size_t sz;uint8_t*d;};
@@ -760,10 +823,12 @@ static int do_decompress(const char* in_path, const char* out_path) {
     pthread_create(&fpts[0],nullptr,litfn,&larg);
     for(int i=0;i<3;i++) pthread_create(&fpts[i+1],nullptr,fdfn,&fds[i]);
     for(int i=0;i<4;i++) pthread_join(fpts[i],nullptr);
+    if(!lit){free(off);free(len);free(cmd);free(zlit);free(zoff);free(zlen);free(zcmd);return 1;}
     double t_fse=now_sec()-t_lit;
     t_lit=t_fse;
     free(zlit); free(zoff); free(zlen); free(zcmd);
     uint8_t* dst=(uint8_t*)malloc(hdr.orig_size);
+    if(!dst){free(lit);free(off);free(len);free(cmd);return 1;}
     double t_lz=now_sec(); parallel_decode(lit,off,len,cmd,boffs.data(),nb,dst,hdr.orig_size,hdr.block_size); t_lz=now_sec()-t_lz;
     dec_time=now_sec()-dec_time;
     fprintf(stderr,"  Phase lit:  %.3fs\n  Phase fse:  %.3fs\n  Phase lz77: %.3fs\n",t_lit,t_fse,t_lz);
@@ -787,6 +852,7 @@ static int do_test(const char* in_path, int threads, int level=2) {
     if (!fin) { fprintf(stderr,"Cannot open: %s\n",in_path); return 1; }
     fseek(fin,0,SEEK_END); size_t src_size=(size_t)ftell(fin); fseek(fin,0,SEEK_SET);
     uint8_t* src=(uint8_t*)malloc(src_size);
+    if(!src){fclose(fin);return 1;}
     fread(src,1,src_size,fin); fclose(fin);
     fprintf(stderr,"[*] Test: %s (%.2f MB) threads=%d\n",in_path,src_size/1e6,threads);
     double t_total_t=now_sec();
@@ -794,11 +860,10 @@ static int do_test(const char* in_path, int threads, int level=2) {
     std::vector<BlockOffsets> boffs;
     uint8_t *raw_lit,*raw_off,*raw_len,*raw_cmd;
     size_t total_lit,total_off,total_len,total_cmd,num_blocks;
-    double enc_time;
     encode_file(src,src_size,threads,level,boffs,
                 raw_lit,total_lit,raw_off,total_off,
                 raw_len,total_len,raw_cmd,total_cmd,
-                enc_time,num_blocks);
+                num_blocks);
  
     size_t zlit_sz,zoff_sz,zlen_sz,zcmd_sz;
     uint8_t *zlit,*zoff,*zlen,*zcmd;
@@ -813,13 +878,17 @@ static int do_test(const char* in_path, int threads, int level=2) {
     size_t cmd_sz=*(uint64_t*)zcmd;
  
     size_t lit_sz=0; uint8_t* lit=lit_decompress(zlit,zlit_sz,lit_sz);
-    uint8_t* off=(uint8_t*)malloc(off_sz); fse_chunked_decomp(zoff,off_sz,off);
-    uint8_t* len=(uint8_t*)malloc(len_sz); fse_chunked_decomp(zlen,len_sz,len);
-    uint8_t* cmd=(uint8_t*)malloc(cmd_sz); fse_chunked_decomp(zcmd,cmd_sz,cmd);
- 
+    if(!lit) return 1;
+    uint8_t* off=(uint8_t*)malloc(off_sz);
+    uint8_t* len=(uint8_t*)malloc(len_sz);
+    uint8_t* cmd=(uint8_t*)malloc(cmd_sz);
     uint8_t* dst=(uint8_t*)malloc(src_size);
-    double dec_time=parallel_decode(lit,off,len,cmd,boffs.data(),num_blocks,
-                                     dst,src_size,(size_t)BLOCK_SIZE);
+    if(!off||!len||!cmd||!dst){free(lit);free(off);free(len);free(cmd);free(dst);return ACEAPEX_ERR_MEMORY;}
+    fse_chunked_decomp(zoff,off_sz,off);
+    fse_chunked_decomp(zlen,len_sz,len);
+    fse_chunked_decomp(zcmd,cmd_sz,cmd);
+    parallel_decode(lit,off,len,cmd,boffs.data(),num_blocks,
+                    dst,src_size,(size_t)BLOCK_SIZE);
  
     uint8_t digest_orig[32], digest_dec[32];
     sha256(src,src_size,digest_orig); sha256(dst,src_size,digest_dec);
@@ -834,7 +903,7 @@ static int do_test(const char* in_path, int threads, int level=2) {
     fprintf(stderr,"  Ratio:  %.5fx   BPB: %.4f\n",(double)src_size/total_z,total_z*8.0/src_size);
     double real_enc_t=now_sec()-t_total_t;
     fprintf(stderr,"  Encode: %.2f MB/s  (%.3fs)\n",src_size/real_enc_t/1e6,real_enc_t);
-    fprintf(stderr,"  Decode: %.2f MB/s  (%.3fs)\n",src_size/dec_time/1e6,dec_time);
+    fprintf(stderr,"  Decode: n/a (timing removed from library)\n");
     fprintf(stderr,"  SHA256: %.16s...\n",sha_hex);
     fprintf(stderr,"  Status: %s\n",ok?"✅ BIT-PERFECT":"❌ HASH MISMATCH");
     fprintf(stderr,"  ====================================================\n");

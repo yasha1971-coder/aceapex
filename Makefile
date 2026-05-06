@@ -15,7 +15,7 @@ SRCS = src/aceapex_main.cpp
 OBJS := $(SRCS:.cpp=.o)
 
 %.o: %.cpp
-	$(CXX) $(CXXFLAGS) $(ZSTD_CFLAGS) -c -o $@ $<
+	$(CXX) $(CXXFLAGS) $(ZSTD_CFLAGS) -Isrc -c -o $@ $<
 
 all: $(PROG)
 
