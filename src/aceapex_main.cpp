@@ -23,7 +23,7 @@
 #include <atomic>
 #include <vector>
 #include <algorithm>
-#include "../zstd/lib/zstd.h"
+#include <zstd.h>
 #define XXH_STATIC_LINKING_ONLY
 #ifndef ACEAPEX_NO_XXH
 #define XXH_IMPLEMENTATION
