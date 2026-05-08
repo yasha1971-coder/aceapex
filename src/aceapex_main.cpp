@@ -751,7 +751,7 @@ static int do_compress(const char* in_path, const char* out_path, int threads, i
     return 0;
 }
  
-static int do_decompress(const char* in_path, const char* out_path) {
+static int do_decompress(const char* in_path, const char* out_path, int threads=8) {
     double t_wall=now_sec();
     FILE* fin=fopen(in_path,"rb");
     if (!fin) { fprintf(stderr,"Cannot open: %s\n",in_path); return 1; }
@@ -804,7 +804,7 @@ static int do_decompress(const char* in_path, const char* out_path) {
     free(zlit); free(zoff); free(zlen); free(zcmd);
     uint8_t* dst=(uint8_t*)malloc(hdr.orig_size);
     if(!dst){free(lit);free(off);free(len);free(cmd);return 1;}
-    double t_lz=now_sec(); parallel_decode(lit,off,len,cmd,boffs.data(),nb,dst,hdr.orig_size,hdr.block_size); t_lz=now_sec()-t_lz;
+    double t_lz=now_sec(); parallel_decode(lit,off,len,cmd,boffs.data(),nb,dst,hdr.orig_size,hdr.block_size,threads); t_lz=now_sec()-t_lz;
     dec_time=now_sec()-dec_time;
     fprintf(stderr,"  Phase lit:  %.3fs\n  Phase fse:  %.3fs\n  Phase lz77: %.3fs\n",t_lit,t_fse,t_lz);
  
@@ -909,7 +909,7 @@ int main(int argc, char** argv) {
     }
     if (!in) { fprintf(stderr,"--in required\n"); return 1; }
     if (!strcmp(cmd,"c")) { if (!out) { fprintf(stderr,"--out required\n"); return 1; } return do_compress(in,out,thr,level); }
-    if (!strcmp(cmd,"d")) { if (!out) { fprintf(stderr,"--out required\n"); return 1; } return do_decompress(in,out); }
+    if (!strcmp(cmd,"d")) { if (!out) { fprintf(stderr,"--out required\n"); return 1; } return do_decompress(in,out,thr); }
     if (!strcmp(cmd,"t")) return do_test(in,thr,level);
     return 1;
 }
