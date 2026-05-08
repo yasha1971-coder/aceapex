@@ -26,13 +26,6 @@ ACEAPEX decode scales with threads — lz4/zstd do not.
 
 ✅ **Included in [lzbench](https://github.com/inikep/lzbench)** — merged May 2026.
 
-### inikep's results (AMD EPYC 9554, GCC 14.3.0)
-
-| Compressor   | Threads | Compress  | Decompress | Ratio  |
-|--------------|---------|-----------|------------|--------|
-| aceapex -2   | 1       | 42.3 MB/s | 1750 MB/s  | 32.18% |
-| aceapex -2   | 16      | 280 MB/s  | 1933 MB/s  | 32.18% |
-
 
 Lossless compression with parallel block decode.
 
