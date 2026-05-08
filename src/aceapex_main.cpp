@@ -472,71 +472,46 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
         htabs[i]->chain_mask=chain_mask;
         htabs[i]->max_attempts=(level>=2)?32:4;
     }
-    // Batch processing: process BATCH_SIZE blocks at a time to limit peak RAM
-    const size_t BATCH_SIZE = (size_t)(threads > 0 ? threads * 2 : 16);
-    BlockResult* results=(BlockResult*)calloc(BATCH_SIZE,sizeof(BlockResult));
+    BlockResult* results=(BlockResult*)calloc(num_blocks,sizeof(BlockResult));
     if(!results){return false;}
+    PoolState pool;
+    pool.src=src; pool.src_size=src_size;
+    pool.num_blocks=num_blocks; pool.results=results;
+    pool.next_block.store(0);
     WorkerArgs* wargs=(WorkerArgs*)calloc(threads,sizeof(WorkerArgs));
     pthread_t* pts=(pthread_t*)calloc(threads,sizeof(pthread_t));
     if(!wargs||!pts){free(results);return false;}
+    for(int i=0;i<threads;i++) {
+        wargs[i].thread_id=i; wargs[i].htab=htabs[i]; wargs[i].pool=&pool;
+        pthread_create(&pts[i],nullptr,worker_func,&wargs[i]);
+    }
+    for(int i=0;i<threads;i++) pthread_join(pts[i],nullptr);
 
     total_lit=0; total_off=0; total_len=0; total_cmd=0;
-    raw_lit=nullptr; raw_off=nullptr; raw_len=nullptr; raw_cmd=nullptr;
+    for(size_t b=0;b<num_blocks;b++) {
+        if(results[b].overflow==99) { free(results); return false; }
+        boffs[b].lit_off=total_lit; boffs[b].lit_sz=results[b].lit_size;
+        boffs[b].off_off=total_off; boffs[b].off_sz=results[b].off_size;
+        boffs[b].len_off=total_len; boffs[b].len_sz=results[b].len_size;
+        boffs[b].cmd_off=total_cmd; boffs[b].cmd_sz=results[b].cmd_size;
+        total_lit+=results[b].lit_size; total_off+=results[b].off_size;
+        total_len+=results[b].len_size; total_cmd+=results[b].cmd_size;
+    }
 
-    for(size_t batch_start=0; batch_start<num_blocks; batch_start+=BATCH_SIZE) {
-        size_t batch_end = batch_start + BATCH_SIZE;
-        if(batch_end > num_blocks) batch_end = num_blocks;
-        size_t batch_sz = batch_end - batch_start;
+    raw_lit=(uint8_t*)malloc(total_lit);
+    raw_off=(uint8_t*)malloc(total_off);
+    raw_len=(uint8_t*)malloc(total_len);
+    raw_cmd=(uint8_t*)malloc(total_cmd);
+    if(!raw_lit||!raw_off||!raw_len||!raw_cmd){free(results);return false;}
 
-        // Reset results for this batch
-        memset(results, 0, batch_sz * sizeof(BlockResult));
-
-        PoolState pool;
-        pool.src=src; pool.src_size=src_size;
-        pool.num_blocks=batch_end; pool.results=results - batch_start;
-        pool.next_block.store(batch_start);
-
-        size_t nt = (size_t)threads < batch_sz ? (size_t)threads : batch_sz;
-        for(size_t i=0;i<nt;i++) {
-            wargs[i].thread_id=(int)i; wargs[i].htab=htabs[i % threads]; wargs[i].pool=&pool;
-            pthread_create(&pts[i],nullptr,worker_func,&wargs[i]);
-        }
-        for(size_t i=0;i<nt;i++) pthread_join(pts[i],nullptr);
-
-        // Accumulate sizes and copy immediately, then free block buffers
-        for(size_t bi=0; bi<batch_sz; bi++) {
-            size_t b = batch_start + bi;
-            if(results[bi].overflow==99){ free(results);free(wargs);free(pts);free(raw_lit);free(raw_off);free(raw_len);free(raw_cmd);return false; }
-            boffs[b].lit_off=total_lit; boffs[b].lit_sz=results[bi].lit_size;
-            boffs[b].off_off=total_off; boffs[b].off_sz=results[bi].off_size;
-            boffs[b].len_off=total_len; boffs[b].len_sz=results[bi].len_size;
-            boffs[b].cmd_off=total_cmd; boffs[b].cmd_sz=results[bi].cmd_size;
-            total_lit+=results[bi].lit_size; total_off+=results[bi].off_size;
-            total_len+=results[bi].len_size; total_cmd+=results[bi].cmd_size;
-        }
-
-        // Realloc raw buffers to fit accumulated data
-        uint8_t* tmp;
-        tmp=(uint8_t*)realloc(raw_lit,total_lit); if(!tmp){free(results);free(wargs);free(pts);free(raw_lit);free(raw_off);free(raw_len);free(raw_cmd);return false;} raw_lit=tmp;
-        tmp=(uint8_t*)realloc(raw_off,total_off); if(!tmp){free(results);free(wargs);free(pts);free(raw_lit);free(raw_off);free(raw_len);free(raw_cmd);return false;} raw_off=tmp;
-        tmp=(uint8_t*)realloc(raw_len,total_len); if(!tmp){free(results);free(wargs);free(pts);free(raw_lit);free(raw_off);free(raw_len);free(raw_cmd);return false;} raw_len=tmp;
-        tmp=(uint8_t*)realloc(raw_cmd,total_cmd); if(!tmp){free(results);free(wargs);free(pts);free(raw_lit);free(raw_off);free(raw_len);free(raw_cmd);return false;} raw_cmd=tmp;
-
-        // Copy batch results and free block buffers immediately
-        size_t li=boffs[batch_start].lit_off;
-        size_t oi=boffs[batch_start].off_off;
-        size_t ni=boffs[batch_start].len_off;
-        size_t ci=boffs[batch_start].cmd_off;
-        for(size_t bi=0; bi<batch_sz; bi++) {
-            memcpy(raw_lit+li,results[bi].lit_buf,results[bi].lit_size); li+=results[bi].lit_size;
-            memcpy(raw_off+oi,results[bi].off_buf,results[bi].off_size); oi+=results[bi].off_size;
-            memcpy(raw_len+ni,results[bi].len_buf,results[bi].len_size); ni+=results[bi].len_size;
-            memcpy(raw_cmd+ci,results[bi].cmd_buf,results[bi].cmd_size); ci+=results[bi].cmd_size;
-            free(results[bi].lit_buf); free(results[bi].off_buf);
-            free(results[bi].len_buf); free(results[bi].cmd_buf);
-            results[bi].lit_buf=nullptr; results[bi].off_buf=nullptr;
-            results[bi].len_buf=nullptr; results[bi].cmd_buf=nullptr;
-        }
+    size_t li=0,oi=0,ni=0,ci=0;
+    for(size_t b=0;b<num_blocks;b++) {
+        memcpy(raw_lit+li,results[b].lit_buf,results[b].lit_size); li+=results[b].lit_size;
+        memcpy(raw_off+oi,results[b].off_buf,results[b].off_size); oi+=results[b].off_size;
+        memcpy(raw_len+ni,results[b].len_buf,results[b].len_size); ni+=results[b].len_size;
+        memcpy(raw_cmd+ci,results[b].cmd_buf,results[b].cmd_size); ci+=results[b].cmd_size;
+        free(results[b].lit_buf); free(results[b].off_buf);
+        free(results[b].len_buf); free(results[b].cmd_buf);
     }
     for(int i=0;i<threads;i++) {
         free(htabs[i]->pos); free(htabs[i]->epoch); free(htabs[i]->chain);
