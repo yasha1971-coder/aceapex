@@ -1,5 +1,27 @@
 # ACEAPEX
 
+## Benchmarks (lzbench, AMD EPYC 4344P, file: nci)
+
+### Single-thread (I=1)
+
+| Compressor | Compress | Decompress | Ratio |
+|------------|----------|------------|-------|
+| aceapex -1 | 238 MB/s | 2544 MB/s | 8.72% |
+| aceapex -2 | 150 MB/s | 2574 MB/s | 8.56% |
+| lz4 1.10.0 | 1767 MB/s | 8629 MB/s | 16.49% |
+| zstd -3    | 1096 MB/s | 3367 MB/s | 8.45% |
+
+### Multi-thread (I=8, parallel decode)
+
+| Compressor | Compress | Decompress | Ratio |
+|------------|----------|------------|-------|
+| aceapex -1 | 1210 MB/s | **9714 MB/s** | 8.72% |
+| aceapex -2 | 862 MB/s | **10192 MB/s** | 8.56% |
+| lz4 1.10.0 | 1767 MB/s | 8629 MB/s | 16.49% |
+| zstd -3    | 1096 MB/s | 3367 MB/s | 8.45% |
+
+ACEAPEX decode scales with threads — lz4/zstd do not.
+
 ## Status
 
 ✅ **Included in [lzbench](https://github.com/inikep/lzbench)** — merged May 2026.
