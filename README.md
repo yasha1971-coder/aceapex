@@ -56,7 +56,7 @@ block-parallel decode via per-block offset index in header.
 ## Two formats
 
 **ACEPX2** — maximum throughput, requires ~2.8GB RAM encode  
-**ACEPX3** (v2-dev) — streaming, 23MB RAM encode, parallel decode
+**ACEPX3** — streaming, 23MB RAM encode, parallel decode
 
 ## Build
 
@@ -75,11 +75,6 @@ Research-grade. Single-thread decode slower than zstd.
 Multi-thread decode 3x faster than zstd on structured data.
 Encode 7x slower than zstd single-thread.
 Built with Claude AI assistance.
-
-## v2-dev branch
-
-ACEPX3 streaming format, C API, Python bindings.
-See [v2-dev](https://github.com/yasha1971-coder/aceapex/tree/v2-dev)
 
 ## License
 
