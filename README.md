@@ -50,6 +50,8 @@ Lossless compression with parallel block decode.
 
 All BIT-PERFECT (MD5 verified).
 
+*Thanks to flanglet and the lzbench community for methodology feedback.*
+
 ## Core Idea
 
 Standard LZ77 codecs face a tradeoff:
