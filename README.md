@@ -46,6 +46,7 @@ Lossless compression with parallel block decode.
 | zstd -3        | 1       |  261 MB/s | 1578 MB/s  | 35.96% | dickens |
 | zstd -3        | 8       |  324 MB/s | 1592 MB/s  | 35.96% | dickens |
 | aceapex -2     | 1       |   74 MB/s | 1600 MB/s  | 38.44% | dickens |
+| aceapex -2     | 8       |  205 MB/s | 4080 MB/s  | 38.44% | dickens |
 
 All BIT-PERFECT (MD5 verified).
 
