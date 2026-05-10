@@ -22,6 +22,8 @@
 
 ACEAPEX decode scales with threads — lz4/zstd do not.
 
+> Note: All codecs tested with same `-I8` flag (parallel independent instances). lz4/zstd have their own multi-thread compress APIs not reflected here.
+
 ## Status
 
 ✅ **Included in [lzbench](https://github.com/inikep/lzbench)** — merged May 2026.
