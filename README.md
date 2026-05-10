@@ -11,14 +11,14 @@
 | lz4 1.10.0 | 1767 MB/s | 8629 MB/s | 16.49% |
 | zstd -3    | 1096 MB/s | 3367 MB/s | 8.45% |
 
-### Multi-thread (I=8, parallel decode)
+### Multi-thread (I=8)
 
 | Compressor | Compress | Decompress | Ratio |
 |------------|----------|------------|-------|
 | aceapex -1 | 1210 MB/s | **9714 MB/s** | 8.72% |
 | aceapex -2 | 862 MB/s | **10192 MB/s** | 8.56% |
-| lz4 1.10.0 | 1767 MB/s | 8629 MB/s | 16.49% |
-| zstd -3    | 1096 MB/s | 3367 MB/s | 8.45% |
+| lz4 1.10.0 | 1771 MB/s | 8733 MB/s | 16.49% |
+| zstd -3    | 3083 MB/s | 3397 MB/s | 8.45% |
 
 ACEAPEX decode scales with threads — lz4/zstd do not.
 
