@@ -24,6 +24,12 @@ ACEAPEX decode scales with threads — lz4/zstd do not.
 
 > Note: All codecs tested with same `-I8` flag (parallel independent instances). lz4/zstd have their own multi-thread compress APIs not reflected here.
 
+## Performance Graph
+
+![lzbench performance](aceapex_graph.png)
+
+*Graph generated with hexagone's lzbench visualization script. X: compression time + 2x decompression time. Y: compressed size.*
+
 ## Status
 
 ✅ **Included in [lzbench](https://github.com/inikep/lzbench)** — merged May 2026.
