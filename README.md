@@ -28,10 +28,6 @@ ACEAPEX decode scales with threads — lz4/zstd do not.
 
 ![lzbench performance](aceapex_graph.png)
 
-### Decompression Speed vs Ratio (I=8 threads)
-
-![decode vs ratio](aceapex_decode_vs_ratio.png)
-
 *Graph generated with hexagone's lzbench visualization script. X: compression time + 2x decompression time. Y: compressed size.*
 
 ## Status
