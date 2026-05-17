@@ -30,6 +30,12 @@ ACEAPEX decode scales with threads — lz4/zstd do not.
 
 *Graph generated with hexagone's lzbench visualization script. X: compression time + 2x decompression time. Y: compressed size.*
 
+## Decode Scaling
+
+![decode scaling](aceapex_scaling.png)
+
+ACEAPEX resolves all cross-block references at encode time. Each block decodes independently — no inter-block dependencies. zstd and lz4 cannot parallelize decode without format changes.
+
 ## Status
 
 ✅ **Included in [lzbench](https://github.com/inikep/lzbench)** — PR #276 + PR #277 merged May 2026.
