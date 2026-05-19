@@ -1,3 +1,4 @@
+#include <immintrin.h>
 #include "aceapex.h"
 #include <stdint.h>
 #include <string.h>
@@ -273,7 +274,9 @@ static void* worker_func(void* arg) {
 static inline void copy_match(uint8_t* dst, size_t out_ptr, uint32_t dist, uint32_t len) {
     uint8_t* d = dst + out_ptr;
     const uint8_t* s = dst + out_ptr - dist;
-    if (__builtin_expect(dist >= len, 1)) { memcpy(d, s, len); return; }
+    if (__builtin_expect(dist >= len, 1)) {
+        memcpy(d, s, len); return;
+    }
     if (dist == 1) { memset(d, s[0], len); return; }
     uint32_t done = 0;
     while (done + dist <= len) { memcpy(d + done, s, dist); done += dist; }
@@ -322,12 +325,14 @@ static void decompress_streams(
             uint32_t l=lv+6, dist=rep[ri];
             if (ri>0) { for(int i=ri;i>0;i--) rep[i]=rep[i-1]; rep[0]=dist; }
             if (!dist||out+l>dst_size) break;
+            __builtin_prefetch(dst+out-dist, 0, 1);
             copy_match(dst,out,dist,l); out+=l;
         } else {
             uint32_t lv=(c==0xFE)?read_varint(len,np,len_sz):(uint32_t)(c&0x3F);
             uint32_t l=lv+6, dist=read_varint(off,op,off_sz);
             rep[3]=rep[2];rep[2]=rep[1];rep[1]=rep[0];rep[0]=dist;
             if (!dist||out+l>dst_size) break;
+            __builtin_prefetch(dst+out-dist, 0, 1);
             copy_match(dst,out,dist,l); out+=l;
         }
     }
