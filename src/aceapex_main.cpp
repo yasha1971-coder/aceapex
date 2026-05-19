@@ -72,6 +72,8 @@ struct ThreadHashTable {
 struct BlockOffsets {
     uint64_t lit_off, off_off, len_off, cmd_off;
     uint64_t lit_sz,  off_sz,  len_sz,  cmd_sz;
+    uint8_t  all_indep;  // 1 = all copies are non-overlapping, fast path safe
+    uint8_t  _pad[7];
 };
  
 static inline void wv(uint8_t* buf, size_t& ptr, uint32_t val,
@@ -300,6 +302,41 @@ static inline uint32_t read_varint(const uint8_t* buf, size_t& ptr, size_t limit
     return val;
 }
  
+
+// ULTRA: fast path decoder for blocks where all copies are non-overlapping
+static void decompress_fast(
+    uint8_t* dst, size_t dst_size,
+    const uint8_t* lit, size_t lit_sz,
+    const uint8_t* off, size_t off_sz,
+    const uint8_t* len, size_t len_sz,
+    const uint8_t* cmd, size_t cmd_sz)
+{
+    size_t lp=0, op=0, np=0, cp=0, out=0;
+    uint32_t rep[4]={1,2,4,8};
+    while (out<dst_size && cp<cmd_sz) {
+        uint8_t c=cmd[cp++];
+        if (c==0xFF) { rep[0]=1;rep[1]=2;rep[2]=4;rep[3]=8; continue; }
+        if (c<0x80) {
+            uint32_t l=c+1;
+            if (lp+l>lit_sz||out+l>dst_size) break;
+            memcpy(dst+out,lit+lp,l); out+=l; lp+=l;
+        } else if ((c&0xC0)==0x80) {
+            uint32_t ri=(c>>4)&3, lv=c&0x0F;
+            if (lv==0x0F) lv+=read_varint(len,np,len_sz);
+            uint32_t l=lv+6, dist=rep[ri];
+            if (ri>0) { for(int i=ri;i>0;i--) rep[i]=rep[i-1]; rep[0]=dist; }
+            if (!dist||out+l>dst_size) break;
+            memcpy(dst+out, dst+out-dist, l); out+=l;
+        } else {
+            uint32_t lv=(c==0xFE)?read_varint(len,np,len_sz):(uint32_t)(c&0x3F);
+            uint32_t l=lv+6, dist=read_varint(off,op,off_sz);
+            rep[3]=rep[2];rep[2]=rep[1];rep[1]=rep[0];rep[0]=dist;
+            if (!dist||out+l>dst_size) break;
+            memcpy(dst+out, dst+out-dist, l); out+=l;
+        }
+    }
+}
+
 static void decompress_streams(
     uint8_t* dst, size_t dst_size,
     const uint8_t* lit, size_t lit_sz,
@@ -429,13 +466,23 @@ static void* dec_worker(void* arg) {
         size_t bstart = b * a->block_size;
         size_t bsize  = a->dst_size > bstart ?
                         std::min<size_t>((size_t)a->block_size, a->dst_size - bstart) : 0;
-        if (bsize > 0)
-            decompress_streams(
-                a->dst + bstart, bsize,
-                a->lit + bo.lit_off, bo.lit_sz,
-                a->off + bo.off_off, bo.off_sz,
-                a->len + bo.len_off, bo.len_sz,
-                a->cmd + bo.cmd_off, bo.cmd_sz);
+        if (bsize > 0) {
+            if (bo.all_indep) {
+                decompress_fast(
+                    a->dst + bstart, bsize,
+                    a->lit + bo.lit_off, bo.lit_sz,
+                    a->off + bo.off_off, bo.off_sz,
+                    a->len + bo.len_off, bo.len_sz,
+                    a->cmd + bo.cmd_off, bo.cmd_sz);
+            } else {
+                decompress_streams(
+                    a->dst + bstart, bsize,
+                    a->lit + bo.lit_off, bo.lit_sz,
+                    a->off + bo.off_off, bo.off_sz,
+                    a->len + bo.len_off, bo.len_sz,
+                    a->cmd + bo.cmd_off, bo.cmd_sz);
+            }
+        }
     }
     return nullptr;
 }
@@ -494,6 +541,36 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
         boffs[b].off_off=total_off; boffs[b].off_sz=results[b].off_size;
         boffs[b].len_off=total_len; boffs[b].len_sz=results[b].len_size;
         boffs[b].cmd_off=total_cmd; boffs[b].cmd_sz=results[b].cmd_size;
+        // Analyze independence: check all copies are non-overlapping
+        {
+            const uint8_t* cmd=results[b].cmd_buf;
+            const uint8_t* off=results[b].off_buf;
+            const uint8_t* len=results[b].len_buf;
+            size_t op=0,np=0,cp=0,out=0;
+            uint32_t rep[4]={1,2,4,8};
+            bool all_ok=true;
+            size_t bsz=BLOCK_SIZE;
+            while(out<bsz && cp<results[b].cmd_size && all_ok) {
+                uint8_t c=cmd[cp++];
+                if(c==0xFF){rep[0]=1;rep[1]=2;rep[2]=4;rep[3]=8;continue;}
+                if(c<0x80){uint32_t l=c+1;out+=l;}
+                else if((c&0xC0)==0x80){
+                    uint32_t ri=(c>>4)&3,lv=c&0x0F;
+                    if(lv==0x0F)lv+=read_varint(len,np,results[b].len_size);
+                    uint32_t l=lv+6,dist=rep[ri];
+                    if(ri>0){for(int i=ri;i>0;i--)rep[i]=rep[i-1];rep[0]=dist;}
+                    if(out<dist+l)all_ok=false;
+                    out+=l;
+                } else {
+                    uint32_t lv=(c==0xFE)?read_varint(len,np,results[b].len_size):(uint32_t)(c&0x3F);
+                    uint32_t l=lv+6,dist=read_varint(off,op,results[b].off_size);
+                    rep[3]=rep[2];rep[2]=rep[1];rep[1]=rep[0];rep[0]=dist;
+                    if(out<dist+l)all_ok=false;
+                    out+=l;
+                }
+            }
+            boffs[b].all_indep=all_ok?1:0;
+        }
         total_lit+=results[b].lit_size; total_off+=results[b].off_size;
         total_len+=results[b].len_size; total_cmd+=results[b].cmd_size;
     }
