@@ -338,6 +338,91 @@ static void decompress_streams(
     }
 }
  
+
+// ULTRA: Pass 1 - parse only, no copy
+static size_t parse_streams_count(
+    size_t dst_size,
+    const uint8_t* off, size_t off_sz,
+    const uint8_t* len, size_t len_sz,
+    const uint8_t* cmd, size_t cmd_sz)
+{
+    size_t op=0, np=0, cp=0, out=0;
+    uint32_t rep[4]={1,2,4,8};
+    size_t ops=0;
+    while (out<dst_size && cp<cmd_sz) {
+        uint8_t c=cmd[cp++];
+        if (c==0xFF) { rep[0]=1;rep[1]=2;rep[2]=4;rep[3]=8; continue; }
+        if (c<0x80) {
+            uint32_t l=c+1; out+=l; ops++;
+        } else if ((c&0xC0)==0x80) {
+            uint32_t ri=(c>>4)&3, lv=c&0x0F;
+            if (lv==0x0F) lv+=read_varint(len,np,len_sz);
+            uint32_t l=lv+6, dist=rep[ri];
+            if (ri>0) { for(int i=ri;i>0;i--) rep[i]=rep[i-1]; rep[0]=dist; }
+            out+=l; ops++;
+        } else {
+            uint32_t lv=(c==0xFE)?read_varint(len,np,len_sz):(uint32_t)(c&0x3F);
+            uint32_t l=lv+6, dist=read_varint(off,op,off_sz);
+            rep[3]=rep[2];rep[2]=rep[1];rep[1]=rep[0];rep[0]=dist;
+            out+=l; ops++;
+        }
+    }
+    return ops;
+}
+
+
+// ULTRA: Two-pass decoder
+struct DecOp {
+    uint32_t src_off;  // offset in lit[] or in dst[] (for match)
+    uint32_t dst_off;  // offset in dst[]
+    uint32_t len;
+    uint8_t  is_lit;   // 1=literal, 0=match
+};
+
+static void decompress_streams(
+    uint8_t* dst, size_t dst_size,
+    const uint8_t* lit, size_t lit_sz,
+    const uint8_t* off, size_t off_sz,
+    const uint8_t* len, size_t len_sz,
+    const uint8_t* cmd, size_t cmd_sz)
+{
+    // Pass 1: build ops array
+    std::vector<DecOp> ops;
+    ops.reserve(65536);
+    size_t lp=0, op=0, np=0, cp=0, out=0;
+    uint32_t rep[4]={1,2,4,8};
+    while (out<dst_size && cp<cmd_sz) {
+        uint8_t c=cmd[cp++];
+        if (c==0xFF) { rep[0]=1;rep[1]=2;rep[2]=4;rep[3]=8; continue; }
+        if (c<0x80) {
+            uint32_t l=c+1;
+            if (lp+l>lit_sz||out+l>dst_size) break;
+            ops.push_back({(uint32_t)lp,(uint32_t)out,l,1});
+            out+=l; lp+=l;
+        } else if ((c&0xC0)==0x80) {
+            uint32_t ri=(c>>4)&3, lv=c&0x0F;
+            if (lv==0x0F) lv+=read_varint(len,np,len_sz);
+            uint32_t l=lv+6, dist=rep[ri];
+            if (ri>0) { for(int i=ri;i>0;i--) rep[i]=rep[i-1]; rep[0]=dist; }
+            if (!dist||out+l>dst_size) break;
+            ops.push_back({(uint32_t)(out-dist),(uint32_t)out,l,0});
+            out+=l;
+        } else {
+            uint32_t lv=(c==0xFE)?read_varint(len,np,len_sz):(uint32_t)(c&0x3F);
+            uint32_t l=lv+6, dist=read_varint(off,op,off_sz);
+            rep[3]=rep[2];rep[2]=rep[1];rep[1]=rep[0];rep[0]=dist;
+            if (!dist||out+l>dst_size) break;
+            ops.push_back({(uint32_t)(out-dist),(uint32_t)out,l,0});
+            out+=l;
+        }
+    }
+    // Pass 2: execute copies
+    for (const auto& o : ops) {
+        if (o.is_lit) memcpy(dst+o.dst_off, lit+o.src_off, o.len);
+        else copy_match(dst, o.dst_off, o.dst_off-o.src_off, o.len);
+    }
+}
+
 static const uint32_t K256[64] = {
     0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
     0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
@@ -434,13 +519,32 @@ static void* dec_worker(void* arg) {
         size_t bstart = b * a->block_size;
         size_t bsize  = a->dst_size > bstart ?
                         std::min<size_t>((size_t)a->block_size, a->dst_size - bstart) : 0;
-        if (bsize > 0)
+        if (bsize > 0) {
+#ifdef ULTRA_BENCH
+            double t0 = now_sec();
+            size_t ops = parse_streams_count(bsize,
+                a->off + bo.off_off, bo.off_sz,
+                a->len + bo.len_off, bo.len_sz,
+                a->cmd + bo.cmd_off, bo.cmd_sz);
+            double t1 = now_sec();
             decompress_streams(
                 a->dst + bstart, bsize,
                 a->lit + bo.lit_off, bo.lit_sz,
                 a->off + bo.off_off, bo.off_sz,
                 a->len + bo.len_off, bo.len_sz,
                 a->cmd + bo.cmd_off, bo.cmd_sz);
+            double t2 = now_sec();
+            fprintf(stderr, "block %zu: parse=%.3fms full=%.3fms ops=%zu ratio=%.2fx\n",
+                b, (t1-t0)*1000, (t2-t1)*1000, ops, (t2-t1)/(t1-t0));
+#else
+            decompress_two_pass(
+                a->dst + bstart, bsize,
+                a->lit + bo.lit_off, bo.lit_sz,
+                a->off + bo.off_off, bo.off_sz,
+                a->len + bo.len_off, bo.len_sz,
+                a->cmd + bo.cmd_off, bo.cmd_sz);
+#endif
+        }
     }
     return nullptr;
 }
