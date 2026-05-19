@@ -64,6 +64,10 @@ All BIT-PERFECT (MD5 verified).
 
 *Thanks to flanglet and the lzbench community for methodology feedback.*
 
+## Documentation
+
+[📄 Technical Whitepaper](docs/WHITEPAPER.md) — architecture, design decisions, benchmarks, limitations.
+
 ## Core Idea
 
 Standard LZ77 codecs face a tradeoff:
