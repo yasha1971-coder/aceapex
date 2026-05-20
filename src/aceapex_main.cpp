@@ -151,6 +151,15 @@ static void compress_block(const uint8_t* src, size_t src_size,
     uint32_t rep[4]={1,2,4,8}, lit_run=0, miss=0;
     int ov=0;
     res->cmd_buf[cmd_i++] = BLOCK_MARKER;
+
+    // ULTRA: Chain flattening origin table
+    // origin[local_pos] = original literal source position (local)
+    static thread_local uint32_t origin[1048576];
+    size_t flat_pos = 0; // track which positions are initialized
+    auto init_origin = [&](size_t from, size_t to) {
+        for (size_t i = from; i < to && i < 1048576; i++) origin[i] = (uint32_t)i;
+    };
+    init_origin(0, bsz); // init all as self-referential (literal)
  
     auto flush_lit = [&]() {
         while (lit_run > 0 && !ov) {
@@ -223,8 +232,28 @@ static void compress_block(const uint8_t* src, size_t src_size,
                 if (lv<62) { res->cmd_buf[cmd_i++]=(uint8_t)(0xC0|lv); }
                 else { res->cmd_buf[cmd_i++]=0xFE;
                        wv(res->len_buf,len_i,lv,len_cap,ov,3); if(ov) break; }
-                wv(res->off_buf,off_i,c_off,off_cap,ov,2); if(ov) break;
-                rep[3]=rep[2]; rep[2]=rep[1]; rep[1]=rep[0]; rep[0]=c_off;
+                // ULTRA: Chain flattening with validation
+                size_t local_pos = pos - bstart;
+                uint32_t flat_off = c_off;
+                if (c_off <= local_pos) {
+                    size_t src_local = local_pos - c_off;
+                    uint32_t orig_src = origin[src_local];
+                    if (orig_src != src_local) {
+                        uint32_t candidate = (uint32_t)(local_pos - orig_src);
+                        // Validate ALL bytes
+                        bool valid = (candidate <= local_pos && candidate < 8388608u);
+                        for (size_t fi = 0; fi < c_len && valid; fi++) {
+                            if (src[bstart + local_pos - candidate + fi] !=
+                                src[bstart + local_pos - c_off + fi])
+                                valid = false;
+                        }
+                        if (valid) flat_off = candidate;
+                    }
+                    for (size_t fi = 0; fi < c_len && local_pos+fi < 1048576 && src_local+fi < 1048576; fi++)
+                        origin[local_pos + fi] = origin[src_local + fi];
+                }
+                wv(res->off_buf,off_i,flat_off,off_cap,ov,2); if(ov) break;
+                rep[3]=rep[2]; rep[2]=rep[1]; rep[1]=rep[0]; rep[0]=flat_off;
             }
             // Insert intermediate positions for short matches only
             // Insert intermediate positions for short matches only
@@ -300,6 +329,75 @@ static inline uint32_t read_varint(const uint8_t* buf, size_t& ptr, size_t limit
     return val;
 }
  
+
+// ULTRA: D=1 depth analyzer
+// Checks if ALL match sources are in literal-only zones (never in match-written zones)
+// If true: two-phase decode is provably correct
+static void analyze_depth(
+    size_t dst_size,
+    const uint8_t* off, size_t off_sz,
+    const uint8_t* len, size_t len_sz,
+    const uint8_t* cmd, size_t cmd_sz, size_t block_id)
+{
+    // First pass: collect all ops with positions
+    struct Op { uint32_t dst; uint32_t src; uint32_t len; uint8_t is_lit; };
+    static Op ops[131072];
+    size_t n=0;
+    size_t op=0,np=0,cp=0,out=0;
+    uint32_t rep[4]={1,2,4,8};
+    while(out<dst_size && cp<cmd_sz && n<131072) {
+        uint8_t c=cmd[cp++];
+        if(c==0xFF){rep[0]=1;rep[1]=2;rep[2]=4;rep[3]=8;continue;}
+        if(c<0x80) {
+            uint32_t l=c+1;
+            ops[n++]={(uint32_t)out,(uint32_t)0,l,1};
+            out+=l;
+        } else if((c&0xC0)==0x80) {
+            uint32_t ri=(c>>4)&3,lv=c&0x0F;
+            if(lv==0x0F)lv+=read_varint(len,np,len_sz);
+            uint32_t l=lv+6,dist=rep[ri];
+            if(ri>0){for(int i=ri;i>0;i--)rep[i]=rep[i-1];rep[0]=dist;}
+            if(!dist||out+l>dst_size)break;
+            ops[n++]={(uint32_t)out,(uint32_t)(out-dist),l,0};
+            out+=l;
+        } else {
+            uint32_t lv=(c==0xFE)?read_varint(len,np,len_sz):(uint32_t)(c&0x3F);
+            uint32_t l=lv+6,dist=read_varint(off,op,off_sz);
+            rep[3]=rep[2];rep[2]=rep[1];rep[1]=rep[0];rep[0]=dist;
+            if(!dist||out+l>dst_size)break;
+            ops[n++]={(uint32_t)out,(uint32_t)(out-dist),l,0};
+            out+=l;
+        }
+    }
+
+    // Second pass: for each match, check if src overlaps any MATCH dst
+    // Build match dst ranges first
+    size_t d1_safe=0, d2_dep=0;
+    for(size_t i=0;i<n;i++) {
+        if(ops[i].is_lit) continue;
+        uint32_t src_start=ops[i].src;
+        uint32_t src_end=ops[i].src+ops[i].len;
+        bool has_match_dep=false;
+        // Check all previous match destinations
+        for(size_t j=0;j<i;j++) {
+            if(ops[j].is_lit) continue; // skip literals
+            uint32_t mdst_start=ops[j].dst;
+            uint32_t mdst_end=ops[j].dst+ops[j].len;
+            // Does our src overlap this match's dst?
+            if(src_start < mdst_end && src_end > mdst_start) {
+                has_match_dep=true;
+                break;
+            }
+        }
+        if(has_match_dep) d2_dep++;
+        else d1_safe++;
+    }
+    fprintf(stderr, "block %zu: matches=%zu D1_safe=%.1f%% D2_dep=%.1f%%\n",
+        block_id, d1_safe+d2_dep,
+        (d1_safe+d2_dep)?100.0*d1_safe/(d1_safe+d2_dep):0,
+        (d1_safe+d2_dep)?100.0*d2_dep/(d1_safe+d2_dep):0);
+}
+
 static void decompress_streams(
     uint8_t* dst, size_t dst_size,
     const uint8_t* lit, size_t lit_sz,
@@ -596,13 +694,20 @@ static void* dec_worker(void* arg) {
         size_t bstart = b * a->block_size;
         size_t bsize  = a->dst_size > bstart ?
                         std::min<size_t>((size_t)a->block_size, a->dst_size - bstart) : 0;
-        if (bsize > 0)
+        if (bsize > 0) {
+#ifdef ANALYZE_DEPS
+            analyze_depth(bsize,
+                a->off + bo.off_off, bo.off_sz,
+                a->len + bo.len_off, bo.len_sz,
+                a->cmd + bo.cmd_off, bo.cmd_sz, b);
+#endif
             decompress_streams(
                 a->dst + bstart, bsize,
                 a->lit + bo.lit_off, bo.lit_sz,
                 a->off + bo.off_off, bo.off_sz,
                 a->len + bo.len_off, bo.len_sz,
                 a->cmd + bo.cmd_off, bo.cmd_sz);
+        }
     }
     return nullptr;
 }
