@@ -304,6 +304,46 @@ static inline uint32_t read_varint(const uint8_t* buf, size_t& ptr, size_t limit
  
 
 // ULTRA: fast path decoder for blocks where all copies are non-overlapping
+
+static void analyze_block_deps(
+    size_t dst_size,
+    const uint8_t* off, size_t off_sz,
+    const uint8_t* len, size_t len_sz,
+    const uint8_t* cmd, size_t cmd_sz, size_t block_id)
+{
+    size_t op=0, np=0, cp=0, out=0;
+    uint32_t rep[4]={1,2,4,8};
+    size_t total_copies=0, indep_copies=0, total_lits=0, long_copies=0;
+    while (out<dst_size && cp<cmd_sz) {
+        uint8_t c=cmd[cp++];
+        if (c==0xFF) { rep[0]=1;rep[1]=2;rep[2]=4;rep[3]=8; continue; }
+        if (c<0x80) {
+            uint32_t l=c+1; out+=l; total_lits++;
+        } else if ((c&0xC0)==0x80) {
+            uint32_t ri=(c>>4)&3, lv=c&0x0F;
+            if (lv==0x0F) lv+=read_varint(len,np,len_sz);
+            uint32_t l=lv+6, dist=rep[ri];
+            if (ri>0){for(int i=ri;i>0;i--) rep[i]=rep[i-1]; rep[0]=dist;}
+            if (!dist||out+l>dst_size) break;
+            if (out >= dist+l) indep_copies++;
+            if (l > 64) long_copies++;
+            total_copies++; out+=l;
+        } else {
+            uint32_t lv=(c==0xFE)?read_varint(len,np,len_sz):(uint32_t)(c&0x3F);
+            uint32_t l=lv+6, dist=read_varint(off,op,off_sz);
+            rep[3]=rep[2];rep[2]=rep[1];rep[1]=rep[0];rep[0]=dist;
+            if (!dist||out+l>dst_size) break;
+            if (out >= dist+l) indep_copies++;
+            if (l > 64) long_copies++;
+            total_copies++; out+=l;
+        }
+    }
+    fprintf(stderr, "block %zu: lits=%zu copies=%zu indep=%zu (%.1f%%) long64=%zu (%.1f%%)\n",
+        block_id, total_lits, total_copies, indep_copies,
+        total_copies ? 100.0*indep_copies/total_copies : 0,
+        long_copies, total_copies ? 100.0*long_copies/total_copies : 0);
+}
+
 static void decompress_fast(
     uint8_t* dst, size_t dst_size,
     const uint8_t* lit, size_t lit_sz,
@@ -467,6 +507,12 @@ static void* dec_worker(void* arg) {
         size_t bsize  = a->dst_size > bstart ?
                         std::min<size_t>((size_t)a->block_size, a->dst_size - bstart) : 0;
         if (bsize > 0) {
+#ifdef ANALYZE_DEPS
+            analyze_block_deps(bsize,
+                a->off + bo.off_off, bo.off_sz,
+                a->len + bo.len_off, bo.len_sz,
+                a->cmd + bo.cmd_off, bo.cmd_sz, b);
+#endif
             if (bo.all_indep) {
                 decompress_fast(
                     a->dst + bstart, bsize,
