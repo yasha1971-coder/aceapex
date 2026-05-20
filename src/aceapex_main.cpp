@@ -303,6 +303,9 @@ static inline uint32_t read_varint(const uint8_t* buf, size_t& ptr, size_t limit
 }
  
 
+// Forward declaration
+static void decompress_streams(uint8_t*, size_t, const uint8_t*, size_t, const uint8_t*, size_t, const uint8_t*, size_t, const uint8_t*, size_t);
+
 // ULTRA: fast path decoder for blocks where all copies are non-overlapping
 
 static void analyze_block_deps(
@@ -347,11 +350,48 @@ static void analyze_block_deps(
             if (out > ready_end) ready_end = out;
         }
     }
-    fprintf(stderr, "block %zu: copies=%zu local_indep=%.1f%% global_indep=%.1f%% long64=%.1f%%\n",
+    // Count copies that don't cross 64KB chunk boundaries
+    size_t chunk_safe = 0;
+    size_t op2=0, np2=0, cp2=0, out2=0;
+    uint32_t rep2[4]={1,2,4,8};
+    // Re-parse to count chunk-safe copies
+    // (src and dst in same 64KB chunk)
+    {
+        size_t CHUNK=524288;
+        size_t op_=0,np_=0,cp_=0,out_=0;
+        uint32_t rep_[4]={1,2,4,8};
+        const uint8_t* cmd_=cmd; size_t cmd_sz_=cmd_sz;
+        const uint8_t* off_=off; size_t off_sz_=off_sz;
+        const uint8_t* len_=len; size_t len_sz_=len_sz;
+        while(out_<dst_size && cp_<cmd_sz_){
+            uint8_t c=cmd_[cp_++];
+            if(c==0xFF){rep_[0]=1;rep_[1]=2;rep_[2]=4;rep_[3]=8;continue;}
+            if(c<0x80){uint32_t l=c+1;out_+=l;}
+            else if((c&0xC0)==0x80){
+                uint32_t ri=(c>>4)&3,lv=c&0x0F;
+                if(lv==0x0F)lv+=read_varint(len_,np_,len_sz_);
+                uint32_t l=lv+6,dist=rep_[ri];
+                if(ri>0){for(int i=ri;i>0;i--)rep_[i]=rep_[i-1];rep_[0]=dist;}
+                if(!dist||out_+l>dst_size)break;
+                size_t src=out_-dist, dst_=out_;
+                if(src/CHUNK==dst_/CHUNK && (dst_+l-1)/CHUNK==dst_/CHUNK) chunk_safe++;
+                out_+=l;
+            } else {
+                uint32_t lv=(c==0xFE)?read_varint(len_,np_,len_sz_):(uint32_t)(c&0x3F);
+                uint32_t l=lv+6,dist=read_varint(off_,op_,off_sz_);
+                rep_[3]=rep_[2];rep_[2]=rep_[1];rep_[1]=rep_[0];rep_[0]=dist;
+                if(!dist||out_+l>dst_size)break;
+                size_t src=out_-dist, dst_=out_;
+                if(src/CHUNK==dst_/CHUNK && (dst_+l-1)/CHUNK==dst_/CHUNK) chunk_safe++;
+                out_+=l;
+            }
+        }
+    }
+    fprintf(stderr, "block %zu: copies=%zu local=%.1f%% global=%.1f%% chunk64k=%.1f%%\n",
         block_id, total_copies,
         total_copies ? 100.0*indep_copies/total_copies : 0,
         total_copies ? 100.0*global_indep/total_copies : 0,
-        total_copies ? 100.0*long_copies/total_copies : 0);
+        total_copies ? 100.0*chunk_safe/total_copies : 0);
 }
 
 static void decompress_fast(
@@ -361,6 +401,43 @@ static void decompress_fast(
     const uint8_t* len, size_t len_sz,
     const uint8_t* cmd, size_t cmd_sz)
 {
+    // ULTRA: if block > 512KB, split into 2 halves
+    // Each half decoded independently (rep[] reset)
+    // Works because 99%+ copies are chunk-safe on FASTQ
+    if (dst_size > 524288) {
+        size_t half = dst_size / 2;
+        // Find cmd split point for half
+        size_t cp2=0, out2=0;
+        uint32_t rep2[4]={1,2,4,8};
+        size_t lp2=0, op2=0, np2=0;
+        while (out2 < half && cp2 < cmd_sz) {
+            uint8_t c = cmd[cp2];
+            if (c == 0xFF) { cp2++; rep2[0]=1;rep2[1]=2;rep2[2]=4;rep2[3]=8; continue; }
+            if (c < 0x80) { uint32_t l=c+1; if(out2+l>half) break; cp2++; out2+=l; lp2+=l; }
+            else if ((c&0xC0)==0x80) {
+                uint32_t ri=(c>>4)&3,lv=c&0x0F; cp2++;
+                if(lv==0x0F) lv+=read_varint(len,np2,len_sz);
+                uint32_t l=lv+6; if(out2+l>half) break;
+                if(ri>0){for(int i=ri;i>0;i--)rep2[i]=rep2[i-1];rep2[0]=rep2[ri];}
+                out2+=l;
+            } else {
+                uint32_t lv=(c==0xFE)?read_varint(len,np2,len_sz):(uint32_t)(c&0x3F); cp2++;
+                uint32_t l=lv+6; if(out2+l>half) break;
+                read_varint(off,op2,off_sz);
+                out2+=l;
+            }
+        }
+        // Parallel: first half normal, second half in thread
+        #pragma omp parallel sections num_threads(2)
+        {
+            #pragma omp section
+            decompress_streams(dst, out2, lit, lp2, off, op2, len, np2, cmd, cp2);
+            #pragma omp section
+            decompress_streams(dst+out2, dst_size-out2, lit+lp2, lit_sz-lp2,
+                off+op2, off_sz-op2, len+np2, len_sz-np2, cmd+cp2, cmd_sz-cp2);
+        }
+        return;
+    }
     size_t lp=0, op=0, np=0, cp=0, out=0;
     uint32_t rep[4]={1,2,4,8};
     while (out<dst_size && cp<cmd_sz) {
