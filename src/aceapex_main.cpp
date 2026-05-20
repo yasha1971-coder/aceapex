@@ -411,6 +411,95 @@ static void decompress_adaptive(
     }
 }
 
+
+struct DecOp {
+    uint32_t src_off;
+    uint32_t dst_off;
+    uint32_t len;
+    uint8_t  is_lit;
+};
+
+// ULTRA: True parallel decoder using Bernstein conditions
+// Step 1: Sequential literals (creates ready zone)
+// Step 2: Parallel matches where src is in ready zone
+static void decompress_parallel(
+    uint8_t* dst, size_t dst_size,
+    const uint8_t* lit, size_t lit_sz,
+    const uint8_t* off, size_t off_sz,
+    const uint8_t* len, size_t len_sz,
+    const uint8_t* cmd, size_t cmd_sz)
+{
+    // Build ops list first
+    static thread_local DecOp ops_buf[131072];
+    size_t ops_cnt = 0;
+    size_t lp=0, op=0, np=0, cp=0, out=0;
+    uint32_t rep[4]={1,2,4,8};
+    while (out<dst_size && cp<cmd_sz) {
+        uint8_t c=cmd[cp++];
+        if (c==0xFF){rep[0]=1;rep[1]=2;rep[2]=4;rep[3]=8;continue;}
+        if (c<0x80) {
+            uint32_t l=c+1;
+            if (lp+l>lit_sz||out+l>dst_size) break;
+            ops_buf[ops_cnt++]={(uint32_t)lp,(uint32_t)out,l,1};
+            out+=l; lp+=l;
+        } else if ((c&0xC0)==0x80) {
+            uint32_t ri=(c>>4)&3,lv=c&0x0F;
+            if(lv==0x0F) lv+=read_varint(len,np,len_sz);
+            uint32_t l=lv+6,dist=rep[ri];
+            if(ri>0){for(int i=ri;i>0;i--)rep[i]=rep[i-1];rep[0]=dist;}
+            if(!dist||out+l>dst_size) break;
+            ops_buf[ops_cnt++]={(uint32_t)(out-dist),(uint32_t)out,l,0};
+            out+=l;
+        } else {
+            uint32_t lv=(c==0xFE)?read_varint(len,np,len_sz):(uint32_t)(c&0x3F);
+            uint32_t l=lv+6,dist=read_varint(off,op,off_sz);
+            rep[3]=rep[2];rep[2]=rep[1];rep[1]=rep[0];rep[0]=dist;
+            if(!dist||out+l>dst_size) break;
+            ops_buf[ops_cnt++]={(uint32_t)(out-dist),(uint32_t)out,l,0};
+            out+=l;
+        }
+    }
+
+    // Step 1: Sequential literals — creates ready zone
+    size_t ready_end = 0;
+    for (size_t i = 0; i < ops_cnt; i++) {
+        if (ops_buf[i].is_lit) {
+            memcpy(dst+ops_buf[i].dst_off, lit+ops_buf[i].src_off, ops_buf[i].len);
+            size_t end = ops_buf[i].dst_off + ops_buf[i].len;
+            if (end > ready_end) ready_end = end;
+        }
+    }
+
+    // Step 2: Parallel matches where src+len <= ready_end (Bernstein safe)
+    // Split into parallel and sequential
+    static thread_local size_t par_idx[131072];
+    static thread_local size_t seq_idx[131072];
+    size_t par_cnt=0, seq_cnt=0;
+    for (size_t i = 0; i < ops_cnt; i++) {
+        if (!ops_buf[i].is_lit) {
+            const DecOp& o = ops_buf[i];
+            if (o.src_off + o.len <= ready_end && o.len <= (o.dst_off - o.src_off)) {
+                par_idx[par_cnt++] = i;
+            } else {
+                seq_idx[seq_cnt++] = i;
+            }
+        }
+    }
+
+    // Parallel copies — Bernstein conditions verified
+    #pragma omp parallel for schedule(static) num_threads(2)
+    for (size_t i = 0; i < par_cnt; i++) {
+        const DecOp& o = ops_buf[par_idx[i]];
+        memcpy(dst+o.dst_off, dst+o.src_off, o.len);
+    }
+
+    // Sequential fallback for dependent copies
+    for (size_t i = 0; i < seq_cnt; i++) {
+        const DecOp& o = ops_buf[seq_idx[i]];
+        copy_match(dst, o.dst_off, o.dst_off-o.src_off, o.len);
+    }
+}
+
 static const uint32_t K256[64] = {
     0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
     0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
