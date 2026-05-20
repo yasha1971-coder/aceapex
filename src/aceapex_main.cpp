@@ -72,8 +72,6 @@ struct ThreadHashTable {
 struct BlockOffsets {
     uint64_t lit_off, off_off, len_off, cmd_off;
     uint64_t lit_sz,  off_sz,  len_sz,  cmd_sz;
-    uint8_t  all_indep;  // 1 = all copies are non-overlapping, fast path safe
-    uint8_t  _pad[7];
 };
  
 static inline void wv(uint8_t* buf, size_t& ptr, uint32_t val,
@@ -302,168 +300,6 @@ static inline uint32_t read_varint(const uint8_t* buf, size_t& ptr, size_t limit
     return val;
 }
  
-
-// Forward declaration
-static void decompress_streams(uint8_t*, size_t, const uint8_t*, size_t, const uint8_t*, size_t, const uint8_t*, size_t, const uint8_t*, size_t);
-
-// ULTRA: fast path decoder for blocks where all copies are non-overlapping
-
-static void analyze_block_deps(
-    size_t dst_size,
-    const uint8_t* off, size_t off_sz,
-    const uint8_t* len, size_t len_sz,
-    const uint8_t* cmd, size_t cmd_sz, size_t block_id)
-{
-    size_t op=0, np=0, cp=0, out=0;
-    uint32_t rep[4]={1,2,4,8};
-    size_t total_copies=0, indep_copies=0, global_indep=0, total_lits=0, long_copies=0;
-    size_t ready_end=0; // global: max written position that is final
-    while (out<dst_size && cp<cmd_sz) {
-        uint8_t c=cmd[cp++];
-        if (c==0xFF) { rep[0]=1;rep[1]=2;rep[2]=4;rep[3]=8; continue; }
-        if (c<0x80) {
-            uint32_t l=c+1; out+=l; total_lits++;
-            if (out > ready_end) ready_end = out;
-        } else if ((c&0xC0)==0x80) {
-            uint32_t ri=(c>>4)&3, lv=c&0x0F;
-            if (lv==0x0F) lv+=read_varint(len,np,len_sz);
-            uint32_t l=lv+6, dist=rep[ri];
-            if (ri>0){for(int i=ri;i>0;i--) rep[i]=rep[i-1]; rep[0]=dist;}
-            if (!dist||out+l>dst_size) break;
-            if (out >= dist+l) indep_copies++;
-            // Global: src range fully within ready_end
-            size_t src_start = out - dist;
-            if (src_start + l <= ready_end) global_indep++;
-            if (l > 64) long_copies++;
-            total_copies++; out+=l;
-            if (out > ready_end) ready_end = out;
-        } else {
-            uint32_t lv=(c==0xFE)?read_varint(len,np,len_sz):(uint32_t)(c&0x3F);
-            uint32_t l=lv+6, dist=read_varint(off,op,off_sz);
-            rep[3]=rep[2];rep[2]=rep[1];rep[1]=rep[0];rep[0]=dist;
-            if (!dist||out+l>dst_size) break;
-            if (out >= dist+l) indep_copies++;
-            size_t src_start = out - dist;
-            if (src_start + l <= ready_end) global_indep++;
-            if (l > 64) long_copies++;
-            total_copies++; out+=l;
-            if (out > ready_end) ready_end = out;
-        }
-    }
-    // Count copies that don't cross 64KB chunk boundaries
-    size_t chunk_safe = 0;
-    size_t op2=0, np2=0, cp2=0, out2=0;
-    uint32_t rep2[4]={1,2,4,8};
-    // Re-parse to count chunk-safe copies
-    // (src and dst in same 64KB chunk)
-    {
-        size_t CHUNK=524288;
-        size_t op_=0,np_=0,cp_=0,out_=0;
-        uint32_t rep_[4]={1,2,4,8};
-        const uint8_t* cmd_=cmd; size_t cmd_sz_=cmd_sz;
-        const uint8_t* off_=off; size_t off_sz_=off_sz;
-        const uint8_t* len_=len; size_t len_sz_=len_sz;
-        while(out_<dst_size && cp_<cmd_sz_){
-            uint8_t c=cmd_[cp_++];
-            if(c==0xFF){rep_[0]=1;rep_[1]=2;rep_[2]=4;rep_[3]=8;continue;}
-            if(c<0x80){uint32_t l=c+1;out_+=l;}
-            else if((c&0xC0)==0x80){
-                uint32_t ri=(c>>4)&3,lv=c&0x0F;
-                if(lv==0x0F)lv+=read_varint(len_,np_,len_sz_);
-                uint32_t l=lv+6,dist=rep_[ri];
-                if(ri>0){for(int i=ri;i>0;i--)rep_[i]=rep_[i-1];rep_[0]=dist;}
-                if(!dist||out_+l>dst_size)break;
-                size_t src=out_-dist, dst_=out_;
-                if(src/CHUNK==dst_/CHUNK && (dst_+l-1)/CHUNK==dst_/CHUNK) chunk_safe++;
-                out_+=l;
-            } else {
-                uint32_t lv=(c==0xFE)?read_varint(len_,np_,len_sz_):(uint32_t)(c&0x3F);
-                uint32_t l=lv+6,dist=read_varint(off_,op_,off_sz_);
-                rep_[3]=rep_[2];rep_[2]=rep_[1];rep_[1]=rep_[0];rep_[0]=dist;
-                if(!dist||out_+l>dst_size)break;
-                size_t src=out_-dist, dst_=out_;
-                if(src/CHUNK==dst_/CHUNK && (dst_+l-1)/CHUNK==dst_/CHUNK) chunk_safe++;
-                out_+=l;
-            }
-        }
-    }
-    fprintf(stderr, "block %zu: copies=%zu local=%.1f%% global=%.1f%% chunk64k=%.1f%%\n",
-        block_id, total_copies,
-        total_copies ? 100.0*indep_copies/total_copies : 0,
-        total_copies ? 100.0*global_indep/total_copies : 0,
-        total_copies ? 100.0*chunk_safe/total_copies : 0);
-}
-
-static void decompress_fast(
-    uint8_t* dst, size_t dst_size,
-    const uint8_t* lit, size_t lit_sz,
-    const uint8_t* off, size_t off_sz,
-    const uint8_t* len, size_t len_sz,
-    const uint8_t* cmd, size_t cmd_sz)
-{
-    // ULTRA: if block > 512KB, split into 2 halves
-    // Each half decoded independently (rep[] reset)
-    // Works because 99%+ copies are chunk-safe on FASTQ
-    if (dst_size > 524288) {
-        size_t half = dst_size / 2;
-        // Find cmd split point for half
-        size_t cp2=0, out2=0;
-        uint32_t rep2[4]={1,2,4,8};
-        size_t lp2=0, op2=0, np2=0;
-        while (out2 < half && cp2 < cmd_sz) {
-            uint8_t c = cmd[cp2];
-            if (c == 0xFF) { cp2++; rep2[0]=1;rep2[1]=2;rep2[2]=4;rep2[3]=8; continue; }
-            if (c < 0x80) { uint32_t l=c+1; if(out2+l>half) break; cp2++; out2+=l; lp2+=l; }
-            else if ((c&0xC0)==0x80) {
-                uint32_t ri=(c>>4)&3,lv=c&0x0F; cp2++;
-                if(lv==0x0F) lv+=read_varint(len,np2,len_sz);
-                uint32_t l=lv+6; if(out2+l>half) break;
-                if(ri>0){for(int i=ri;i>0;i--)rep2[i]=rep2[i-1];rep2[0]=rep2[ri];}
-                out2+=l;
-            } else {
-                uint32_t lv=(c==0xFE)?read_varint(len,np2,len_sz):(uint32_t)(c&0x3F); cp2++;
-                uint32_t l=lv+6; if(out2+l>half) break;
-                read_varint(off,op2,off_sz);
-                out2+=l;
-            }
-        }
-        // Parallel: first half normal, second half in thread
-        #pragma omp parallel sections num_threads(2)
-        {
-            #pragma omp section
-            decompress_streams(dst, out2, lit, lp2, off, op2, len, np2, cmd, cp2);
-            #pragma omp section
-            decompress_streams(dst+out2, dst_size-out2, lit+lp2, lit_sz-lp2,
-                off+op2, off_sz-op2, len+np2, len_sz-np2, cmd+cp2, cmd_sz-cp2);
-        }
-        return;
-    }
-    size_t lp=0, op=0, np=0, cp=0, out=0;
-    uint32_t rep[4]={1,2,4,8};
-    while (out<dst_size && cp<cmd_sz) {
-        uint8_t c=cmd[cp++];
-        if (c==0xFF) { rep[0]=1;rep[1]=2;rep[2]=4;rep[3]=8; continue; }
-        if (c<0x80) {
-            uint32_t l=c+1;
-            if (lp+l>lit_sz||out+l>dst_size) break;
-            memcpy(dst+out,lit+lp,l); out+=l; lp+=l;
-        } else if ((c&0xC0)==0x80) {
-            uint32_t ri=(c>>4)&3, lv=c&0x0F;
-            if (lv==0x0F) lv+=read_varint(len,np,len_sz);
-            uint32_t l=lv+6, dist=rep[ri];
-            if (ri>0) { for(int i=ri;i>0;i--) rep[i]=rep[i-1]; rep[0]=dist; }
-            if (!dist||out+l>dst_size) break;
-            memcpy(dst+out, dst+out-dist, l); out+=l;
-        } else {
-            uint32_t lv=(c==0xFE)?read_varint(len,np,len_sz):(uint32_t)(c&0x3F);
-            uint32_t l=lv+6, dist=read_varint(off,op,off_sz);
-            rep[3]=rep[2];rep[2]=rep[1];rep[1]=rep[0];rep[0]=dist;
-            if (!dist||out+l>dst_size) break;
-            memcpy(dst+out, dst+out-dist, l); out+=l;
-        }
-    }
-}
-
 static void decompress_streams(
     uint8_t* dst, size_t dst_size,
     const uint8_t* lit, size_t lit_sz,
@@ -498,93 +334,80 @@ static void decompress_streams(
 }
  
 
-
-struct DecOp {
-    uint32_t src_off;
-    uint32_t dst_off;
-    uint32_t len;
-    uint8_t  is_lit;
-};
-
-// ULTRA: Wavefront parallel decoder (Variant B)
-// Wave 0: phrases where src+len <= ready_end (globally independent)
-// Wave 1+: remaining phrases (sequential fallback)
-static void decompress_wavefront(
+// ULTRA: Adaptive parallel decoder
+// Checks true source-readiness (not just self-overlap)
+static void decompress_adaptive(
     uint8_t* dst, size_t dst_size,
     const uint8_t* lit, size_t lit_sz,
     const uint8_t* off, size_t off_sz,
     const uint8_t* len, size_t len_sz,
     const uint8_t* cmd, size_t cmd_sz)
 {
-    // Pass 1: build ops array
-    static thread_local DecOp ops_buf[131072];
-    DecOp* ops = ops_buf;
-    size_t ops_cnt = 0;
+    // Pass 1: decode all literals first into dst
+    // This makes all literal bytes "source-ready"
     size_t lp=0, op=0, np=0, cp=0, out=0;
     uint32_t rep[4]={1,2,4,8};
-    while (out<dst_size && cp<cmd_sz) {
-        uint8_t c=cmd[cp++];
-        if (c==0xFF){rep[0]=1;rep[1]=2;rep[2]=4;rep[3]=8;continue;}
+    
+    // First pass: literals only
+    size_t cp1=0, lp1=0, out1=0;
+    uint32_t rep1[4]={1,2,4,8};
+    size_t np1=0, op1=0;
+    while (out1<dst_size && cp1<cmd_sz) {
+        uint8_t c=cmd[cp1++];
+        if (c==0xFF){rep1[0]=1;rep1[1]=2;rep1[2]=4;rep1[3]=8;continue;}
         if (c<0x80) {
             uint32_t l=c+1;
-            if (lp+l>lit_sz||out+l>dst_size) break;
-            ops[ops_cnt++]={(uint32_t)lp,(uint32_t)out,l,1};
-            out+=l; lp+=l;
+            if (lp1+l>lit_sz||out1+l>dst_size) break;
+            memcpy(dst+out1, lit+lp1, l);
+            out1+=l; lp1+=l;
         } else if ((c&0xC0)==0x80) {
             uint32_t ri=(c>>4)&3,lv=c&0x0F;
-            if (lv==0x0F) lv+=read_varint(len,np,len_sz);
-            uint32_t l=lv+6,dist=rep[ri];
-            if (ri>0){for(int i=ri;i>0;i--)rep[i]=rep[i-1];rep[0]=dist;}
-            if (!dist||out+l>dst_size) break;
-            ops[ops_cnt++]={(uint32_t)(out-dist),(uint32_t)out,l,0};
-            out+=l;
+            if(lv==0x0F) lv+=read_varint(len,np1,len_sz);
+            uint32_t l=lv+6,dist=rep1[ri];
+            if(ri>0){for(int i=ri;i>0;i--)rep1[i]=rep1[i-1];rep1[0]=dist;}
+            out1+=l; // skip match for now
         } else {
-            uint32_t lv=(c==0xFE)?read_varint(len,np,len_sz):(uint32_t)(c&0x3F);
-            uint32_t l=lv+6,dist=read_varint(off,op,off_sz);
-            rep[3]=rep[2];rep[2]=rep[1];rep[1]=rep[0];rep[0]=dist;
-            if (!dist||out+l>dst_size) break;
-            ops[ops_cnt++]={(uint32_t)(out-dist),(uint32_t)out,l,0};
-            out+=l;
+            uint32_t lv=(c==0xFE)?read_varint(len,np1,len_sz):(uint32_t)(c&0x3F);
+            uint32_t l=lv+6; read_varint(off,op1,off_sz);
+            rep1[3]=rep1[2];rep1[2]=rep1[1];rep1[1]=rep1[0];
+            out1+=l; // skip match for now
         }
     }
+    size_t lit_ready_end = out1; // all literal positions are ready
 
-    // Pass 2: split into wave0 (global_indep) and wave1 (sequential)
-    // ready_end after all literals = max lit dst position
-    size_t ready_end = 0;
-    for (size_t i = 0; i < ops_cnt; i++) {
-        if (ops[i].is_lit) {
-            size_t end = ops[i].dst_off + ops[i].len;
-            if (end > ready_end) ready_end = end;
-        }
-    }
-
-    // Pass 3: split ops into wave0 and wave1
-    static thread_local size_t wave0_buf[131072];
-    static thread_local size_t wave1_buf[131072];
-    size_t w0=0, w1=0;
-    for (size_t i = 0; i < ops_cnt; i++) {
-        const DecOp& o = ops[i];
-        if (o.is_lit) {
-            wave0_buf[w0++] = i;
+    // Second pass: matches only, using lit_ready_end as source-readiness threshold
+    size_t cp2=0, lp2=0, out2=0, op2=0, np2=0;
+    uint32_t rep2[4]={1,2,4,8};
+    while (out2<dst_size && cp2<cmd_sz) {
+        uint8_t c=cmd[cp2++];
+        if (c==0xFF){rep2[0]=1;rep2[1]=2;rep2[2]=4;rep2[3]=8;continue;}
+        if (c<0x80) {
+            uint32_t l=c+1; out2+=l; lp2+=l; // already done
+        } else if ((c&0xC0)==0x80) {
+            uint32_t ri=(c>>4)&3,lv=c&0x0F;
+            if(lv==0x0F) lv+=read_varint(len,np2,len_sz);
+            uint32_t l=lv+6,dist=rep2[ri];
+            if(ri>0){for(int i=ri;i>0;i--)rep2[i]=rep2[i-1];rep2[0]=dist;}
+            if(!dist||out2+l>dst_size) break;
+            // Source-ready check: src fully before lit_ready_end
+            if (out2-dist+l <= lit_ready_end) {
+                memcpy(dst+out2, dst+out2-dist, l); // safe parallel copy
+            } else {
+                copy_match(dst,out2,dist,l); // fallback
+            }
+            out2+=l;
         } else {
-            size_t src_end = o.src_off + o.len;
-            if (src_end <= ready_end) wave0_buf[w0++] = i;
-            else wave1_buf[w1++] = i;
+            uint32_t lv=(c==0xFE)?read_varint(len,np2,len_sz):(uint32_t)(c&0x3F);
+            uint32_t l=lv+6,dist=read_varint(off,op2,off_sz);
+            rep2[3]=rep2[2];rep2[2]=rep2[1];rep2[1]=rep2[0];rep2[0]=dist;
+            if(!dist||out2+l>dst_size) break;
+            if (out2-dist+l <= lit_ready_end) {
+                memcpy(dst+out2, dst+out2-dist, l);
+            } else {
+                copy_match(dst,out2,dist,l);
+            }
+            out2+=l;
         }
-    }
-
-    // Execute wave0 in parallel - all globally independent
-    #pragma omp parallel for schedule(static) num_threads(4)
-    for (size_t i = 0; i < w0; i++) {
-        const DecOp& o = ops[wave0_buf[i]];
-        if (o.is_lit) memcpy(dst+o.dst_off, lit+o.src_off, o.len);
-        else memcpy(dst+o.dst_off, dst+o.src_off, o.len);
-    }
-
-    // Execute wave1 sequentially
-    for (size_t i = 0; i < w1; i++) {
-        const DecOp& o = ops[wave1_buf[i]];
-        copy_match(dst, o.dst_off, o.dst_off-o.src_off, o.len);
     }
 }
 
@@ -684,29 +507,13 @@ static void* dec_worker(void* arg) {
         size_t bstart = b * a->block_size;
         size_t bsize  = a->dst_size > bstart ?
                         std::min<size_t>((size_t)a->block_size, a->dst_size - bstart) : 0;
-        if (bsize > 0) {
-#ifdef ANALYZE_DEPS
-            analyze_block_deps(bsize,
+        if (bsize > 0)
+            decompress_streams(
+                a->dst + bstart, bsize,
+                a->lit + bo.lit_off, bo.lit_sz,
                 a->off + bo.off_off, bo.off_sz,
                 a->len + bo.len_off, bo.len_sz,
-                a->cmd + bo.cmd_off, bo.cmd_sz, b);
-#endif
-            if (bo.all_indep) {
-                decompress_fast(
-                    a->dst + bstart, bsize,
-                    a->lit + bo.lit_off, bo.lit_sz,
-                    a->off + bo.off_off, bo.off_sz,
-                    a->len + bo.len_off, bo.len_sz,
-                    a->cmd + bo.cmd_off, bo.cmd_sz);
-            } else {
-                decompress_streams(
-                    a->dst + bstart, bsize,
-                    a->lit + bo.lit_off, bo.lit_sz,
-                    a->off + bo.off_off, bo.off_sz,
-                    a->len + bo.len_off, bo.len_sz,
-                    a->cmd + bo.cmd_off, bo.cmd_sz);
-            }
-        }
+                a->cmd + bo.cmd_off, bo.cmd_sz);
     }
     return nullptr;
 }
@@ -765,36 +572,6 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
         boffs[b].off_off=total_off; boffs[b].off_sz=results[b].off_size;
         boffs[b].len_off=total_len; boffs[b].len_sz=results[b].len_size;
         boffs[b].cmd_off=total_cmd; boffs[b].cmd_sz=results[b].cmd_size;
-        // Analyze independence: check all copies are non-overlapping
-        {
-            const uint8_t* cmd=results[b].cmd_buf;
-            const uint8_t* off=results[b].off_buf;
-            const uint8_t* len=results[b].len_buf;
-            size_t op=0,np=0,cp=0,out=0;
-            uint32_t rep[4]={1,2,4,8};
-            bool all_ok=true;
-            size_t bsz=BLOCK_SIZE;
-            while(out<bsz && cp<results[b].cmd_size && all_ok) {
-                uint8_t c=cmd[cp++];
-                if(c==0xFF){rep[0]=1;rep[1]=2;rep[2]=4;rep[3]=8;continue;}
-                if(c<0x80){uint32_t l=c+1;out+=l;}
-                else if((c&0xC0)==0x80){
-                    uint32_t ri=(c>>4)&3,lv=c&0x0F;
-                    if(lv==0x0F)lv+=read_varint(len,np,results[b].len_size);
-                    uint32_t l=lv+6,dist=rep[ri];
-                    if(ri>0){for(int i=ri;i>0;i--)rep[i]=rep[i-1];rep[0]=dist;}
-                    if(out<dist+l)all_ok=false;
-                    out+=l;
-                } else {
-                    uint32_t lv=(c==0xFE)?read_varint(len,np,results[b].len_size):(uint32_t)(c&0x3F);
-                    uint32_t l=lv+6,dist=read_varint(off,op,results[b].off_size);
-                    rep[3]=rep[2];rep[2]=rep[1];rep[1]=rep[0];rep[0]=dist;
-                    if(out<dist+l)all_ok=false;
-                    out+=l;
-                }
-            }
-            boffs[b].all_indep=all_ok?1:0;
-        }
         total_lit+=results[b].lit_size; total_off+=results[b].off_size;
         total_len+=results[b].len_size; total_cmd+=results[b].cmd_size;
     }
