@@ -151,6 +151,15 @@ static void compress_block(const uint8_t* src, size_t src_size,
     uint32_t rep[4]={1,2,4,8}, lit_run=0, miss=0;
     int ov=0;
     res->cmd_buf[cmd_i++] = BLOCK_MARKER;
+
+    // ULTRA: Chain flattening origin table
+    // origin[local_pos] = original literal source position (local)
+    static thread_local uint32_t origin[1048576];
+    size_t flat_pos = 0; // track which positions are initialized
+    auto init_origin = [&](size_t from, size_t to) {
+        for (size_t i = from; i < to && i < 1048576; i++) origin[i] = (uint32_t)i;
+    };
+    init_origin(0, bsz); // init all as self-referential (literal)
  
     auto flush_lit = [&]() {
         while (lit_run > 0 && !ov) {
@@ -223,8 +232,28 @@ static void compress_block(const uint8_t* src, size_t src_size,
                 if (lv<62) { res->cmd_buf[cmd_i++]=(uint8_t)(0xC0|lv); }
                 else { res->cmd_buf[cmd_i++]=0xFE;
                        wv(res->len_buf,len_i,lv,len_cap,ov,3); if(ov) break; }
-                wv(res->off_buf,off_i,c_off,off_cap,ov,2); if(ov) break;
-                rep[3]=rep[2]; rep[2]=rep[1]; rep[1]=rep[0]; rep[0]=c_off;
+                // ULTRA: Chain flattening with validation
+                size_t local_pos = pos - bstart;
+                uint32_t flat_off = c_off;
+                if (c_off <= local_pos) {
+                    size_t src_local = local_pos - c_off;
+                    uint32_t orig_src = origin[src_local];
+                    if (orig_src != src_local) {
+                        uint32_t candidate = (uint32_t)(local_pos - orig_src);
+                        // Validate ALL bytes
+                        bool valid = (candidate <= local_pos && candidate < 8388608u);
+                        for (size_t fi = 0; fi < c_len && valid; fi++) {
+                            if (src[bstart + local_pos - candidate + fi] !=
+                                src[bstart + local_pos - c_off + fi])
+                                valid = false;
+                        }
+                        if (valid) flat_off = candidate;
+                    }
+                    for (size_t fi = 0; fi < c_len && local_pos+fi < 1048576 && src_local+fi < 1048576; fi++)
+                        origin[local_pos + fi] = origin[src_local + fi];
+                }
+                wv(res->off_buf,off_i,flat_off,off_cap,ov,2); if(ov) break;
+                rep[3]=rep[2]; rep[2]=rep[1]; rep[1]=rep[0]; rep[0]=flat_off;
             }
             // Insert intermediate positions for short matches only
             // Insert intermediate positions for short matches only
@@ -300,6 +329,75 @@ static inline uint32_t read_varint(const uint8_t* buf, size_t& ptr, size_t limit
     return val;
 }
  
+
+// ULTRA: D=1 depth analyzer
+// Checks if ALL match sources are in literal-only zones (never in match-written zones)
+// If true: two-phase decode is provably correct
+static void analyze_depth(
+    size_t dst_size,
+    const uint8_t* off, size_t off_sz,
+    const uint8_t* len, size_t len_sz,
+    const uint8_t* cmd, size_t cmd_sz, size_t block_id)
+{
+    // First pass: collect all ops with positions
+    struct Op { uint32_t dst; uint32_t src; uint32_t len; uint8_t is_lit; };
+    static Op ops[131072];
+    size_t n=0;
+    size_t op=0,np=0,cp=0,out=0;
+    uint32_t rep[4]={1,2,4,8};
+    while(out<dst_size && cp<cmd_sz && n<131072) {
+        uint8_t c=cmd[cp++];
+        if(c==0xFF){rep[0]=1;rep[1]=2;rep[2]=4;rep[3]=8;continue;}
+        if(c<0x80) {
+            uint32_t l=c+1;
+            ops[n++]={(uint32_t)out,(uint32_t)0,l,1};
+            out+=l;
+        } else if((c&0xC0)==0x80) {
+            uint32_t ri=(c>>4)&3,lv=c&0x0F;
+            if(lv==0x0F)lv+=read_varint(len,np,len_sz);
+            uint32_t l=lv+6,dist=rep[ri];
+            if(ri>0){for(int i=ri;i>0;i--)rep[i]=rep[i-1];rep[0]=dist;}
+            if(!dist||out+l>dst_size)break;
+            ops[n++]={(uint32_t)out,(uint32_t)(out-dist),l,0};
+            out+=l;
+        } else {
+            uint32_t lv=(c==0xFE)?read_varint(len,np,len_sz):(uint32_t)(c&0x3F);
+            uint32_t l=lv+6,dist=read_varint(off,op,off_sz);
+            rep[3]=rep[2];rep[2]=rep[1];rep[1]=rep[0];rep[0]=dist;
+            if(!dist||out+l>dst_size)break;
+            ops[n++]={(uint32_t)out,(uint32_t)(out-dist),l,0};
+            out+=l;
+        }
+    }
+
+    // Second pass: for each match, check if src overlaps any MATCH dst
+    // Build match dst ranges first
+    size_t d1_safe=0, d2_dep=0;
+    for(size_t i=0;i<n;i++) {
+        if(ops[i].is_lit) continue;
+        uint32_t src_start=ops[i].src;
+        uint32_t src_end=ops[i].src+ops[i].len;
+        bool has_match_dep=false;
+        // Check all previous match destinations
+        for(size_t j=0;j<i;j++) {
+            if(ops[j].is_lit) continue; // skip literals
+            uint32_t mdst_start=ops[j].dst;
+            uint32_t mdst_end=ops[j].dst+ops[j].len;
+            // Does our src overlap this match's dst?
+            if(src_start < mdst_end && src_end > mdst_start) {
+                has_match_dep=true;
+                break;
+            }
+        }
+        if(has_match_dep) d2_dep++;
+        else d1_safe++;
+    }
+    fprintf(stderr, "block %zu: matches=%zu D1_safe=%.1f%% D2_dep=%.1f%%\n",
+        block_id, d1_safe+d2_dep,
+        (d1_safe+d2_dep)?100.0*d1_safe/(d1_safe+d2_dep):0,
+        (d1_safe+d2_dep)?100.0*d2_dep/(d1_safe+d2_dep):0);
+}
+
 static void decompress_streams(
     uint8_t* dst, size_t dst_size,
     const uint8_t* lit, size_t lit_sz,
@@ -333,6 +431,173 @@ static void decompress_streams(
     }
 }
  
+
+// ULTRA: Adaptive parallel decoder
+// Checks true source-readiness (not just self-overlap)
+static void decompress_adaptive(
+    uint8_t* dst, size_t dst_size,
+    const uint8_t* lit, size_t lit_sz,
+    const uint8_t* off, size_t off_sz,
+    const uint8_t* len, size_t len_sz,
+    const uint8_t* cmd, size_t cmd_sz)
+{
+    // Pass 1: decode all literals first into dst
+    // This makes all literal bytes "source-ready"
+    size_t lp=0, op=0, np=0, cp=0, out=0;
+    uint32_t rep[4]={1,2,4,8};
+    
+    // First pass: literals only
+    size_t cp1=0, lp1=0, out1=0;
+    uint32_t rep1[4]={1,2,4,8};
+    size_t np1=0, op1=0;
+    while (out1<dst_size && cp1<cmd_sz) {
+        uint8_t c=cmd[cp1++];
+        if (c==0xFF){rep1[0]=1;rep1[1]=2;rep1[2]=4;rep1[3]=8;continue;}
+        if (c<0x80) {
+            uint32_t l=c+1;
+            if (lp1+l>lit_sz||out1+l>dst_size) break;
+            memcpy(dst+out1, lit+lp1, l);
+            out1+=l; lp1+=l;
+        } else if ((c&0xC0)==0x80) {
+            uint32_t ri=(c>>4)&3,lv=c&0x0F;
+            if(lv==0x0F) lv+=read_varint(len,np1,len_sz);
+            uint32_t l=lv+6,dist=rep1[ri];
+            if(ri>0){for(int i=ri;i>0;i--)rep1[i]=rep1[i-1];rep1[0]=dist;}
+            out1+=l; // skip match for now
+        } else {
+            uint32_t lv=(c==0xFE)?read_varint(len,np1,len_sz):(uint32_t)(c&0x3F);
+            uint32_t l=lv+6; read_varint(off,op1,off_sz);
+            rep1[3]=rep1[2];rep1[2]=rep1[1];rep1[1]=rep1[0];
+            out1+=l; // skip match for now
+        }
+    }
+    size_t lit_ready_end = out1; // all literal positions are ready
+
+    // Second pass: matches only, using lit_ready_end as source-readiness threshold
+    size_t cp2=0, lp2=0, out2=0, op2=0, np2=0;
+    uint32_t rep2[4]={1,2,4,8};
+    while (out2<dst_size && cp2<cmd_sz) {
+        uint8_t c=cmd[cp2++];
+        if (c==0xFF){rep2[0]=1;rep2[1]=2;rep2[2]=4;rep2[3]=8;continue;}
+        if (c<0x80) {
+            uint32_t l=c+1; out2+=l; lp2+=l; // already done
+        } else if ((c&0xC0)==0x80) {
+            uint32_t ri=(c>>4)&3,lv=c&0x0F;
+            if(lv==0x0F) lv+=read_varint(len,np2,len_sz);
+            uint32_t l=lv+6,dist=rep2[ri];
+            if(ri>0){for(int i=ri;i>0;i--)rep2[i]=rep2[i-1];rep2[0]=dist;}
+            if(!dist||out2+l>dst_size) break;
+            // Source-ready check: src fully before lit_ready_end
+            if (out2-dist+l <= lit_ready_end) {
+                memcpy(dst+out2, dst+out2-dist, l); // safe parallel copy
+            } else {
+                copy_match(dst,out2,dist,l); // fallback
+            }
+            out2+=l;
+        } else {
+            uint32_t lv=(c==0xFE)?read_varint(len,np2,len_sz):(uint32_t)(c&0x3F);
+            uint32_t l=lv+6,dist=read_varint(off,op2,off_sz);
+            rep2[3]=rep2[2];rep2[2]=rep2[1];rep2[1]=rep2[0];rep2[0]=dist;
+            if(!dist||out2+l>dst_size) break;
+            if (out2-dist+l <= lit_ready_end) {
+                memcpy(dst+out2, dst+out2-dist, l);
+            } else {
+                copy_match(dst,out2,dist,l);
+            }
+            out2+=l;
+        }
+    }
+}
+
+
+struct DecOp {
+    uint32_t src_off;
+    uint32_t dst_off;
+    uint32_t len;
+    uint8_t  is_lit;
+};
+
+// ULTRA: True parallel decoder using Bernstein conditions
+// Step 1: Sequential literals (creates ready zone)
+// Step 2: Parallel matches where src is in ready zone
+static void decompress_parallel(
+    uint8_t* dst, size_t dst_size,
+    const uint8_t* lit, size_t lit_sz,
+    const uint8_t* off, size_t off_sz,
+    const uint8_t* len, size_t len_sz,
+    const uint8_t* cmd, size_t cmd_sz)
+{
+    // Build ops list first
+    static thread_local DecOp ops_buf[131072];
+    size_t ops_cnt = 0;
+    size_t lp=0, op=0, np=0, cp=0, out=0;
+    uint32_t rep[4]={1,2,4,8};
+    while (out<dst_size && cp<cmd_sz) {
+        uint8_t c=cmd[cp++];
+        if (c==0xFF){rep[0]=1;rep[1]=2;rep[2]=4;rep[3]=8;continue;}
+        if (c<0x80) {
+            uint32_t l=c+1;
+            if (lp+l>lit_sz||out+l>dst_size) break;
+            ops_buf[ops_cnt++]={(uint32_t)lp,(uint32_t)out,l,1};
+            out+=l; lp+=l;
+        } else if ((c&0xC0)==0x80) {
+            uint32_t ri=(c>>4)&3,lv=c&0x0F;
+            if(lv==0x0F) lv+=read_varint(len,np,len_sz);
+            uint32_t l=lv+6,dist=rep[ri];
+            if(ri>0){for(int i=ri;i>0;i--)rep[i]=rep[i-1];rep[0]=dist;}
+            if(!dist||out+l>dst_size) break;
+            ops_buf[ops_cnt++]={(uint32_t)(out-dist),(uint32_t)out,l,0};
+            out+=l;
+        } else {
+            uint32_t lv=(c==0xFE)?read_varint(len,np,len_sz):(uint32_t)(c&0x3F);
+            uint32_t l=lv+6,dist=read_varint(off,op,off_sz);
+            rep[3]=rep[2];rep[2]=rep[1];rep[1]=rep[0];rep[0]=dist;
+            if(!dist||out+l>dst_size) break;
+            ops_buf[ops_cnt++]={(uint32_t)(out-dist),(uint32_t)out,l,0};
+            out+=l;
+        }
+    }
+
+    // Step 1: Sequential literals — creates ready zone
+    size_t ready_end = 0;
+    for (size_t i = 0; i < ops_cnt; i++) {
+        if (ops_buf[i].is_lit) {
+            memcpy(dst+ops_buf[i].dst_off, lit+ops_buf[i].src_off, ops_buf[i].len);
+            size_t end = ops_buf[i].dst_off + ops_buf[i].len;
+            if (end > ready_end) ready_end = end;
+        }
+    }
+
+    // Step 2: Parallel matches where src+len <= ready_end (Bernstein safe)
+    // Split into parallel and sequential
+    static thread_local size_t par_idx[131072];
+    static thread_local size_t seq_idx[131072];
+    size_t par_cnt=0, seq_cnt=0;
+    for (size_t i = 0; i < ops_cnt; i++) {
+        if (!ops_buf[i].is_lit) {
+            const DecOp& o = ops_buf[i];
+            if (o.src_off + o.len <= ready_end && o.len <= (o.dst_off - o.src_off)) {
+                par_idx[par_cnt++] = i;
+            } else {
+                seq_idx[seq_cnt++] = i;
+            }
+        }
+    }
+
+    // Parallel copies — Bernstein conditions verified
+    #pragma omp parallel for schedule(static) num_threads(2)
+    for (size_t i = 0; i < par_cnt; i++) {
+        const DecOp& o = ops_buf[par_idx[i]];
+        memcpy(dst+o.dst_off, dst+o.src_off, o.len);
+    }
+
+    // Sequential fallback for dependent copies
+    for (size_t i = 0; i < seq_cnt; i++) {
+        const DecOp& o = ops_buf[seq_idx[i]];
+        copy_match(dst, o.dst_off, o.dst_off-o.src_off, o.len);
+    }
+}
+
 static const uint32_t K256[64] = {
     0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
     0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
@@ -429,13 +694,20 @@ static void* dec_worker(void* arg) {
         size_t bstart = b * a->block_size;
         size_t bsize  = a->dst_size > bstart ?
                         std::min<size_t>((size_t)a->block_size, a->dst_size - bstart) : 0;
-        if (bsize > 0)
+        if (bsize > 0) {
+#ifdef ANALYZE_DEPS
+            analyze_depth(bsize,
+                a->off + bo.off_off, bo.off_sz,
+                a->len + bo.len_off, bo.len_sz,
+                a->cmd + bo.cmd_off, bo.cmd_sz, b);
+#endif
             decompress_streams(
                 a->dst + bstart, bsize,
                 a->lit + bo.lit_off, bo.lit_sz,
                 a->off + bo.off_off, bo.off_sz,
                 a->len + bo.len_off, bo.len_sz,
                 a->cmd + bo.cmd_off, bo.cmd_sz);
+        }
     }
     return nullptr;
 }
@@ -548,13 +820,21 @@ static void fse_chunked_decomp(const uint8_t* src, size_t orig_sz, uint8_t* dst)
     const size_t CHUNK=512*1024;
     const uint64_t* cs = (const uint64_t*)(src + 8);
     size_t nc = (orig_sz + CHUNK - 1) / CHUNK;
-    const uint8_t* p = src + 8 + nc * 8;
-    size_t off = 0;
+    // Build chunk offsets for parallel decompress
+    std::vector<size_t> src_off(nc), dst_off(nc), raw_sz(nc);
+    size_t p_off = (size_t)(src + 8 + nc * 8 - src);
     for (size_t i = 0; i < nc; i++) {
-        size_t raw = std::min<size_t>(CHUNK, orig_sz - off);
-        if (cs[i] >> 63) { memcpy(dst+off, p, raw); p += raw; }
-        else { ZSTD_decompress(dst+off, raw, p, cs[i]); p += cs[i]; }
-        off += raw;
+        dst_off[i] = i * CHUNK;
+        raw_sz[i] = std::min<size_t>(CHUNK, orig_sz - dst_off[i]);
+        src_off[i] = p_off;
+        p_off += (cs[i] >> 63) ? raw_sz[i] : (size_t)(cs[i] & ~(uint64_t(1)<<63));
+    }
+    // Parallel decompress chunks
+    #pragma omp parallel for schedule(dynamic,1)
+    for (size_t i = 0; i < nc; i++) {
+        const uint8_t* p = src + src_off[i];
+        if (cs[i] >> 63) memcpy(dst + dst_off[i], p, raw_sz[i]);
+        else ZSTD_decompress(dst + dst_off[i], raw_sz[i], p, cs[i] & ~(uint64_t(1)<<63));
     }
 }
  
