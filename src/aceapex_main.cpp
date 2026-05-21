@@ -820,13 +820,21 @@ static void fse_chunked_decomp(const uint8_t* src, size_t orig_sz, uint8_t* dst)
     const size_t CHUNK=512*1024;
     const uint64_t* cs = (const uint64_t*)(src + 8);
     size_t nc = (orig_sz + CHUNK - 1) / CHUNK;
-    const uint8_t* p = src + 8 + nc * 8;
-    size_t off = 0;
+    // Build chunk offsets for parallel decompress
+    std::vector<size_t> src_off(nc), dst_off(nc), raw_sz(nc);
+    size_t p_off = (size_t)(src + 8 + nc * 8 - src);
     for (size_t i = 0; i < nc; i++) {
-        size_t raw = std::min<size_t>(CHUNK, orig_sz - off);
-        if (cs[i] >> 63) { memcpy(dst+off, p, raw); p += raw; }
-        else { ZSTD_decompress(dst+off, raw, p, cs[i]); p += cs[i]; }
-        off += raw;
+        dst_off[i] = i * CHUNK;
+        raw_sz[i] = std::min<size_t>(CHUNK, orig_sz - dst_off[i]);
+        src_off[i] = p_off;
+        p_off += (cs[i] >> 63) ? raw_sz[i] : (size_t)(cs[i] & ~(uint64_t(1)<<63));
+    }
+    // Parallel decompress chunks
+    #pragma omp parallel for schedule(dynamic,1)
+    for (size_t i = 0; i < nc; i++) {
+        const uint8_t* p = src + src_off[i];
+        if (cs[i] >> 63) memcpy(dst + dst_off[i], p, raw_sz[i]);
+        else ZSTD_decompress(dst + dst_off[i], raw_sz[i], p, cs[i] & ~(uint64_t(1)<<63));
     }
 }
  
