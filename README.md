@@ -118,9 +118,12 @@ Built with Claude AI assistance.
 
 MIT
 
-## Community
 
-Discussion on [encode.su](https://encode.su/threads/4487-ACEAPEX-my-first-compression-project-looking-for-feedback)
+## Community & Results
 
-Featured on [X.com](https://x.com/yasha1971/status/2057485786514125149)
+**X.com article** — [LZ77 decode at 9,903 MB/s: how we broke the sequential bottleneck on CPU](https://x.com/yasha1971/status/2057485786514125149)
+
+![ACEAPEX benchmark chart](aceapex_chart.png)
+
+**encode.su thread** — [ACEAPEX — my first compression project](https://encode.su/threads/4487-ACEAPEX-my-first-compression-project-looking-for-feedback)
 
