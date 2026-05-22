@@ -117,3 +117,10 @@ Built with Claude AI assistance.
 ## License
 
 MIT
+
+## Community
+
+Discussion on [encode.su](https://encode.su/threads/4487-ACEAPEX-my-first-compression-project-looking-for-feedback)
+
+Featured on [X.com](https://x.com/yasha1971/status/2057485786514125149)
+
