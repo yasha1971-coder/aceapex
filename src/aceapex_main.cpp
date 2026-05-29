@@ -36,6 +36,7 @@
 #define HASH_SIZE    0xFFFF
 #define MAX_DIST     (128 * 1024 * 1024)
 #define BLOCK_SIZE   (1 * 1024 * 1024)
+static size_t g_block_size = BLOCK_SIZE; // runtime adaptive, set in encode_file
 #define MAX_THREADS  16
 #define BLOCK_MARKER 0xFF
 #define ZSTD_LEVEL   22
@@ -292,7 +293,7 @@ static void* worker_func(void* arg) {
     while (true) {
         size_t bid=ps->next_block.fetch_add(1);
         if (bid>=ps->num_blocks) break;
-        size_t bstart=bid*BLOCK_SIZE, bend=bstart+BLOCK_SIZE;
+        size_t bstart=bid*g_block_size, bend=bstart+g_block_size;
         if (bend>ps->src_size) bend=ps->src_size;
         compress_block(ps->src,ps->src_size,bstart,bend,wa->htab,&ps->results[bid]);
     }
@@ -712,6 +713,19 @@ static void* dec_worker(void* arg) {
     return nullptr;
 }
  
+static size_t compute_block_size(size_t src_size, int threads) {
+    const size_t MIN_BS = 256*1024, MAX_BS = 1*1024*1024;
+    if (threads < 1) threads = 1;
+    size_t want_blocks = (size_t)threads * 4;
+    size_t blocks_at_max = (src_size + MAX_BS - 1) / MAX_BS;
+    if (blocks_at_max >= want_blocks) return MAX_BS; // 1MB enough -> best ratio, exact baseline
+    size_t bs = (src_size + want_blocks - 1) / want_blocks;
+    if (bs > MAX_BS) bs = MAX_BS;
+    bs &= ~((size_t)65536 - 1); // round to 64KB
+    if (bs < MIN_BS) bs = MIN_BS;
+    return bs;
+}
+
 static bool encode_file(const uint8_t* src, size_t src_size, int threads, int level,
     std::vector<BlockOffsets>& boffs,
     uint8_t*& raw_lit, size_t& total_lit,
@@ -720,7 +734,8 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
     uint8_t*& raw_cmd, size_t& total_cmd,
     size_t& num_blocks)
 {
-    num_blocks = (src_size + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    g_block_size = compute_block_size(src_size, threads);
+    num_blocks = (src_size + g_block_size - 1) / g_block_size;
     boffs.resize(num_blocks);
  
     // Adaptive hash size
@@ -989,7 +1004,7 @@ static int do_compress(const char* in_path, const char* out_path, int threads, i
     AetHeader hdr;
     memcpy(hdr.magic,"ACEPX2\0\0",8);
     hdr.version=2; hdr.orig_size=(uint64_t)src_size;
-    hdr.block_size=(uint32_t)BLOCK_SIZE; hdr.num_blocks=(uint32_t)num_blocks;
+    hdr.block_size=(uint32_t)g_block_size; hdr.num_blocks=(uint32_t)num_blocks;
     double t_sha256=now_sec();
     uint64_t hv=OUR_CHECKSUM(src,src_size);
     memcpy(hdr.xxhash,&hv,8);
@@ -1143,7 +1158,7 @@ static int do_test(const char* in_path, int threads, int level=2) {
     fse_chunked_decomp(zlen,len_sz,len);
     fse_chunked_decomp(zcmd,cmd_sz,cmd);
     parallel_decode(lit,off,len,cmd,boffs.data(),num_blocks,
-                    dst,src_size,(size_t)BLOCK_SIZE);
+                    dst,src_size,g_block_size);
  
     uint8_t digest_orig[32], digest_dec[32];
     sha256(src,src_size,digest_orig); sha256(dst,src_size,digest_dec);
