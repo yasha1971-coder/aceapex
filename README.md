@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20440965.svg)](https://doi.org/10.5281/zenodo.20440965)
+
 # ACEAPEX
 
 ## Benchmarks (lzbench, AMD EPYC 4344P, file: nci)
