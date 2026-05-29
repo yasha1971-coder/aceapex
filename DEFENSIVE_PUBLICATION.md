@@ -26,3 +26,8 @@ D1_safe = (src >= block_start) && (src + length <= block_end)
   howpublished = {GitHub repository, yasha1971-coder/aceapex},
   url = {https://github.com/yasha1971-coder/aceapex}
 }
+
+## DOI (Zenodo)https://doi.org/10.5281/zenodo.20440965
+
+Published: May 29, 2026
+Archived: Software Heritage swh:1:dir:33b1a9c7c5f86b07a57c7d546ca78175c9c234bf
