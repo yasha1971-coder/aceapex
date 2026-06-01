@@ -1149,6 +1149,15 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
         fprintf(stderr,"\n=== REAL ACEAPEX DEPTH ===\n");
         fprintf(stderr,"Match calls: %llu\n",(unsigned long long)g_match_calls);
         fprintf(stderr,"Tokens: %zu  MaxLevel: %d  AvgLevel: %.1f\n",g_tokens.size(),ml,avg);
+        { std::vector<uint64_t> hist(3244,0);
+          for(auto v:lev) hist[std::min(v,(int32_t)3243)]++;
+          fprintf(stderr,"=== DEPTH DISTRIBUTION ===\n");
+          uint64_t total=lev.size(),cum=0;
+          int limits[]={1,2,3,5,10,20,50,100,200,500,1000,2000,3243};
+          for(int li=0;li<13;li++){int d=limits[li];
+            for(int i=(li?limits[li-1]+1:0);i<=d;i++)cum+=hist[i];
+            fprintf(stderr,"depth<=%4d: %6.2f%% cumulative\n",d,100.0*cum/total);
+            if(cum>=total)break;}}
         FILE*ft=fopen("tokens.bin","wb");
         size_t ntok=g_tokens.size();fwrite(&ntok,8,1,ft);
         std::vector<uint32_t> tp(ntok),ts(ntok),tl(ntok),tlit(ntok);
