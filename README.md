@@ -125,6 +125,8 @@ MIT
 
 **X.com article** — [LZ77 decode at 9,903 MB/s: how we broke the sequential bottleneck on CPU](https://x.com/yasha1971/status/2057485786514125149)
 
+**X.com article (GPU)** — [We gave LZ77 an H100. It used 0.6% of the bandwidth.](https://x.com/yasha1971/status/2063314815381073955)
+
 ![ACEAPEX benchmark chart](aceapex_chart.png)
 
 **encode.su thread** — [ACEAPEX — my first compression project](https://encode.su/threads/4487-ACEAPEX-my-first-compression-project-looking-for-feedback)
