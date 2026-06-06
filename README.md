@@ -129,3 +129,12 @@ MIT
 
 **encode.su thread** — [ACEAPEX — my first compression project](https://encode.su/threads/4487-ACEAPEX-my-first-compression-project-looking-for-feedback)
 
+
+## Test Datasets
+
+FASTQ benchmark dataset: NA12878 (1 GB subset, 1000 Genomes Project)
+SHA256: 741ce8bd4b37e67656def1cf891445aefb80042d029ce7efe447a41b0c50636f
+Size: 1,073,741,824 bytes
+
+All GPU and CPU results in the paper use this exact file.
+BIT-PERFECT verified via XXH3-64 on every run.
