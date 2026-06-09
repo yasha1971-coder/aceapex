@@ -86,7 +86,7 @@ __global__ void k_parse(
     uint32_t lit_sz=bo.lit_sz, off_sz=bo.off_sz, len_sz=bo.len_sz, cmd_sz=bo.cmd_sz;
 
     uint64_t base = (uint64_t)b * block_size;
-    uint64_t dst_size = (orig_size > base) ? min((uint64_t)block_size, orig_size-base) : 0;
+    uint64_t dst_size = (orig_size > base) ? ((orig_size-base)<(uint64_t)block_size?(orig_size-base):(uint64_t)block_size) : 0;
 
     uint32_t lp=0, op=0, np=0, cp=0, out=0;
     uint32_t rep[4]={1,2,4,8};
