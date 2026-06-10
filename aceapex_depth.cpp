@@ -1119,7 +1119,15 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
       fwrite(&lit_sz,8,1,fl);
       fwrite(lit,1,lit_sz,fl);
       fclose(fl); }
-    g_record=true; g_tokens.clear(); double t_lz=now_sec(); parallel_decode(lit,off,len,cmd,boffs.data(),nb,dst,hdr.orig_size,hdr.block_size,threads); t_lz=now_sec()-t_lz;
+    // step0: dump raw decoded streams + BlockOffsets for full_gpu_decode.cu
+    { FILE* fs=fopen("streams.bin","wb");
+      fwrite(&hdr,sizeof(hdr),1,fs);
+      fwrite(boffs.data(),sizeof(BlockOffsets),nb,fs);
+      fwrite(lit,1,lit_sz,fs); fwrite(off,1,off_sz,fs);
+      fwrite(len,1,len_sz,fs); fwrite(cmd,1,cmd_sz,fs);
+      fclose(fs);
+      fprintf(stderr,"Dumped streams.bin (%u blocks)\n",nb); }
+    g_record=true; g_tokens.clear(); double t_lz=now_sec(); parallel_decode(lit,off,len,cmd,boffs.data(),nb,dst,hdr.orig_size,hdr.block_size,1); t_lz=now_sec()-t_lz;
     dec_time=now_sec()-dec_time;
     fprintf(stderr,"  Phase lit:  %.3fs\n  Phase fse:  %.3fs\n  Phase lz77: %.3fs\n",t_lit,t_fse,t_lz);
  
