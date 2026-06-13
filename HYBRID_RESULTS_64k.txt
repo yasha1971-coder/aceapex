@@ -54,3 +54,13 @@ FASTQ-256   233.2   9.70    |  (64KB: 44.7 @ 11.94)
 - v4 ANS = скоростной профиль (110-233 GB/s полного device-resident декода).
 - hybrid Zstd = ratio-профиль (+15-19% сжатия, скорость 2-3x ниже из-за GPU-Zstd).
 Оба bit-perfect. Пик скорости FASTQ 251 @ 8KB. Гибрид silesia/FASTQ бьёт nvcomp Zstd ratio.
+
+=== ФЛАГМАН: ПОЛНЫЙ 1GB NA12878 FASTQ, v4 ANS 16KB, H100, 2026-06-13 ===
+orig=1,073,741,824 B (полный человеческий геном FASTQ), 65536 блоков x 16KB
+FULL 260.1 GB/s @ ratio 11.19  (A=0.42ms entropy + B=3.71ms decode), bit-perfect MATCHES
+Полный device-resident декод (entropy ANS + match на GPU).
+ВАЖНО: на полном 1GB ratio ВЫШЕ (11.19) и скорость ВЫШЕ (260), чем на 256MiB (9.70@233)
+       -> больше данных = больше избыточности + лучше occupancy. Масштабируется в плюс.
+vs landscape: nvcomp DEFLATE genomics 50@5.3 (5x медленнее, 2x хуже ratio);
+              FASTQ CPU tools (FQZCOMP) <0.5 GB/s @ ~5 (3 порядка медленнее).
+FLAGSHIP 1GB NA12878: FULL 260.1 GB/s @ ratio 11.19 bit-perfect 16KB v4
