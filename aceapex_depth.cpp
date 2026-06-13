@@ -729,6 +729,8 @@ static void* dec_worker(void* arg) {
 }
  
 static size_t compute_block_size(size_t src_size, int threads) {
+    const char* bsenv=getenv("ACEAPEX_BS");
+    if(bsenv){ size_t v=(size_t)strtoull(bsenv,0,10); if(v>=4096){ fprintf(stderr,"[ACEAPEX_BS override] block_size=%zu\n",v); return v; } }
     const size_t MIN_BS = 256*1024, MAX_BS = 1*1024*1024;
     if (threads < 1) threads = 1;
     size_t want_blocks = (size_t)threads * 4;

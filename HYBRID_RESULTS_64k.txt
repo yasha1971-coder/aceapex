@@ -1,0 +1,35 @@
+=== enwik9-256MiB, 1MiB блоки (256 блоков), H100, 2026-06-13 ===
+v4 (ANS all):       ratio 2.185, FULL 7.8 GB/s, A=0.45ms B=34.0ms, MATCHES
+hybrid (Zstd lit):  ratio 2.502, FULL 7.0 GB/s, A=4.34ms B=34.3ms, MATCHES
+-> Zstd-литералы: 91.6MB -> 75.5MB. ratio +14.5%. Цель (вернуть ratio) достигнута.
+-> Скорость B-bound (1MiB блоки, недогрузка). Цена Zstd-энтропии видна будет на 64KB.
+
+=== ВСЕ ТРИ ДАТАСЕТА, 1MiB блоки, H100, 2026-06-13 (bit-perfect x3) ===
+              v4 ratio | hybrid ratio | прирост | hybrid FULL GB/s
+enwik9-256      2.185  |    2.502     | +14.5%  | 7.0
+silesia         2.638  |    2.924     | +10.8%  | 4.7
+FASTQ-256      10.874  |   12.196     | +12.2%  | 13.5
+Гибрид (Zstd литералы + ANS off/len/cmd) поднимает ratio на всех трёх.
+Скорость B-bound (1MiB = недогрузка GPU). Полная скорость -> замер 64KB.
+
+=== ФИНАЛ 64KB, H100, 2026-06-13, все bit-perfect ===
+            v4_ratio v4_GBs | hyb_ratio hyb_GBs | nvcompZstd(ctx)
+enwik9-256    2.10   73.8   |  2.43     36.2    | 2.51@44
+silesia       2.49   45.7   |  2.82     21.4    | 2.51@44
+FASTQ-256    10.60  160.1   | 11.94     44.7    | 11.1@69
+ВЫВОД: hybrid (Zstd-lit + ANS-rest) поднимает ratio +12-15% на всех трёх.
+- silesia 2.82 и FASTQ 11.94 БЬЮТ nvcomp Zstd по ratio (device-resident).
+- enwik (текст): 2.43 чуть ниже nvcomp 2.51 -> паритет на тексте.
+- Цена: Zstd-декод на GPU ~4ms фикс -> [A] стало узким местом, скорость ~2x ниже v4.
+- Узкое место теперь однозначно GPU-Zstd-энтропия (след. фронтир: DietGPU/быстрее декод).
+
+=== ФИНАЛ 64KB, H100, 2026-06-13, все bit-perfect ===
+            v4_ratio v4_GBs | hyb_ratio hyb_GBs | nvcompZstd(ctx)
+enwik9-256    2.10   73.8   |  2.43     36.2    | 2.51@44
+silesia       2.49   45.7   |  2.82     21.4    | 2.51@44
+FASTQ-256    10.60  160.1   | 11.94     44.7    | 11.1@69
+ВЫВОД: hybrid (Zstd-lit + ANS-rest) поднимает ratio +12-15% на всех трёх.
+- silesia 2.82 и FASTQ 11.94 БЬЮТ nvcomp Zstd по ratio (device-resident).
+- enwik (текст): 2.43 чуть ниже nvcomp 2.51 -> паритет на тексте.
+- Цена: Zstd-декод на GPU ~4ms фикс -> [A] стало узким местом, скорость ~2x ниже v4.
+- Узкое место теперь однозначно GPU-Zstd-энтропия (след. фронтир: DietGPU/быстрее декод).

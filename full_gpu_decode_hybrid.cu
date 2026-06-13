@@ -37,20 +37,13 @@
 #if defined(LIT_ZSTD)
   #include <nvcomp/zstd.h>
   #define LIT_PREFIX                 nvcompBatchedZstd
-  #define LIT_OPTS_T                 nvcompBatchedZstdOpts_t
-  #define LIT_DEFAULT_OPTS           nvcompBatchedZstdDefaultOpts
   #define LIT_NAME                   "zstd"
 #elif defined(LIT_GDEFLATE)
   #include <nvcomp/gdeflate.h>
   #define LIT_PREFIX                 nvcompBatchedGdeflate
-  #define LIT_OPTS_T                 nvcompBatchedGdeflateOpts_t
-  #define LIT_DEFAULT_OPTS           nvcompBatchedGdeflateDefaultOpts
   #define LIT_NAME                   "gdeflate"
 #else
-  // LIT_ANS: literals also via ANS (no gain; correctness/skeleton only)
   #define LIT_PREFIX                 nvcompBatchedANS
-  #define LIT_OPTS_T                 nvcompBatchedANSOpts_t
-  #define LIT_DEFAULT_OPTS           nvcompBatchedANSDefaultOpts
   #define LIT_NAME                   "ans"
 #endif
 
@@ -91,6 +84,7 @@ struct G5Hdr {                       // hybrid GPU-profile container header
 
 static const uint32_t CHUNK = 65536;
 static inline uint64_t pad16(uint64_t x){ return (x+15)&~15ull; }
+static inline uint64_t pad256(uint64_t x){ return (x+255)&~255ull; }
 
 // ---------------- decode kernel: warp-per-block (verbatim from v4) -----------
 __device__ __forceinline__ uint32_t d_read_varint(const uint8_t* buf, uint32_t& p, uint32_t limit){
@@ -194,7 +188,7 @@ static bool read_streams(const char* path, AetHdr& hdr, vector<BlockOffsets>& bo
 // families, we provide TWO concrete helpers (ANS and LIT) sharing this body via
 // a macro. (nvcomp's C API names differ per codec, so a macro is cleanest.)
 
-#define DEFINE_PACK_SEG(NAME, PREFIX, OPTS_T, DEFAULT_OPTS)                       \
+#define DEFINE_PACK_SEG(NAME, PREFIX)                                             \
 static int NAME##_pack_seg(const uint8_t* dSeg, uint64_t segBytes,               \
                            uint8_t*& dComp, uint64_t& stride, uint32_t& nchunks, \
                            std::vector<size_t>& csz){                            \
@@ -205,8 +199,8 @@ static int NAME##_pack_seg(const uint8_t* dSeg, uint64_t segBytes,              
         h_insz[i]=(i+1<nchunks)?CHUNK:(size_t)(segBytes-(uint64_t)(nchunks-1)*CHUNK);\
     }                                                                            \
     size_t max_out=0;                                                            \
-    NVCK(CAT(PREFIX,CompressGetMaxOutputChunkSize)(CHUNK,DEFAULT_OPTS,&max_out));\
-    stride=pad16(max_out);                                                       \
+    NVCK(CAT(PREFIX,CompressGetMaxOutputChunkSize)(CHUNK,CAT(PREFIX,CompressDefaultOpts),&max_out));\
+    stride=pad256(max_out);                                                      \
     CK(cudaMalloc(&dComp,stride*nchunks));                                       \
     std::vector<void*> h_out(nchunks);                                           \
     for(uint32_t i=0;i<nchunks;i++) h_out[i]=dComp+(uint64_t)i*stride;           \
@@ -220,10 +214,10 @@ static int NAME##_pack_seg(const uint8_t* dSeg, uint64_t segBytes,              
     CK(cudaMemcpy(d_out,h_out.data(),nchunks*sizeof(void*),cudaMemcpyHostToDevice));\
     CK(cudaMemcpy(d_insz,h_insz.data(),nchunks*sizeof(size_t),cudaMemcpyHostToDevice));\
     size_t temp_sz=0;                                                            \
-    NVCK(CAT(PREFIX,CompressGetTempSizeAsync)(nchunks,CHUNK,DEFAULT_OPTS,&temp_sz,segBytes));\
+    NVCK(CAT(PREFIX,CompressGetTempSizeAsync)(nchunks,CHUNK,CAT(PREFIX,CompressDefaultOpts),&temp_sz,segBytes));\
     void* dTemp=nullptr; if(temp_sz) CK(cudaMalloc(&dTemp,temp_sz));             \
     NVCK(CAT(PREFIX,CompressAsync)((const void* const*)d_in,d_insz,CHUNK,nchunks,\
-        dTemp,temp_sz,(void* const*)d_out,d_outsz,DEFAULT_OPTS,d_st,0));         \
+        dTemp,temp_sz,(void* const*)d_out,d_outsz,CAT(PREFIX,CompressDefaultOpts),d_st,0));\
     CK(cudaDeviceSynchronize());                                                 \
     csz.resize(nchunks); std::vector<nvcompStatus_t> st(nchunks);               \
     CK(cudaMemcpy(csz.data(),d_outsz,nchunks*sizeof(size_t),cudaMemcpyDeviceToHost));\
@@ -233,8 +227,8 @@ static int NAME##_pack_seg(const uint8_t* dSeg, uint64_t segBytes,              
     return 0;                                                                    \
 }
 
-DEFINE_PACK_SEG(ans, nvcompBatchedANS, nvcompBatchedANSOpts_t, nvcompBatchedANSDefaultOpts)
-DEFINE_PACK_SEG(lit, LIT_PREFIX,        LIT_OPTS_T,            LIT_DEFAULT_OPTS)
+DEFINE_PACK_SEG(ans, nvcompBatchedANS)
+DEFINE_PACK_SEG(lit, LIT_PREFIX)
 
 // ---------------- PACK: raw streams -> [LIT seg | R seg] -> .gaet5 -----------
 static int do_pack(const char* in_path, const char* out_path){
@@ -245,10 +239,12 @@ static int do_pack(const char* in_path, const char* out_path){
     uint64_t totR = totO+totN+totC;                 // off|len|cmd contiguous after lit
     printf("pack(hybrid,lit=%s): rawL=%.1f MB rawR=%.1f MB\n", LIT_NAME, totL/1e6, totR/1e6);
 
-    uint8_t* dRaw; CK(cudaMalloc(&dRaw,totRaw));
-    CK(cudaMemcpy(dRaw,RAW.data(),totRaw,cudaMemcpyHostToDevice));
-    const uint8_t* dL = dRaw;            // literal segment
-    const uint8_t* dR = dRaw + totL;     // off/len/cmd segment
+    // separate aligned device buffers per segment (nvcomp needs in-ptr aligned)
+    uint8_t *dL=nullptr,*dR=nullptr;
+    CK(cudaMalloc(&dL,totL>0?totL:1));
+    CK(cudaMalloc(&dR,totR>0?totR:1));
+    CK(cudaMemcpy(dL,RAW.data(),totL,cudaMemcpyHostToDevice));
+    CK(cudaMemcpy(dR,RAW.data()+totL,totR,cudaMemcpyHostToDevice));
 
     // pack literal segment with LIT codec
     uint8_t* dCompL=nullptr; uint64_t strideL=0; uint32_t nL=0; vector<size_t> cszL;
@@ -288,12 +284,12 @@ static int do_pack(const char* in_path, const char* out_path){
     uint64_t meta=sizeof(g)+sizeof(BlockOffsets)*hdr.num_blocks+8ull*(nL+nR);
     printf("pack done: container=%.1f MB (blob %.1f + meta %.1f)  GPU-profile ratio=%.3f  lit=%s\n",
         (blob+meta)/1e6, blob/1e6, meta/1e6, (double)hdr.orig_size/(blob+meta), LIT_NAME);
-    cudaFree(dRaw);cudaFree(dCompL);cudaFree(dCompR);
+    cudaFree(dL);cudaFree(dR);cudaFree(dCompL);cudaFree(dCompR);
     return 0;
 }
 
 // ---------------- generic batched decompress of one segment ------------------
-#define DEFINE_DECOMP_SEG(NAME, PREFIX, OPTS_T, DEFAULT_OPTS)                     \
+#define DEFINE_DECOMP_SEG(NAME, PREFIX)                                           \
 static int NAME##_decomp_seg(const uint8_t* dComp, const std::vector<uint64_t>& csz,\
                              uint8_t* dOutSeg, uint64_t segBytes, uint32_t chunk, \
                              cudaStream_t stream){                               \
@@ -318,16 +314,16 @@ static int NAME##_decomp_seg(const uint8_t* dComp, const std::vector<uint64_t>& 
     CK(cudaMemcpy(d_csz,h_csz.data(),nchunks*sizeof(size_t),cudaMemcpyHostToDevice));\
     CK(cudaMemcpy(d_bsz,h_bsz.data(),nchunks*sizeof(size_t),cudaMemcpyHostToDevice));\
     size_t temp_sz=0;                                                            \
-    NVCK(CAT(PREFIX,DecompressGetTempSizeAsync)(nchunks,chunk,DEFAULT_OPTS,&temp_sz,segBytes));\
+    NVCK(CAT(PREFIX,DecompressGetTempSizeAsync)(nchunks,chunk,CAT(PREFIX,DecompressDefaultOpts),&temp_sz,segBytes));\
     void* dTemp=nullptr; if(temp_sz) CK(cudaMalloc(&dTemp,temp_sz));             \
     NVCK(CAT(PREFIX,DecompressAsync)((const void* const*)d_c,d_csz,d_bsz,d_asz,  \
-        nchunks,dTemp,temp_sz,(void* const*)d_o,DEFAULT_OPTS,d_st,stream));      \
+        nchunks,dTemp,temp_sz,(void* const*)d_o,CAT(PREFIX,DecompressDefaultOpts),d_st,stream));\
     /* status checked by caller after sync; free scratch ptr arrays after sync */\
     /* NOTE: leak of small d_* arrays acceptable for a benchmark harness */      \
     return 0;                                                                    \
 }
-DEFINE_DECOMP_SEG(ans, nvcompBatchedANS, nvcompBatchedANSOpts_t, nvcompBatchedANSDefaultOpts)
-DEFINE_DECOMP_SEG(lit, LIT_PREFIX,        LIT_OPTS_T,            LIT_DEFAULT_OPTS)
+DEFINE_DECOMP_SEG(ans, nvcompBatchedANS)
+DEFINE_DECOMP_SEG(lit, LIT_PREFIX)
 
 // ---------------- DECODE: .gaet5 -> two entropy decodes -> k_decode ----------
 static int do_decode(const char* in_path, const char* orig_path){
