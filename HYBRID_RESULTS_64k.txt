@@ -33,3 +33,24 @@ FASTQ-256    10.60  160.1   | 11.94     44.7    | 11.1@69
 - enwik (текст): 2.43 чуть ниже nvcomp 2.51 -> паритет на тексте.
 - Цена: Zstd-декод на GPU ~4ms фикс -> [A] стало узким местом, скорость ~2x ниже v4.
 - Узкое место теперь однозначно GPU-Zstd-энтропия (след. фронтир: DietGPU/быстрее декод).
+
+=== 200+ ВЗЯТО: FASTQ-256, 16KB, v4 ANS, H100, 2026-06-13 ===
+FULL 233.2 GB/s @ ratio 9.70  (A=0.13ms entropy + B=1.02ms decode), bit-perfect MATCHES.
+Полный device-resident декод (entropy+match на GPU), НЕ match-only.
+16KB разгружает decode-kernel; ratio 10.6->9.70 (мелкие блоки режут длинные матчи).
+
+=== ПИК FASTQ v4: block_size свип полного декода, H100, 2026-06-13 ===
+64KB: 160.1 GB/s @ 10.60
+16KB: 233.2 GB/s @ 9.70   <- sweet spot
+8KB:  251.4 GB/s @ 8.73   <- пик скорости, ratio за коленом
+Полный device-resident (entropy ANS + match), bit-perfect. 16KB = лучший баланс.
+
+=== ПОЛНАЯ ТАБЛИЦА 16KB, H100, 2026-06-13, bit-perfect ===
+            v4_GBs v4_ratio | hyb_GBs hyb_ratio
+enwik9-256  110.1   2.002   |  42.8    2.387
+silesia      88.2   2.337   |  26.8    2.745
+FASTQ-256   233.2   9.70    |  (64KB: 44.7 @ 11.94)
+ДВА РЕЖИМА ОДНОГО ФОРМАТА:
+- v4 ANS = скоростной профиль (110-233 GB/s полного device-resident декода).
+- hybrid Zstd = ratio-профиль (+15-19% сжатия, скорость 2-3x ниже из-за GPU-Zstd).
+Оба bit-perfect. Пик скорости FASTQ 251 @ 8KB. Гибрид silesia/FASTQ бьёт nvcomp Zstd ratio.
