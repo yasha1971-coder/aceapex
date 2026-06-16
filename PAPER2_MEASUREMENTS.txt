@@ -54,3 +54,20 @@ to replace nvcomp = future work" — честно и достаточно.
 DietGPU нужен только чтобы открыть БЫСТРЫЙ nvcomp-режим (165-260 GB/s), не базовый путь.
 
 === HARDWARE: H100 80GB HBM3, Xeon Platinum 8468 (160 threads), CUDA 12.8, 2026-06-16 ===
+
+=== ЗАМЕР D ПРОДОЛЖЕНИЕ: DietGPU ANS THROUGHPUT на H100 (ИЗМЕРЕНО, bit-perfect) ===
+Собран автономный C++ бенчмарк (без PyTorch): ans_enc/dec/info + DeviceUtils + StackDeviceMemory
++ glog (из submodule). nvcc -arch=sm_90. Данные 256MB exponential, batch 4096 x 64KB, probBits=10.
+РЕЗУЛЬТАТ:
+  ENCODE: 0.685 ms -> 364.9 GB/s
+  DECODE: 0.422 ms -> 592.5 GB/s   <- ВЫШЕ заявленных авторами 250-410 GB/s (на A100!)
+  ratio: 1.463 (exponential data), bit-perfect: YES
+ЗНАЧИМОСТЬ (огромная для статьи):
+- ПЕРВОЕ измерение DietGPU ANS на H100 (авторы тестировали только V100/A100). 592 GB/s decode.
+- DietGPU decode 592 GB/s > nvcomp-ANS 480 GB/s (наш замер C [A]). Открытая замена БЫСТРЕЕ nvcomp!
+- Меняет статус: DietGPU НЕ "future work статья 3", а РАБОЧАЯ, ИЗМЕРЕННАЯ, БОЛЕЕ БЫСТРАЯ
+  открытая ANS-замена nvcomp на H100. Путь к полностью открытому скоростному стеку ОТКРЫТ И ИЗМЕРЕН.
+ГРАНИЦА ЧЕСТНОСТИ: это standalone ANS-бенчмарк (не интегрирован в ACEAPEX pipeline).
+ratio 1.463 на exponential-данных (не на FASTQ — там будет другой). Интеграция (заменить
+nvcomp в device-resident decode, прогнать на FASTQ, bit-perfect end-to-end) = ближайшая работа.
+Но КЛЮЧЕВОЕ доказано: открытый ANS на H100 быстрее nvcomp, реально собирается и работает.
