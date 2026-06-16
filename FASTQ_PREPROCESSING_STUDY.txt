@@ -36,3 +36,9 @@ qual  | 510M   | 208.3M  | 173.2M  | zstd 1.20x
   Подтверждает: DNA-packing-трансформы не дают выигрыша на этих данных vs хороший LZ+entropy.
 ИТОГ Закона Прорыва: stream separation работает (+10%); все байт-меняющие трансформы
 (packing/delta/transpose/kanzi-DNA) — нет. ACEAPEX конкурирует скоростью, не ratio.
+
+=== kanzi сильные уровни на seq (дополнение) ===
+ACEAPEX 40.5M | kanzi-l6 38.2M | kanzi-l9 31.2M | zstd-19 26.1M (лучший)
+kanzi-l9 бьёт ACEAPEX но медленный (7.2s/510MB) и проигрывает zstd. DNA-режим не помог.
+ФИНАЛ: на ratio порядок zstd > kanzi > ACEAPEX на всех потоках. ACEAPEX лидер по СКОРОСТИ декода
+(165 GB/s GPU), не по ratio. Честная рыночная позиция для статьи 2.
