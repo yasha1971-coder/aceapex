@@ -24,6 +24,7 @@ It is not the densest compressor (see [Honest Status](#honest-status)). Its edge
 
 - **Paper 1:** [ACEAPEX: Parallel LZ77 Decoding via Encode-Time Absolute Offset Resolution](https://arxiv.org/abs/2606.04268) — CPU scaling, GPU wavefront decoder, lzbench 2.3 integration.
 - **Paper 2:** [Compressed-Resident Genomics: Full-Pipeline Device-Resident GPU LZ77 Decode with Position-Invariant Random Access](https://arxiv.org/abs/2606.18900) — Full GPU pipeline, genomic seek, 50 GB range-decode.
+- **Paper 3:** [Unified Position-Invariant Random Access Through Two Compression Layers via Absolute-Offset Coordinates: A Bit-Perfect Device-Resident Proof](https://arxiv.org/abs/2606.24531) — Unified seek through entropy+match on GPU, 0.334 ms, bit-perfect, three-phase verified.
 
 Code archived on Zenodo: [DOI 10.5281/zenodo.20729380](https://doi.org/10.5281/zenodo.20729380)
 
