@@ -131,7 +131,7 @@ g++ -O3 -march=native -funroll-loops -std=c++17 \
 
 **GPU (aceapex_cuda, Mode 1 — nvcomp-free):**
 ```bash
-nvcc -O3 -std=c++17 -o aceapex_cuda src/aceapex_cuda.cu -lpthread -lzstd
+nvcc -O3 -std=c++17 -o aceapex_cuda lz/aceapex/cuda/aceapex_cuda_wrapper.cu -lpthread -lzstd
 ```
 
 ---
