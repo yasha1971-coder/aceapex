@@ -876,7 +876,12 @@ static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
     struct ZW{const uint8_t*in;size_t isz;uint8_t*out;size_t osz;size_t cap;};
     ZW zws[NW];
     for(int t=0;t<NW;t++){
-        size_t off=(size_t)t*csz,isz=(t<NW-1)?csz:sz-off;
+        // Unsigned-underflow guard: the last worker's offset 3*ceil(sz/4) exceeds
+        // sz for sz in {1,2,5,...}, so sz-off wrapped to ~2^64 -> ZSTD_compressBound
+        // huge -> malloc failed -> the literal stream was SILENTLY DROPPED and decode
+        // produced garbage. (lzbench issue #2, reported by inikep.)
+        size_t off=(size_t)t*csz; if(off>sz) off=sz;
+        size_t isz=(t<NW-1)?((off+csz<=sz)?csz:(sz-off)):(sz-off);
         zws[t]={src+off,isz,nullptr,0,ZSTD_compressBound(isz)+8};
         zws[t].out=(uint8_t*)malloc(zws[t].cap);
         if(!zws[t].out){out_sz=0;return nullptr;}}
@@ -899,7 +904,11 @@ static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
     out_sz=totalsz; return res;
 }
 static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_sz) {
-    uint64_t h=*(const uint64_t*)src;
+    // An empty or truncated literal stream must not be read as an 8-byte header.
+    // Tiny inputs give zlit_sz==0; the out-of-bounds read corrupted heap metadata
+    // and surfaced as a double-free thousands of calls later. (lzbench issue #2.)
+    if (!src || src_sz < 8) { orig_sz = 0; return (uint8_t*)malloc(1); }
+    uint64_t h; memcpy(&h, src, 8);   // alignment-safe (no AX_read64 in this tree)
     orig_sz=h & ~(uint64_t(1)<<62);
     uint8_t* out=(uint8_t*)malloc(orig_sz);
     if(!out) return nullptr;
@@ -910,7 +919,9 @@ static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_s
     struct DW{uint8_t*out;size_t raw;const uint8_t*in;size_t isz;};
     DW dws[NW]; const uint8_t* p=p0;
     for(int t=0;t<NW;t++){
-        size_t off=(size_t)t*csz,raw=(t<NW-1)?csz:orig_sz-off;
+        // Same underflow guard as in lit_compress (decoder side).
+        size_t off=(size_t)t*csz; if(off>orig_sz) off=orig_sz;
+        size_t raw=(t<NW-1)?((off+csz<=orig_sz)?csz:(orig_sz-off)):(orig_sz-off);
         dws[t]={out+off,raw,p,(size_t)zsz[t]}; p+=(size_t)zsz[t];}
     auto dfn=[](void*a)->void*{DW*d=(DW*)a;
         ZSTD_decompress(d->out,d->raw,d->in,d->isz); return nullptr;};

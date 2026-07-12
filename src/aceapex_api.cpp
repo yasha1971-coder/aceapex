@@ -14,6 +14,10 @@ int64_t aceapex_compress(
     int         level,
     int         threads)
 {
+    // Empty input: nothing to encode. Returning 0 avoids a division by
+    // num_blocks==0 further down (SIGFPE). Reported paths never hit this in
+    // lzbench, but the public API must not crash on an empty buffer.
+    if (src_size == 0) return 0;
     if (!src || !dst) return ACEAPEX_ERR_DATA;
     if (threads <= 0) threads = 8;
     if (level <= 0)   level   = 2;
@@ -72,10 +76,12 @@ int64_t aceapex_decompress(
     std::vector<BlockOffsets> boffs(hdr.num_blocks);
     memcpy(boffs.data(),p,hdr.num_blocks*sizeof(BlockOffsets));
     p+=hdr.num_blocks*sizeof(BlockOffsets);
-    uint8_t* zl=(uint8_t*)malloc(hdr.zlit_sz);
-    uint8_t* zo=(uint8_t*)malloc(hdr.zoff_sz);
-    uint8_t* zn=(uint8_t*)malloc(hdr.zlen_sz);
-    uint8_t* zc=(uint8_t*)malloc(hdr.zcmd_sz);
+    // malloc(0) may legally return NULL; an empty stream is not an error.
+    // The old !zl check turned zlit_sz==0 (tiny inputs) into ACEAPEX_ERR_MEMORY.
+    uint8_t* zl=(uint8_t*)malloc(hdr.zlit_sz?hdr.zlit_sz:1);
+    uint8_t* zo=(uint8_t*)malloc(hdr.zoff_sz?hdr.zoff_sz:1);
+    uint8_t* zn=(uint8_t*)malloc(hdr.zlen_sz?hdr.zlen_sz:1);
+    uint8_t* zc=(uint8_t*)malloc(hdr.zcmd_sz?hdr.zcmd_sz:1);
     if(!zl||!zo||!zn||!zc){free(zl);free(zo);free(zn);free(zc);return ACEAPEX_ERR_MEMORY;}
     memcpy(zl,p,hdr.zlit_sz); p+=hdr.zlit_sz;
     memcpy(zo,p,hdr.zoff_sz); p+=hdr.zoff_sz;
