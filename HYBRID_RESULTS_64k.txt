@@ -1,3 +1,10 @@
+[CORRECTION 2026-07-12] All FASTQ rows in this file were measured on a local NA12878 sample with
+degenerate quality strings (2 distinct symbols instead of ~40), which inflated its ratio ~3.4x.
+Those FASTQ ratios (10.6-12.2) are WITHDRAWN. On the real dataset (ENA ERR194147, md5 9af9ffaa)
+the ratio is ~3.97. The enwik9 and Silesia rows were always measured on real corpora and stand.
+The hybrid finding itself (Zstd literals + ANS for off/len/cmd raises ratio) holds on enwik9 and
+Silesia; its FASTQ magnitude must be re-measured before being cited.
+
 === enwik9-256MiB, 1MiB блоки (256 блоков), H100, 2026-06-13 ===
 v4 (ANS all):       ratio 2.185, FULL 7.8 GB/s, A=0.45ms B=34.0ms, MATCHES
 hybrid (Zstd lit):  ratio 2.502, FULL 7.0 GB/s, A=4.34ms B=34.3ms, MATCHES
