@@ -1,3 +1,9 @@
+**Correction 2026-07-12:** the FASTQ row previously reported 13.10 -> 13.46. That was measured
+on a local sample with degenerate quality strings. Re-measured on ENA accession ERR194147
+(md5 9af9ffaa0e15dba938408a711740e101): ratio 3.90 -> 3.97, decode 142.6 -> 178.6 GB/s.
+The lever holds and is STRONGER on the corrected data (+25% decode, was +8%).
+All other datasets were always real and are unchanged.
+
 # Results: `min_match_len` 6/8/10/12 → 12/16/24/32
 
 All measurements on NVIDIA H100 80GB, `ACEAPEX_BS=16384`, device-resident decode
@@ -9,7 +15,7 @@ GPU path, `cmp` for the CPU path). Ratio = original size / compressed size.
 
 | dataset            | baseline | tuned  | change |
 |--------------------|---------:|-------:|-------:|
-| FASTQ NA12878 1 GB |    13.10 | 13.46  | +2.7%  |
+| FASTQ ERR194147 1 GB |    3.90 | 3.97  | +1.8%  |
 | enwik9 (256 MB)    |     2.64 |  2.77  | +4.9%  |
 | dickens            |     2.58 |  2.71  | +5.0%  |
 | mozilla            |     2.62 |  2.68  | +2.3%  |

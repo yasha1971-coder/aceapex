@@ -1,3 +1,11 @@
+**Correction 2026-07-12:** all FASTQ figures below were measured on a sample with degenerate
+quality strings and are withdrawn. Corrected, on ENA ERR194147 (md5 9af9ffaa...): 20.7 M matches,
+81.7% coverage, mean length 10.1, 95.7% shorter than 32 B. CRUCIALLY, the parse ablation is
+REVERSED: the fused kernel runs at 143 GB/s while pure-copy reaches 212, and a direct parse-only
+measurement shows the serial parse is 66% of decode time. Parsing IS a bottleneck. The
+work-granularity mechanism itself holds (and holds more sharply: real FASTQ sits even lower on
+the curve), but the claim 'not parse-bound' does not.
+
 # Decode Mechanism: What Governs Throughput
 
 Reproduction material for the mechanism behind the [match-threshold](../match-threshold/)

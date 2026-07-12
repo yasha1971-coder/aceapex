@@ -69,9 +69,15 @@ All results XXH3 bit-perfect verified.
 
 | Dataset | Size | GB/s | Ratio |
 |---------|------|------|-------|
-| FASTQ NA12878 | 1 GB | up to 260 | 11.19 |
+| ~~FASTQ NA12878 | 1 GB | up to 260 | 11.19~~ | **WITHDRAWN 2026-07-12** |
 | FASTQ ERR194147 | 5 GB | 168.9 | 3.31 |
 | FASTQ ERR194147 | 50 GB† | 165.7 | 3.99 |
+
+**Correction (2026-07-12):** the 1 GB "NA12878" row above is withdrawn. That local sample had
+degenerate quality strings (2 distinct symbols instead of ~40), which inflated its ratio. The
+ERR194147 rows are unaffected and were always measured on the real dataset. Re-measured on
+ERR194147 (1 GB, md5 9af9ffaa0e15dba938408a711740e101): ratio 3.90 base / 3.97 tuned,
+match-phase decode 142.6 / 178.6 GB/s, bit-perfect.
 
 †Range-decode (output size decoupled from VRAM). H2D/D2H excluded from timer: target consumer is GPU-resident.
 

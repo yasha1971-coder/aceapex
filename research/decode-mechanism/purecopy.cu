@@ -1,7 +1,13 @@
 // НЕРЕЗОННЫЙ ТЕСТ: decode без вычисления. Все факторы предвычислены как
 // (src_abs, dst_abs, len) фиксированной ширины. Kernel = чистый parallel copy.
-// Гипотеза: снимает compute-предел (221), упирается в memory (HBM3 ~3TB/s).
-// Если throughput >> 221 -> закон "decode compute-bound" ВЗЛОМАН для absolute-offset.
+// Traces decode copy throughput against average match length, in isolation from parsing.
+// CORRECTION 2026-07-12: an earlier version of this file compared the result against a
+// hard-coded 221 GB/s "real kernel" figure and concluded that parsing was not the
+// bottleneck. That figure came from a FASTQ sample with degenerate quality strings and
+// the conclusion does not hold. On the real dataset (ENA ERR194147) the fused kernel runs
+// at 143 GB/s while this harness reaches 212, and a direct parse-only ablation shows the
+// serial per-token parse costs 66% of decode time. Parsing IS a bottleneck at short match
+// lengths. This harness measures the copy phase only; draw no conclusion about parsing from it.
 #include <cstdio>
 #include <cstdint>
 #include <cuda_runtime.h>
@@ -61,10 +67,10 @@ int main(int argc, char** argv){
     float ms=0; cudaEventElapsedTime(&ms,t0,t1);
     double gbs = (double)OUT/(ms*1e-3)/1e9;
     printf("PURE-COPY throughput: %.1f GB/s (%.3f ms)\n", gbs, ms);
-    printf("наш реальный kernel (с парсингом/leader): 221 GB/s\n");
-    printf("HBM3 теоретический предел H100: ~3350 GB/s\n");
-    if(gbs>300) printf(">>> ЗАКОН ВЗЛОМАН: pure-copy decode снимает compute-предел! Путь есть.\n");
-    else printf(">>> pure-copy не быстрее — предел не в парсинге, а в copy-паттерне.\n");
+    printf("HBM3 theoretical peak, H100: ~3350 GB/s\n");
+    printf("NOTE: this is the COPY phase in isolation. It says nothing about parse cost.\n");
+    printf("      On real data the fused kernel is SLOWER than this harness, because the\n");
+    printf("      serial per-token parse dominates at short match lengths.\n");
     free(htoks);
     return 0;
 }
