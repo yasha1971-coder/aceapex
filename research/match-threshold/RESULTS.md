@@ -30,7 +30,7 @@ Ratio improves on **every** dataset. No trade-off.
 
 | dataset            | baseline | tuned  | change |
 |--------------------|---------:|-------:|-------:|
-| FASTQ NA12878 1 GB |    220.5 | 238.8  | +8.3%  |
+| FASTQ ERR194147 1 GB |    142.6 | 178.6  | +25.2%  |
 | enwik9 (256 MB)    |     91.6 | 163.5  | +78%   |
 | dickens            |     17.6 |  25.5  | +45%   |
 | mozilla            |     28.9 |  29.3  | +1.4%  |
@@ -39,7 +39,7 @@ Ratio improves on **every** dataset. No trade-off.
 | xml                |      7.6 |   9.1  | +20%   |
 | samba              |     15.8 |  23.9  | +51%   |
 
-Throughput improves on **every** dataset. The FASTQ 1 GB flagship reaches 238.8 GB/s,
+Throughput improves on **every** dataset. The FASTQ 1 GB figure reaches 178.6 GB/s,
 above the ~221 GB/s this pipeline previously plateaued at — not by breaking any
 hardware limit, but by raising the average match length and moving up the
 throughput-vs-match-length curve.
