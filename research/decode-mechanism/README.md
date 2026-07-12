@@ -1,94 +1,111 @@
 # Decode Mechanism: What Governs Throughput
 
-Reproduction material for the mechanism half of the match-length work: the claim that
-decode throughput in this codec is a function of **average match length** (work
-granularity), and not of occupancy, parse cost, address locality, or launch parallelism.
+Reproduction material for the mechanism behind the [match-threshold](../match-threshold/)
+result: decode throughput in this codec is governed by **work granularity** — the average
+match length — and not by occupancy, parse cost, address locality, or launch parallelism.
 
-The practical consequence — an encoder threshold that improves ratio *and* throughput
-together — lives in [`../match-threshold/`](../match-threshold/). Read that one for the
-result; read this one for why it works.
+Read `../match-threshold/` for the practical result. Read this one for why it works.
 
-## The three tools
+## Tools
 
-| tool | what it shows | needs |
+| file | what it shows | needs |
 |---|---|---|
-| `match_length_curve.cu` | throughput as a function of match length, in isolation | H100-class GPU |
-| `match_histogram.cpp` | where real data sits on that curve | CPU only |
-| `offset_entropy.cpp` | why short matches also cost ratio | CPU only |
+| `purecopy.cu` | throughput as a function of match length, isolated from parsing | H100-class GPU |
+| `match_histogram.cpp` | where real corpora sit on that curve | CPU |
+| `offset_entropy.cpp` | why short matches also cost compression ratio | CPU |
 
 ```bash
-nvcc -O3 -arch=sm_90 -o match_length_curve match_length_curve.cu
+nvcc -O3 -arch=sm_90 -o purecopy purecopy.cu
 g++  -O3 -march=native -std=c++17 -o match_histogram match_histogram.cpp
 g++  -O3 -std=c++17 -o offset_entropy offset_entropy.cpp
 
-./match_length_curve                                   # the curve
-./match_histogram  enwik9 256000000                    # where enwik9 sits on it
-./offset_entropy   NA12878.fastq 256000000             # why the threshold pays
+./purecopy 32                                # one point on the curve
+for L in 32 64 128 256 512 1024; do ./purecopy $L; done
+./match_histogram enwik9 256000000
+./offset_entropy  NA12878.fastq 256000000
 ```
 
-## What we measured (H100 80GB, CUDA 12.4)
+## The curve
 
-**The curve.** Output size held constant at 1 GB; only the average match length varies:
+`purecopy.cu` hands the kernel pre-resolved `(src, dst, len)` triplets — no command parsing,
+no entropy stage, no leader-lane serialization. One warp copies one match, lanes strided
+across its bytes: the inner loop of the shipping `k_decode_g` with everything else removed.
+Output size is fixed at 1 GB; only the average match length varies.
+
+Measured on H100 80GB HBM3, from a fresh run of the published file:
 
 | avg match length | 32 | 64 | 128 | 256 | 512 | 1024 |
 |---|---:|---:|---:|---:|---:|---:|
-| GB/s | 212 | 417 | 606 | 693 | 737 | 741 |
+| GB/s | 212 | 416 | 607 | 692 | 734 | 744 |
 
-A 3.5× span. The reason is structural: a cooperative group is 32 lanes wide, so a 32-byte
-match gives each lane one byte and a shorter match leaves most of them idle.
+A 3.5x span from match length alone. The reason is structural: a warp is 32 lanes wide, so a
+32-byte match gives each lane a single byte, and anything shorter leaves most of the warp
+idle. Longer matches fill it.
 
-**Where real data sits.** Greedy hash factorization, 256 MB prefixes:
+The first column is also the key ablation: **212 GB/s of pure copy against 221 GB/s of the
+real kernel** on the same match-length distribution. Stripping out all parsing buys about 4%.
+Decode is therefore not parse-bound — the copy itself, at that granularity, is the wall.
 
-| corpus | matches | coverage | mean length | below 32 bytes |
+## Where real data sits
+
+Greedy hash factorization over 256 MB prefixes (`match_histogram`):
+
+| corpus | matches | coverage | mean length | shorter than 32 B |
 |---|---:|---:|---:|---:|
 | enwik9 | 32.5 M | 82.8% | 6.5 | 99.1% |
 | FASTQ (NA12878) | 11.9 M | 93.0% | 20.0 | 84.8% |
 
-Real factorizations sit at the low, steep end. That is the whole story: throughput is not
-capped by the hardware here, it is capped by how much work each match hands the warp.
+Real factorizations sit at the low, steep end of the curve. Throughput here is not capped by
+the hardware; it is capped by how little work each match hands the warp.
 
-**Why the threshold also helps ratio.** On FASTQ at `min_len=4`, the offset stream is ~66%
-of the compressed bytes. A short match to a far, near-random offset spends more bits
-encoding that offset than it saves in replaced literals. Raising the minimum length deletes
-exactly those matches, so offset entropy falls faster than literal count rises.
+## Why the threshold also improves ratio
+
+`offset_entropy` codes literals, offsets, and lengths as three separate streams and reports
+each stream's order-0 entropy while sweeping the minimum match length. On FASTQ at
+`min_len=4` the offset stream is about two-thirds of the compressed bytes: a short match to a
+far, near-random offset spends more bits encoding that offset than it saves in replaced
+literals. Raising the minimum length deletes exactly those matches, so offset entropy falls
+faster than literal count rises — and mean match length rises at the same time.
+
+One cause, two effects. That is why the threshold change improves ratio *and* throughput
+together instead of trading one against the other.
 
 ## Hypotheses we rejected
 
-Each was tested against a control before we accepted work-granularity:
+Each was tested against a control before work-granularity was accepted:
 
 | hypothesis | control | outcome |
 |---|---|---|
-| compute / parse bound | feed the kernel pre-parsed triplets | 212 GB/s ≈ real 221 → **rejected** |
-| occupancy bound | `__launch_bounds__(128,16)`: regs 39→32, blocks 12→16 | *slower* (register spill): 221→202, 181→155 → **rejected** |
-| address scatter (cold gather) | sorted vs. scattered source addresses | identical, 212.5 both → **rejected** |
-| launch parallelism | two concurrent decode streams | 90.9 + 61.6 = 152 < 220 single → **rejected** |
-| **work granularity** | throughput vs. average match length | **monotone, 3.5× span → accepted** |
+| compute / parse bound | feed the kernel pre-parsed triplets (`purecopy.cu`) | 212 vs 221 real -> **rejected** |
+| occupancy bound | `__launch_bounds__(128,16)`: registers 39->32, blocks/SM 12->16 | *slower* (register spill): 221->202, 181->155 -> **rejected** |
+| address scatter | sorted vs scattered source addresses | identical (212.5 both) -> **rejected** |
+| launch parallelism | two concurrent decode streams | 90.9 + 61.6 = 152 < 220 single -> **rejected** |
+| **work granularity** | throughput vs average match length | **monotone, 3.5x span -> accepted** |
 
-`match_length_curve.cu` is the last row. The rejected controls are single-line variants of
-it (drop the scatter in the source index; add `__launch_bounds__`; launch two streams) and
-are quick to re-derive from it.
+The rejected controls are one-line variants of `purecopy.cu`: permute the source index, add
+`__launch_bounds__`, or launch the kernel on two streams.
 
-## Effective workload (Table 1 of the paper)
+## Effective workload
 
-Throughput is a function of concurrent lanes, `lanes = G × block_count`, rather than of
-block size or cooperation width separately — three different `(G, block_size)` settings at
-131 K lanes all land at 170–183 GB/s; below ~32 K lanes the device starves, above ~1 M it
-saturates. Reproducing this grid requires the full pipeline binary (`e2e_pipe_tile`), not
-just these standalone tools: encode with `ACEAPEX_BS=<block_size>`, then decode with
-cooperation width `G`, and record GB/s across the grid.
+Throughput is a function of concurrent lanes, `lanes = G x block_count`, rather than of block
+size or cooperation width separately: three different `(G, block_size)` settings at 131 K
+lanes all land at 170-183 GB/s, the device starves below ~32 K lanes, and saturates above
+~1 M. Reproducing that grid needs the full pipeline binary rather than these standalone
+tools — encode with `ACEAPEX_BS=<block_size>`, decode at cooperation width `G`, record GB/s
+across the grid.
 
-Occupancy in the paper is computed analytically with
-`cudaOccupancyMaxActiveBlocksPerMultiprocessor` (39 registers → 12 resident blocks/SM →
-1584 total), not with profiler counters — Nsight counters are restricted on the cloud host
-we used (`ERR_NVGPUCTRPERM`). The mechanism is established by controlled ablation instead.
+Occupancy is computed analytically with `cudaOccupancyMaxActiveBlocksPerMultiprocessor`
+(39 registers -> 12 resident blocks/SM -> 1584 total), not from profiler counters: Nsight
+counters are restricted on the cloud host used here (`ERR_NVGPUCTRPERM`), so the mechanism is
+established by controlled ablation instead.
 
 ## Honest scope
 
-- The curve is a **synthetic copy kernel**: it isolates match-copy from parsing on purpose.
-  The end-to-end numbers in the paper come from the real pipeline, not from this tool.
-- `offset_entropy.cpp` models the entropy stage (order-0, per-stream). The shipping encoder
-  is stronger — dist-dependent thresholds, repeat offsets, depth factorization — so its
+- `purecopy.cu` is a **synthetic harness**. It isolates match-copy from parsing on purpose.
+  The end-to-end figures in the paper come from the real pipeline, not from this tool.
+- `offset_entropy.cpp` models the entropy stage (order-0, per stream). The shipping encoder
+  is stronger — distance-dependent thresholds, repeat offsets, depth factorization — so its
   absolute ratios are higher. This tool shows the *mechanism*, not the shipped ratio.
-- The plateaus (≈217 GB/s on enwik9, ≈377 on FASTQ at their tuned match lengths) are real
-  bandwidth limits at that granularity. Raising the average match length moves the
-  operating point up the curve; it does not raise the ceiling.
+- The plateaus (~217 GB/s on enwik9, ~377 on FASTQ at their tuned match lengths) are real
+  bandwidth limits at that granularity. Raising the average match length moves the operating
+  point up the curve; it does not raise the ceiling.
