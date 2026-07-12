@@ -74,6 +74,8 @@ struct BlockOffsets {
     uint64_t lit_off, off_off, len_off, cmd_off;
     uint64_t lit_sz,  off_sz,  len_sz,  cmd_sz;
 };
+
+
  
 static inline void wv(uint8_t* buf, size_t& ptr, uint32_t val,
                       size_t limit, int& ov, int sid) {
@@ -420,13 +422,17 @@ static void decompress_streams(
             if (lv==0x0F) lv+=read_varint(len,np,len_sz);
             uint32_t l=lv+6, dist=rep[ri];
             if (ri>0) { for(int i=ri;i>0;i--) rep[i]=rep[i-1]; rep[0]=dist; }
-            if (!dist||out+l>dst_size) break;
+            // dist>out would read before the start of the block buffer.
+            // A corrupted offset made this read arbitrary memory -> SIGSEGV.
+            if (!dist||dist>out||out+l>dst_size) break;
             copy_match(dst,out,dist,l); out+=l;
         } else {
             uint32_t lv=(c==0xFE)?read_varint(len,np,len_sz):(uint32_t)(c&0x3F);
             uint32_t l=lv+6, dist=read_varint(off,op,off_sz);
             rep[3]=rep[2];rep[2]=rep[1];rep[1]=rep[0];rep[0]=dist;
-            if (!dist||out+l>dst_size) break;
+            // Same guard: a corrupted offset varint yields a huge dist, and
+            // copy_match would then read from dst+out-dist, far before the buffer.
+            if (!dist||dist>out||out+l>dst_size) break;
             copy_match(dst,out,dist,l); out+=l;
         }
     }
@@ -672,6 +678,33 @@ struct AetHeader {
     uint8_t  xxhash[8];  // XXH3_64bits
     uint64_t zlit_sz, zoff_sz, zlen_sz, zcmd_sz;
 };
+
+// ---- Shared archive validation. Called from BOTH decode paths (CLI do_decompress
+// and the aceapex_decompress API), so they cannot drift apart again.
+// A single corrupted byte in the header or the BlockOffsets table used to send stream
+// pointers into arbitrary memory (SIGSEGV). Absolute offsets make this cheap: every
+// bound is a constant known before decoding starts, so all of this runs once per
+// archive and costs nothing in the hot loop.
+static bool ax_header_ok(const AetHeader& h, uint64_t src_size) {
+    if (h.block_size == 0 || h.num_blocks == 0) return false;
+    if ((uint64_t)h.num_blocks * (uint64_t)h.block_size < h.orig_size) return false;
+    uint64_t need = (uint64_t)sizeof(AetHeader)
+                  + (uint64_t)h.num_blocks * sizeof(BlockOffsets)
+                  + h.zlit_sz + h.zoff_sz + h.zlen_sz + h.zcmd_sz;
+    return need <= src_size;
+}
+
+static bool ax_boffs_ok(const BlockOffsets* b, uint64_t nb,
+                        uint64_t ls, uint64_t os, uint64_t ns, uint64_t cs) {
+    for (uint64_t i = 0; i < nb; i++) {
+        const BlockOffsets& o = b[i];
+        if (o.lit_off > ls || o.lit_sz > ls - o.lit_off) return false;
+        if (o.off_off > os || o.off_sz > os - o.off_off) return false;
+        if (o.len_off > ns || o.len_sz > ns - o.len_off) return false;
+        if (o.cmd_off > cs || o.cmd_sz > cs - o.cmd_off) return false;
+    }
+    return true;
+}
 #pragma pack(pop)
  
 static double now_sec() {
@@ -1067,6 +1100,11 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
     if (memcmp(hdr.magic,"ACEPX2\0\0",8)!=0) { fprintf(stderr,"Bad magic\n"); return 1; }
     fprintf(stderr,"[*] Decompress: %s -> %s\n",in_path,out_path);
  
+    { // archive-level sanity before we trust any offset from the file
+      fseek(fin,0,SEEK_END); long fsz=ftell(fin); fseek(fin,sizeof(hdr),SEEK_SET);
+      if (fsz < 0 || !ax_header_ok(hdr,(uint64_t)fsz)) {
+          fprintf(stderr,"Corrupt archive (header)\n"); fclose(fin); return 1; } }
+
     uint32_t nb=hdr.num_blocks;
     std::vector<BlockOffsets> boffs(nb);
     fread(boffs.data(),sizeof(BlockOffsets),nb,fin);
@@ -1080,9 +1118,24 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
     fread(zlen,1,hdr.zlen_sz,fin); fread(zcmd,1,hdr.zcmd_sz,fin);
     fclose(fin);
  
-    size_t off_sz=*(uint64_t*)zoff;
-    size_t len_sz=*(uint64_t*)zlen;
-    size_t cmd_sz=*(uint64_t*)zcmd;
+    // Stream headers come from the file: a corrupted length would malloc() garbage.
+    // Bound them by orig_size, which the header check already validated.
+    // A stream shorter than its 8-byte size header can only be an EMPTY stream
+    // (tiny inputs legitimately produce these), not a corrupt one: treat it as 0.
+    size_t off_sz=0, len_sz=0, cmd_sz=0;
+    if (hdr.zoff_sz >= 8) { memcpy(&off_sz, zoff, 8); off_sz &= ~(uint64_t(1)<<63); }
+    if (hdr.zlen_sz >= 8) { memcpy(&len_sz, zlen, 8); len_sz &= ~(uint64_t(1)<<63); }
+    if (hdr.zcmd_sz >= 8) { memcpy(&cmd_sz, zcmd, 8); cmd_sz &= ~(uint64_t(1)<<63); }
+    // Bound decoded stream sizes. NOT by orig_size: on tiny inputs the command
+    // stream legitimately exceeds the payload (format overhead > data). Bound by a
+    // generous multiple of orig_size plus a floor, which still rejects the garbage
+    // lengths a corrupted byte produces (those are astronomically large).
+    {
+        uint64_t cap = hdr.orig_size * 4 + ((uint64_t)1 << 20);
+        if (off_sz > cap || len_sz > cap || cmd_sz > cap) {
+            fprintf(stderr,"Corrupt archive (stream size)\n");
+            free(zlit);free(zoff);free(zlen);free(zcmd); return 1; }
+    }
  
     double dec_time=now_sec();
     double t_lit=now_sec();
@@ -1111,6 +1164,10 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
     free(zlit); free(zoff); free(zlen); free(zcmd);
     uint8_t* dst=(uint8_t*)malloc(hdr.orig_size);
     if(!dst){free(lit);free(off);free(len);free(cmd);return 1;}
+    // Last barrier: every block's slice must lie inside its decoded stream.
+    if (!ax_boffs_ok(boffs.data(), nb, lit_sz, off_sz, len_sz, cmd_sz)) {
+        fprintf(stderr,"Corrupt archive (block offsets)\n");
+        free(lit);free(off);free(len);free(cmd);free(dst); return 1; }
     double t_lz=now_sec(); parallel_decode(lit,off,len,cmd,boffs.data(),nb,dst,hdr.orig_size,hdr.block_size,threads); t_lz=now_sec()-t_lz;
     dec_time=now_sec()-dec_time;
     fprintf(stderr,"  Phase lit:  %.3fs\n  Phase fse:  %.3fs\n  Phase lz77: %.3fs\n",t_lit,t_fse,t_lz);

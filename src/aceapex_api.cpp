@@ -72,6 +72,20 @@ int64_t aceapex_decompress(
     AetHeader hdr; memcpy(&hdr,p,sizeof(hdr));
     if (memcmp(hdr.magic,"ACEPX2\0\0",8)!=0) return ACEAPEX_ERR_DATA;
     if (hdr.orig_size>dst_capacity) return ACEAPEX_ERR_BUFFER;
+
+    // ---- Header validation. Runs once per archive, costs nothing in the hot loop.
+    // A single corrupted byte in the header or in the BlockOffsets table used to send
+    // stream pointers into arbitrary memory (SIGSEGV). Absolute offsets make this cheap
+    // to check: every bound is a constant known before decoding starts.
+    if (hdr.block_size == 0 || hdr.num_blocks == 0) return ACEAPEX_ERR_DATA;
+    if ((uint64_t)hdr.num_blocks * (uint64_t)hdr.block_size < hdr.orig_size)
+        return ACEAPEX_ERR_DATA;
+    {
+        uint64_t need = (uint64_t)sizeof(hdr)
+                      + (uint64_t)hdr.num_blocks * sizeof(BlockOffsets)
+                      + hdr.zlit_sz + hdr.zoff_sz + hdr.zlen_sz + hdr.zcmd_sz;
+        if (need > src_size) return ACEAPEX_ERR_DATA;
+    }
     p+=sizeof(hdr);
     std::vector<BlockOffsets> boffs(hdr.num_blocks);
     memcpy(boffs.data(),p,hdr.num_blocks*sizeof(BlockOffsets));
@@ -96,6 +110,18 @@ int64_t aceapex_decompress(
     if(!o||!n||!c){free(o);free(n);free(c);free(zl);free(zo);free(zn);free(zc);return ACEAPEX_ERR_MEMORY;}
     fse_chunked_decomp(zo,os,o); fse_chunked_decomp(zn,ns,n); fse_chunked_decomp(zc,cs,c);
     free(zl);free(zo);free(zn);free(zc);
+
+    // Every block's stream slice must lie inside its decoded stream.
+    for (size_t b = 0; b < hdr.num_blocks; b++) {
+        const BlockOffsets& bo = boffs[b];
+        if (bo.lit_off + bo.lit_sz > ls || bo.lit_off > ls ||
+            bo.off_off + bo.off_sz > os || bo.off_off > os ||
+            bo.len_off + bo.len_sz > ns || bo.len_off > ns ||
+            bo.cmd_off + bo.cmd_sz > cs || bo.cmd_off > cs) {
+            free(l);free(o);free(n);free(c);
+            return ACEAPEX_ERR_DATA;
+        }
+    }
     parallel_decode(l,o,n,c,boffs.data(),hdr.num_blocks,
                     (uint8_t*)dst,hdr.orig_size,hdr.block_size);
     free(l);free(o);free(n);free(c);
