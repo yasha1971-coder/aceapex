@@ -1,10 +1,15 @@
 **Correction 2026-07-12:** all FASTQ figures below were measured on a sample with degenerate
 quality strings and are withdrawn. Corrected, on ENA ERR194147 (md5 9af9ffaa...): 20.7 M matches,
-81.7% coverage, mean length 10.1, 95.7% shorter than 32 B. CRUCIALLY, the parse ablation is
-REVERSED: the fused kernel runs at 143 GB/s while pure-copy reaches 212, and a direct parse-only
-measurement shows the serial parse is 66% of decode time. Parsing IS a bottleneck. The
-work-granularity mechanism itself holds (and holds more sharply: real FASTQ sits even lower on
-the curve), but the claim 'not parse-bound' does not.
+81.7% coverage, mean length 10.1, 95.7% shorter than 32 B. A note on scope. The §3.3 parse ablation below (pure-copy 212 vs the 221 GB/s
+MATCH-PHASE kernel, within 4%) is correct for the match-phase timer scope this paper uses
+throughout (see Setup): within the match phase, copy is the wall, not parse. Measured over
+the FULL decode instead (including the serial per-token front-end), a parse-only run puts
+parse at about 66% of decode time (fused 143 vs pure-copy 212), with the caveat that this
+run did not fully exclude dead-code elimination. These are two different timer scopes, not a
+contradiction: within the match phase parse is ~4%; across the full decode it is the larger
+share. The work-granularity mechanism holds in both, and holds more sharply on real FASTQ,
+which sits even lower on the curve. The shift of the wall from copy to parse as matches
+lengthen is a separate finding.
 
 # Decode Mechanism: What Governs Throughput
 
@@ -52,7 +57,9 @@ idle. Longer matches fill it.
 
 The first column is also the key ablation: **212 GB/s of pure copy against 221 GB/s of the
 real kernel** on the same match-length distribution. Stripping out all parsing buys about 4%.
-Decode is therefore not parse-bound — the copy itself, at that granularity, is the wall.
+Within the match phase, decode is not parse-bound — the copy itself, at that granularity,
+is the wall. (Across the full decode, including the serial front-end, parse is the larger
+share; see the scope note at the top.)
 
 ## Where real data sits
 
