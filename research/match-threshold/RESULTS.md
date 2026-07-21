@@ -51,9 +51,15 @@ distributions) ruled out the common explanations for the plateau:
 
 | hypothesis                    | test                                   | result          |
 |-------------------------------|----------------------------------------|-----------------|
-| compute / parse-bound         | pure-copy of pre-parsed triplets       | same speed → no |
+| compute / parse-bound (match phase) | pure-copy of pre-parsed triplets | same speed → no* |
 | occupancy-bound               | launch-bounds to raise resident blocks | *slower* (spill)|
 | address-scatter (cold gather) | sequential vs scattered source reads   | identical → no  |
+
+*Scope: this control is within the match-phase timer (pure-copy 212 vs the 221 GB/s
+match-phase kernel, ~4%). Across the FULL decode, including the serial per-token
+front-end, parse is the larger share (~66%, fused 143 vs pure-copy 212; caveat: that
+parse-only run did not fully exclude dead-code elimination). Two scopes, not a
+contradiction — see research/decode-mechanism/README.md.
 | multi-stream contention       | two parallel decodes                   | sum < single    |
 | **work-granularity**          | throughput vs average match length     | **monotone rise**|
 
