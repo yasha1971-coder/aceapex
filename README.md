@@ -7,6 +7,7 @@ Full device-resident GPU decode pipeline. Position-invariant random access on ge
 [![arXiv](https://img.shields.io/badge/arXiv-2606.04268-b31b1b.svg)](https://arxiv.org/abs/2606.04268)
 [![arXiv](https://img.shields.io/badge/arXiv-2606.18900-b31b1b.svg)](https://arxiv.org/abs/2606.18900)
 [![arXiv](https://img.shields.io/badge/arXiv-2606.24531-b31b1b.svg)](https://arxiv.org/abs/2606.24531)
+[![arXiv](https://img.shields.io/badge/arXiv-2607.18541-b31b1b.svg)](https://arxiv.org/abs/2607.18541)
 [![lzbench](https://img.shields.io/badge/lzbench-2.3-blue.svg)](https://github.com/inikep/lzbench/releases/tag/v2.3)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/yasha1971-coder?style=social)](https://github.com/sponsors/yasha1971-coder)
@@ -26,8 +27,9 @@ It is not the densest compressor (see [Honest Status](#honest-status)). Its edge
 - **Paper 1:** [ACEAPEX: Parallel LZ77 Decoding via Encode-Time Absolute Offset Resolution](https://arxiv.org/abs/2606.04268) — CPU scaling, GPU wavefront decoder, lzbench 2.3 integration.
 - **Paper 2:** [Compressed-Resident Genomics: Full-Pipeline Device-Resident GPU LZ77 Decode with Position-Invariant Random Access](https://arxiv.org/abs/2606.18900) — Full GPU pipeline, genomic seek, 50 GB range-decode.
 - **Paper 3:** [Unified Position-Invariant Random Access Through Two Compression Layers via Absolute-Offset Coordinates: A Bit-Perfect Device-Resident Proof](https://arxiv.org/abs/2606.24531) — Unified seek through entropy+match on GPU, 0.334 ms, bit-perfect, three-phase verified.
+- **Paper 4:** [What Governs Decode Throughput in Absolute-Offset GPU LZ77? A Work-Granularity Mechanism and an Encode-Time Min-Match-Length Lever](https://arxiv.org/abs/2607.18541) — Decode throughput governed by work granularity, not occupancy; encode-time min-match-length lever improves ratio and throughput together on all eight datasets.
 
-Code archived on Zenodo: [DOI 10.5281/zenodo.20729380](https://doi.org/10.5281/zenodo.20729380)
+Code archived on Zenodo: [Papers 1–3: 10.5281/zenodo.20729380](https://doi.org/10.5281/zenodo.20729380) · [Paper 4: 10.5281/zenodo.21316748](https://doi.org/10.5281/zenodo.21316748)
 
 ---
 
