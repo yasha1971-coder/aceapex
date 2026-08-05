@@ -70,7 +70,7 @@ __device__ __host__ static inline uint32_t rd_varint(const uint8_t* buf, uint32_
 }
 
 // ---- match kernel: byte-identical to e2e_pipe.cu ----
-#include "d2p_kernel.cuh"
+#include "d2p_dense_v4_282.cuh"
 
 template<int G>
 __global__ void k_decode_g(const uint8_t* __restrict__ LIT, const uint8_t* __restrict__ OFF,
@@ -225,6 +225,14 @@ int main(int argc, char** argv){
     if(G!=8&&G!=16&&G!=32){ fprintf(stderr,"G must be 8|16|32\n"); return 1; }
     FILE* f=fopen(argv[1],"rb"); if(!f){perror("open");return 1;}
     AetHdr hdr; if(fread(&hdr,sizeof(hdr),1,f)!=1){fprintf(stderr,"bad header\n");return 1;}
+    // FAIL LOUD: d2p_dense packs aux (match distance) in 14 bits (D2P_AUX & 0x3FFF, max 16383).
+    // block_size>16384 overflows aux -> silent corruption. Refuse instead of emitting bad data.
+    if(hdr.block_size > 16384){
+        fprintf(stderr,"ERROR: e2e_dense requires block_size <= 16384 (d2p_dense aux is 14-bit, max 16383); got %u.\n"
+                       "       Re-encode with ACEAPEX_BS<=16384 (16384 is the throughput optimum), or use v7ra for larger blocks.\n",
+                       hdr.block_size);
+        return 1;
+    }
     uint32_t nb=hdr.num_blocks;
     vector<BlockOffsets> boffs(nb);
     if(fread(boffs.data(),sizeof(BlockOffsets),nb,f)!=nb){fprintf(stderr,"bad boffs\n");return 1;}
