@@ -1,14 +1,22 @@
-*.bin
-*.o
-e2e_pipe
-e2e_full
-fgd_v3
-ans_bench2
-hybrid
-hybrid_ans
-v4
-v6
+# бинари (собираются из исходников)
+aceapex
+aceapex_depth*
+aceapex_dl
+aceapex_enc
+aceapex_main*
+e2e_dense
+e2e_pipe*
+e2e_seek
 v7ra
-wf_proof
-*_asan
-*.bak
+v7ra_test
+gpu_hash_finder*
+gpu_sa_*
+method_a_encode
+off_delta_analyze
+tile_*_smoke*
+Q4
+# временные/тестовые
+*.aet
+streams.bin
+*_test
+*.o
