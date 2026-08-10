@@ -176,9 +176,9 @@
     <div class="src">ERR194147 &middot; FNV-verified</div>
   </div>
   <div class="cell">
-    <div class="n">&minus;86<span>%</span></div>
-    <div class="l">Tail jitter cut by the depth cap: 284&rarr;39 &micro;s, worst block 462&rarr;214 &micro;s.</div>
-    <div class="src">chr1 &middot; +1.28% size &middot; bit-perfect</div>
+    <div class="n">4.53<span>&times;</span></div>
+    <div class="l">Self-overlapping matches are periodic fills, not dependency chains &mdash; fully parallel. 2.75&ndash;8.42&times; across four corpora.</div>
+    <div class="src">chr1 match layer &middot; bit-perfect &middot; Paper&nbsp;5</div>
   </div>
   <div class="cell">
     <div class="n">845<span>&times;</span></div>
@@ -196,8 +196,8 @@
   <p class="sub">A comparison built only from wins invites the reviewer to fill the gaps in public. These are ours to name.</p>
   <div class="loss-grid">
     <div class="loss">
-      <div class="t">zstd-19 packs tighter</div>
-      <div class="d">On the same genome: ratio 4.04 (ours) vs 4.93 (zstd-19). We beat zstd-3, not the high levels. Ratio is not our axis.</div>
+      <div class="t">zstd-19 packs tighter &mdash; when it is allowed a whole-file window</div>
+      <div class="d">On the same genome: ratio 4.04 (ours) vs 4.93 (zstd-19). Ratio is not our axis. But the comparison only means something once the constraint is equalised: under independent 16&nbsp;KB blocks, where every codec is equally seekable, ACEAPEX is first on 3 of 5 corpora against zstd-19 (enwik8 2.638, enwik9 2.981, silesia 3.005) and ahead of zstd-3 everywhere by 4.9&ndash;16.1%. Blocking itself costs 6.7% on genome and 24.2% on text; the match layer returns about three quarters of it. See Paper&nbsp;5.</div>
     </div>
     <div class="loss">
       <div class="t">A single cold tile over PCIe is faster</div>
@@ -219,6 +219,7 @@
     <a href="https://arxiv.org/abs/2606.18900">2606.18900</a>
     <a href="https://arxiv.org/abs/2606.24531">2606.24531</a>
     <a href="https://arxiv.org/abs/2607.18541">2607.18541</a>
+    <a href="https://doi.org/10.5281/zenodo.21874972">Paper&nbsp;5 &mdash; What Actually Serializes GPU LZ77 Decode (artifacts, DOI)</a>
   </div>
   <div>MIT-licensed. Every number carries command &middot; hardware &middot; verification. <a href="https://github.com/yasha1971-coder/aceapex">Reproduce &rarr;</a></div>
 </div></footer>
