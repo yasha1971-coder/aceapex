@@ -8,6 +8,7 @@ Full device-resident GPU decode pipeline. Position-invariant random access on ge
 [![arXiv](https://img.shields.io/badge/arXiv-2606.18900-b31b1b.svg)](https://arxiv.org/abs/2606.18900)
 [![arXiv](https://img.shields.io/badge/arXiv-2606.24531-b31b1b.svg)](https://arxiv.org/abs/2606.24531)
 [![arXiv](https://img.shields.io/badge/arXiv-2607.18541-b31b1b.svg)](https://arxiv.org/abs/2607.18541)
+[![Paper 5 DOI](https://img.shields.io/badge/Paper%205-10.5281%2Fzenodo.21874972-1682d4.svg)](https://doi.org/10.5281/zenodo.21874972)
 [![lzbench](https://img.shields.io/badge/lzbench-2.3-blue.svg)](https://github.com/inikep/lzbench/releases/tag/v2.3)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/yasha1971-coder?style=social)](https://github.com/sponsors/yasha1971-coder)
@@ -29,7 +30,20 @@ It is not the densest compressor (see [Honest Status](#honest-status)). Its edge
 - **Paper 3:** [Unified Position-Invariant Random Access Through Two Compression Layers via Absolute-Offset Coordinates: A Bit-Perfect Device-Resident Proof](https://arxiv.org/abs/2606.24531) — Unified seek through entropy+match on GPU, 0.334 ms, bit-perfect, three-phase verified.
 - **Paper 4:** [What Governs Decode Throughput in Absolute-Offset GPU LZ77? A Work-Granularity Mechanism and an Encode-Time Min-Match-Length Lever](https://arxiv.org/abs/2607.18541) — Decode throughput governed by work granularity, not occupancy; encode-time min-match-length lever improves ratio and throughput together on all eight datasets.
 
-Code archived on Zenodo: [Papers 1–3: 10.5281/zenodo.20729380](https://doi.org/10.5281/zenodo.20729380) · [Paper 4: 10.5281/zenodo.21316748](https://doi.org/10.5281/zenodo.21316748)
+- **Paper 5:** What Actually Serializes GPU LZ77 Decode: Three Decoders, Three Mechanisms, and an Encode-Time Lever That Removes the Last One — *submitted to arXiv, artifacts released.* Parse, not copy, holds 64–72% of device-resident decode; bounding chain depth moves latency by at most 2.8% and provably nothing at all where the file's own spike lives; self-overlapping matches are periodic fills, not chains, giving 2.75–8.42× on the match layer; the last sequential parse element is removed by the encoder for 0.540% of ratio.
+
+Code archived on Zenodo: [Papers 1–3: 10.5281/zenodo.20729380](https://doi.org/10.5281/zenodo.20729380) · [Paper 4: 10.5281/zenodo.21316748](https://doi.org/10.5281/zenodo.21316748) · [Paper 5: 10.5281/zenodo.21874972](https://doi.org/10.5281/zenodo.21874972)
+
+### Reproducing Paper 5
+
+Every claim carries a level — **R** reproducible here, **M** measured but not bit-perfect, **E** estimated — and the script writes one JSON record per claim:
+
+```bash
+git clone https://github.com/yasha1971-coder/aceapex.git && cd aceapex
+CHR1=/path/chr1.fa ENWIK9=/path/enwik9 ./reproduce_paper5.sh
+```
+
+A fresh clone of tag `paper5-v1` on a CPU-only host gives **17 pass, 0 fail, 6 skipped** (3 GPU claims need a CUDA device; 3 are the declared M and E entries). The recorded run ships as `results.json`.
 
 ---
 
