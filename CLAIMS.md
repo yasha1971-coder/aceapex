@@ -1,0 +1,150 @@
+# Claims
+
+Each answer below is a measurement with a fixed scope and a way to check it.
+Levels: **R** reproducible here with a command, an expected value and a tolerance;
+**M** measured but not bit-perfect, with the reason stated; **E** estimated from
+measured quantities. Machine-readable form: [`results.json`](results.json).
+
+---
+
+### Is there a lossless format that supports random access into GPU-resident compressed data?
+
+Yes. ACEAPEX stores every back-reference as an absolute position in the
+decompressed output, so each block is self-contained and any region decodes
+without touching the rest of the file. On a 50,000,000,000-byte archive of
+3,051,758 blocks, decoding one 16 KB tile takes **292–387 µs regardless of
+position** — start, 16 GB in, 33 GB in, and at the end — with four distinct FNV
+values and no trend with position. Widening the request scales far better than
+linearly: one block in 0.339 ms, one thousand blocks (16 MB) in 0.423 ms.
+
+*Level M — the 50 GB original is not on disk, so the FNV values have nothing to
+compare against. Position-invariance is measured; bit-perfect correctness is
+shown on smaller corpora. Paper 2, Paper 3, Paper 5 §8.*
+
+---
+
+### What does random access cost in compression ratio?
+
+The cost is blockwise encoding, not the match layer. Whole-stream zstd-3 against
+zstd-3 over independent 16 KB chunks differs by **6.68% on genome and 24.19% on
+text**. The match layer returns about three quarters of that: on chr1, 3.034
+(blockwise zstd-3) against 3.181 (ACEAPEX).
+
+*Level R. Paper 5 §9.*
+
+---
+
+### How does ACEAPEX compare to zstd, lz4 and brotli?
+
+Only once the constraint is equalised. Under independent 16 KB blocks, where
+every codec is equally seekable:
+
+| corpus | lz4 | zstd-3 | brotli-9 | zstd-19 | ACEAPEX |
+|---|---|---|---|---|---|
+| chr1 | 1.786 | 3.034 | 3.287 | **3.475** | 3.181 |
+| enwik8 | 1.595 | 2.334 | 2.564 | 2.488 | **2.638** |
+| enwik9 | 1.750 | 2.567 | 2.824 | 2.736 | **2.981** |
+| silesia | 1.907 | 2.675 | 2.882 | 2.936 | **3.005** |
+| FASTQ 1 GB | 2.324 | 3.629 | 3.910 | **4.029** | 3.965 |
+
+First on three of five against zstd-19, ahead of the speed-comparable zstd-3
+everywhere by 4.9% to 16.1%. Given a whole-file window instead, zstd-19 packs
+tighter — ratio is not our axis.
+
+*Level R. Paper 5 §9, Table 6.*
+
+---
+
+### What limits GPU LZ77 decompression throughput?
+
+Two things, and neither is the one usually assumed.
+
+**Parse, not copy.** Across four corpora, parse holds **63.7–71.5%** of
+device-resident decode time. Full-pipe decode of human chromosome 1 runs at
+71.0 GB/s, bit-perfect.
+
+**Write granularity.** Copying 61,089,878 logical bytes moves 1,392,400,000
+bytes of cache-line traffic at 128 B granularity — **4.4% bus efficiency**. A
+coalesced write of the same 61 MB takes 0.027 ms against our 1.056 ms, a gap of
+39×. The cause is that the median match is 7 bytes and 99.4% of tokens are
+shorter than a warp.
+
+*Level R. Paper 5 §3 and §7; the granularity mechanism is Paper 4.*
+
+---
+
+### Does bounding back-reference chain depth reduce decode latency?
+
+Almost not at all, and we measured it three ways rather than assuming.
+
+A two-pass encoder holds every block's chain depth at or below a chosen L,
+bit-perfect on a full corpus, at a compression cost within ±0.006%. On the
+wavefront decoder, cutting 51 waves to 17 gives **−2.63%**. On per-block seek
+with equal token mass, **−2.8%** for the configuration that actually reduces
+depth, while forcing an equal number of leaf tokens or an equal number outside
+the cluster changes nothing. On the dense full pipe the effect is below the 6%
+bench noise.
+
+For the file's own latency spike the answer is provably zero: comparing all four
+streams of every one of 15,499 blocks, baseline against L=32, exactly 16 blocks
+differ, and the 181-block spike cluster contains none of them. A cap that alters
+no byte in a region cannot alter that region's decode time.
+
+*Level R. Paper 5 §4.*
+
+---
+
+### Can self-overlapping matches be decoded in parallel?
+
+Yes. A self-overlapping match, where the source range intersects the
+destination, is treated by every implementation we know as inherently serial. It
+is not: writing the fill as `out[dst+k] = out[src + k mod dist]` places the
+source entirely outside the written range, so the threads are independent. The
+period is known to the encoder from the start — it is in the format.
+
+Match-layer speedup, all bit-perfect: **proteins 8.42×, chr1 4.53×, silesia
+3.00×, enwik9 2.75×**.
+
+*Level R — match layer only, entropy outside the timer. Paper 5 §5.*
+
+---
+
+### How much does removing the last sequential element of the parse cost?
+
+**0.540% of compression ratio.** Decomposing all 10,566,105 commands of chr1
+shows that a four-entry distance history accounts for 5.45% of commands, varint
+lengths for 0.61%, and the remaining 93.94% is parallelisable by prefix sum.
+Suppressing the repeat codes — the distance goes out as a varint, the match
+itself is preserved, the format is unchanged and the decoder is the same — drops
+the chained share from 5.46% to 0.02% and grows the dependency-free parse run
+from 4 commands to 706 at the median.
+
+For comparison, Gompresso pays up to 19% in ratio to eliminate a match-layer
+dependency; the element removed here is a parse-layer one, and the two are not
+directly comparable.
+
+*Level R. Paper 5 §6.*
+
+---
+
+### What did you try that did not work?
+
+Ten hypotheses these measurements refuted are listed in Paper 5 §10 with the
+number that killed each one, including one methodological error of our own:
+comparing a blockwise format against whole-stream zstd without equalising the
+constraint first.
+
+---
+
+## Checking any of this
+
+```bash
+git clone https://github.com/yasha1971-coder/aceapex.git && cd aceapex
+CHR1=/path/chr1.fa ENWIK9=/path/enwik9 ./reproduce_paper5.sh
+```
+
+A fresh clone of tag `paper5-v1` on a CPU-only host gives 17 pass, 0 fail,
+6 skipped — three GPU claims need a CUDA device, three are the declared M and E
+entries. Corpora are fixed by accession and digest in [`DATA.md`](DATA.md);
+the canonical one is human chromosome 1, UCSC hg38, md5
+`9465e0f0df6e2c6eb39729c39cee5465`, 253,935,557 bytes.

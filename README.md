@@ -19,6 +19,8 @@ Full device-resident GPU decode pipeline. Position-invariant random access on ge
 
 ACEAPEX is a research-grade LZ77 codec built around one design decision: back-references are stored as **absolute positions** in the decompressed output, not relative distances in a sliding window. That single choice makes every block self-contained, which unlocks parallel decode on CPU and GPU and **position-invariant random access** — decoding an arbitrary region without decompressing the whole file.
 
+**Every published claim is answered with a number and a way to check it — see [CLAIMS.md](CLAIMS.md).**
+
 It is not the densest compressor (see [Honest Status](#honest-status)). Its edge is **decode speed, region seek, and GPU residency** — useful when large static datasets are read far more often than written: genomic archives, columnar stores, GPU data-loading pipelines.
 
 ---

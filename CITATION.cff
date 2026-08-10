@@ -31,6 +31,9 @@ identifiers:
   - type: doi
     value: 10.5281/zenodo.21316748
     description: Archived code, Paper 4 artifact (v4.0)
+  - type: doi
+    value: 10.5281/zenodo.21874972
+    description: Archived code, Paper 5 artifact (paper5-v1)
 preferred-citation:
   type: article
   title: >-
@@ -81,3 +84,16 @@ references:
     identifiers:
       - type: other
         value: 'arXiv:2607.18541'
+  - type: article
+    title: >-
+      What Actually Serializes GPU LZ77 Decode: Three Decoders,
+      Three Mechanisms, and an Encode-Time Lever That Removes
+      the Last One
+    authors:
+      - given-names: Yakiv
+        family-names: Shavidze
+    year: 2026
+    identifiers:
+      - type: doi
+        value: 10.5281/zenodo.21874972
+        description: Artifacts; arXiv identifier pending announcement
