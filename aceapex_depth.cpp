@@ -44,6 +44,7 @@ static uint64_t g_match_calls=0;
 #define MAX_DIST     (128 * 1024 * 1024)
 #define BLOCK_SIZE   (1 * 1024 * 1024)
 static size_t g_block_size = BLOCK_SIZE; // runtime adaptive, set in encode_file
+static uint8_t* g_forced=nullptr; static size_t g_forced_n=0;  // PHASE2B forced-literal
 #define MAX_THREADS  16
 #define BLOCK_MARKER 0xFF
 #define ZSTD_LEVEL   22
@@ -92,15 +93,21 @@ static inline void wv(uint8_t* buf, size_t& ptr, uint32_t val,
     buf[ptr++] = (uint8_t)val;
 }
  
+static int g_mm = 0;      // MIN_MATCH=N -> нижний порог длины матча (0 = штатные 6/8/10/12)
+
 static inline uint32_t min_match_len(uint32_t dist) {
-    if (dist < 128)     return 6;
-    if (dist < 16384)   return 8;
-    if (dist < 2097152) return 10;
-    return 12;
+    uint32_t base;
+    if (dist < 128)          base = 6;
+    else if (dist < 16384)   base = 8;
+    else if (dist < 2097152) base = 10;
+    else                     base = 12;
+    return (g_mm > (int)base) ? (uint32_t)g_mm : base;
 }
  
 
 struct Match { uint32_t len, off; int rep; };
+static int g_norep = 0;   // NO_REP=1 -> не эмитить rep-матчи (scan-friendly parse)
+
 static inline int find_matches(const uint8_t* src, size_t pos, size_t bstart, size_t bend,
                                 ThreadHashTable* ht, uint32_t* rep, Match* out, int maxout) {
     int max_attempts = ht->max_attempts;
@@ -110,7 +117,7 @@ static inline int find_matches(const uint8_t* src, size_t pos, size_t bstart, si
         uint32_t d = rep[i]; if (pos < bstart+d) continue;
         if (*(uint32_t*)(src+pos)!=*(uint32_t*)(src+pos-d)) continue;
         uint32_t l=4; while(l<maxl&&src[pos+l]==src[pos-d+l]&&l<65535) l++;
-        if (l>=6) out[n++]={l,d,i};
+        if (l>=6) out[n++]={l,d,(g_norep?-1:i)};
     }
     uint32_t h=((*(uint32_t*)(src+pos)*0x9E3779B1u)>>10)&ht->hash_mask;
     int64_t head=(ht->epoch[h]==ht->cur_epoch)?ht->pos[h]:-1;
@@ -224,6 +231,10 @@ static void compress_block(const uint8_t* src, size_t src_size,
                     }
                 }
             }
+        }
+        if (c_len >= 6 && g_forced) {  // PHASE2B: reject if match covers forced-literal
+            size_t gp=pos;  // pos is global output coord in this encoder
+            for (uint32_t k=0;k<c_len;k++) if(gp+k<g_forced_n && g_forced[gp+k]){c_len=0;break;}
         }
         if (c_len >= 6) {
             flush_lit(); if (ov) break; miss=0;
@@ -974,7 +985,17 @@ static void entropy_encode(
     for(int i=0;i<3;i++) pthread_join(epts[i],nullptr);
 }
  
+static void load_forced(){  // PHASE2B
+    { const char* nr=getenv("NO_REP"); g_norep = (nr && *nr=='1') ? 1 : 0; }
+    { const char* mm=getenv("MIN_MATCH"); g_mm = mm ? atoi(mm) : 0; }
+    const char* fp=getenv("FORCED_BIN"); if(!fp) return;
+    FILE* ff=fopen(fp,"rb"); if(!ff) return;
+    fseek(ff,0,SEEK_END); long fs=ftell(ff); fseek(ff,0,SEEK_SET);
+    g_forced=(uint8_t*)malloc(fs); g_forced_n=fread(g_forced,1,fs,ff); fclose(ff);
+    fprintf(stderr,"PHASE2B: forced %zu positions\n",g_forced_n);
+}
 static int do_compress(const char* in_path, const char* out_path, int threads, int level=2) {
+    load_forced();
     double t_fread=now_sec();
 #ifdef _WIN32
     FILE* fin_w=fopen(in_path,"rb");
@@ -1206,6 +1227,7 @@ free(lit); free(off); free(len); free(cmd); free(dst);
 }
  
 static int do_test(const char* in_path, int threads, int level=2) {
+    load_forced();
     FILE* fin=fopen(in_path,"rb");
     if (!fin) { fprintf(stderr,"Cannot open: %s\n",in_path); return 1; }
     fseek(fin,0,SEEK_END); size_t src_size=(size_t)ftell(fin); fseek(fin,0,SEEK_SET);
