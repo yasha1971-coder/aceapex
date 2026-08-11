@@ -117,7 +117,7 @@ echo ""
 echo "--- R: what is sequential in the parse ---"
 if [ -f "$CHR1" ]; then
   env MIN_MATCH=0 ACEAPEX_BS=16384 "$BIN" c --in "$CHR1" --out /tmp/_p5.aet --threads 8 >/dev/null 2>&1
-  env MIN_MATCH=0 ACEAPEX_BS=16384 "$BIN" d --in /tmp/_p5.aet --out /tmp/_p5.dec >/dev/null 2>&1
+  env MIN_MATCH=0 ACEAPEX_BS=16384 ACEAPEX_DUMP=1 "$BIN" d --in /tmp/_p5.aet --out /tmp/_p5.dec >/dev/null 2>&1
   if [ -f streams.bin ]; then
     read -r CHAINED RUN50 <<<"$(python3 - << 'PY'
 import numpy as np, struct
@@ -165,7 +165,7 @@ if command -v nvcc >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
   [ "$OK" = 1 ] || rec wf_build R "3 kernels" - "nvcc failed" fail "nvcc -O3 -arch=sm_90"
   if [ "$OK" = 1 ] && [ -f "$CHR1" ]; then
     env MIN_MATCH=0 ACEAPEX_BS=16384 "$BIN" c --in "$CHR1" --out /tmp/_p5.aet --threads 8 >/dev/null 2>&1
-    env MIN_MATCH=0 ACEAPEX_BS=16384 "$BIN" d --in /tmp/_p5.aet --out /tmp/_p5.dec >/dev/null 2>&1
+    env MIN_MATCH=0 ACEAPEX_BS=16384 ACEAPEX_DUMP=1 "$BIN" d --in /tmp/_p5.aet --out /tmp/_p5.dec >/dev/null 2>&1
     for K in real par; do
       O=$(/tmp/wf_$K tokens.bin "$CHR1" 2>&1)
       MS=$(grep -oE '[0-9.]+ ms' <<<"$O" | grep -oE '[0-9.]+' | head -1)
