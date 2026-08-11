@@ -56,7 +56,7 @@ Standard LZ77 codecs face a tradeoff:
 - Global context gives better ratio but forces sequential decode
 - Independent blocks enable parallel decode but lose ratio
 
-ACEAPEX separates these responsibilities instead of trading between them:
+ACEAPEX takes the second branch and works on the price of it:
 
 - **Encode:** match search is confined to the block, and every back-reference chain is **resolved to its originating position** inside it — so a match never depends on another match's output
 - **Decode:** block-parallel reconstruction — each block is self-contained and independently decodable
