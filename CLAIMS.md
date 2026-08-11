@@ -28,6 +28,36 @@ shown on smaller corpora. Paper 2, Paper 3, Paper 5 §8.*
 
 ---
 
+### How does a region read compare to zstd's seekable format?
+
+Both solve the same problem on CPU: pull a slice out of a compressed file without
+touching the rest. Same file, same region, same host.
+
+| | archive | ratio | 16 KB seek | needs |
+|---|---|---|---|---|
+| zstd seekable, 16 KB frames | 83,924,167 | 3.026 | under 10 ms | a separate format and a second library |
+| **ACEAPEX** `LIT_CHUNK=1048576` | **79,771,100** | **3.183** | **3 ms** | the base format |
+
+Denser by 5.2% and faster to seek. Widening the request costs almost nothing: one
+block 3 ms, ten blocks 3 ms, a hundred blocks — 1.6 MB — 5 ms. The phase breakdown
+for a single block is read 0.000 s, entropy 0.001–0.005 s, match layer 0.000 s: the
+archive is mapped rather than read, so the kernel faults in only the pages the range
+touches.
+
+Verified byte for byte against the original at the start, the middle and the tail of
+the file.
+
+```bash
+aceapex c --in chr1.fa --out chr1.aet          # LIT_CHUNK=1048576 for region reads
+aceapex r --in chr1.aet --out slice.bin --region 126959616 16384
+```
+
+*Level R. The chunked literal scheme is opt-in: without `LIT_CHUNK` the encoder uses
+the previous layout, which is what the published figures were measured on. Chunk size
+is data-dependent — genome improves at 1 MB, text prefers 16 MB.*
+
+---
+
 ### What does random access cost in compression ratio?
 
 The cost is blockwise encoding, not the match layer. Whole-stream zstd-3 against
