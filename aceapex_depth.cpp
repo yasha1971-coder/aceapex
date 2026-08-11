@@ -169,10 +169,14 @@ static void compress_block(const uint8_t* src, size_t src_size,
 
     // ULTRA: Chain flattening origin table
     // origin[local_pos] = original literal source position (local)
-    static thread_local uint32_t origin[1048576];
+    // Chain flattening работает только на первом мегабайте блока: origin —
+    // таблица фиксированного размера. Чтение за её границей давало SIGSEGV при
+    // ACEAPEX_BS больше 1 MB; теперь крупные блоки просто не флэттенятся.
+    #define ORIGIN_CAP (1u<<20)
+    static thread_local uint32_t origin[ORIGIN_CAP];
     size_t flat_pos = 0; // track which positions are initialized
     auto init_origin = [&](size_t from, size_t to) {
-        for (size_t i = from; i < to && i < 1048576; i++) origin[i] = (uint32_t)i;
+        for (size_t i = from; i < to && i < ORIGIN_CAP; i++) origin[i] = (uint32_t)i;
     };
     init_origin(0, bsz); // init all as self-referential (literal)
  
@@ -254,7 +258,7 @@ static void compress_block(const uint8_t* src, size_t src_size,
                 // ULTRA: Chain flattening with validation
                 size_t local_pos = pos - bstart;
                 uint32_t flat_off = c_off;
-                if (c_off <= local_pos) {
+                if (c_off <= local_pos && local_pos < ORIGIN_CAP) {
                     size_t src_local = local_pos - c_off;
                     uint32_t orig_src = origin[src_local];
                     if (orig_src != src_local) {
@@ -268,7 +272,7 @@ static void compress_block(const uint8_t* src, size_t src_size,
                         }
                         if (valid) flat_off = candidate;
                     }
-                    for (size_t fi = 0; fi < c_len && local_pos+fi < 1048576 && src_local+fi < 1048576; fi++)
+                    for (size_t fi = 0; fi < c_len && local_pos+fi < ORIGIN_CAP && src_local+fi < ORIGIN_CAP; fi++)
                         origin[local_pos + fi] = origin[src_local + fi];
                 }
                 wv(res->off_buf,off_i,flat_off,off_cap,ov,2); if(ov) break;
