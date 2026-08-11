@@ -888,7 +888,7 @@ static void fse_chunked_decomp(const uint8_t* src, size_t orig_sz, uint8_t* dst)
 }
  
 // Parallel entropy encode — 4 streams simultaneously
-static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
+static uint8_t* lit_compress_legacy(const uint8_t* src, size_t sz, size_t& out_sz) {
     const int NW=4; size_t csz=(sz+NW-1)/NW;
     struct ZW{const uint8_t*in;size_t isz;uint8_t*out;size_t osz;size_t cap;};
     ZW zws[NW];
@@ -920,31 +920,92 @@ static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
     for(int t=0;t<NW;t++){zsz[t]=zws[t].osz;memcpy(p,zws[t].out,zws[t].osz);p+=zws[t].osz;free(zws[t].out);}
     out_sz=totalsz; return res;
 }
+
+// Literals are cut into fixed-size chunks instead of NW equal shares, which makes
+// unpacking partial: a region needs one chunk rather than a quarter of the file.
+// Opt-in through LIT_CHUNK; without it the previous layout is used unchanged.
+// Bit 61 of the stream header marks the new scheme, the chunk count follows it.
+static size_t lit_chunk_size(){
+    const char* e=getenv("LIT_CHUNK");
+    if(!e) return 0;
+    size_t v=strtoull(e,0,10);
+    return v<(1u<<16) ? 0 : v;
+}
+#define LIT_CHUNK lit_chunk_size()
+
+static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
+    const size_t CH = LIT_CHUNK;
+    if (CH == 0) return lit_compress_legacy(src, sz, out_sz);
+    const int NW = (int)((sz + CH - 1) / CH);
+    if (NW < 1 || NW > 65535) return lit_compress_legacy(src, sz, out_sz);
+    size_t csz = CH;
+    struct ZW{const uint8_t*in;size_t isz;uint8_t*out;size_t osz;size_t cap;};
+    std::vector<ZW> zws(NW);
+    for(int t=0;t<NW;t++){
+        size_t off=(size_t)t*csz; if(off>sz) off=sz;
+        size_t isz=(off+csz<=sz)?csz:(sz-off);
+        zws[t]={src+off,isz,nullptr,0,ZSTD_compressBound(isz)+8};
+        zws[t].out=(uint8_t*)malloc(zws[t].cap);
+        if(!zws[t].out){out_sz=0;return nullptr;}}
+    struct CPool{ ZW* w; int n; std::atomic<int> next; };
+    CPool cpool{zws.data(),NW,{0}};
+    auto zfn=[](void*a)->void*{
+        CPool* p=(CPool*)a;
+        ZSTD_CCtx* ctx=ZSTD_createCCtx();
+        if(!ctx) return nullptr;
+        ZSTD_CCtx_setParameter(ctx,ZSTD_c_compressionLevel,3);
+        for(;;){ int i=p->next.fetch_add(1); if(i>=p->n) break;
+            ZW& z=p->w[i]; z.osz=ZSTD_compress2(ctx,z.out,z.cap,z.in,z.isz); }
+        ZSTD_freeCCtx(ctx); return nullptr;};
+    const int LANES=std::min(8,NW);
+    std::vector<pthread_t> pts(LANES);
+    for(int t=0;t<LANES;t++) pthread_create(&pts[t],nullptr,zfn,&cpool);
+    for(int t=0;t<LANES;t++) pthread_join(pts[t],nullptr);
+    size_t hdrsz=8+8+(size_t)NW*8,totalsz=hdrsz;
+    for(int t=0;t<NW;t++) totalsz+=zws[t].osz;
+    uint8_t* res=(uint8_t*)malloc(totalsz);
+    if(!res){out_sz=0;return nullptr;}
+    *(uint64_t*)res=sz|(uint64_t(1)<<62)|(uint64_t(1)<<61);
+    *(uint64_t*)(res+8)=(uint64_t)CH;   // размер чанка, а не их число
+    uint64_t* zsz=(uint64_t*)(res+16); uint8_t* p=res+hdrsz;
+    for(int t=0;t<NW;t++){zsz[t]=zws[t].osz;memcpy(p,zws[t].out,zws[t].osz);p+=zws[t].osz;free(zws[t].out);}
+    out_sz=totalsz; return res;
+}
 static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_sz) {
     // An empty or truncated literal stream must not be read as an 8-byte header.
     // Tiny inputs give zlit_sz==0; the out-of-bounds read corrupted heap metadata
     // and surfaced as a double-free thousands of calls later. (lzbench issue #2.)
     if (!src || src_sz < 8) { orig_sz = 0; return (uint8_t*)malloc(1); }
     uint64_t h; memcpy(&h, src, 8);   // alignment-safe (no AX_read64 in this tree)
-    orig_sz=h & ~(uint64_t(1)<<62);
-    uint8_t* out=(uint8_t*)malloc(orig_sz);
+    const int NW_LEGACY=4;
+    const bool chunked=(h & (uint64_t(1)<<61))!=0;
+    orig_sz=h & ~((uint64_t(1)<<62)|(uint64_t(1)<<61));
+    uint8_t* out=(uint8_t*)malloc(orig_sz?orig_sz:1);
     if(!out) return nullptr;
     if(!(h & (uint64_t(1)<<62))){fse_chunked_decomp(src,orig_sz,out);return out;}
-    const int NW=4; const uint64_t* zsz=(const uint64_t*)(src+8);
-    const uint8_t* p0=src+8+NW*8;
-    size_t csz=(orig_sz+NW-1)/NW;
+    // Размер чанка читается ИЗ ФАЙЛА: архив не должен зависеть от окружения читателя.
+    size_t csz = chunked ? (size_t)(*(const uint64_t*)(src+8)) : (orig_sz+NW_LEGACY-1)/NW_LEGACY;
+    const int NW = chunked ? (int)((orig_sz + csz - 1)/csz) : NW_LEGACY;
+    const uint64_t* zsz=(const uint64_t*)(src+(chunked?16:8));
+    const uint8_t* p0=src+(chunked?16:8)+(size_t)NW*8;
     struct DW{uint8_t*out;size_t raw;const uint8_t*in;size_t isz;};
-    DW dws[NW]; const uint8_t* p=p0;
+    std::vector<DW> dws(NW); const uint8_t* p=p0;
     for(int t=0;t<NW;t++){
         // Same underflow guard as in lit_compress (decoder side).
         size_t off=(size_t)t*csz; if(off>orig_sz) off=orig_sz;
         size_t raw=(t<NW-1)?((off+csz<=orig_sz)?csz:(orig_sz-off)):(orig_sz-off);
         dws[t]={out+off,raw,p,(size_t)zsz[t]}; p+=(size_t)zsz[t];}
-    auto dfn=[](void*a)->void*{DW*d=(DW*)a;
-        ZSTD_decompress(d->out,d->raw,d->in,d->isz); return nullptr;};
-    pthread_t pts[NW];
-    for(int t=0;t<NW;t++) pthread_create(&pts[t],nullptr,dfn,&dws[t]);
-    for(int t=0;t<NW;t++) pthread_join(pts[t],nullptr);
+    struct Pool{ DW* w; int n; std::atomic<int> next; };
+    Pool pool{dws.data(),NW,{0}};
+    auto dfn=[](void*a)->void*{
+        Pool* p=(Pool*)a;
+        for(;;){ int i=p->next.fetch_add(1); if(i>=p->n) break;
+            DW& d=p->w[i]; if(d.isz) ZSTD_decompress(d.out,d.raw,d.in,d.isz); }
+        return nullptr;};
+    const int LANES=std::min(8,NW);
+    std::vector<pthread_t> pts(LANES);
+    for(int t=0;t<LANES;t++) pthread_create(&pts[t],nullptr,dfn,&pool);
+    for(int t=0;t<LANES;t++) pthread_join(pts[t],nullptr);
     return out;
 }
 static void entropy_encode(

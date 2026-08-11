@@ -1007,7 +1007,7 @@ static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
     uint8_t* res=(uint8_t*)malloc(totalsz);
     if(!res){out_sz=0;return nullptr;}
     *(uint64_t*)res=sz|(uint64_t(1)<<62)|(uint64_t(1)<<61);
-    *(uint64_t*)(res+8)=(uint64_t)NW;
+    *(uint64_t*)(res+8)=(uint64_t)CH;   // размер чанка, а не их число
     uint64_t* zsz=(uint64_t*)(res+16); uint8_t* p=res+hdrsz;
     for(int t=0;t<NW;t++){zsz[t]=zws[t].osz;memcpy(p,zws[t].out,zws[t].osz);p+=zws[t].osz;free(zws[t].out);}
     out_sz=totalsz; return res;
@@ -1018,15 +1018,17 @@ static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_s
     // and surfaced as a double-free thousands of calls later. (lzbench issue #2.)
     if (!src || src_sz < 8) { orig_sz = 0; return (uint8_t*)malloc(1); }
     uint64_t h; memcpy(&h, src, 8);   // alignment-safe (no AX_read64 in this tree)
+    const int NW_LEGACY=4;
     const bool chunked = (h & (uint64_t(1)<<61)) != 0;
     orig_sz = h & ~((uint64_t(1)<<62)|(uint64_t(1)<<61));
     uint8_t* out=(uint8_t*)malloc(orig_sz?orig_sz:1);
     if(!out) return nullptr;
     if(!(h & (uint64_t(1)<<62))){fse_chunked_decomp(src,orig_sz,out);return out;}
-    const int NW = chunked ? (int)(*(const uint64_t*)(src+8)) : 4;
-    const uint64_t* zsz=(const uint64_t*)(src + (chunked?16:8));
-    const uint8_t* p0=src + (chunked?16:8) + (size_t)NW*8;
-    size_t csz = chunked ? LIT_CHUNK : (orig_sz+NW-1)/NW;
+    // Размер чанка читается ИЗ ФАЙЛА: архив не должен зависеть от окружения читателя.
+    size_t csz = chunked ? (size_t)(*(const uint64_t*)(src+8)) : (orig_sz+NW_LEGACY-1)/NW_LEGACY;
+    const int NW = chunked ? (int)((orig_sz + csz - 1)/csz) : NW_LEGACY;
+    const uint64_t* zsz=(const uint64_t*)(src+(chunked?16:8));
+    const uint8_t* p0=src+(chunked?16:8)+(size_t)NW*8;
     struct DW{uint8_t*out;size_t raw;const uint8_t*in;size_t isz;};
     std::vector<DW> dws(NW); const uint8_t* p=p0;
     for(int t=0;t<NW;t++){
@@ -1447,10 +1449,10 @@ static uint8_t* lit_range(const uint8_t* src, size_t src_sz, size_t& orig_sz,
     const bool chunked=(h&(uint64_t(1)<<61))!=0;
     orig_sz=h&~((uint64_t(1)<<62)|(uint64_t(1)<<61));
     if(!(h&(uint64_t(1)<<62))) return fse_range(src,orig_sz,from,to);
-    const int NW=chunked?(int)(*(const uint64_t*)(src+8)):4;
+    size_t csz=chunked?(size_t)(*(const uint64_t*)(src+8)):(orig_sz+3)/4;
+    const int NW=chunked?(int)((orig_sz+csz-1)/csz):4;
     const uint64_t* zsz=(const uint64_t*)(src+(chunked?16:8));
     const uint8_t* p=src+(chunked?16:8)+(size_t)NW*8;
-    size_t csz=chunked?LIT_CHUNK:(orig_sz+NW-1)/NW;
     uint8_t* out=(uint8_t*)calloc(orig_sz?orig_sz:1,1);
     if(!out) return nullptr;
     for(int t=0;t<NW;t++){
