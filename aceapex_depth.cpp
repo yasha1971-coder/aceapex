@@ -318,14 +318,44 @@ static void* worker_func(void* arg) {
     return nullptr;
 }
  
-static inline void copy_match(uint8_t* dst, size_t out_ptr, uint32_t dist, uint32_t len) {
+// WILD COPY: dst выделяется с DST_PAD запасом, поэтому можно писать за len.
+// Один 16-байтовый store вместо вызова memcpy на матч в 7-8 байт.
+#define DST_PAD 64
+
+static inline void wild16(uint8_t* d, const uint8_t* s, uint32_t len) {
+    uint32_t i = 0;
+    do {
+        __builtin_memcpy(d + i, s + i, 16);   // компилятор разворачивает в один store
+        i += 16;
+    } while (i < len);
+}
+
+static inline void copy_match(uint8_t* dst, size_t out_ptr, uint32_t dist, uint32_t len,
+                              size_t safe_end) {
     uint8_t* d = dst + out_ptr;
     const uint8_t* s = dst + out_ptr - dist;
-    if (__builtin_expect(dist >= len, 1)) { memcpy(d, s, len); return; }
+
+    // wild copy пишет округляя вверх до 16; блоки декодируются параллельно в общий
+    // буфер, поэтому выходить за границу СВОЕГО блока нельзя
+    const bool room = (out_ptr + ((size_t)len + 15u & ~(size_t)15u)) <= safe_end;
+
+    if (__builtin_expect(dist >= 16 && room, 1)) {
+        wild16(d, s, len);
+        return;
+    }
+    if (dist >= len) { memcpy(d, s, len); return; }
     if (dist == 1) { memset(d, s[0], len); return; }
-    uint32_t done = 0;
-    while (done + dist <= len) { memcpy(d + done, s, dist); done += dist; }
-    if (done < len) memcpy(d + done, s, len - done);
+
+    // dist < 16: сначала размножаем паттерн до >=16 байт побайтно (максимум 15 шагов),
+    // дальше копируем широко — вместо len/dist вызовов memcpy по 3 байта
+    // копируем первые dist байт, затем удваиваем уже готовый префикс
+    for (uint32_t k = 0; k < dist && k < len; k++) d[k] = s[k];
+    uint32_t have = dist;
+    while (have < len) {
+        uint32_t take = have < (len - have) ? have : (len - have);
+        memcpy(d + have, d, take);
+        have += take;
+    }
 }
  
 static inline uint32_t read_varint(const uint8_t* buf, size_t& ptr, size_t limit) {
@@ -439,7 +469,7 @@ static void decompress_streams(
             uint32_t l=lv+6, dist=rep[ri];
             if (ri>0) { for(int i=ri;i>0;i--) rep[i]=rep[i-1]; rep[0]=dist; }
             if (!dist||out+l>dst_size) break;
-            copy_match(dst,out,dist,l);
+            copy_match(dst,out,dist,l,dst_size);
                 if(g_record){g_match_calls++;int64_t src64=(int64_t)g_bstart+(int64_t)out-(int64_t)dist;
                     if(src64>=0) g_tokens.push_back({(uint64_t)(g_bstart+out),(uint64_t)src64,(uint32_t)l});
                 } out+=l;
@@ -448,7 +478,7 @@ static void decompress_streams(
             uint32_t l=lv+6, dist=read_varint(off,op,off_sz);
             rep[3]=rep[2];rep[2]=rep[1];rep[1]=rep[0];rep[0]=dist;
             if (!dist||out+l>dst_size) break;
-            copy_match(dst,out,dist,l);
+            copy_match(dst,out,dist,l,dst_size);
                 if(g_record){
                     int64_t src64=(int64_t)g_bstart+(int64_t)out-(int64_t)dist;
                     if(src64>=0) g_tokens.push_back({(uint64_t)(g_bstart+out),(uint64_t)src64,(uint32_t)l});
@@ -517,7 +547,7 @@ static void decompress_adaptive(
             if (out2-dist+l <= lit_ready_end) {
                 memcpy(dst+out2, dst+out2-dist, l); // safe parallel copy
             } else {
-                copy_match(dst,out2,dist,l); // fallback
+                copy_match(dst,out2,dist,l,dst_size); // fallback
             }
             out2+=l;
         } else {
@@ -528,7 +558,7 @@ static void decompress_adaptive(
             if (out2-dist+l <= lit_ready_end) {
                 memcpy(dst+out2, dst+out2-dist, l);
             } else {
-                copy_match(dst,out2,dist,l);
+                copy_match(dst,out2,dist,l,dst_size);
             }
             out2+=l;
         }
@@ -620,7 +650,7 @@ static void decompress_parallel(
     // Sequential fallback for dependent copies
     for (size_t i = 0; i < seq_cnt; i++) {
         const DecOp& o = ops_buf[seq_idx[i]];
-        copy_match(dst, o.dst_off, o.dst_off-o.src_off, o.len);
+        copy_match(dst, o.dst_off, o.dst_off-o.src_off, o.len, 0);  // точный путь
     }
 }
 
@@ -1116,6 +1146,7 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
     fread(zlit,1,hdr.zlit_sz,fin); fread(zoff,1,hdr.zoff_sz,fin);
     fread(zlen,1,hdr.zlen_sz,fin); fread(zcmd,1,hdr.zcmd_sz,fin);
     fclose(fin);
+    fprintf(stderr,"  Phase read: %.3fs\n",now_sec()-t_wall);
  
     size_t off_sz=*(uint64_t*)zoff;
     size_t len_sz=*(uint64_t*)zlen;
@@ -1146,14 +1177,16 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
     double t_fse=now_sec()-t_lit;
     t_lit=t_fse;
     free(zlit); free(zoff); free(zlen); free(zcmd);
-    uint8_t* dst=(uint8_t*)malloc(hdr.orig_size);
+    uint8_t* dst=(uint8_t*)malloc(hdr.orig_size + DST_PAD);
     if(!dst){free(lit);free(off);free(len);free(cmd);return 1;}
     // Записываем lit[] буфер для честного GPU decode
+    if(getenv("ACEAPEX_DUMP"))
     { FILE*fl=fopen("lits.bin","wb");
       fwrite(&lit_sz,8,1,fl);
       fwrite(lit,1,lit_sz,fl);
       fclose(fl); }
     // step0: dump raw decoded streams + BlockOffsets for full_gpu_decode.cu
+    if(getenv("ACEAPEX_DUMP"))
     { FILE* fs=fopen("streams.bin","wb");
       fwrite(&hdr,sizeof(hdr),1,fs);
       fwrite(boffs.data(),sizeof(BlockOffsets),nb,fs);
@@ -1161,11 +1194,13 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
       fwrite(len,1,len_sz,fs); fwrite(cmd,1,cmd_sz,fs);
       fclose(fs);
       fprintf(stderr,"Dumped streams.bin (%u blocks)\n",nb); }
-    g_record=true; g_tokens.clear(); double t_lz=now_sec(); parallel_decode(lit,off,len,cmd,boffs.data(),nb,dst,hdr.orig_size,hdr.block_size,1); t_lz=now_sec()-t_lz;
+    g_record=false; g_tokens.clear(); double t_lz=now_sec(); parallel_decode(lit,off,len,cmd,boffs.data(),nb,dst,hdr.orig_size,hdr.block_size,threads); t_lz=now_sec()-t_lz;
     dec_time=now_sec()-dec_time;
     fprintf(stderr,"  Phase lit:  %.3fs\n  Phase fse:  %.3fs\n  Phase lz77: %.3fs\n",t_lit,t_fse,t_lz);
  
+    double t_hash=now_sec();
     uint64_t dv=OUR_CHECKSUM(dst,hdr.orig_size);
+    fprintf(stderr,"  Phase hash: %.3fs\n",now_sec()-t_hash);
     uint64_t hv3; memcpy(&hv3,hdr.xxhash,8);
     bool ok=(dv==hv3);
     FILE* fout=fopen(out_path,"wb");
@@ -1262,7 +1297,7 @@ static int do_test(const char* in_path, int threads, int level=2) {
     uint8_t* off=(uint8_t*)malloc(off_sz);
     uint8_t* len=(uint8_t*)malloc(len_sz);
     uint8_t* cmd=(uint8_t*)malloc(cmd_sz);
-    uint8_t* dst=(uint8_t*)malloc(src_size);
+    uint8_t* dst=(uint8_t*)malloc(src_size + DST_PAD);
     if(!off||!len||!cmd||!dst){free(lit);free(off);free(len);free(cmd);free(dst);return ACEAPEX_ERR_MEMORY;}
     fse_chunked_decomp(zoff,off_sz,off);
     fse_chunked_decomp(zlen,len_sz,len);
