@@ -1034,7 +1034,9 @@ static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_s
     for(int t=0;t<NW;t++){
         // Same underflow guard as in lit_compress (decoder side).
         size_t off=(size_t)t*csz; if(off>orig_sz) off=orig_sz;
-        size_t raw=(t<NW-1)?((off+csz<=orig_sz)?csz:(orig_sz-off)):(orig_sz-off);
+        // Правило совпадает с кодером: кусок равен csz, кроме последнего.
+        // Прежняя формула с (t<NW-1) была под legacy и на чанках расходилась.
+        size_t raw=(off+csz<=orig_sz)?csz:(orig_sz-off);
         dws[t]={out+off,raw,p,(size_t)zsz[t]}; p+=(size_t)zsz[t];}
     // Пул фиксированного размера: восемь рабочих разбирают очередь чанков через
     // атомарный счётчик. Создание потока на каждый чанк давало x3 к времени фазы.

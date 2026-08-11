@@ -127,3 +127,72 @@ int64_t aceapex_decompress(
     free(l);free(o);free(n);free(c);
     return (int64_t)hdr.orig_size;
 }
+
+int64_t aceapex_decompress_region(
+    const void* src, size_t src_size,
+    void*       dst, size_t dst_capacity,
+    uint64_t    offset, uint64_t length)
+{
+    if (!src || src_size < sizeof(AetHeader)) return ACEAPEX_ERR_DATA;
+    const uint8_t* p = (const uint8_t*)src;
+    AetHeader hdr; memcpy(&hdr, p, sizeof(hdr));
+    if (memcmp(hdr.magic,"ACEPX2\0\0",8) != 0) return ACEAPEX_ERR_DATA;
+    if (hdr.block_size == 0 || hdr.num_blocks == 0) return ACEAPEX_ERR_DATA;
+    if (length == 0) return 0;
+    if (offset > hdr.orig_size || length > hdr.orig_size - offset) return ACEAPEX_ERR_DATA;
+    if (length > dst_capacity) return ACEAPEX_ERR_BUFFER;
+
+    uint64_t need = (uint64_t)sizeof(hdr)
+                  + (uint64_t)hdr.num_blocks * sizeof(BlockOffsets)
+                  + hdr.zlit_sz + hdr.zoff_sz + hdr.zlen_sz + hdr.zcmd_sz;
+    if (need > src_size) return ACEAPEX_ERR_DATA;
+
+    p += sizeof(hdr);
+    std::vector<BlockOffsets> boffs(hdr.num_blocks);
+    memcpy(boffs.data(), p, (size_t)hdr.num_blocks * sizeof(BlockOffsets));
+    p += (size_t)hdr.num_blocks * sizeof(BlockOffsets);
+
+    const uint8_t* zlit = p;
+    const uint8_t* zoff = zlit + hdr.zlit_sz;
+    const uint8_t* zlen = zoff + hdr.zoff_sz;
+    const uint8_t* zcmd = zlen + hdr.zlen_sz;
+
+    size_t b0 = (size_t)(offset / hdr.block_size);
+    size_t b1 = (size_t)((offset + length - 1) / hdr.block_size);
+    if (b1 >= hdr.num_blocks) return ACEAPEX_ERR_DATA;
+
+    size_t lf=boffs[b0].lit_off, lt=boffs[b1].lit_off+boffs[b1].lit_sz;
+    size_t of=boffs[b0].off_off, ot=boffs[b1].off_off+boffs[b1].off_sz;
+    size_t nf=boffs[b0].len_off, nt=boffs[b1].len_off+boffs[b1].len_sz;
+    size_t cf=boffs[b0].cmd_off, ct=boffs[b1].cmd_off+boffs[b1].cmd_sz;
+
+    size_t lit_sz = 0;
+    uint8_t* lit = lit_range(zlit, hdr.zlit_sz, lit_sz, lf, lt);
+    uint8_t* off = fse_range(zoff, *(const uint64_t*)zoff & ~(uint64_t(1)<<63), of, ot);
+    uint8_t* len = fse_range(zlen, *(const uint64_t*)zlen & ~(uint64_t(1)<<63), nf, nt);
+    uint8_t* cmd = fse_range(zcmd, *(const uint64_t*)zcmd & ~(uint64_t(1)<<63), cf, ct);
+    if (!lit || !off || !len || !cmd) {
+        free(lit); free(off); free(len); free(cmd);
+        return ACEAPEX_ERR_MEMORY;
+    }
+
+    size_t span_start = b0 * (size_t)hdr.block_size;
+    size_t span_end   = (b1 + 1) * (size_t)hdr.block_size;
+    if (span_end > hdr.orig_size) span_end = (size_t)hdr.orig_size;
+    uint8_t* span = (uint8_t*)malloc(span_end - span_start + 64);
+    if (!span) { free(lit); free(off); free(len); free(cmd); return ACEAPEX_ERR_MEMORY; }
+
+    for (size_t b = b0; b <= b1; b++) {
+        const BlockOffsets& bo = boffs[b];
+        size_t bstart = b * (size_t)hdr.block_size;
+        size_t bsize  = (size_t)(hdr.orig_size - bstart);
+        if (bsize > hdr.block_size) bsize = hdr.block_size;
+        decompress_streams(span + (bstart - span_start), bsize,
+            lit + bo.lit_off, bo.lit_sz, off + bo.off_off, bo.off_sz,
+            len + bo.len_off, bo.len_sz, cmd + bo.cmd_off, bo.cmd_sz);
+    }
+    memcpy(dst, span + (offset - span_start), (size_t)length);
+
+    free(lit); free(off); free(len); free(cmd); free(span);
+    return (int64_t)length;
+}

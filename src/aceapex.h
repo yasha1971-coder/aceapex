@@ -23,6 +23,20 @@ int64_t aceapex_decompress(
     void*       dst, size_t dst_capacity
 );
 
+/* Decompress only the bytes [offset, offset+length) of the original input,
+   without decoding the rest of the archive. dst must hold at least length bytes.
+   Returns length on success, or a negative error code.
+
+   Cost is set by the block size and, for archives written with chunked literals,
+   by the chunk size: the decoder touches the blocks covering the range and, in
+   each of the four streams, only the compressed chunks those blocks fall into.
+   Both are recorded in the archive; nothing is read from the environment. */
+int64_t aceapex_decompress_region(
+    const void* src, size_t src_size,
+    void*       dst, size_t dst_capacity,
+    uint64_t    offset, uint64_t length
+);
+
 /* Bound for output buffer */
 size_t aceapex_compress_bound(size_t src_size);
 

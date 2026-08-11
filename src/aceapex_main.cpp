@@ -993,7 +993,9 @@ static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_s
     for(int t=0;t<NW;t++){
         // Same underflow guard as in lit_compress (decoder side).
         size_t off=(size_t)t*csz; if(off>orig_sz) off=orig_sz;
-        size_t raw=(t<NW-1)?((off+csz<=orig_sz)?csz:(orig_sz-off)):(orig_sz-off);
+        // Правило совпадает с кодером: кусок равен csz, кроме последнего.
+        // Прежняя формула с (t<NW-1) была под legacy и на чанках расходилась.
+        size_t raw=(off+csz<=orig_sz)?csz:(orig_sz-off);
         dws[t]={out+off,raw,p,(size_t)zsz[t]}; p+=(size_t)zsz[t];}
     struct Pool{ DW* w; int n; std::atomic<int> next; };
     Pool pool{dws.data(),NW,{0}};
@@ -1008,6 +1010,53 @@ static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_s
     for(int t=0;t<LANES;t++) pthread_join(pts[t],nullptr);
     return out;
 }
+// Partial stream unpacking for region reads: touch only the compressed chunks
+// covering [from,to). Buffers are allocated at full stream size; bytes outside
+// the requested span are left zero and are never read by the block decoder.
+static uint8_t* fse_range(const uint8_t* src, size_t orig_sz, size_t from, size_t to) {
+    const size_t CHUNK=512*1024;
+    const uint64_t* cs=(const uint64_t*)(src+8);
+    size_t nc=(orig_sz+CHUNK-1)/CHUNK;
+    uint8_t* out=(uint8_t*)calloc(orig_sz?orig_sz:1,1);
+    if(!out) return nullptr;
+    size_t p_off=8+nc*8;
+    for(size_t i=0;i<nc;i++){
+        size_t d_off=i*CHUNK;
+        size_t raw=std::min<size_t>(CHUNK,orig_sz-d_off);
+        size_t csz=(cs[i]>>63)?raw:(size_t)(cs[i]&~(uint64_t(1)<<63));
+        if(d_off<to && d_off+raw>from){
+            if(cs[i]>>63) memcpy(out+d_off,src+p_off,raw);
+            else ZSTD_decompress(out+d_off,raw,src+p_off,csz);
+        }
+        p_off+=csz;
+    }
+    return out;
+}
+
+// Литеральный поток: новая схема — чанки LIT_CHUNK, старая — NW равных долей.
+static uint8_t* lit_range(const uint8_t* src, size_t src_sz, size_t& orig_sz,
+                          size_t from, size_t to) {
+    if(!src||src_sz<8){orig_sz=0;return (uint8_t*)malloc(1);}
+    uint64_t h; memcpy(&h,src,8);
+    const bool chunked=(h&(uint64_t(1)<<61))!=0;
+    orig_sz=h&~((uint64_t(1)<<62)|(uint64_t(1)<<61));
+    if(!(h&(uint64_t(1)<<62))) return fse_range(src,orig_sz,from,to);
+    size_t csz=chunked?(size_t)(*(const uint64_t*)(src+8)):(orig_sz+3)/4;
+    const int NW=chunked?(int)((orig_sz+csz-1)/csz):4;
+    const uint64_t* zsz=(const uint64_t*)(src+(chunked?16:8));
+    const uint8_t* p=src+(chunked?16:8)+(size_t)NW*8;
+    uint8_t* out=(uint8_t*)calloc(orig_sz?orig_sz:1,1);
+    if(!out) return nullptr;
+    for(int t=0;t<NW;t++){
+        size_t off=(size_t)t*csz; if(off>orig_sz) off=orig_sz;
+        size_t raw=(t<NW-1)?((off+csz<=orig_sz)?csz:(orig_sz-off)):(orig_sz-off);
+        if(off<to && off+raw>from)
+            ZSTD_decompress(out+off,raw,p,(size_t)zsz[t]);
+        p+=(size_t)zsz[t];
+    }
+    return out;
+}
+
 static void entropy_encode(
     const uint8_t* raw_lit, size_t total_lit,
     const uint8_t* raw_off, size_t total_off,
