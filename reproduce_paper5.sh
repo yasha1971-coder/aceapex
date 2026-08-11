@@ -3,11 +3,12 @@
 # Emits results.json: one record per claim with level R/M/E, expected, measured, verdict.
 set -uo pipefail
 
-CHR1=${CHR1:-$HOME/data/chr1.fa}
-ENWIK8=${ENWIK8:-/tmp/enwik8}
-ENWIK9=${ENWIK9:-/tmp/enwik9}
-SILESIA=${SILESIA:-/tmp/silesia.tar}
-FASTQ=${FASTQ:-$HOME/data/NA12878_REAL.fastq}
+GOLDEN=${GOLDEN:-$HOME/golden}
+CHR1=${CHR1:-$GOLDEN/genome/chr1.fa}
+ENWIK8=${ENWIK8:-$GOLDEN/text/enwik8}
+ENWIK9=${ENWIK9:-$GOLDEN/text/enwik9}
+SILESIA=${SILESIA:-$GOLDEN/mixed/silesia.tar}
+FASTQ=${FASTQ:-$GOLDEN/genome/ERR194147_1gb.fastq}
 ZSTD_INC=${ZSTD_INC:-}
 OUT=${OUT:-results.json}
 BIN=${BIN:-./aceapex_p5}

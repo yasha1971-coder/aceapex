@@ -1,6 +1,6 @@
 {
   "paper": "What Actually Serializes GPU LZ77 Decode",
-  "date": "2026-08-10T14:12:52Z",
+  "date": "2026-08-11T11:27:11Z",
   "hardware": "x86_64 16 cores",
   "corpus_md5_expected": "9465e0f0df6e2c6eb39729c39cee5465",
   "summary": {"pass": 17, "fail": 0, "skipped": 6},
