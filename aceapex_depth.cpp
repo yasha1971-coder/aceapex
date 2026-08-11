@@ -912,15 +912,13 @@ static void fse_chunked_decomp(const uint8_t* src, size_t orig_sz, uint8_t* dst)
 }
  
 // Parallel entropy encode — 4 streams simultaneously
-static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
+// Старая схема: NW равных долей. Остаётся для входов, где чанкование неприменимо
+// (очень маленький файл, или чанков было бы больше 65535).
+static uint8_t* lit_compress_legacy(const uint8_t* src, size_t sz, size_t& out_sz) {
     const int NW=4; size_t csz=(sz+NW-1)/NW;
     struct ZW{const uint8_t*in;size_t isz;uint8_t*out;size_t osz;size_t cap;};
     ZW zws[NW];
     for(int t=0;t<NW;t++){
-        // Unsigned-underflow guard: the last worker's offset 3*ceil(sz/4) exceeds
-        // sz for sz in {1,2,5,...}, so sz-off wrapped to ~2^64 -> ZSTD_compressBound
-        // huge -> malloc failed -> the literal stream was SILENTLY DROPPED and decode
-        // produced garbage. (lzbench issue #2, reported by inikep.)
         size_t off=(size_t)t*csz; if(off>sz) off=sz;
         size_t isz=(t<NW-1)?((off+csz<=sz)?csz:(sz-off)):(sz-off);
         zws[t]={src+off,isz,nullptr,0,ZSTD_compressBound(isz)+8};
@@ -944,31 +942,108 @@ static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
     for(int t=0;t<NW;t++){zsz[t]=zws[t].osz;memcpy(p,zws[t].out,zws[t].osz);p+=zws[t].osz;free(zws[t].out);}
     out_sz=totalsz; return res;
 }
+
+// LIT_CHUNK: литералы режутся на куски фиксированного размера, а не на NW равных
+// долей. Это делает распаковку ЧАСТИЧНОЙ: для региона нужен один кусок, а не четверть
+// файла. Цена на chr1 = +0.051% общего размера при 1 MB (измерено).
+// Бит 61 в заголовке потока = новая схема; число кусков идёт следующим полем.
+// Схема литералов по умолчанию — прежняя (NW равных долей), чтобы опубликованные
+// числа воспроизводились без оговорок. Чанки включаются явно: LIT_CHUNK=1048576.
+// Они дают частичную распаковку, без которой region-декод пришлось бы делать на
+// четверти файла; цена и выигрыш зависят от данных, поэтому это опция, не дефолт.
+static size_t lit_chunk_size(){
+    const char* e=getenv("LIT_CHUNK");
+    if(!e) return 0;                       // 0 = legacy
+    size_t v=strtoull(e,0,10);
+    return v<(1u<<16) ? 0 : v;
+}
+#define LIT_CHUNK lit_chunk_size()
+
+static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
+    const size_t CH = LIT_CHUNK;
+    if (CH == 0) return lit_compress_legacy(src, sz, out_sz);
+    const int NW = (int)((sz + CH - 1) / CH);
+    if (NW < 1 || NW > 65535) return lit_compress_legacy(src, sz, out_sz);
+    size_t csz = CH;
+    struct ZW{const uint8_t*in;size_t isz;uint8_t*out;size_t osz;size_t cap;};
+    std::vector<ZW> zws(NW);
+    for(int t=0;t<NW;t++){
+        // Unsigned-underflow guard: the last worker's offset 3*ceil(sz/4) exceeds
+        // sz for sz in {1,2,5,...}, so sz-off wrapped to ~2^64 -> ZSTD_compressBound
+        // huge -> malloc failed -> the literal stream was SILENTLY DROPPED and decode
+        // produced garbage. (lzbench issue #2, reported by inikep.)
+        size_t off=(size_t)t*csz; if(off>sz) off=sz;
+        size_t isz=(t<NW-1)?((off+csz<=sz)?csz:(sz-off)):(sz-off);
+        zws[t]={src+off,isz,nullptr,0,ZSTD_compressBound(isz)+8};
+        zws[t].out=(uint8_t*)malloc(zws[t].cap);
+        if(!zws[t].out){out_sz=0;return nullptr;}}
+    auto zfn=[](void*a)->void*{ZW*z=(ZW*)a;
+        ZSTD_CCtx*ctx=ZSTD_createCCtx();
+        if(!ctx){z->osz=0; return nullptr;}
+        ZSTD_CCtx_setParameter(ctx,ZSTD_c_compressionLevel,3);
+        z->osz=ZSTD_compress2(ctx,z->out,z->cap,z->in,z->isz);
+        ZSTD_freeCCtx(ctx); return nullptr;};
+    struct CPool{ ZW* w; int n; std::atomic<int> next; };
+    CPool cpool{zws.data(),NW,{0}};
+    auto zfn_pool=[](void*a)->void*{
+        CPool* p=(CPool*)a;
+        ZSTD_CCtx* ctx=ZSTD_createCCtx();
+        if(!ctx) return nullptr;
+        ZSTD_CCtx_setParameter(ctx,ZSTD_c_compressionLevel,3);
+        for(;;){ int i=p->next.fetch_add(1); if(i>=p->n) break;
+            ZW& z=p->w[i];
+            z.osz=ZSTD_compress2(ctx,z.out,z.cap,z.in,z.isz); }
+        ZSTD_freeCCtx(ctx); return nullptr;};
+    const int LANES=std::min(8,NW);
+    std::vector<pthread_t> pts(LANES);
+    for(int t=0;t<LANES;t++) pthread_create(&pts[t],nullptr,zfn_pool,&cpool);
+    for(int t=0;t<LANES;t++) pthread_join(pts[t],nullptr);
+    size_t hdrsz=8+8+(size_t)NW*8,totalsz=hdrsz;   // h + nchunks + таблица
+    for(int t=0;t<NW;t++) totalsz+=zws[t].osz;
+    uint8_t* res=(uint8_t*)malloc(totalsz);
+    if(!res){out_sz=0;return nullptr;}
+    *(uint64_t*)res=sz|(uint64_t(1)<<62)|(uint64_t(1)<<61);
+    *(uint64_t*)(res+8)=(uint64_t)NW;
+    uint64_t* zsz=(uint64_t*)(res+16); uint8_t* p=res+hdrsz;
+    for(int t=0;t<NW;t++){zsz[t]=zws[t].osz;memcpy(p,zws[t].out,zws[t].osz);p+=zws[t].osz;free(zws[t].out);}
+    out_sz=totalsz; return res;
+}
 static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_sz) {
     // An empty or truncated literal stream must not be read as an 8-byte header.
     // Tiny inputs give zlit_sz==0; the out-of-bounds read corrupted heap metadata
     // and surfaced as a double-free thousands of calls later. (lzbench issue #2.)
     if (!src || src_sz < 8) { orig_sz = 0; return (uint8_t*)malloc(1); }
     uint64_t h; memcpy(&h, src, 8);   // alignment-safe (no AX_read64 in this tree)
-    orig_sz=h & ~(uint64_t(1)<<62);
-    uint8_t* out=(uint8_t*)malloc(orig_sz);
+    const bool chunked = (h & (uint64_t(1)<<61)) != 0;
+    orig_sz = h & ~((uint64_t(1)<<62)|(uint64_t(1)<<61));
+    uint8_t* out=(uint8_t*)malloc(orig_sz?orig_sz:1);
     if(!out) return nullptr;
     if(!(h & (uint64_t(1)<<62))){fse_chunked_decomp(src,orig_sz,out);return out;}
-    const int NW=4; const uint64_t* zsz=(const uint64_t*)(src+8);
-    const uint8_t* p0=src+8+NW*8;
-    size_t csz=(orig_sz+NW-1)/NW;
+    const int NW = chunked ? (int)(*(const uint64_t*)(src+8)) : 4;
+    const uint64_t* zsz=(const uint64_t*)(src + (chunked?16:8));
+    const uint8_t* p0=src + (chunked?16:8) + (size_t)NW*8;
+    size_t csz = chunked ? LIT_CHUNK : (orig_sz+NW-1)/NW;
     struct DW{uint8_t*out;size_t raw;const uint8_t*in;size_t isz;};
-    DW dws[NW]; const uint8_t* p=p0;
+    std::vector<DW> dws(NW); const uint8_t* p=p0;
     for(int t=0;t<NW;t++){
         // Same underflow guard as in lit_compress (decoder side).
         size_t off=(size_t)t*csz; if(off>orig_sz) off=orig_sz;
         size_t raw=(t<NW-1)?((off+csz<=orig_sz)?csz:(orig_sz-off)):(orig_sz-off);
         dws[t]={out+off,raw,p,(size_t)zsz[t]}; p+=(size_t)zsz[t];}
-    auto dfn=[](void*a)->void*{DW*d=(DW*)a;
-        ZSTD_decompress(d->out,d->raw,d->in,d->isz); return nullptr;};
-    pthread_t pts[NW];
-    for(int t=0;t<NW;t++) pthread_create(&pts[t],nullptr,dfn,&dws[t]);
-    for(int t=0;t<NW;t++) pthread_join(pts[t],nullptr);
+    // Пул фиксированного размера: восемь рабочих разбирают очередь чанков через
+    // атомарный счётчик. Создание потока на каждый чанк давало x3 к времени фазы.
+    struct Pool{ DW* w; int n; std::atomic<int> next; };
+    Pool pool{dws.data(),NW,{0}};
+    auto dfn=[](void*a)->void*{
+        Pool* p=(Pool*)a;
+        for(;;){ int i=p->next.fetch_add(1); if(i>=p->n) break;
+            DW& d=p->w[i];
+            if(d.isz) ZSTD_decompress(d.out,d.raw,d.in,d.isz); }
+        return nullptr;};
+    const int LANES=std::min(8,NW);
+    std::vector<pthread_t> pts(LANES);
+    for(int t=0;t<LANES;t++) pthread_create(&pts[t],nullptr,dfn,&pool);
+    for(int t=0;t<LANES;t++) pthread_join(pts[t],nullptr);
     return out;
 }
 static void entropy_encode(
@@ -1331,26 +1406,160 @@ static int do_test(const char* in_path, int threads, int level=2) {
 }
  
 #ifndef ACEAPEX_NO_MAIN
+// ---------------------------------------------------------------------------
+// REGION DECODE. Блоки самодостаточны, а таблица BlockOffsets даёт байтовые
+// диапазоны четырёх потоков для каждого блока. Осталось распаковать не потоки
+// целиком, а только куски, покрывающие эти диапазоны.
+// ---------------------------------------------------------------------------
+
+// FSE-поток: чанки по 512 KB, таблица размеров в заголовке.
+// Распаковываем только чанки, пересекающие [from,to). Возвращаем буфер размера
+// orig_sz, где валиден лишь запрошенный диапазон.
+static uint8_t* fse_range(const uint8_t* src, size_t orig_sz, size_t from, size_t to) {
+    const size_t CHUNK=512*1024;
+    const uint64_t* cs=(const uint64_t*)(src+8);
+    size_t nc=(orig_sz+CHUNK-1)/CHUNK;
+    uint8_t* out=(uint8_t*)calloc(orig_sz?orig_sz:1,1);
+    if(!out) return nullptr;
+    size_t p_off=8+nc*8;
+    for(size_t i=0;i<nc;i++){
+        size_t d_off=i*CHUNK;
+        size_t raw=std::min<size_t>(CHUNK,orig_sz-d_off);
+        size_t csz=(cs[i]>>63)?raw:(size_t)(cs[i]&~(uint64_t(1)<<63));
+        if(d_off<to && d_off+raw>from){
+            if(cs[i]>>63) memcpy(out+d_off,src+p_off,raw);
+            else ZSTD_decompress(out+d_off,raw,src+p_off,csz);
+        }
+        p_off+=csz;
+    }
+    return out;
+}
+
+// Литеральный поток: новая схема — чанки LIT_CHUNK, старая — NW равных долей.
+static uint8_t* lit_range(const uint8_t* src, size_t src_sz, size_t& orig_sz,
+                          size_t from, size_t to) {
+    if(!src||src_sz<8){orig_sz=0;return (uint8_t*)malloc(1);}
+    uint64_t h; memcpy(&h,src,8);
+    const bool chunked=(h&(uint64_t(1)<<61))!=0;
+    orig_sz=h&~((uint64_t(1)<<62)|(uint64_t(1)<<61));
+    if(!(h&(uint64_t(1)<<62))) return fse_range(src,orig_sz,from,to);
+    const int NW=chunked?(int)(*(const uint64_t*)(src+8)):4;
+    const uint64_t* zsz=(const uint64_t*)(src+(chunked?16:8));
+    const uint8_t* p=src+(chunked?16:8)+(size_t)NW*8;
+    size_t csz=chunked?LIT_CHUNK:(orig_sz+NW-1)/NW;
+    uint8_t* out=(uint8_t*)calloc(orig_sz?orig_sz:1,1);
+    if(!out) return nullptr;
+    for(int t=0;t<NW;t++){
+        size_t off=(size_t)t*csz; if(off>orig_sz) off=orig_sz;
+        size_t raw=(t<NW-1)?((off+csz<=orig_sz)?csz:(orig_sz-off)):(orig_sz-off);
+        if(off<to && off+raw>from)
+            ZSTD_decompress(out+off,raw,p,(size_t)zsz[t]);
+        p+=(size_t)zsz[t];
+    }
+    return out;
+}
+
+static int do_region(const char* in_path,const char* out_path,
+                     uint64_t req_off,uint64_t req_len) {
+    double t0=now_sec();
+    FILE* fin=fopen(in_path,"rb");
+    if(!fin){fprintf(stderr,"Cannot open: %s\n",in_path);return 1;}
+    AetHeader hdr;
+    if(fread(&hdr,sizeof(hdr),1,fin)!=1){fclose(fin);return 1;}
+    if(memcmp(hdr.magic,"ACEPX2\0\0",8)!=0){fprintf(stderr,"Bad magic\n");fclose(fin);return 1;}
+    if(req_off+req_len>hdr.orig_size){fprintf(stderr,"region beyond end\n");fclose(fin);return 1;}
+
+    uint32_t nb=hdr.num_blocks;
+    std::vector<BlockOffsets> boffs(nb);
+    if(fread(boffs.data(),sizeof(BlockOffsets),nb,fin)!=nb){fclose(fin);return 1;}
+
+    size_t b0=req_off/hdr.block_size;
+    size_t b1=(req_off+req_len-1)/hdr.block_size;
+
+    // байтовые диапазоны четырёх потоков, покрывающие блоки [b0,b1]
+    size_t lf=boffs[b0].lit_off, lt=boffs[b1].lit_off+boffs[b1].lit_sz;
+    size_t of=boffs[b0].off_off, ot=boffs[b1].off_off+boffs[b1].off_sz;
+    size_t nf=boffs[b0].len_off, nt2=boffs[b1].len_off+boffs[b1].len_sz;
+    size_t cf=boffs[b0].cmd_off, ct=boffs[b1].cmd_off+boffs[b1].cmd_sz;
+
+    // Не читаем архив — отображаем. Ядро подкачает ТОЛЬКО те страницы, которых
+    // коснутся fse_range/lit_range: таблицы размеров в началах потоков и один-два
+    // чанка. Остальные 78 MB никогда не попадут в память.
+    long base=ftell(fin);
+    int fd=fileno(fin);
+    struct stat st; fstat(fd,&st);
+    uint8_t* map=(uint8_t*)mmap(nullptr,(size_t)st.st_size,PROT_READ,MAP_PRIVATE,fd,0);
+    if(map==MAP_FAILED){fclose(fin);fprintf(stderr,"mmap failed\n");return 1;}
+    madvise(map,(size_t)st.st_size,MADV_RANDOM);
+    const uint8_t* zlit=map+base;
+    const uint8_t* zoff=zlit+hdr.zlit_sz;
+    const uint8_t* zlen=zoff+hdr.zoff_sz;
+    const uint8_t* zcmd=zlen+hdr.zlen_sz;
+    fclose(fin);
+    double t_read=now_sec()-t0;
+
+    double t1=now_sec();
+    size_t lit_sz=0;
+    uint8_t* lit=lit_range(zlit,hdr.zlit_sz,lit_sz,lf,lt);
+    uint8_t* off=fse_range(zoff,*(uint64_t*)zoff&~(uint64_t(1)<<63),of,ot);
+    uint8_t* len=fse_range(zlen,*(uint64_t*)zlen&~(uint64_t(1)<<63),nf,nt2);
+    uint8_t* cmd=fse_range(zcmd,*(uint64_t*)zcmd&~(uint64_t(1)<<63),cf,ct);
+    if(!lit||!off||!len||!cmd){munmap(map,(size_t)st.st_size);return 1;}
+    double t_ent=now_sec()-t1;
+
+    double t2=now_sec();
+    size_t span_start=b0*(size_t)hdr.block_size;
+    size_t span_end=std::min<size_t>((b1+1)*(size_t)hdr.block_size,hdr.orig_size);
+    uint8_t* dst=(uint8_t*)malloc(span_end-span_start+DST_PAD);
+    if(!dst) return 1;
+    for(size_t b=b0;b<=b1;b++){
+        const BlockOffsets& bo=boffs[b];
+        size_t bstart=b*(size_t)hdr.block_size;
+        size_t bsize=std::min<size_t>((size_t)hdr.block_size,hdr.orig_size-bstart);
+        decompress_streams(dst+(bstart-span_start),bsize,
+            lit+bo.lit_off,bo.lit_sz, off+bo.off_off,bo.off_sz,
+            len+bo.len_off,bo.len_sz, cmd+bo.cmd_off,bo.cmd_sz);
+    }
+    double t_lz=now_sec()-t2;
+
+    FILE* fo=fopen(out_path,"wb");
+    if(fo){fwrite(dst+(req_off-span_start),1,req_len,fo);fclose(fo);}
+    fprintf(stderr,"  blocks %zu..%zu  read %.3fs  entropy %.3fs  lz77 %.3fs  total %.3fs\n",
+            b0,b1,t_read,t_ent,t_lz,now_sec()-t0);
+    free(lit);free(off);free(len);free(cmd);free(dst);
+    munmap(map,(size_t)st.st_size);
+    return 0;
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         fprintf(stderr,"ACEAPEX v3 FSE — Global FSE + Parallel decode\n\n"
             "Usage:\n  %s c --in <f> --out <f.aet> [--threads N]\n"
-            "  %s d --in <f.aet> --out <f>\n  %s t --in <f> [--threads N]\n",
-            argv[0],argv[0],argv[0]);
+            "  %s d --in <f.aet> --out <f>\n  %s t --in <f> [--threads N]\n"
+            "  %s r --in <f.aet> --out <f> --region OFFSET LENGTH\n",
+            argv[0],argv[0],argv[0],argv[0]);
         return 1;
     }
     const char* cmd=argv[1]; const char* in=nullptr; const char* out=nullptr; int thr=8; int level=2;
+    uint64_t reg_off=0, reg_len=0;
     for(int i=2;i<argc;i++) {
         if (!strcmp(argv[i],"--in")&&i+1<argc) in=argv[++i];
         else if (!strcmp(argv[i],"--out")&&i+1<argc) out=argv[++i];
         else if (!strcmp(argv[i],"--threads")&&i+1<argc) thr=atoi(argv[++i]);
         else if (!strcmp(argv[i],"--level")&&i+1<argc) level=atoi(argv[++i]);
         else if (!strcmp(argv[i],"--fast")) level=1;
+        else if (!strcmp(argv[i],"--region")&&i+2<argc){
+            reg_off=strtoull(argv[++i],0,10); reg_len=strtoull(argv[++i],0,10); }
     }
     if (!in) { fprintf(stderr,"--in required\n"); return 1; }
     if (!strcmp(cmd,"c")) { if (!out) { fprintf(stderr,"--out required\n"); return 1; } return do_compress(in,out,thr,level); }
     if (!strcmp(cmd,"d")) { if (!out) { fprintf(stderr,"--out required\n"); return 1; } return do_decompress(in,out,thr); }
     if (!strcmp(cmd,"t")) return do_test(in,thr,level);
+    if (!strcmp(cmd,"r")) {
+        if(!out){fprintf(stderr,"--out required\n");return 1;}
+        if(reg_len==0){fprintf(stderr,"--region OFFSET LENGTH required\n");return 1;}
+        return do_region(in,out,reg_off,reg_len);
+    }
     return 1;
 }
 #endif // ACEAPEX_NO_MAIN
