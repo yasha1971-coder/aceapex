@@ -17,6 +17,14 @@ honest-status section (what is and is not fast), and the core idea.
 - Paper 3 — arXiv:2606.24531 (unified two-layer position-invariant seek)
 - Paper 4 — arXiv:2607.18541 (what governs decode throughput; the min-match lever)
 
+**...change the codec and measure the result** → run `./sync-check.sh` first. The
+source exists in more than one place: a research copy, the production file the library
+and the benchmark are built from, and a copy inside the benchmark tree. In one session
+three conclusions were drawn from code that was never built or lived in another copy —
+a default edited in one file and measured from another, a binary older than its source,
+an environment variable outliving the measurement it was set for. The script checks all
+three in a few seconds.
+
 **...reproduce the numbers** → the build recipes and run steps are in the
 `BUILD_*.md` files and `TECHNICAL_NOTE.txt`. `setup_pod.sh` bootstraps a fresh
 GPU pod to a verified environment. `BUILD_LARGE_FILES.md` covers the two settings
