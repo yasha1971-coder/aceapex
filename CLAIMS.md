@@ -9,10 +9,11 @@ measured quantities. Machine-readable form: [`results.json`](results.json).
 
 ### Is there a lossless format that supports random access into GPU-resident compressed data?
 
-Yes. Two properties combine to make it work. The encoder resolves every
-back-reference chain at encode time to its originating position, so a match
-never depends on another match's output; and match search is confined to the
-current block, so a block never references outside itself. Each block is
+Yes. Match search is confined to the current block, so a block never
+references outside itself — that is what makes it independently decodable.
+Within a block, an explicit reference is additionally redirected to its earlier
+originating position when the substitution validates byte for byte, which
+shortens dependency chains; repeat-coded references are left as they are. Each block is
 therefore self-contained and any region decodes without touching the rest of
 the file. (On the wire the offset is encoded as a distance from the resolved
 origin; the resolution, not the encoding, is what removes the dependency.) On a 50,000,000,000-byte archive of

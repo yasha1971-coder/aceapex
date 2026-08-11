@@ -17,7 +17,7 @@ Full device-resident GPU decode pipeline. Position-invariant random access on ge
 
 ## What this is
 
-ACEAPEX is a research-grade LZ77 codec built around one design decision: at encode time every back-reference chain is **resolved to its originating position**, so a match never depends on another match's output, and match search is confined to the current block. Together these make every block self-contained, which unlocks parallel decode on CPU and GPU and **position-invariant random access** — decoding an arbitrary region without decompressing the whole file. (The wire format encodes the resolved offset as a distance; it is the resolution, not the encoding, that removes the dependency.)
+ACEAPEX is a research-grade LZ77 codec built around one design decision: **match search never leaves the current block**. That makes every block self-contained and independently decodable, which unlocks parallel decode on CPU and GPU and **position-invariant random access** — decoding an arbitrary region without decompressing the whole file. Inside a block, the encoder additionally redirects explicit references to their earlier originating position where the substitution validates byte for byte, shortening dependency chains; the rest is resolved by the decoder.
 
 **Every published claim is answered with a number and a way to check it — see [CLAIMS.md](CLAIMS.md).**
 
@@ -58,10 +58,10 @@ Standard LZ77 codecs face a tradeoff:
 
 ACEAPEX takes the second branch and works on the price of it:
 
-- **Encode:** match search is confined to the block, and every back-reference chain is **resolved to its originating position** inside it — so a match never depends on another match's output
+- **Encode:** match search is confined to the block, so a block never references outside itself; where it can be validated byte for byte, an explicit reference is additionally **redirected to the earlier originating position**, shortening the dependency chain inside the block
 - **Decode:** block-parallel reconstruction — each block is self-contained and independently decodable
 
-Two separate mechanisms, not one. Confining the search removes cross-block dependency; resolving the chain removes within-block dependency between matches. Together they make any region decodable without touching the rest of the file. The price is paid in ratio, and we state it: under an equal 16 KB independent-block constraint the match layer recovers about three quarters of what blocking costs (see [CLAIMS.md](CLAIMS.md)).
+Two separate mechanisms, not one. Confining the search is what removes cross-block dependency and makes a block independently decodable; flattening only shortens dependency chains inside a block, and what remains is handled by the decoder — by wavefront ordering, or in closed form where a match is a periodic fill. The price is paid in ratio, and we state it: under an equal 16 KB independent-block constraint the match layer recovers about three quarters of what blocking costs (see [CLAIMS.md](CLAIMS.md)).
 
 ---
 
