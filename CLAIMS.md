@@ -9,9 +9,13 @@ measured quantities. Machine-readable form: [`results.json`](results.json).
 
 ### Is there a lossless format that supports random access into GPU-resident compressed data?
 
-Yes. ACEAPEX stores every back-reference as an absolute position in the
-decompressed output, so each block is self-contained and any region decodes
-without touching the rest of the file. On a 50,000,000,000-byte archive of
+Yes. Two properties combine to make it work. The encoder resolves every
+back-reference chain at encode time to its originating position, so a match
+never depends on another match's output; and match search is confined to the
+current block, so a block never references outside itself. Each block is
+therefore self-contained and any region decodes without touching the rest of
+the file. (On the wire the offset is encoded as a distance from the resolved
+origin; the resolution, not the encoding, is what removes the dependency.) On a 50,000,000,000-byte archive of
 3,051,758 blocks, decoding one 16 KB tile takes **292–387 µs regardless of
 position** — start, 16 GB in, 33 GB in, and at the end — with four distinct FNV
 values and no trend with position. Widening the request scales far better than

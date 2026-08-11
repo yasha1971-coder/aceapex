@@ -17,7 +17,7 @@ Full device-resident GPU decode pipeline. Position-invariant random access on ge
 
 ## What this is
 
-ACEAPEX is a research-grade LZ77 codec built around one design decision: back-references are stored as **absolute positions** in the decompressed output, not relative distances in a sliding window. That single choice makes every block self-contained, which unlocks parallel decode on CPU and GPU and **position-invariant random access** — decoding an arbitrary region without decompressing the whole file.
+ACEAPEX is a research-grade LZ77 codec built around one design decision: at encode time every back-reference chain is **resolved to its originating position**, so a match never depends on another match's output, and match search is confined to the current block. Together these make every block self-contained, which unlocks parallel decode on CPU and GPU and **position-invariant random access** — decoding an arbitrary region without decompressing the whole file. (The wire format encodes the resolved offset as a distance; it is the resolution, not the encoding, that removes the dependency.)
 
 **Every published claim is answered with a number and a way to check it — see [CLAIMS.md](CLAIMS.md).**
 
@@ -58,10 +58,10 @@ Standard LZ77 codecs face a tradeoff:
 
 ACEAPEX separates these responsibilities instead of trading between them:
 
-- **Encode:** global analysis, full match search across the entire input — every back-reference resolved to an **absolute position** in the decompressed output
+- **Encode:** match search is confined to the block, and every back-reference chain is **resolved to its originating position** inside it — so a match never depends on another match's output
 - **Decode:** block-parallel reconstruction — each block is self-contained and independently decodable
 
-This is *global analysis, local decode*. The same property enables position-invariant random access: because every block carries absolute offsets, any region decodes without touching the rest of the file.
+Two separate mechanisms, not one. Confining the search removes cross-block dependency; resolving the chain removes within-block dependency between matches. Together they make any region decodable without touching the rest of the file. The price is paid in ratio, and we state it: under an equal 16 KB independent-block constraint the match layer recovers about three quarters of what blocking costs (see [CLAIMS.md](CLAIMS.md)).
 
 ---
 

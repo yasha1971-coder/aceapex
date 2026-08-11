@@ -1,9 +1,9 @@
 # ACEAPEX
 
-> A lossless LZ77 codec whose back-references are absolute positions in the
-> decompressed output rather than relative distances in a sliding window. Every
-> block is self-contained, so any 16 KB region decodes on a GPU without touching
-> the rest of the file. Five arXiv papers, MIT licensed, first row of lzbench 2.3.
+> A lossless LZ77 codec that resolves every back-reference chain at encode time
+> to its originating position and confines match search to the current block.
+> Every block is therefore self-contained, so any 16 KB region decodes on a GPU
+> without touching the rest of the file. Five arXiv papers, MIT licensed, first row of lzbench 2.3.
 > Every published claim is machine-checkable: a script emits one JSON record per
 > claim and a fresh clone of the tagged release passes 17 of 17 CPU-reachable
 > checks with none failing.
