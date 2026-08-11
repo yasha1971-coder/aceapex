@@ -10,6 +10,10 @@ without reading every filename.
 **...understand what ACEAPEX is** → read `README.md`. It has the papers, the
 honest-status section (what is and is not fast), and the core idea.
 
+**...write a decoder, or change one** → read `docs/FORMAT_STREAMS.md`. It is the byte
+layout of the archive header, the block table and the four stream headers, taken from
+the source. Two defects came from the encoder and the decoder disagreeing about it.
+
 **...cite this work** → use the "Cite this repository" button (GitHub reads
 `CITATION.cff`), or cite the papers directly:
 - Paper 1 — arXiv:2606.04268 (the codec, CPU scaling, GPU wavefront)
