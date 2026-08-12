@@ -84,7 +84,11 @@ Every figure below is a claim the reproduction script checks.</p>
 without touching the rest of the file. Comparing a block-structured format against a
 whole-stream archive measures the constraint rather than the mechanism.</p>
 <table><tr><th>Corpus</th><th class="n">Bytes</th><th class="n">zstd-3, 16 KB</th>
-<th class="n">ACEAPEX</th></tr>%s</table>
+<th class="n">ACEAPEX</th></tr>%s
+<tr><td>chr1 with the genomic transform</td><td class="n">253,935,557</td>
+<td class="n">3.034</td><td class="n us">%s</td></tr></table>
+<p class="note">The last row is the same corpus with the literal transform enabled, which
+is opt-in: the default layout is what the published paper figures were measured on.</p>
 
 <h2>Reading a 16 KB region out of a 254 MB archive</h2>
 <table>
@@ -130,7 +134,7 @@ CUDA device is present rather than silently omitted.</p>
 
 </div></body></html>
 """ % (CSS, d['date'][:10], html.escape(d['hardware']), rows,
-       arch, v('transform_chr1_ratio'),
+       v('transform_chr1_ratio'), arch, v('transform_chr1_ratio'),
        s['pass'], s['fail'], s['skipped'], levels)
 
 open('docs/benchmarks.html', 'w').write(page)

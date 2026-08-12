@@ -38,7 +38,11 @@ Every figure below is a claim the reproduction script checks.</p>
 without touching the rest of the file. Comparing a block-structured format against a
 whole-stream archive measures the constraint rather than the mechanism.</p>
 <table><tr><th>Corpus</th><th class="n">Bytes</th><th class="n">zstd-3, 16 KB</th>
-<th class="n">ACEAPEX</th></tr><tr><td>Human chromosome 1</td><td class="n">253,935,557</td><td class="n">3.03362</td><td class="n us">3.18065</td></tr><tr><td>English Wikipedia, 100 MB</td><td class="n">100,000,000</td><td class="n">2.33351</td><td class="n us">2.63791</td></tr><tr><td>English Wikipedia, 1 GB</td><td class="n">1,000,000,000</td><td class="n">2.56673</td><td class="n us">2.98108</td></tr><tr><td>Silesia corpus</td><td class="n">211,957,760</td><td class="n">2.67498</td><td class="n us">3.00457</td></tr><tr><td>Sequencing reads, 1 GB</td><td class="n">1,073,741,620</td><td class="n">3.62875</td><td class="n us">3.96476</td></tr></table>
+<th class="n">ACEAPEX</th></tr><tr><td>Human chromosome 1</td><td class="n">253,935,557</td><td class="n">3.03362</td><td class="n us">3.18065</td></tr><tr><td>English Wikipedia, 100 MB</td><td class="n">100,000,000</td><td class="n">2.33351</td><td class="n us">2.63791</td></tr><tr><td>English Wikipedia, 1 GB</td><td class="n">1,000,000,000</td><td class="n">2.56673</td><td class="n us">2.98108</td></tr><tr><td>Silesia corpus</td><td class="n">211,957,760</td><td class="n">2.67498</td><td class="n us">3.00457</td></tr><tr><td>Sequencing reads, 1 GB</td><td class="n">1,073,741,620</td><td class="n">3.62875</td><td class="n us">3.96476</td></tr>
+<tr><td>chr1 with the genomic transform</td><td class="n">253,935,557</td>
+<td class="n">3.034</td><td class="n us">3.77696</td></tr></table>
+<p class="note">The last row is the same corpus with the literal transform enabled, which
+is opt-in: the default layout is what the published paper figures were measured on.</p>
 
 <h2>Reading a 16 KB region out of a 254 MB archive</h2>
 <table>
