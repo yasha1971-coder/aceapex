@@ -182,6 +182,36 @@ else
 fi
 
 echo ""
+echo "--- R: genomic literal transform and region read ---"
+if [ -f "$CHR1" ]; then
+  SRC="$CHR1"
+  M=$(ratio_of MIN_MATCH=0 LIT_CHUNK=1048576)
+  within "$M" 3.77696 0.00001 && V=pass || V=fail
+  rec transform_chr1_ratio R 3.77696 1e-5 "$M" "$V" "LIT_CHUNK=1048576 aceapex t --in chr1"
+
+  env MIN_MATCH=0 ACEAPEX_BS=16384 LIT_CHUNK=1048576 "$BIN" c --in "$CHR1" \
+      --out /tmp/_p5r.aet --threads 8 >/dev/null 2>&1
+  OK=1
+  for OFF in 16384 126959616 253902848; do
+    env ACEAPEX_BS=16384 "$BIN" r --in /tmp/_p5r.aet --out /tmp/_p5r.bin \
+        --region $OFF 16384 >/dev/null 2>&1
+    dd if="$CHR1" of=/tmp/_p5r.ref bs=1 skip=$OFF count=16384 2>/dev/null
+    cmp -s /tmp/_p5r.bin /tmp/_p5r.ref || OK=0
+  done
+  [ "$OK" = 1 ] && V=pass || V=fail
+  rec region_16k_byte_exact R "3 points match" 0 "$([ $OK = 1 ] && echo match || echo differ)" "$V" \
+      "aceapex r --region, compared with dd from the original"
+
+  SZ=$(stat -c%s /tmp/_p5r.aet)
+  within "$SZ" 68224719 0.001 && V=pass || V=fail
+  rec transform_archive_bytes R 68224719 1e-3 "$SZ" "$V" "size of the transformed archive"
+  rm -f /tmp/_p5r.aet /tmp/_p5r.bin /tmp/_p5r.ref
+else
+  for C in transform_chr1_ratio region_16k_byte_exact transform_archive_bytes; do
+    rec "$C" R - - "missing corpus" skipped-no-corpus "set CHR1"; done
+fi
+
+echo ""
 echo "--- M / E: declared, not verifiable here ---"
 rec seek_50gb_position_invariance M "292-387 us" - "original not on disk; FNV has nothing to compare against" declared "v7ra streams_50gb.bin"
 rec min_match_cost_probe M "1.291 -> 0.215 ms" - "tokens dropped without substituting literals" declared "wf_par, filtered tokens"
