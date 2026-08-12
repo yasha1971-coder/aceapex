@@ -272,6 +272,33 @@ else
 fi
 
 echo ""
+echo "--- R: FAI edge cases ---"
+if python3 -c "import pysam" 2>/dev/null; then
+  D=/tmp/_p5e; rm -rf $D; mkdir -p $D
+  printf ">c1 description\r\nACGTACGTAC\r\nGTGTGTGTGT\r\nAC\r\n" > $D/crlf.fa
+  printf ">a first\nACGTACGTAC\nGTGT\n>b second\nTTTTAAAACC\nGG\n>c\nA\n" > $D/multi.fa
+  printf ">r\nACGTACGTAC\nGT\nACGTACGTAC\nGT\n" > $D/ragged.fa
+  printf ">n\nACGTACGTAC\nGTGT" > $D/nonl.fa
+  OK=1; DET=""
+  for F in crlf multi nonl; do
+    python3 -c "import pysam;pysam.faidx('$D/$F.fa')" 2>/dev/null
+    "$BIN" faidx --in $D/$F.fa --out $D/$F.ours >/dev/null 2>&1
+    grep -v "^#" $D/$F.ours > $D/$F.clean 2>/dev/null
+    cmp -s $D/$F.clean $D/$F.fa.fai || { OK=0; DET="$DET $F"; }
+  done
+  "$BIN" faidx --in $D/ragged.fa --out $D/r.fai >/dev/null 2>&1
+  RC=$?
+  { [ "$RC" = 0 ] || [ -f $D/r.fai ]; } && { OK=0; DET="$DET ragged-accepted"; }
+  [ "$OK" = 1 ] && V=pass || V=fail
+  rec fai_edge_cases R "crlf multi nonl identical, ragged refused" 0 \
+      "$([ "$OK" = 1 ] && echo "all correct" || echo "failed:$DET")" "$V" \
+      "CRLF, multi-contig, no trailing newline, ragged lines"
+  rm -rf $D
+else
+  rec fai_edge_cases R - - "needs pysam" skipped-no-tool "pip install --user pysam"
+fi
+
+echo ""
 echo "--- M / E: declared, not verifiable here ---"
 rec seek_50gb_position_invariance M "292-387 us" - "original not on disk; FNV has nothing to compare against" declared "v7ra streams_50gb.bin"
 rec min_match_cost_probe M "1.291 -> 0.215 ms" - "tokens dropped without substituting literals" declared "wf_par, filtered tokens"

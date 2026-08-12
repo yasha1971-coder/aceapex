@@ -1752,13 +1752,32 @@ static bool fai_build(const uint8_t* src, size_t n, const char* out_path){
         memcpy(name, src+hs, nl2); name[nl2]=0;
         size_t eol=he; while(eol<n && src[eol]!='\n') eol++;
         size_t seq=eol+1;
-        // первая строка последовательности задаёт геометрию записи
+        // Геометрию задаёт ПЕРВАЯ строка, но остальные обязаны ей соответствовать:
+        // htslib отвергает рваные записи, и мы обязаны тоже. Иначе смещения врут молча,
+        // а это худший класс ошибки — пользователь получает не тот участок генома.
+        // CR перед LF не считается основанием (файлы с CRLF).
         size_t l1=seq; while(l1<n && src[l1]!='\n') l1++;
-        uint64_t lb=l1-seq, lby=lb+1;
-        uint64_t total=0; size_t p=seq;
+        size_t l1b=l1; if(l1b>seq && src[l1b-1]=='\r') l1b--;
+        uint64_t lb=l1b-seq, lby=l1-seq+1;      // оснований и БАЙТ в строке
+        if(lb==0){ fprintf(stderr,"faidx: empty first line in %s\n",name);
+                   fclose(fo); remove(out_path); return false; }
+        uint64_t total=0; size_t p=seq; bool last=false;
         while(p<n && src[p]!='>'){
             size_t e=p; while(e<n && src[e]!='\n') e++;
-            total += e-p; p = (e<n) ? e+1 : e;
+            size_t eb=e; if(eb>p && src[eb-1]=='\r') eb--;
+            uint64_t cur=eb-p;
+            if(last && cur>0){
+                fprintf(stderr,"faidx: ragged lines in %s near offset %llu\n",
+                        name,(unsigned long long)p);
+                fclose(fo); remove(out_path); return false;
+            }
+            if(cur<lb) last=true;               // короче нормы — допустима только последняя
+            else if(cur>lb){
+                fprintf(stderr,"faidx: line longer than the first in %s near offset %llu\n",
+                        name,(unsigned long long)p);
+                fclose(fo); remove(out_path); return false;
+            }
+            total += cur; p = (e<n) ? e+1 : e;
         }
         fprintf(fo,"%s\t%llu\t%llu\t%llu\t%llu\n", name,
                 (unsigned long long)total,(unsigned long long)seq,
