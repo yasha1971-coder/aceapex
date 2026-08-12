@@ -215,7 +215,7 @@ echo ""
 echo "--- R: genomic coordinate lookup ---"
 if [ -f "$CHR1" ]; then
   "$BIN" faidx --in "$CHR1" --out /tmp/_p5.fai >/dev/null 2>&1
-  GOT=$(cat /tmp/_p5.fai 2>/dev/null | tr -s "\t" " ")
+  GOT=$(grep -v "^#" /tmp/_p5.fai 2>/dev/null | tr -s "\t" " " | tr -d "\n")
   [ "$GOT" = "chr1 248956422 6 50 51" ] && V=pass || V=fail
   rec fasta_index R "chr1 248956422 6 50 51" 0 "$GOT" "$V" "aceapex faidx --in chr1.fa"
 
@@ -231,6 +231,44 @@ if [ -f "$CHR1" ]; then
 else
   for C in fasta_index coord_range_byte_exact; do
     rec "$C" R - - "missing corpus" skipped-no-corpus "set CHR1"; done
+fi
+
+echo ""
+echo "--- R: FAI compatibility and index binding ---"
+if [ -f "$CHR1" ] && python3 -c "import pysam" 2>/dev/null; then
+  env MIN_MATCH=0 ACEAPEX_BS=16384 LIT_CHUNK=1048576 "$BIN" c --in "$CHR1" \
+      --out /tmp/_p5f.aet --fai-out /tmp/_p5f.fai --threads 8 >/dev/null 2>&1
+  cp "$CHR1" /tmp/_p5f.fa 2>/dev/null || ln -f "$CHR1" /tmp/_p5f.fa
+  python3 -c "import pysam; pysam.faidx('/tmp/_p5f.fa')" 2>/dev/null
+  grep -v "^#" /tmp/_p5f.fai > /tmp/_p5f.clean
+  cmp -s /tmp/_p5f.clean /tmp/_p5f.fa.fai && V=pass || V=fail
+  rec fai_matches_htslib R "byte-identical" 0 \
+      "$([ "$V" = pass ] && echo identical || echo differs)" "$V" \
+      "aceapex c --fai-out, compared with pysam.faidx"
+
+  env ACEAPEX_BS=16384 "$BIN" r --in /tmp/_p5f.aet --out /tmp/_p5f.seq \
+      --fai /tmp/_p5f.fai --range chr1:5000000-5016000 --view sequence >/dev/null 2>&1
+  GOT=$(python3 -c "
+import pysam
+fa=pysam.FastaFile('/tmp/_p5f.fa')
+print('match' if open('/tmp/_p5f.seq').read()==fa.fetch('chr1',4999999,5016000) else 'differ')" 2>/dev/null)
+  [ "$GOT" = match ] && V=pass || V=fail
+  rec view_sequence_vs_htslib R "match" 0 "$GOT" "$V" \
+      "aceapex r --view sequence vs pysam fetch"
+
+  sed "s/^#aceapex-src-xxh3.*/#aceapex-src-xxh3\tdeadbeefdeadbeef/" /tmp/_p5f.fai > /tmp/_p5f.alien
+  env ACEAPEX_BS=16384 "$BIN" r --in /tmp/_p5f.aet --out /tmp/_p5f.bad \
+      --fai /tmp/_p5f.alien --range chr1:5000000-5016000 >/dev/null 2>&1
+  RC=$?
+  [ "$RC" != 0 ] && [ ! -f /tmp/_p5f.bad ] && V=pass || V=fail
+  rec alien_index_refused R "nonzero exit, no output" 0 \
+      "exit $RC$([ -f /tmp/_p5f.bad ] && echo ", file written")" "$V" \
+      "index whose source hash does not match the archive"
+  rm -f /tmp/_p5f.aet /tmp/_p5f.fai /tmp/_p5f.fa /tmp/_p5f.fa.fai /tmp/_p5f.clean \
+        /tmp/_p5f.seq /tmp/_p5f.alien /tmp/_p5f.bad
+else
+  for C in fai_matches_htslib view_sequence_vs_htslib alien_index_refused; do
+    rec "$C" R - - "needs chr1 and pysam" skipped-no-tool "pip install --user pysam"; done
 fi
 
 echo ""

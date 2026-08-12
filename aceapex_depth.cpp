@@ -1603,8 +1603,15 @@ static uint8_t* lit_range(const uint8_t* src, size_t src_sz, size_t& orig_sz,
     return out;
 }
 
+// Три представления одного и того же среза:
+//   source   — исходные байты файла, включая переводы строк (было раньше)
+//   sequence — ровно TO-FROM+1 оснований без переводов
+//   fasta    — заголовок ">name:from-to" плюс sequence, как отдаёт samtools faidx
+// Основания у всех трёх одинаковы, различается только обёртка.
 static int do_region(const char* in_path,const char* out_path,
-                     uint64_t req_off,uint64_t req_len) {
+                     uint64_t req_off,uint64_t req_len,
+                     const char* view=nullptr,const char* rname=nullptr,
+                     uint64_t rfrom=0,uint64_t rto=0,uint64_t lbases=0) {
     double t0=now_sec();
     FILE* fin=fopen(in_path,"rb");
     if(!fin){fprintf(stderr,"Cannot open: %s\n",in_path);return 1;}
@@ -1667,7 +1674,31 @@ static int do_region(const char* in_path,const char* out_path,
     double t_lz=now_sec()-t2;
 
     FILE* fo=fopen(out_path,"wb");
-    if(fo){fwrite(dst+(req_off-span_start),1,req_len,fo);fclose(fo);}
+    if(fo){
+        const uint8_t* p0=dst+(req_off-span_start);
+        bool want_seq = view && (!strcmp(view,"sequence")||!strcmp(view,"fasta"));
+        if(!want_seq){
+            fwrite(p0,1,req_len,fo);
+        } else {
+            if(!strcmp(view,"fasta") && rname)
+                fprintf(fo,">%s:%llu-%llu\n",rname,
+                        (unsigned long long)rfrom,(unsigned long long)rto);
+            // снимаем переводы строк; для fasta заворачиваем по 60, как htslib
+            size_t wrap = (!strcmp(view,"fasta")) ? 60 : 0, col=0, wrote=0;
+            for(uint64_t i=0;i<req_len;i++){
+                uint8_t c=p0[i];
+                if(c=='\n'||c=='\r') continue;
+                fputc(c,fo); wrote++;
+                if(wrap && ++col==wrap){ fputc('\n',fo); col=0; }
+            }
+            if(wrap && col) fputc('\n',fo);
+            uint64_t want = (rto>=rfrom) ? (rto-rfrom+1) : 0;
+            if(want && wrote!=want)
+                fprintf(stderr,"  WARNING: wrote %llu bases, expected %llu\n",
+                        (unsigned long long)wrote,(unsigned long long)want);
+        }
+        fclose(fo);
+    }
     fprintf(stderr,"  blocks %zu..%zu  read %.3fs  entropy %.3fs  lz77 %.3fs  total %.3fs\n",
             b0,b1,t_read,t_ent,t_lz,now_sec()-t0);
     free(lit);free(off);free(len);free(cmd);free(dst);
@@ -1684,10 +1715,17 @@ static int do_region(const char* in_path,const char* out_path,
 // ---------------------------------------------------------------------------
 struct FaiRec { char name[256]; uint64_t len, off, lbases, lbytes; };
 
-static bool fai_load(const char* path, std::vector<FaiRec>& out){
+static bool fai_load(const char* path, std::vector<FaiRec>& out, uint64_t& src_hash){
+    src_hash=0;
     FILE* f=fopen(path,"r"); if(!f) return false;
-    char nm[256]; unsigned long long a,b,c,d;
-    while(fscanf(f,"%255s %llu %llu %llu %llu",nm,&a,&b,&c,&d)==5){
+    char line[1024]; unsigned long long a,b,c,d; char nm[256];
+    while(fgets(line,sizeof line,f)){
+        if(line[0]=='#'){
+            unsigned long long h;
+            if(sscanf(line,"#aceapex-src-xxh3 %llx",&h)==1) src_hash=h;
+            continue;
+        }
+        if(sscanf(line,"%255s %llu %llu %llu %llu",nm,&a,&b,&c,&d)!=5) continue;
         FaiRec r; snprintf(r.name,sizeof r.name,"%s",nm);
         r.len=a; r.off=b; r.lbases=c; r.lbytes=d;
         out.push_back(r);
@@ -1697,8 +1735,13 @@ static bool fai_load(const char* path, std::vector<FaiRec>& out){
 
 // Индекс строится ОДНИМ проходом по несжатому входу — при кодировании он уже в
 // памяти, поэтому стоит около нуля.
+// Индекс несёт XXH3-64 файла, для которого построен. Архив несёт свой в заголовке.
+// Не совпало — отказ: чужой или устаревший индекс даёт НЕ ТОТ участок генома молча,
+// и это опаснее любой ошибки формата. Строка начинается с '#', samtools её игнорирует.
 static bool fai_build(const uint8_t* src, size_t n, const char* out_path){
     FILE* fo=fopen(out_path,"w"); if(!fo) return false;
+    fprintf(fo,"#aceapex-src-xxh3\t%016llx\n",
+            (unsigned long long)OUR_CHECKSUM(src,n));
     size_t i=0;
     while(i<n){
         if(src[i]!='>'){ i++; continue; }
@@ -1746,6 +1789,8 @@ int main(int argc, char** argv) {
     const char* cmd=argv[1]; const char* in=nullptr; const char* out=nullptr; int thr=8; int level=2;
     uint64_t reg_off=0, reg_len=0;
     const char* fai_path=nullptr; const char* range_spec=nullptr;
+    const char* view_mode="source";   // source | sequence | fasta
+    const char* fai_out=nullptr;
     for(int i=2;i<argc;i++) {
         if (!strcmp(argv[i],"--in")&&i+1<argc) in=argv[++i];
         else if (!strcmp(argv[i],"--out")&&i+1<argc) out=argv[++i];
@@ -1753,12 +1798,31 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i],"--level")&&i+1<argc) level=atoi(argv[++i]);
         else if (!strcmp(argv[i],"--fast")) level=1;
         else if (!strcmp(argv[i],"--fai")&&i+1<argc) fai_path=argv[++i];
+        else if (!strcmp(argv[i],"--view")&&i+1<argc) view_mode=argv[++i];
+        else if (!strcmp(argv[i],"--fai-out")&&i+1<argc) fai_out=argv[++i];
         else if (!strcmp(argv[i],"--range")&&i+1<argc) range_spec=argv[++i];
         else if (!strcmp(argv[i],"--region")&&i+2<argc){
             reg_off=strtoull(argv[++i],0,10); reg_len=strtoull(argv[++i],0,10); }
     }
     if (!in) { fprintf(stderr,"--in required\n"); return 1; }
-    if (!strcmp(cmd,"c")) { if (!out) { fprintf(stderr,"--out required\n"); return 1; } return do_compress(in,out,thr,level); }
+    if (!strcmp(cmd,"c")) {
+        if (!out) { fprintf(stderr,"--out required\n"); return 1; }
+        int rc = do_compress(in,out,thr,level);
+        // Индекс строится в момент сжатия — только так он гарантированно про ТОТ ЖЕ файл.
+        if (rc==0 && fai_out) {
+            double t0=now_sec();
+            FILE* fi=fopen(in,"rb");
+            if(fi){
+                fseek(fi,0,SEEK_END); long fsz=ftell(fi); fseek(fi,0,SEEK_SET);
+                uint8_t* b=(uint8_t*)malloc(fsz);
+                if(b && fread(b,1,fsz,fi)==(size_t)fsz)
+                    fprintf(stderr,"  fai: %s (%.3fs)\n",
+                            fai_build(b,(size_t)fsz,fai_out)?"written":"FAILED", now_sec()-t0);
+                free(b); fclose(fi);
+            }
+        }
+        return rc;
+    }
     if (!strcmp(cmd,"d")) { if (!out) { fprintf(stderr,"--out required\n"); return 1; } return do_decompress(in,out,thr); }
     if (!strcmp(cmd,"t")) return do_test(in,thr,level);
     if (!strcmp(cmd,"faidx")) {
@@ -1778,10 +1842,25 @@ int main(int argc, char** argv) {
     if (!strcmp(cmd,"r")) {
         if(!out){fprintf(stderr,"--out required\n");return 1;}
         // Координата вместо байтов: --fai chr1.fai --range chr1:5000000-5016000
+        char rng_name[256]={0}; uint64_t rng_from=0,rng_to=0,rng_lb=0;
         if(range_spec){
             if(!fai_path){fprintf(stderr,"--range requires --fai\n");return 1;}
-            std::vector<FaiRec> recs;
-            if(!fai_load(fai_path,recs)){fprintf(stderr,"cannot read %s\n",fai_path);return 1;}
+            std::vector<FaiRec> recs; uint64_t fai_hash=0;
+            if(!fai_load(fai_path,recs,fai_hash)){fprintf(stderr,"cannot read %s\n",fai_path);return 1;}
+            {   // индекс обязан относиться к ЭТОМУ архиву
+                FILE* fh=fopen(in,"rb"); AetHeader hh;
+                if(fh && fread(&hh,sizeof hh,1,fh)==1){
+                    uint64_t ah; memcpy(&ah,hh.xxhash,8);
+                    if(fai_hash && fai_hash!=ah){
+                        fprintf(stderr,"index/archive mismatch: fai %016llx, archive %016llx\n",
+                                (unsigned long long)fai_hash,(unsigned long long)ah);
+                        fclose(fh); return 1;
+                    }
+                    if(!fai_hash)
+                        fprintf(stderr,"  note: index has no source hash, cannot verify it matches\n");
+                }
+                if(fh) fclose(fh);
+            }
             char nm[256]; unsigned long long a=0,b=0;
             if(sscanf(range_spec,"%255[^:]:%llu-%llu",nm,&a,&b)!=3){
                 fprintf(stderr,"bad --range, expected NAME:FROM-TO\n"); return 1; }
@@ -1792,12 +1871,14 @@ int main(int argc, char** argv) {
             if(!fai_range(*r,a,b,b0,b1)){fprintf(stderr,"range outside %s (len %llu)\n",
                 nm,(unsigned long long)r->len);return 1;}
             reg_off=b0; reg_len=b1-b0+1;
+            snprintf(rng_name,sizeof rng_name,"%s",nm);
+            rng_from=a; rng_to=b; rng_lb=r->lbases;
             fprintf(stderr,"  %s:%llu-%llu -> bytes %llu..%llu (%llu)\n",
                 nm,a,b,(unsigned long long)b0,(unsigned long long)b1,
                 (unsigned long long)reg_len);
         }
         if(reg_len==0){fprintf(stderr,"--region OFFSET LENGTH required\n");return 1;}
-        return do_region(in,out,reg_off,reg_len);
+        return do_region(in,out,reg_off,reg_len,view_mode,rng_name,rng_from,rng_to,rng_lb);
     }
     return 1;
 }

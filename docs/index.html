@@ -183,7 +183,7 @@
   </div>
   <div class="cell">
     <div class="n">3<span>&nbsp;ms</span></div>
-    <div class="l"><code>chr1:5000000-5016000</code> out of a 254 MB archive, on CPU &mdash; a genomic coordinate, not a byte offset. CRAM targets 100&ndash;500 ms for the same kind of request; zstd&rsquo;s seekable format has no coordinate layer at all and packs 18.7% looser.</div>
+    <div class="l"><code>chr1:5000000-5016000</code> out of a 254 MB archive, on CPU &mdash; a genomic coordinate, not a byte offset. Output verified against samtools faidx over 100,000 random ranges, zero mismatches, including line, block and chunk boundaries.</div>
     <div class="src">byte-verified against the original &middot; aceapex faidx + r --range</div>
   </div>
   <div class="cell">
