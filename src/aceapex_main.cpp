@@ -888,6 +888,107 @@ static void fse_chunked_decomp(const uint8_t* src, size_t orig_sz, uint8_t* dst)
 }
  
 // Parallel entropy encode — 4 streams simultaneously
+static int lit_lanes(){
+    const char* e=getenv("LIT_LANES");
+    if(e){ int v=atoi(e); if(v>0) return v; }
+    long n=sysconf(_SC_NPROCESSORS_ONLN);
+    return n>0 ? (int)n : 8;
+}
+
+static int lit_level(){
+    const char* e=getenv("LIT_LEVEL");
+    if(e){ int v=atoi(e); if(v>=-5 && v<=19 && v!=0) return v; }
+    return 3;
+}
+
+static bool dna_worth(const uint8_t* s, size_t n){
+    if(n < 4096) return false;
+    size_t step = n>65536 ? n/65536 : 1, bad=0, cnt=0;
+    for(size_t i=0;i<n;i+=step){ uint8_t u=s[i]&0xDF;
+        if(u!='A'&&u!='C'&&u!='G'&&u!='T') bad++;
+        cnt++; }
+    return cnt && (double)bad/(double)cnt < 0.10;
+}
+
+static uint8_t* dna_compress(const uint8_t* s, size_t n, size_t& out_sz){
+    size_t np=(n+3)/4, nc=(n+7)/8, nexc=0;
+    for(size_t i=0;i<n;i++){ uint8_t u=s[i]&0xDF;
+        if(u!='A'&&u!='C'&&u!='G'&&u!='T') nexc++; }
+    uint8_t* seq=(uint8_t*)calloc(np?np:1,1);
+    uint8_t* cse=(uint8_t*)calloc(nc?nc:1,1);
+    uint32_t* gap=(uint32_t*)malloc((nexc?nexc:1)*4);
+    uint8_t*  val=(uint8_t*)malloc(nexc?nexc:1);
+    if(!seq||!cse||!gap||!val){free(seq);free(cse);free(gap);free(val);out_sz=0;return nullptr;}
+    size_t e=0, prev=0;
+    for(size_t i=0;i<n;i++){
+        uint8_t b=s[i], u=b&0xDF, code=0;
+        if(u=='A') code=0; else if(u=='C') code=1;
+        else if(u=='G') code=2; else if(u=='T') code=3;
+        else { gap[e]=(uint32_t)(i-prev); prev=i; val[e]=b; e++; }
+        seq[i>>2] |= (uint8_t)(code << (6-2*(i&3)));
+        if(b>=0x61 && b<=0x7a) cse[i>>3] |= (uint8_t)(0x80>>(i&7));
+    }
+    size_t c1=ZSTD_compressBound(np)+8, c2=ZSTD_compressBound(nc)+8;
+    size_t c3=ZSTD_compressBound(nexc*4)+8, c4=ZSTD_compressBound(nexc)+8;
+    uint8_t* buf=(uint8_t*)malloc(20+c1+c2+c3+c4);
+    if(!buf){free(seq);free(cse);free(gap);free(val);out_sz=0;return nullptr;}
+    uint8_t* p=buf+20;
+    int L=lit_level();
+    size_t s1=ZSTD_compress(p,c1,seq,np,L); p+=s1;
+    size_t s2=ZSTD_compress(p,c2,cse,nc,L); p+=s2;
+    size_t s3=nexc?ZSTD_compress(p,c3,gap,nexc*4,L):0; p+=s3;
+    size_t s4=nexc?ZSTD_compress(p,c4,val,nexc,L):0; p+=s4;
+    uint32_t h[5]={(uint32_t)nexc,(uint32_t)s1,(uint32_t)s2,(uint32_t)s3,(uint32_t)s4};
+    memcpy(buf,h,20);
+    free(seq);free(cse);free(gap);free(val);
+    out_sz=20+s1+s2+s3+s4;
+    return buf;
+}
+
+static void dna_decompress(const uint8_t* src, uint8_t* dst, size_t n){
+    uint32_t h[5]; memcpy(h,src,20);
+    size_t nexc=h[0], np=(n+3)/4, nc=(n+7)/8;
+    const uint8_t* p=src+20;
+    uint8_t* seq=(uint8_t*)malloc(np?np:1);
+    uint8_t* cse=(uint8_t*)malloc(nc?nc:1);
+    uint32_t* gap=(uint32_t*)malloc((nexc?nexc:1)*4);
+    uint8_t*  val=(uint8_t*)malloc(nexc?nexc:1);
+    ZSTD_decompress(seq,np,p,h[1]); p+=h[1];
+    ZSTD_decompress(cse,nc,p,h[2]); p+=h[2];
+    if(h[3]) ZSTD_decompress(gap,nexc*4,p,h[3]); p+=h[3];
+    if(h[4]) ZSTD_decompress(val,nexc,p,h[4]);
+    // Таблица на 256 входов: один упакованный байт разворачивается в четыре
+    // основания одним 32-битным store вместо четырёх сдвигов с условием.
+    static uint32_t T4[256]; static bool T4_ready=false;
+    if(!T4_ready){
+        static const uint8_t B[4]={'A','C','G','T'};
+        for(int v=0;v<256;v++){
+            uint8_t q[4]={B[(v>>6)&3],B[(v>>4)&3],B[(v>>2)&3],B[v&3]};
+            memcpy(&T4[v],q,4);
+        }
+        T4_ready=true;
+    }
+    size_t full=n>>2;
+    for(size_t k=0;k<full;k++) memcpy(dst+4*k,&T4[seq[k]],4);
+    for(size_t i=full<<2;i<n;i++){
+        static const uint8_t B2[4]={'A','C','G','T'};
+        dst[i]=B2[(seq[i>>2] >> (6-2*(i&3))) & 3];
+    }
+    // Регистр: байты, где бит маски выставлен, получают 0x20. Байт маски покрывает
+    // восемь позиций, поэтому нулевой байт пропускается целиком.
+    size_t nb8=(n+7)>>3;
+    for(size_t k=0;k<nb8;k++){
+        uint8_t m=cse[k];
+        if(!m) continue;
+        size_t base=k<<3, lim=(base+8<=n)?8:(n-base);
+        for(size_t j=0;j<lim;j++) if(m & (0x80>>j)) dst[base+j]|=0x20;
+    }
+    size_t pos=0;
+    for(size_t k=0;k<nexc;k++){ pos+=gap[k]; if(pos<n) dst[pos]=val[k]; }
+    free(seq);free(cse);free(gap);free(val);
+}
+
+
 static uint8_t* lit_compress_legacy(const uint8_t* src, size_t sz, size_t& out_sz) {
     const int NW=4; size_t csz=(sz+NW-1)/NW;
     struct ZW{const uint8_t*in;size_t isz;uint8_t*out;size_t osz;size_t cap;};
@@ -953,11 +1054,23 @@ static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
         CPool* p=(CPool*)a;
         ZSTD_CCtx* ctx=ZSTD_createCCtx();
         if(!ctx) return nullptr;
-        ZSTD_CCtx_setParameter(ctx,ZSTD_c_compressionLevel,3);
+        ZSTD_CCtx_setParameter(ctx,ZSTD_c_compressionLevel,lit_level());
         for(;;){ int i=p->next.fetch_add(1); if(i>=p->n) break;
-            ZW& z=p->w[i]; z.osz=ZSTD_compress2(ctx,z.out,z.cap,z.in,z.isz); }
+            ZW& z=p->w[i];
+            // Байт режима перед данными: 0 = обычный zstd, 1 = DNA-трансформ.
+            // Считаем оба и берём меньший, поэтому режим не может ухудшить размер.
+            size_t zs=ZSTD_compress2(ctx,z.out+1,z.cap-1,z.in,z.isz);
+            uint8_t* db=nullptr; size_t dsz=0;
+            if(dna_worth(z.in,z.isz)) db=dna_compress(z.in,z.isz,dsz);
+            if(db && dsz && dsz<zs){
+                z.out[0]=1; memcpy(z.out+1,db,dsz); z.osz=dsz+1;
+            } else {
+                z.out[0]=0; z.osz=zs+1;
+            }
+            free(db);
+        }
         ZSTD_freeCCtx(ctx); return nullptr;};
-    const int LANES=std::min(8,NW);
+    const int LANES=std::min(lit_lanes(),NW);
     std::vector<pthread_t> pts(LANES);
     for(int t=0;t<LANES;t++) pthread_create(&pts[t],nullptr,zfn,&cpool);
     for(int t=0;t<LANES;t++) pthread_join(pts[t],nullptr);
@@ -965,7 +1078,7 @@ static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
     for(int t=0;t<NW;t++) totalsz+=zws[t].osz;
     uint8_t* res=(uint8_t*)malloc(totalsz);
     if(!res){out_sz=0;return nullptr;}
-    *(uint64_t*)res=sz|(uint64_t(1)<<62)|(uint64_t(1)<<61);
+    *(uint64_t*)res=sz|(uint64_t(1)<<62)|(uint64_t(1)<<61)|(uint64_t(1)<<60);
     *(uint64_t*)(res+8)=(uint64_t)CH;   // размер чанка, а не их число
     uint64_t* zsz=(uint64_t*)(res+16); uint8_t* p=res+hdrsz;
     for(int t=0;t<NW;t++){zsz[t]=zws[t].osz;memcpy(p,zws[t].out,zws[t].osz);p+=zws[t].osz;free(zws[t].out);}
@@ -979,7 +1092,8 @@ static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_s
     uint64_t h; memcpy(&h, src, 8);   // alignment-safe (no AX_read64 in this tree)
     const int NW_LEGACY=4;
     const bool chunked=(h & (uint64_t(1)<<61))!=0;
-    orig_sz=h & ~((uint64_t(1)<<62)|(uint64_t(1)<<61));
+    const bool tagged=(h & (uint64_t(1)<<60))!=0;
+    orig_sz=h & ~((uint64_t(1)<<62)|(uint64_t(1)<<61)|(uint64_t(1)<<60));
     uint8_t* out=(uint8_t*)malloc(orig_sz?orig_sz:1);
     if(!out) return nullptr;
     if(!(h & (uint64_t(1)<<62))){fse_chunked_decomp(src,orig_sz,out);return out;}
@@ -988,7 +1102,7 @@ static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_s
     const int NW = chunked ? (int)((orig_sz + csz - 1)/csz) : NW_LEGACY;
     const uint64_t* zsz=(const uint64_t*)(src+(chunked?16:8));
     const uint8_t* p0=src+(chunked?16:8)+(size_t)NW*8;
-    struct DW{uint8_t*out;size_t raw;const uint8_t*in;size_t isz;};
+    struct DW{uint8_t*out;size_t raw;const uint8_t*in;size_t isz;bool tg;};
     std::vector<DW> dws(NW); const uint8_t* p=p0;
     for(int t=0;t<NW;t++){
         // Same underflow guard as in lit_compress (decoder side).
@@ -996,13 +1110,16 @@ static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_s
         // Правило совпадает с кодером: кусок равен csz, кроме последнего.
         // Прежняя формула с (t<NW-1) была под legacy и на чанках расходилась.
         size_t raw=(off+csz<=orig_sz)?csz:(orig_sz-off);
-        dws[t]={out+off,raw,p,(size_t)zsz[t]}; p+=(size_t)zsz[t];}
+        dws[t]={out+off,raw,p,(size_t)zsz[t],tagged}; p+=(size_t)zsz[t];}
     struct Pool{ DW* w; int n; std::atomic<int> next; };
     Pool pool{dws.data(),NW,{0}};
     auto dfn=[](void*a)->void*{
         Pool* p=(Pool*)a;
         for(;;){ int i=p->next.fetch_add(1); if(i>=p->n) break;
-            DW& d=p->w[i]; if(d.isz) ZSTD_decompress(d.out,d.raw,d.in,d.isz); }
+            DW& d=p->w[i]; if(!d.isz) continue;
+            if(!d.tg){ ZSTD_decompress(d.out,d.raw,d.in,d.isz); continue; }
+            if(d.in[0]==1) dna_decompress(d.in+1,d.out,d.raw);
+            else           ZSTD_decompress(d.out,d.raw,d.in+1,d.isz-1); }
         return nullptr;};
     const int LANES=std::min(8,NW);
     std::vector<pthread_t> pts(LANES);
@@ -1039,7 +1156,8 @@ static uint8_t* lit_range(const uint8_t* src, size_t src_sz, size_t& orig_sz,
     if(!src||src_sz<8){orig_sz=0;return (uint8_t*)malloc(1);}
     uint64_t h; memcpy(&h,src,8);
     const bool chunked=(h&(uint64_t(1)<<61))!=0;
-    orig_sz=h&~((uint64_t(1)<<62)|(uint64_t(1)<<61));
+    const bool tagged=(h&(uint64_t(1)<<60))!=0;
+    orig_sz=h&~((uint64_t(1)<<62)|(uint64_t(1)<<61)|(uint64_t(1)<<60));
     if(!(h&(uint64_t(1)<<62))) return fse_range(src,orig_sz,from,to);
     size_t csz=chunked?(size_t)(*(const uint64_t*)(src+8)):(orig_sz+3)/4;
     const int NW=chunked?(int)((orig_sz+csz-1)/csz):4;
@@ -1049,9 +1167,12 @@ static uint8_t* lit_range(const uint8_t* src, size_t src_sz, size_t& orig_sz,
     if(!out) return nullptr;
     for(int t=0;t<NW;t++){
         size_t off=(size_t)t*csz; if(off>orig_sz) off=orig_sz;
-        size_t raw=(t<NW-1)?((off+csz<=orig_sz)?csz:(orig_sz-off)):(orig_sz-off);
-        if(off<to && off+raw>from)
-            ZSTD_decompress(out+off,raw,p,(size_t)zsz[t]);
+        size_t raw=(off+csz<=orig_sz)?csz:(orig_sz-off);
+        if(off<to && off+raw>from){
+            if(!tagged)      ZSTD_decompress(out+off,raw,p,(size_t)zsz[t]);
+            else if(p[0]==1) dna_decompress(p+1,out+off,raw);
+            else             ZSTD_decompress(out+off,raw,p+1,(size_t)zsz[t]-1);
+        }
         p+=(size_t)zsz[t];
     }
     return out;
