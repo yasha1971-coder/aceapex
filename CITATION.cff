@@ -94,6 +94,9 @@ references:
         family-names: Shavidze
     year: 2026
     identifiers:
+      - type: other
+        value: 'arXiv:2608.10188'
+        description: arXiv preprint
       - type: doi
         value: 10.5281/zenodo.21874972
-        description: Artifacts; arXiv identifier pending announcement
+        description: Archived artifacts

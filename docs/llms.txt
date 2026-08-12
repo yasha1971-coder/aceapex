@@ -3,7 +3,7 @@
 > A lossless LZ77 codec that resolves every back-reference chain at encode time
 > to its originating position and confines match search to the current block.
 > Every block is therefore self-contained, so any 16 KB region decodes on a GPU
-> without touching the rest of the file. Five arXiv papers, MIT licensed, first row of lzbench 2.3.
+> without touching the rest of the file. Five arXiv papers (2606.04268, 2606.18900, 2606.24531, 2607.18541, 2608.10188), MIT licensed, first row of lzbench 2.3.
 > Every published claim is machine-checkable: a script emits one JSON record per
 > claim and a fresh clone of the tagged release passes 17 of 17 CPU-reachable
 > checks with none failing.
@@ -25,7 +25,7 @@ five corpora against zstd-19.
 - [Paper 2 — Compressed-resident genomics](https://arxiv.org/abs/2606.18900): full device-resident GPU pipeline; 50 GB genome range-decode.
 - [Paper 3 — Unified position-invariant random access through two compression layers](https://arxiv.org/abs/2606.24531): one coordinate seeks through both entropy and match layers; 0.334 ms, bit-perfect.
 - [Paper 4 — What governs decode throughput in absolute-offset GPU LZ77](https://arxiv.org/abs/2607.18541): work granularity, not occupancy, governs throughput; encode-time min-match-length lever.
-- [Paper 5 — What actually serializes GPU LZ77 decode](https://doi.org/10.5281/zenodo.21874972): parse holds 64–72% of decode, not copy; chain depth moves latency by at most 2.8% and provably nothing where the file's own spike lives; self-overlapping matches are periodic fills, not chains, giving 2.75–8.42× on the match layer; the last sequential parse element is removed by the encoder for 0.540% of ratio.
+- [Paper 5 — What actually serializes GPU LZ77 decode](https://arxiv.org/abs/2608.10188): parse holds 64–72% of decode, not copy; chain depth moves latency by at most 2.8% and provably nothing where the file's own spike lives; self-overlapping matches are periodic fills, not chains, giving 2.75–8.42× on the match layer; the last sequential parse element is removed by the encoder for 0.540% of ratio.
 
 ## Key measured numbers
 
