@@ -36,9 +36,14 @@ touching the rest. Same file, same region, same host.
 | | archive | ratio | 16 KB seek | needs |
 |---|---|---|---|---|
 | zstd seekable, 16 KB frames | 83,924,167 | 3.026 | under 10 ms | a separate format and a second library |
-| **ACEAPEX** `LIT_CHUNK=1048576` | **79,771,100** | **3.183** | **3 ms** | the base format |
+| **ACEAPEX** `LIT_CHUNK=1048576` | **68,224,719** | **3.777** | **3 ms** | the base format |
 
-Denser by 5.2% and faster to seek. Widening the request costs almost nothing: one
+Denser by 18.7% and faster to seek. The density comes from a literal transform that
+switches itself on per chunk when the data is genomic: two bits per base, the letter
+case as a packed bitmask, and the rare non-ACGT bytes as position gaps. The encoder
+computes the ordinary result as well and keeps whichever is smaller, so the mode can
+never cost size, and it stays off on text, archives and sequencing reads where the
+non-ACGT share runs 74 to 92 percent. Widening the request costs almost nothing: one
 block 3 ms, ten blocks 3 ms, a hundred blocks — 1.6 MB — 5 ms. The phase breakdown
 for a single block is read 0.000 s, entropy 0.001–0.005 s, match layer 0.000 s: the
 archive is mapped rather than read, so the kernel faults in only the pages the range
