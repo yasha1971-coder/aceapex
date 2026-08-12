@@ -212,6 +212,28 @@ else
 fi
 
 echo ""
+echo "--- R: genomic coordinate lookup ---"
+if [ -f "$CHR1" ]; then
+  "$BIN" faidx --in "$CHR1" --out /tmp/_p5.fai >/dev/null 2>&1
+  GOT=$(cat /tmp/_p5.fai 2>/dev/null | tr -s "\t" " ")
+  [ "$GOT" = "chr1 248956422 6 50 51" ] && V=pass || V=fail
+  rec fasta_index R "chr1 248956422 6 50 51" 0 "$GOT" "$V" "aceapex faidx --in chr1.fa"
+
+  env MIN_MATCH=0 ACEAPEX_BS=16384 LIT_CHUNK=1048576 "$BIN" c --in "$CHR1" \
+      --out /tmp/_p5c.aet --threads 8 >/dev/null 2>&1
+  env ACEAPEX_BS=16384 "$BIN" r --in /tmp/_p5c.aet --out /tmp/_p5c.bin \
+      --fai /tmp/_p5.fai --range chr1:5000000-5016000 >/dev/null 2>&1
+  dd if="$CHR1" of=/tmp/_p5c.ref bs=1 skip=5100004 count=16321 2>/dev/null
+  cmp -s /tmp/_p5c.bin /tmp/_p5c.ref && V=pass || V=fail
+  rec coord_range_byte_exact R "match" 0 "$([ "$V" = pass ] && echo match || echo differ)" "$V" \
+      "aceapex r --fai --range chr1:5000000-5016000"
+  rm -f /tmp/_p5.fai /tmp/_p5c.aet /tmp/_p5c.bin /tmp/_p5c.ref
+else
+  for C in fasta_index coord_range_byte_exact; do
+    rec "$C" R - - "missing corpus" skipped-no-corpus "set CHR1"; done
+fi
+
+echo ""
 echo "--- M / E: declared, not verifiable here ---"
 rec seek_50gb_position_invariance M "292-387 us" - "original not on disk; FNV has nothing to compare against" declared "v7ra streams_50gb.bin"
 rec min_match_cost_probe M "1.291 -> 0.215 ms" - "tokens dropped without substituting literals" declared "wf_par, filtered tokens"

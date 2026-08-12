@@ -1675,6 +1675,65 @@ static int do_region(const char* in_path,const char* out_path,
     return 0;
 }
 
+// ---------------------------------------------------------------------------
+// FASTA-ИНДЕКС. Регион до сих пор адресовался БАЙТАМИ файла, а биологу нужна
+// координата: chr1:5000000-5016000. Для FASTA перевод арифметический — заголовок,
+// фиксированная длина строки, переводы строк, — и совпадает с .fai у samtools:
+// name, length, offset первого основания, оснований в строке, байт в строке.
+// Мы читаем ту же таблицу, но дальше идём в aceapex_decompress_region.
+// ---------------------------------------------------------------------------
+struct FaiRec { char name[256]; uint64_t len, off, lbases, lbytes; };
+
+static bool fai_load(const char* path, std::vector<FaiRec>& out){
+    FILE* f=fopen(path,"r"); if(!f) return false;
+    char nm[256]; unsigned long long a,b,c,d;
+    while(fscanf(f,"%255s %llu %llu %llu %llu",nm,&a,&b,&c,&d)==5){
+        FaiRec r; snprintf(r.name,sizeof r.name,"%s",nm);
+        r.len=a; r.off=b; r.lbases=c; r.lbytes=d;
+        out.push_back(r);
+    }
+    fclose(f); return !out.empty();
+}
+
+// Индекс строится ОДНИМ проходом по несжатому входу — при кодировании он уже в
+// памяти, поэтому стоит около нуля.
+static bool fai_build(const uint8_t* src, size_t n, const char* out_path){
+    FILE* fo=fopen(out_path,"w"); if(!fo) return false;
+    size_t i=0;
+    while(i<n){
+        if(src[i]!='>'){ i++; continue; }
+        size_t hs=i+1, he=hs;
+        while(he<n && src[he]!='\n' && src[he]!=' ' && src[he]!='\t') he++;
+        char name[256];
+        size_t nl2 = (he-hs < sizeof(name)-1) ? (he-hs) : (sizeof(name)-1);
+        memcpy(name, src+hs, nl2); name[nl2]=0;
+        size_t eol=he; while(eol<n && src[eol]!='\n') eol++;
+        size_t seq=eol+1;
+        // первая строка последовательности задаёт геометрию записи
+        size_t l1=seq; while(l1<n && src[l1]!='\n') l1++;
+        uint64_t lb=l1-seq, lby=lb+1;
+        uint64_t total=0; size_t p=seq;
+        while(p<n && src[p]!='>'){
+            size_t e=p; while(e<n && src[e]!='\n') e++;
+            total += e-p; p = (e<n) ? e+1 : e;
+        }
+        fprintf(fo,"%s\t%llu\t%llu\t%llu\t%llu\n", name,
+                (unsigned long long)total,(unsigned long long)seq,
+                (unsigned long long)lb,(unsigned long long)lby);
+        i=p;
+    }
+    fclose(fo); return true;
+}
+
+// Координата (1-based, включительно) -> байтовый диапазон в несжатом файле.
+static bool fai_range(const FaiRec& r, uint64_t from, uint64_t to,
+                      uint64_t& b0, uint64_t& b1){
+    if(from<1 || to<from || to>r.len) return false;
+    b0 = r.off + (from-1)/r.lbases * r.lbytes + (from-1)%r.lbases;
+    b1 = r.off + (to-1)  /r.lbases * r.lbytes + (to-1)  %r.lbases;
+    return true;
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         fprintf(stderr,"ACEAPEX v3 FSE — Global FSE + Parallel decode\n\n"
@@ -1686,12 +1745,15 @@ int main(int argc, char** argv) {
     }
     const char* cmd=argv[1]; const char* in=nullptr; const char* out=nullptr; int thr=8; int level=2;
     uint64_t reg_off=0, reg_len=0;
+    const char* fai_path=nullptr; const char* range_spec=nullptr;
     for(int i=2;i<argc;i++) {
         if (!strcmp(argv[i],"--in")&&i+1<argc) in=argv[++i];
         else if (!strcmp(argv[i],"--out")&&i+1<argc) out=argv[++i];
         else if (!strcmp(argv[i],"--threads")&&i+1<argc) thr=atoi(argv[++i]);
         else if (!strcmp(argv[i],"--level")&&i+1<argc) level=atoi(argv[++i]);
         else if (!strcmp(argv[i],"--fast")) level=1;
+        else if (!strcmp(argv[i],"--fai")&&i+1<argc) fai_path=argv[++i];
+        else if (!strcmp(argv[i],"--range")&&i+1<argc) range_spec=argv[++i];
         else if (!strcmp(argv[i],"--region")&&i+2<argc){
             reg_off=strtoull(argv[++i],0,10); reg_len=strtoull(argv[++i],0,10); }
     }
@@ -1699,8 +1761,41 @@ int main(int argc, char** argv) {
     if (!strcmp(cmd,"c")) { if (!out) { fprintf(stderr,"--out required\n"); return 1; } return do_compress(in,out,thr,level); }
     if (!strcmp(cmd,"d")) { if (!out) { fprintf(stderr,"--out required\n"); return 1; } return do_decompress(in,out,thr); }
     if (!strcmp(cmd,"t")) return do_test(in,thr,level);
+    if (!strcmp(cmd,"faidx")) {
+        FILE* fi=fopen(in,"rb"); if(!fi){fprintf(stderr,"cannot open\n");return 1;}
+        fseek(fi,0,SEEK_END); long fsz=ftell(fi); fseek(fi,0,SEEK_SET);
+        uint8_t* buf=(uint8_t*)malloc(fsz);
+        if(fread(buf,1,fsz,fi)!=(size_t)fsz){fclose(fi);return 1;}
+        fclose(fi);
+        char op[1024];
+        if(out) snprintf(op,sizeof op,"%s",out);
+        else    snprintf(op,sizeof op,"%s.fai",in);
+        bool ok=fai_build(buf,(size_t)fsz,op);
+        free(buf);
+        fprintf(stderr,"%s %s\n", ok?"wrote":"failed", op);
+        return ok?0:1;
+    }
     if (!strcmp(cmd,"r")) {
         if(!out){fprintf(stderr,"--out required\n");return 1;}
+        // Координата вместо байтов: --fai chr1.fai --range chr1:5000000-5016000
+        if(range_spec){
+            if(!fai_path){fprintf(stderr,"--range requires --fai\n");return 1;}
+            std::vector<FaiRec> recs;
+            if(!fai_load(fai_path,recs)){fprintf(stderr,"cannot read %s\n",fai_path);return 1;}
+            char nm[256]; unsigned long long a=0,b=0;
+            if(sscanf(range_spec,"%255[^:]:%llu-%llu",nm,&a,&b)!=3){
+                fprintf(stderr,"bad --range, expected NAME:FROM-TO\n"); return 1; }
+            const FaiRec* r=nullptr;
+            for(auto& x:recs) if(!strcmp(x.name,nm)) { r=&x; break; }
+            if(!r){fprintf(stderr,"%s not in index\n",nm);return 1;}
+            uint64_t b0,b1;
+            if(!fai_range(*r,a,b,b0,b1)){fprintf(stderr,"range outside %s (len %llu)\n",
+                nm,(unsigned long long)r->len);return 1;}
+            reg_off=b0; reg_len=b1-b0+1;
+            fprintf(stderr,"  %s:%llu-%llu -> bytes %llu..%llu (%llu)\n",
+                nm,a,b,(unsigned long long)b0,(unsigned long long)b1,
+                (unsigned long long)reg_len);
+        }
         if(reg_len==0){fprintf(stderr,"--region OFFSET LENGTH required\n");return 1;}
         return do_region(in,out,reg_off,reg_len);
     }
