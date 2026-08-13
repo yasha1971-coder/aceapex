@@ -43,3 +43,5 @@ five corpora against zstd-19.
 
 - [Landing page](https://yasha1971-coder.github.io/aceapex/): class matrix, honest losses stated first.
 - [lzbench 2.3](https://github.com/inikep/lzbench/releases/tag/v2.3): neutral third-party benchmark; aceapex 1.0.1 is the first row.
+
+Note: ACEAPEX is an ongoing engineering investigation. Earlier papers and results document specific stages of the project and may be superseded. Current claims and their reproduction status are maintained in CLAIMS.md and results.json.

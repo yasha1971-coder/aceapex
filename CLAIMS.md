@@ -1,5 +1,7 @@
 # Claims
 
+> ACEAPEX is an ongoing engineering investigation. Earlier papers and results document specific stages of the project and may be superseded. This file and results.json carry the current claims and their reproduction status.
+
 Each answer below is a measurement with a fixed scope and a way to check it.
 Levels: **R** reproducible here with a command, an expected value and a tolerance;
 **M** measured but not bit-perfect, with the reason stated; **E** estimated from

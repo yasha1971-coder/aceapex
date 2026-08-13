@@ -26,6 +26,8 @@ It is not the densest compressor (see [Honest Status](#honest-status)). Its edge
 
 ---
 
+> ACEAPEX is an ongoing engineering investigation. Earlier papers and results document specific stages of the project and may be superseded. Current claims and their reproduction status are maintained in CLAIMS.md and results.json.
+
 ## Papers
 
 - **Paper 1:** [ACEAPEX: Parallel LZ77 Decoding via Encode-Time Absolute Offset Resolution](https://arxiv.org/abs/2606.04268) — CPU scaling, GPU wavefront decoder, lzbench 2.3 integration.
