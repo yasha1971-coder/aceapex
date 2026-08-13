@@ -148,8 +148,10 @@ int64_t aceapex_decompress_region(
     if (need > src_size) return ACEAPEX_ERR_DATA;
 
     p += sizeof(hdr);
-    std::vector<BlockOffsets> boffs(hdr.num_blocks);
-    memcpy(boffs.data(), p, (size_t)hdr.num_blocks * sizeof(BlockOffsets));
+    // Таблица блоков читается ПРЯМО ИЗ АРХИВА. Копия в вектор стоила 969 KB на каждый
+    // вызов ради 128 байт, что дало 485 page-faults на запрос — почти всю оставшуюся
+    // латентность. Архив уже в памяти вызывающего, копировать нечего.
+    const BlockOffsets* boffs = (const BlockOffsets*)p;
     p += (size_t)hdr.num_blocks * sizeof(BlockOffsets);
 
     const uint8_t* zlit = p;
@@ -166,11 +168,11 @@ int64_t aceapex_decompress_region(
     size_t nf=boffs[b0].len_off, nt=boffs[b1].len_off+boffs[b1].len_sz;
     size_t cf=boffs[b0].cmd_off, ct=boffs[b1].cmd_off+boffs[b1].cmd_sz;
 
-    size_t lit_sz = 0;
-    uint8_t* lit = lit_range(zlit, hdr.zlit_sz, lit_sz, lf, lt);
-    uint8_t* off = fse_range(zoff, *(const uint64_t*)zoff & ~(uint64_t(1)<<63), of, ot);
-    uint8_t* len = fse_range(zlen, *(const uint64_t*)zlen & ~(uint64_t(1)<<63), nf, nt);
-    uint8_t* cmd = fse_range(zcmd, *(const uint64_t*)zcmd & ~(uint64_t(1)<<63), cf, ct);
+    size_t lit_sz = 0, wl=0, wo=0, wn=0, wc=0;
+    uint8_t* lit = lit_range(zlit, hdr.zlit_sz, lit_sz, lf, lt, &wl);
+    uint8_t* off = fse_range(zoff, *(const uint64_t*)zoff & ~(uint64_t(1)<<63), of, ot, &wo);
+    uint8_t* len = fse_range(zlen, *(const uint64_t*)zlen & ~(uint64_t(1)<<63), nf, nt, &wn);
+    uint8_t* cmd = fse_range(zcmd, *(const uint64_t*)zcmd & ~(uint64_t(1)<<63), cf, ct, &wc);
     if (!lit || !off || !len || !cmd) {
         free(lit); free(off); free(len); free(cmd);
         return ACEAPEX_ERR_MEMORY;
@@ -188,8 +190,8 @@ int64_t aceapex_decompress_region(
         size_t bsize  = (size_t)(hdr.orig_size - bstart);
         if (bsize > hdr.block_size) bsize = hdr.block_size;
         decompress_streams(span + (bstart - span_start), bsize,
-            lit + bo.lit_off, bo.lit_sz, off + bo.off_off, bo.off_sz,
-            len + bo.len_off, bo.len_sz, cmd + bo.cmd_off, bo.cmd_sz);
+            lit + (bo.lit_off-wl), bo.lit_sz, off + (bo.off_off-wo), bo.off_sz,
+            len + (bo.len_off-wn), bo.len_sz, cmd + (bo.cmd_off-wc), bo.cmd_sz);
     }
     memcpy(dst, span + (offset - span_start), (size_t)length);
 

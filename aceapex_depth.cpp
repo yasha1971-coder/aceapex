@@ -893,8 +893,16 @@ static void parallel_decode(
  
 // Helper: chunked FSE decompress a stream
 // Format: [8:orig_sz][nc*8:csizes][chunks...]
+// Размер FSE-чанка был зашит на 512 KB. Три потока off/len/cmd требуют по чанку
+// при ЛЮБОМ размере чанка литералов — это пол латентности региона, около 1 MB.
+static size_t fse_chunk_size(){
+    const char* e=getenv("FSE_CHUNK");
+    if(e){ size_t v=strtoull(e,0,10); if(v>=4096) return v; }
+    return 512*1024;
+}
+
 static void fse_chunked_decomp(const uint8_t* src, size_t orig_sz, uint8_t* dst) {
-    const size_t CHUNK=512*1024;
+    const size_t CHUNK=fse_chunk_size();
     const uint64_t* cs = (const uint64_t*)(src + 8);
     size_t nc = (orig_sz + CHUNK - 1) / CHUNK;
     // Build chunk offsets for parallel decompress
@@ -1191,7 +1199,7 @@ static void entropy_encode(
     struct EA{const uint8_t*in;size_t isz;uint8_t**out;size_t*osz;};
     auto ew=[](void*a)->void*{
         EA*e=(EA*)a;
-        const size_t CHUNK=512*1024;
+        const size_t CHUNK=fse_chunk_size();
         size_t nc=(e->isz+CHUNK-1)/CHUNK;
         size_t hdrsz=8+nc*8;
         size_t cap=hdrsz+e->isz+nc*64;
@@ -1553,11 +1561,23 @@ static int do_test(const char* in_path, int threads, int level=2) {
 // FSE-поток: чанки по 512 KB, таблица размеров в заголовке.
 // Распаковываем только чанки, пересекающие [from,to). Возвращаем буфер размера
 // orig_sz, где валиден лишь запрошенный диапазон.
-static uint8_t* fse_range(const uint8_t* src, size_t orig_sz, size_t from, size_t to) {
-    const size_t CHUNK=512*1024;
+// Буфер выделяется НА ПОКРЫВАЕМЫЙ ДИАПАЗОН, а не на весь поток. Полный calloc сам по
+// себе бесплатен (0.002 ms на 210 MB), но КАЖДОЕ первое касание страницы — page fault:
+// 2 MB данных стоили 0.5 ms, то есть всю оставшуюся латентность региона.
+// base_off — смещение начала буфера в координатах потока.
+static uint8_t* fse_range(const uint8_t* src, size_t orig_sz, size_t from, size_t to,
+                          size_t* base_off=nullptr) {
+    const size_t CHUNK=fse_chunk_size();
     const uint64_t* cs=(const uint64_t*)(src+8);
     size_t nc=(orig_sz+CHUNK-1)/CHUNK;
-    uint8_t* out=(uint8_t*)calloc(orig_sz?orig_sz:1,1);
+    size_t c0=from/CHUNK, c1=(to?to-1:0)/CHUNK;
+    if(c1>=nc) c1=nc?nc-1:0;
+    size_t win_lo=c0*CHUNK, win_hi=std::min(orig_sz,(c1+1)*CHUNK);
+    if(base_off) *base_off=win_lo;
+    // malloc, не calloc: распакованные чанки перезаписывают окно целиком, а вне
+    // запрошенного диапазона декодер блоков не читает. Зануление 130 KB на вызов
+    // было самой дорогой операцией профиля (memset_avx512, 9.75%).
+    uint8_t* out=(uint8_t*)malloc(win_hi>win_lo?win_hi-win_lo:1);
     if(!out) return nullptr;
     size_t p_off=8+nc*8;
     for(size_t i=0;i<nc;i++){
@@ -1565,8 +1585,9 @@ static uint8_t* fse_range(const uint8_t* src, size_t orig_sz, size_t from, size_
         size_t raw=std::min<size_t>(CHUNK,orig_sz-d_off);
         size_t csz=(cs[i]>>63)?raw:(size_t)(cs[i]&~(uint64_t(1)<<63));
         if(d_off<to && d_off+raw>from){
-            if(cs[i]>>63) memcpy(out+d_off,src+p_off,raw);
-            else ZSTD_decompress(out+d_off,raw,src+p_off,csz);
+            uint8_t* dst=out+(d_off-win_lo);
+            if(cs[i]>>63) memcpy(dst,src+p_off,raw);
+            else ZSTD_decompress(dst,raw,src+p_off,csz);
         }
         p_off+=csz;
     }
@@ -1575,7 +1596,7 @@ static uint8_t* fse_range(const uint8_t* src, size_t orig_sz, size_t from, size_
 
 // Литеральный поток: новая схема — чанки LIT_CHUNK, старая — NW равных долей.
 static uint8_t* lit_range(const uint8_t* src, size_t src_sz, size_t& orig_sz,
-                          size_t from, size_t to) {
+                          size_t from, size_t to, size_t* base_off=nullptr) {
     if(!src||src_sz<8){orig_sz=0;return (uint8_t*)malloc(1);}
     uint64_t h; memcpy(&h,src,8);
     const bool chunked=(h&(uint64_t(1)<<61))!=0;
@@ -1586,7 +1607,14 @@ static uint8_t* lit_range(const uint8_t* src, size_t src_sz, size_t& orig_sz,
     const int NW=chunked?(int)((orig_sz+csz-1)/csz):4;
     const uint64_t* zsz=(const uint64_t*)(src+(chunked?16:8));
     const uint8_t* p=src+(chunked?16:8)+(size_t)NW*8;
-    uint8_t* out=(uint8_t*)calloc(orig_sz?orig_sz:1,1);
+    size_t win_lo=(from/csz)*csz;
+    size_t win_hi=std::min(orig_sz,((to?to-1:0)/csz+1)*csz);
+    if(win_hi<win_lo) win_hi=win_lo;
+    if(base_off) *base_off=win_lo;
+    // malloc, не calloc: распакованные чанки перезаписывают окно целиком, а вне
+    // запрошенного диапазона декодер блоков не читает. Зануление 130 KB на вызов
+    // было самой дорогой операцией профиля (memset_avx512, 9.75%).
+    uint8_t* out=(uint8_t*)malloc(win_hi>win_lo?win_hi-win_lo:1);
     if(!out) return nullptr;
     for(int t=0;t<NW;t++){
         size_t off=(size_t)t*csz; if(off>orig_sz) off=orig_sz;
@@ -1594,9 +1622,10 @@ static uint8_t* lit_range(const uint8_t* src, size_t src_sz, size_t& orig_sz,
         // кроме последнего. Старая формула с (t<NW-1) на чанках расходилась.
         size_t raw=(off+csz<=orig_sz)?csz:(orig_sz-off);
         if(off<to && off+raw>from){
-            if(!tagged)          ZSTD_decompress(out+off,raw,p,(size_t)zsz[t]);
-            else if(p[0]==1)     dna_decompress(p+1,out+off,raw);
-            else                 ZSTD_decompress(out+off,raw,p+1,(size_t)zsz[t]-1);
+            uint8_t* d2=out+(off-win_lo);
+            if(!tagged)          ZSTD_decompress(d2,raw,p,(size_t)zsz[t]);
+            else if(p[0]==1)     dna_decompress(p+1,d2,raw);
+            else                 ZSTD_decompress(d2,raw,p+1,(size_t)zsz[t]-1);
         }
         p+=(size_t)zsz[t];
     }
@@ -1650,11 +1679,11 @@ static int do_region(const char* in_path,const char* out_path,
     double t_read=now_sec()-t0;
 
     double t1=now_sec();
-    size_t lit_sz=0;
-    uint8_t* lit=lit_range(zlit,hdr.zlit_sz,lit_sz,lf,lt);
-    uint8_t* off=fse_range(zoff,*(uint64_t*)zoff&~(uint64_t(1)<<63),of,ot);
-    uint8_t* len=fse_range(zlen,*(uint64_t*)zlen&~(uint64_t(1)<<63),nf,nt2);
-    uint8_t* cmd=fse_range(zcmd,*(uint64_t*)zcmd&~(uint64_t(1)<<63),cf,ct);
+    size_t lit_sz=0, wl=0,wo=0,wn=0,wc=0;
+    uint8_t* lit=lit_range(zlit,hdr.zlit_sz,lit_sz,lf,lt,&wl);
+    uint8_t* off=fse_range(zoff,*(uint64_t*)zoff&~(uint64_t(1)<<63),of,ot,&wo);
+    uint8_t* len=fse_range(zlen,*(uint64_t*)zlen&~(uint64_t(1)<<63),nf,nt2,&wn);
+    uint8_t* cmd=fse_range(zcmd,*(uint64_t*)zcmd&~(uint64_t(1)<<63),cf,ct,&wc);
     if(!lit||!off||!len||!cmd){munmap(map,(size_t)st.st_size);return 1;}
     double t_ent=now_sec()-t1;
 
@@ -1668,8 +1697,8 @@ static int do_region(const char* in_path,const char* out_path,
         size_t bstart=b*(size_t)hdr.block_size;
         size_t bsize=std::min<size_t>((size_t)hdr.block_size,hdr.orig_size-bstart);
         decompress_streams(dst+(bstart-span_start),bsize,
-            lit+bo.lit_off,bo.lit_sz, off+bo.off_off,bo.off_sz,
-            len+bo.len_off,bo.len_sz, cmd+bo.cmd_off,bo.cmd_sz);
+            lit+(bo.lit_off-wl),bo.lit_sz, off+(bo.off_off-wo),bo.off_sz,
+            len+(bo.len_off-wn),bo.len_sz, cmd+(bo.cmd_off-wc),bo.cmd_sz);
     }
     double t_lz=now_sec()-t2;
 
