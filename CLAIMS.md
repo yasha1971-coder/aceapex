@@ -35,10 +35,21 @@ touching the rest. Same file, same region, same host.
 
 | | archive | ratio | 16 KB seek | needs |
 |---|---|---|---|---|
-| zstd seekable, 16 KB frames | 83,924,167 | 3.026 | under 10 ms | a separate format and a second library |
-| **ACEAPEX** `LIT_CHUNK=1048576` | **68,224,719** | **3.777** | **3 ms** | the base format |
+| plain FASTA + fai | 253,935,580 | 1.000 | 0.007 ms | nothing |
+| bgzip + fai + gzi | 76,578,367 | 3.316 | 0.140 ms | two index files |
+| **ACEAPEX + fai** | **69,309,759** | **3.708** | **0.081 ms** | one index file |
 
-Denser by 18.7% and faster to seek. The density comes from a literal transform that
+Against bgzip with a fai index, which is the standard for compressed reference
+genomes and answers exactly this question: **11.8% denser, 1.73x faster on median
+seek, 2.03x faster at the 99th percentile** (0.142 ms against 0.288), and thirteen
+times faster to compress (1.2 s against 15.3 s). Output is verified byte for byte
+against htslib.
+
+Region latency is linear in decode amplification — the bytes unpacked divided by the
+block size — at about 12 µs per unit, measured across nine configurations spanning
+4.75x to 40x. The entropy chunk size barely affects ratio, 0.17% between 8 KB and
+131 KB, so it can be made small almost for free; the real trade lives in the literal
+chunk size, where 64 KB gives 3.708 and 256 KB gives 3.769. The density comes from a literal transform that
 switches itself on per chunk when the data is genomic: two bits per base, the letter
 case as a packed bitmask, and the rare non-ACGT bytes as position gaps. The encoder
 computes the ordinary result as well and keeps whichever is smaller, so the mode can

@@ -182,8 +182,8 @@
     <div class="src">chr1 match layer &middot; bit-perfect &middot; Paper&nbsp;5</div>
   </div>
   <div class="cell">
-    <div class="n">3<span>&nbsp;ms</span></div>
-    <div class="l"><code>chr1:5000000-5016000</code> out of a 254 MB archive, on CPU &mdash; a genomic coordinate, not a byte offset. Output verified against samtools faidx over 100,000 random ranges, zero mismatches, including line, block and chunk boundaries.</div>
+    <div class="n">0.081<span>&nbsp;ms</span></div>
+    <div class="l"><code>chr1:5000000-5016000</code> out of a 254 MB archive &mdash; a genomic coordinate, not a byte offset. Against bgzip with a fai index, the standard for compressed references: 1.73&times; faster on median, 2.03&times; at p99, and 11.8% denser. Verified against samtools faidx.</div>
     <div class="src">byte-verified against the original &middot; aceapex faidx + r --range</div>
   </div>
   <div class="cell">

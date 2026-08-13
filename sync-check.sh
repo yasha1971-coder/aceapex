@@ -17,6 +17,7 @@ done
 
 echo "--- бинарь новее исходника? ---"
 for pair in "$HOME/aceapex/aceapex_region:aceapex_depth.cpp" \
+            "$HOME/aceapex/aceapex_fai:aceapex_depth.cpp" \
             "$HOME/lzbench/lzbench:src/aceapex_main.cpp"; do
   bin="${pair%%:*}"; src="${pair##*:}"
   if [ ! -f "$bin" ]; then echo "  нет $bin (пропуск)"; continue; fi
