@@ -37,6 +37,34 @@ int64_t aceapex_decompress_region(
     uint64_t    offset, uint64_t length
 );
 
+/* Batch region read.
+
+   One region read costs about the same whether it returns 16 KB or 1 KB, because the
+   cost is dominated by unpacking the chunks that cover it. When many ranges are wanted
+   from one archive, the same block is often decoded repeatedly: 10,000 random 16 KiB
+   ranges over a 254 MB genome touch 11,342 distinct blocks, and 100,000 ranges touch
+   all 15,499. Requesting them together lets the decoder group by block, unpack each
+   one once and hand out slices, so the cost follows the number of distinct blocks
+   rather than the number of requests.
+
+   Outputs are written in the order the requests were given, regardless of the order
+   in which they were decoded. Each entry's 'written' field receives the byte count,
+   or a negative error code for that entry alone; one bad range does not fail the batch.
+
+   threads = 0 lets the implementation choose. */
+typedef struct {
+    uint64_t offset;      /* byte offset into the original input */
+    uint64_t length;      /* bytes wanted */
+    void*    dst;         /* caller's buffer, at least length bytes */
+    int64_t  written;     /* out: bytes written, or a negative error code */
+} aceapex_range_t;
+
+int64_t aceapex_decompress_ranges(
+    const void*       src, size_t src_size,
+    aceapex_range_t*  ranges, size_t count,
+    int               threads
+);
+
 /* Bound for output buffer */
 size_t aceapex_compress_bound(size_t src_size);
 

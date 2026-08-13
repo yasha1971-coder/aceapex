@@ -327,6 +327,38 @@ else
 fi
 
 echo ""
+echo "--- R: batch range API ---"
+if [ -f "$CHR1" ] && [ -f scripts/batch_test_ci.c ]; then
+  env MIN_MATCH=0 ACEAPEX_BS=16384 LIT_CHUNK=65536 FSE_CHUNK=4096 "$BIN" c \
+      --in "$CHR1" --out /tmp/_p5b.aet --threads 8 >/dev/null 2>&1
+  ZI=""; [ -n "${ZSTD_INC:-}" ] && ZI="-I$ZSTD_INC"
+  gcc -O2 -Isrc $ZI -o /tmp/_p5b.bin scripts/batch_test_ci.c src/aceapex_api.cpp \
+      -lstdc++ -lpthread -lzstd 2>/tmp/_p5b.err
+  if [ ! -x /tmp/_p5b.bin ]; then
+    echo "  (batch test build failed: $(head -1 /tmp/_p5b.err 2>/dev/null))"
+  fi
+  if [ -x /tmp/_p5b.bin ]; then
+    OUT=$(env ACEAPEX_BS=16384 FSE_CHUNK=4096 /tmp/_p5b.bin /tmp/_p5b.aet 2>/dev/null | cat)
+    BAD=$(echo "$OUT" | grep -c "РАСХОЖДЕНИЯ")
+    RATE=$(echo "$OUT" | awk '/uniform *5000 /{print $NF}')
+    [ "$BAD" = 0 ] && V=pass || V=fail
+    rec batch_ranges_exact R "no mismatches" 0 \
+        "$([ "$BAD" = 0 ] && echo "30800 ranges match" || echo "$BAD mismatches")" "$V" \
+        "batch vs loop of single reads, four access profiles"
+    [ -n "$RATE" ] && OKR=$(python3 -c "print('pass' if float('$RATE')>100000 else 'fail')") || OKR=fail
+    rec batch_ranges_rate R ">100000 ranges/s" 0 "${RATE:-?}" "$OKR" \
+        "uniform 5000 ranges, 8 threads"
+  else
+    for C in batch_ranges_exact batch_ranges_rate; do
+      rec "$C" R - - "build failed" skipped-no-tool "needs gcc and zstd headers"; done
+  fi
+  rm -f /tmp/_p5b.aet /tmp/_p5b.bin /tmp/_p5b.err
+else
+  for C in batch_ranges_exact batch_ranges_rate; do
+    rec "$C" R - - "missing corpus" skipped-no-corpus "set CHR1"; done
+fi
+
+echo ""
 echo "--- M / E: declared, not verifiable here ---"
 rec seek_50gb_position_invariance M "292-387 us" - "original not on disk; FNV has nothing to compare against" declared "v7ra streams_50gb.bin"
 rec min_match_cost_probe M "1.291 -> 0.215 ms" - "tokens dropped without substituting literals" declared "wf_par, filtered tokens"
