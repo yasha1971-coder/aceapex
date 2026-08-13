@@ -299,6 +299,34 @@ else
 fi
 
 echo ""
+echo "--- R: low-latency configuration ---"
+if [ -f "$CHR1" ]; then
+  M=$(ratio_of MIN_MATCH=0 LIT_CHUNK=65536 FSE_CHUNK=4096)
+  within "$M" 3.70807 0.00001 && V=pass || V=fail
+  rec lowlat_chr1_ratio R 3.70807 1e-5 "$M" "$V" \
+      "LIT_CHUNK=65536 FSE_CHUNK=4096 aceapex t --in chr1"
+
+  env MIN_MATCH=0 ACEAPEX_BS=16384 LIT_CHUNK=65536 FSE_CHUNK=4096 "$BIN" c \
+      --in "$CHR1" --out /tmp/_p5l.aet --fai-out /tmp/_p5l.fai --threads 8 >/dev/null 2>&1
+  OK=1
+  for OFF in 1 5000000 248940000; do
+    env ACEAPEX_BS=16384 FSE_CHUNK=4096 "$BIN" r --in /tmp/_p5l.aet \
+        --out /tmp/_p5l.seq --fai /tmp/_p5l.fai \
+        --range chr1:$OFF-$((OFF+15999)) --view sequence >/dev/null 2>&1 || OK=0
+    [ -s /tmp/_p5l.seq ] || OK=0
+    [ "$(stat -c%s /tmp/_p5l.seq 2>/dev/null)" = 16000 ] || OK=0
+  done
+  [ "$OK" = 1 ] && V=pass || V=fail
+  rec lowlat_region_len R "16000 bases at three offsets" 0 \
+      "$([ "$OK" = 1 ] && echo correct || echo wrong)" "$V" \
+      "region reads at the low-latency configuration"
+  rm -f /tmp/_p5l.aet /tmp/_p5l.fai /tmp/_p5l.seq
+else
+  for C in lowlat_chr1_ratio lowlat_region_len; do
+    rec "$C" R - - "missing corpus" skipped-no-corpus "set CHR1"; done
+fi
+
+echo ""
 echo "--- M / E: declared, not verifiable here ---"
 rec seek_50gb_position_invariance M "292-387 us" - "original not on disk; FNV has nothing to compare against" declared "v7ra streams_50gb.bin"
 rec min_match_cost_probe M "1.291 -> 0.215 ms" - "tokens dropped without substituting literals" declared "wf_par, filtered tokens"

@@ -1,9 +1,9 @@
 {
   "paper": "What Actually Serializes GPU LZ77 Decode",
-  "date": "2026-08-13T07:31:22Z",
+  "date": "2026-08-13T07:46:34Z",
   "hardware": "x86_64 16 cores",
   "corpus_md5_expected": "9465e0f0df6e2c6eb39729c39cee5465",
-  "summary": {"pass": 26, "fail": 0, "skipped": 6},
+  "summary": {"pass": 28, "fail": 0, "skipped": 6},
   "claims": [
   {"claim_id":"chr1_md5","level":"R","expected":"9465e0f0df6e2c6eb39729c39cee5465","tolerance":"0","measured":"9465e0f0df6e2c6eb39729c39cee5465","verdict":"pass","command":"md5sum CHR1"},
   {"claim_id":"chr1_baseline_ratio","level":"R","expected":"3.18065","tolerance":"1e-5","measured":"3.18065","verdict":"pass","command":"MIN_MATCH=0 t --in chr1"},
@@ -34,6 +34,8 @@
   {"claim_id":"view_sequence_vs_htslib","level":"R","expected":"match","tolerance":"0","measured":"match","verdict":"pass","command":"aceapex r --view sequence vs pysam fetch"},
   {"claim_id":"alien_index_refused","level":"R","expected":"nonzero exit, no output","tolerance":"0","measured":"exit 1","verdict":"pass","command":"index whose source hash does not match the archive"},
   {"claim_id":"fai_edge_cases","level":"R","expected":"crlf multi nonl identical, ragged refused","tolerance":"0","measured":"all correct","verdict":"pass","command":"CRLF, multi-contig, no trailing newline, ragged lines"},
+  {"claim_id":"lowlat_chr1_ratio","level":"R","expected":"3.70807","tolerance":"1e-5","measured":"3.70807","verdict":"pass","command":"LIT_CHUNK=65536 FSE_CHUNK=4096 aceapex t --in chr1"},
+  {"claim_id":"lowlat_region_len","level":"R","expected":"16000 bases at three offsets","tolerance":"0","measured":"correct","verdict":"pass","command":"region reads at the low-latency configuration"},
   {"claim_id":"seek_50gb_position_invariance","level":"M","expected":"292-387 us","tolerance":"-","measured":"original not on disk; FNV has nothing to compare against","verdict":"declared","command":"v7ra streams_50gb.bin"},
   {"claim_id":"min_match_cost_probe","level":"M","expected":"1.291 -> 0.215 ms","tolerance":"-","measured":"tokens dropped without substituting literals","verdict":"declared","command":"wf_par, filtered tokens"},
   {"claim_id":"scan_parser_speedup","level":"E","expected":"2.7x","tolerance":"-","measured":"parse 2.555 ms scaled by the 93.94 percent share; not verified on GPU","verdict":"declared","command":"no prototype yet"}
