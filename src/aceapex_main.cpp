@@ -1141,6 +1141,10 @@ static uint8_t* fse_range(const uint8_t* src, size_t orig_sz, size_t from, size_
     const size_t CHUNK=fse_chunk_size();
     const uint64_t* cs=(const uint64_t*)(src+8);
     size_t nc=(orig_sz+CHUNK-1)/CHUNK;
+    // Пустой диапазон: поток len не нужен 29% регионов (7478 блоков chr1 из 15 499
+    // имеют len_sz=0, медиана 1 байт при таблице 16 байт на блок). Вызов ради нуля
+    // байт стоит ~12 us по закону амплификации.
+    if(to<=from){ if(base_off) *base_off=0; return (uint8_t*)calloc(1,1); }
     size_t c0=from/CHUNK, c1=(to?to-1:0)/CHUNK;
     if(c1>=nc) c1=nc?nc-1:0;
     size_t win_lo=c0*CHUNK, win_hi=std::min(orig_sz,(c1+1)*CHUNK);
