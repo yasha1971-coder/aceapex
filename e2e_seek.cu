@@ -170,7 +170,10 @@ static void ans_roundtrip(uint8_t* dStream, const vector<BlockOffsets>& bo,
 
 int main(int argc, char** argv){
     if(argc<2){ fprintf(stderr,"Usage: %s <streams.bin> [original_file] [G=8|16|32]\n",argv[0]); return 1; }
-    int G = (argc>3)? atoi(argv[3]) : 32;
+    // G=16 быстрее дефолтных 32 на 6% при том же архиве и ratio (08.09, H100):
+    // FASTQ 162.3 -> 172.1 GB/s (4 прогона), silesia 90.7 -> 92.2. Медиана матча
+    // 13-21 байт, при 32 полосах 19 простаивают — механизм Paper 4 на ширине группы.
+    int G = (argc>3)? atoi(argv[3]) : 16;
     if(G!=8 && G!=16 && G!=32){ fprintf(stderr,"G must be 8|16|32\n"); return 1; }
     uint32_t rstart=(argc>4)?(uint32_t)atoi(argv[4]):0;
     uint32_t rcount=(argc>5)?(uint32_t)atoi(argv[5]):0xFFFFFFFFu;
