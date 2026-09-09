@@ -1261,13 +1261,9 @@ static int do_compress(const char* in_path, const char* out_path, int threads, i
     bool src_is_mmap=true;
 #endif
     t_fread=now_sec()-t_fread;
-    // Запускаем SHA256 параллельно с encode
-    struct ShaArg { const uint8_t* d; size_t n; uint8_t out[32]; };
-    ShaArg sha_arg={src,src_size,{}};
-    pthread_t sha_thr;
-    pthread_create(&sha_thr,nullptr,[](void*a)->void*{
-        ShaArg*s=(ShaArg*)a; sha256(s->d,s->n,s->out); return nullptr;
-    },&sha_arg);
+    // SHA256 в фоне снят 09.09: результат нигде не читался (в заголовок идёт XXH3),
+    // а на одном ядре поток съедал 12% времени кодирования (perf record).
+    // Апрельский фикс заменил хэш заголовка, но поток остался.
 
     fprintf(stderr,"[*] Compress: %s (%.2f MB) threads=%d\n",in_path,src_size/1e6,threads);
     double t_total_c=now_sec();
