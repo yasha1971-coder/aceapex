@@ -8,9 +8,17 @@ CHR1=${CHR1:-$GOLDEN/genome/chr1.fa}
 if [ ! -f "$CHR1" ] && [ -z "${NO_DOWNLOAD:-}" ]; then
   echo "chr1 not found at $CHR1; fetching from UCSC (254 MB)"
   mkdir -p "$(dirname "$CHR1")"
-  if command -v wget >/dev/null; then wget -q -O "$CHR1.gz" https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr1.fa.gz
-  else curl -sL -o "$CHR1.gz" https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr1.fa.gz; fi
-  gunzip -f "$CHR1.gz" 2>/dev/null || rm -f "$CHR1.gz"
+  URL=https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr1.fa.gz
+  if command -v curl >/dev/null; then curl -L --progress-bar -o "$CHR1.gz" "$URL"
+  elif command -v wget >/dev/null; then wget --show-progress -q -O "$CHR1.gz" "$URL"
+  else echo "neither curl nor wget; fetch $URL to $CHR1.gz by hand"; fi
+  if [ -s "$CHR1.gz" ]; then gunzip -f "$CHR1.gz" || echo "gunzip failed on $CHR1.gz"; fi
+  if [ -f "$CHR1" ]; then
+    GOT=$(md5sum "$CHR1" | cut -d" " -f1)
+    [ "$GOT" = 9465e0f0df6e2c6eb39729c39cee5465 ] || echo "WARNING: chr1 md5 $GOT, expected 9465e0f0df6e2c6eb39729c39cee5465"
+  else
+    echo "chr1 still missing after fetch; corpus claims will be skipped"
+  fi
 fi
 ENWIK8=${ENWIK8:-$GOLDEN/text/enwik8}
 ENWIK9=${ENWIK9:-$GOLDEN/text/enwik9}
