@@ -405,15 +405,23 @@ if [ -f "$CHR1" ] && [ -f scripts/batch_test_ci.c ]; then
     OUT=$(env ACEAPEX_BS=16384 FSE_CHUNK=4096 /tmp/_p5b.bin /tmp/_p5b.aet 2>/dev/null | cat)
     BAD=$(echo "$OUT" | grep -c "РАСХОЖДЕНИЯ")
     RATE=$(echo "$OUT" | awk '/uniform *5000 /{print $NF}')
+    LOOP=$(echo "$OUT" | awk '/uniform *5000 /{print $(NF-1)}')
     [ "$BAD" = 0 ] && V=pass || V=fail
     rec batch_ranges_exact R "no mismatches" 0 \
         "$([ "$BAD" = 0 ] && echo "30800 ranges match" || echo "$BAD mismatches")" "$V" \
         "batch vs loop of single reads, four access profiles"
-    [ -n "$RATE" ] && OKR=$(python3 -c "print('pass' if float('$RATE')>100000 else 'fail')") || OKR=fail
-    rec batch_ranges_rate R ">100000 ranges/s" 0 "${RATE:-?}" "$OKR" \
+    # Absolute rate depends on the machine (685k/s on EPYC, 85k/s on a laptop); record it.
+    rec batch_ranges_rate M "685000 ranges/s on EPYC 4344P" - "${RATE:-?}" declared \
         "uniform 5000 ranges, 8 threads"
+    # The claim that survives a change of machine: batch beats a loop of single reads.
+    if [ -n "$RATE" ] && [ -n "$LOOP" ]; then
+      SP=$(python3 -c "print(f'{float(\"$RATE\")/float(\"$LOOP\"):.1f}')")
+      OKR=$(python3 -c "print('pass' if float('$SP')>=5 else 'fail')")
+      rec batch_speedup_over_loop R ">=5x" - "${SP}x" "$OKR" \
+          "batch ranges/s divided by loop ranges/s, same machine; 62x on EPYC"
+    fi
   else
-    for C in batch_ranges_exact batch_ranges_rate; do
+    for C in batch_ranges_exact batch_ranges_rate batch_speedup_over_loop; do
       rec "$C" R - - "build failed" skipped-no-tool "needs gcc and zstd headers"; done
   fi
   rm -f /tmp/_p5b.aet /tmp/_p5b.bin /tmp/_p5b.err
