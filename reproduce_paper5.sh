@@ -397,7 +397,7 @@ if [ -f "$CHR1" ] && [ -f scripts/batch_test_ci.c ]; then
       --in "$CHR1" --out /tmp/_p5b.aet --threads 8 >/dev/null 2>&1
   ZI=""; [ -n "${ZSTD_INC:-}" ] && ZI="-I$ZSTD_INC"
   gcc -O2 -Isrc $ZI -o /tmp/_p5b.bin scripts/batch_test_ci.c src/aceapex_api.cpp \
-      -lstdc++ -lpthread -lzstd 2>/tmp/_p5b.err
+      -lstdc++ -lpthread -lzstd -lm 2>/tmp/_p5b.err
   if [ ! -x /tmp/_p5b.bin ]; then
     echo "  (batch test build failed: $(head -1 /tmp/_p5b.err 2>/dev/null))"
   fi
