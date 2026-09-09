@@ -29,13 +29,17 @@ jobs:
         path: ~/golden/genome/chr1.fa
         key: chr1-hg38-9465e0f0df6e2c6eb39729c39cee5465
 
+    # Условие по факту наличия файла, а не по флагу кэша: первый прогон получил
+    # cache-hit при пустом кэше, скачивание пропустилось и контракт упал на пустом месте.
     - name: Fetch chr1
-      if: steps.cache-chr1.outputs.cache-hit != 'true'
       run: |
         mkdir -p ~/golden/genome
-        curl -sL -o /tmp/chr1.fa.gz https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr1.fa.gz
-        gunzip -c /tmp/chr1.fa.gz > ~/golden/genome/chr1.fa
-        md5sum ~/golden/genome/chr1.fa
+        if [ ! -s ~/golden/genome/chr1.fa ]; then
+          curl -sL -o /tmp/chr1.fa.gz https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr1.fa.gz
+          gunzip -c /tmp/chr1.fa.gz > ~/golden/genome/chr1.fa
+        fi
+        ls -la ~/golden/genome/chr1.fa
+        echo "9465e0f0df6e2c6eb39729c39cee5465  $HOME/golden/genome/chr1.fa" | md5sum -c -
 
     # Контракт в пустом окружении — так его запускает посторонний.
     # Наша сессия дважды показывала неверный результат из-за оставленных переменных.
