@@ -9,14 +9,38 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Install dependencies
-      run: sudo apt-get update && sudo apt-get install -y build-essential libzstd-dev pkg-config
+      run: sudo apt-get update && sudo apt-get install -y build-essential libzstd-dev pkg-config python3-numpy samtools tabix
 
     - name: Build
       run: make
 
-    - name: Test BIT-PERFECT
+    - name: Test BIT-PERFECT on random data
       run: |
         dd if=/dev/urandom of=/tmp/test.bin bs=1M count=10 2>/dev/null
         ./aceapex c --in /tmp/test.bin --out /tmp/test.acpx --threads 2
         ./aceapex d --in /tmp/test.acpx --out /tmp/test_out
         diff /tmp/test.bin /tmp/test_out && echo "BIT-PERFECT OK"
+
+    # chr1 весит 254 MB; кэш держит его между прогонами, качается только при промахе
+    - name: Cache chr1
+      id: cache-chr1
+      uses: actions/cache@v4
+      with:
+        path: ~/golden/genome/chr1.fa
+        key: chr1-hg38-9465e0f0df6e2c6eb39729c39cee5465
+
+    - name: Fetch chr1
+      if: steps.cache-chr1.outputs.cache-hit != 'true'
+      run: |
+        mkdir -p ~/golden/genome
+        curl -sL -o /tmp/chr1.fa.gz https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr1.fa.gz
+        gunzip -c /tmp/chr1.fa.gz > ~/golden/genome/chr1.fa
+        md5sum ~/golden/genome/chr1.fa
+
+    # Контракт в пустом окружении — так его запускает посторонний.
+    # Наша сессия дважды показывала неверный результат из-за оставленных переменных.
+    - name: Contract
+      run: |
+        env -i PATH=$PATH HOME=$HOME ./reproduce_paper5.sh 2>&1 | tee /tmp/contract.log
+        grep -q "0 fail" /tmp/contract.log || { echo "контракт упал"; grep FAIL /tmp/contract.log; exit 1; }
+        grep summary /tmp/contract.log
