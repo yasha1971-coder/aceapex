@@ -320,9 +320,48 @@ if [ -f "$CHR1" ]; then
   rec lowlat_region_len R "16000 bases at three offsets" 0 \
       "$([ "$OK" = 1 ] && echo correct || echo wrong)" "$V" \
       "region reads at the low-latency configuration"
+
+  # Latency of a single 16 KiB region read through the library, archive resident.
+  # 0.081 ms measured on EPYC 4344P; the tolerance admits slower hardware.
+  ZI=""; [ -n "${ZSTD_INC:-}" ] && ZI="-I$ZSTD_INC"
+  if gcc -O2 -Isrc $ZI -o /tmp/_p5seek scripts/libseek.c src/aceapex_api.cpp \
+       -lstdc++ -lpthread -lzstd >/dev/null 2>&1; then
+    P50=$(env ACEAPEX_BS=16384 FSE_CHUNK=4096 /tmp/_p5seek /tmp/_p5l.aet 2>/dev/null \
+          | grep -oE "[0-9]+\.[0-9]+ms" | head -1 | tr -d ms)
+    if [ -n "$P50" ]; then
+      within "$P50" 0.081 0.05 && V=pass || V=fail
+      rec lowlat_region_p50_ms R 0.081 0.05 "$P50" "$V" \
+          "FSE_CHUNK=4096 scripts/libseek on the low-latency archive, p50 of 200 reads"
+    else
+      rec lowlat_region_p50_ms R 0.081 0.05 "no output" fail "libseek ran but printed nothing"
+    fi
+    rm -f /tmp/_p5seek
+  else
+    rec lowlat_region_p50_ms R 0.081 0.05 "build failed" skipped-no-build "scripts/libseek.c"
+  fi
+
+  # Same operation through the incumbent, if samtools is installed.
+  if command -v samtools >/dev/null && command -v bgzip >/dev/null; then
+    bgzip -c "$CHR1" > /tmp/_p5l.fa.gz 2>/dev/null && samtools faidx /tmp/_p5l.fa.gz 2>/dev/null
+    B50=$(python3 - <<'PY'
+import subprocess,time,statistics
+t=[]
+for i in range(50):
+    s=time.perf_counter()
+    subprocess.run(['samtools','faidx','/tmp/_p5l.fa.gz','chr1:5000000-5016000'],capture_output=True)
+    t.append((time.perf_counter()-s)*1000)
+print(f"{statistics.median(t):.3f}")
+PY
+)
+    rec bgzip_region_p50_ms M 0.140 - "$B50" declared \
+        "samtools faidx on bgzip; includes process launch, so not directly comparable to the library path"
+    rm -f /tmp/_p5l.fa.gz /tmp/_p5l.fa.gz.fai /tmp/_p5l.fa.gz.gzi
+  else
+    rec bgzip_region_p50_ms M 0.140 - "samtools absent" skipped-no-samtools "apt install samtools"
+  fi
   rm -f /tmp/_p5l.aet /tmp/_p5l.fai /tmp/_p5l.seq
 else
-  for C in lowlat_chr1_ratio lowlat_region_len; do
+  for C in lowlat_chr1_ratio lowlat_region_len lowlat_region_p50_ms bgzip_region_p50_ms; do
     rec "$C" R - - "missing corpus" skipped-no-corpus "set CHR1"; done
 fi
 
