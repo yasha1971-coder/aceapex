@@ -68,7 +68,10 @@ struct WorkerArgs {
     PoolState* pool;
 };
  
+// 4 последних позиции на ключ; поколение вместо memset
+struct Direct8 { uint32_t pos[65536][4]; uint16_t gen[65536]; uint8_t cnt[65536]; uint16_t cur; };
 struct ThreadHashTable {
+    Direct8* d8;
     int64_t*  pos;
     uint32_t* epoch;
     int64_t*  chain;
@@ -93,7 +96,22 @@ static inline void wv(uint8_t* buf, size_t& ptr, uint32_t val,
     buf[ptr++] = (uint8_t)val;
 }
  
-static int g_mm = 0;      // MIN_MATCH=N -> нижний порог длины матча (0 = штатные 6/8/10/12)
+static int g_mm = 0;
+// DIRECT8: прямая таблица по 8 основаниям (16 бит ключа) вместо хэша с цепью.
+// Только для алфавита ACGT; иные байты дают код 255 и позиция не индексируется.
+// Гистограмма 09.09: при K=8 98.9% корзин пусты или <=2, тяжёлых 1.6 на блок.
+static int g_direct8 = 0;
+static uint8_t g_nt[256];
+static void init_nt(void){ memset(g_nt,255,256); g_nt['A']=g_nt['a']=0; g_nt['C']=g_nt['c']=1;
+                           g_nt['G']=g_nt['g']=2; g_nt['T']=g_nt['t']=3; }
+static inline int key8(const uint8_t* p, uint32_t* out){
+    uint32_t k=0; for(int j=0;j<8;j++){ uint8_t c=g_nt[p[j]]; if(c==255) return 0; k=(k<<2)|c; }
+    *out=k; return 1; }
+static inline uint32_t ext8(const uint8_t* a,const uint8_t* b,uint32_t maxl){
+    uint32_t l=0;
+    while(l+8<=maxl){ uint64_t x=*(const uint64_t*)(a+l)^*(const uint64_t*)(b+l);
+        if(x) return l+(__builtin_ctzll(x)>>3); l+=8; }
+    while(l<maxl&&a[l]==b[l]) l++; return l; }      // MIN_MATCH=N -> нижний порог длины матча (0 = штатные 6/8/10/12)
 
 static inline uint32_t min_match_len(uint32_t dist) {
     uint32_t base;
@@ -118,6 +136,47 @@ static inline int find_matches(const uint8_t* src, size_t pos, size_t bstart, si
         if (*(uint32_t*)(src+pos)!=*(uint32_t*)(src+pos-d)) continue;
         uint32_t l=4; while(l<maxl&&src[pos+l]==src[pos-d+l]&&l<65535) l++;
         if (l>=6) out[n++]={l,d,(g_norep?-1:i)};
+    }
+    if(g_direct8 && ht->d8){
+        uint32_t k;
+        if(pos+8<=bend && key8(src+pos,&k)){
+            Direct8* D=ht->d8;
+            if(D->gen[k]==D->cur){
+                for(int c=0;c<D->cnt[k]&&n<maxout;c++){
+                    uint32_t cur=D->pos[k][c];
+                    if(cur<bstart) continue;
+                    uint32_t dist=(uint32_t)(pos-cur); if(dist>=MAX_DIST) continue;
+                    bool is_rep=false; for(int r=0;r<4;r++) if(dist==rep[r]){is_rep=true;break;}
+                    if(is_rep) continue;
+                    uint32_t l=ext8(src+pos,src+cur,maxl>65535?65535:maxl);
+                    if(l>=min_match_len(dist)) out[n++]={l,dist,-1};
+                }
+            } else { D->gen[k]=D->cur; D->cnt[k]=0; }
+            // вставка: сдвиг, новейшая в [0]
+            uint8_t c=D->cnt[k]; if(c<4) D->cnt[k]=c+1;
+            for(int j=(c<4?c:3);j>0;j--) D->pos[k][j]=D->pos[k][j-1];
+            D->pos[k][0]=(uint32_t)pos;
+        }
+        // Близкие матчи (dist<128, порог 6 байт) прямая таблица не видит: ей нужно
+        // 8 совпавших оснований. Пройти хэш-цепью, но не дальше 128 назад.
+        {
+            uint32_t h=((*(uint32_t*)(src+pos)*0x9E3779B1u)>>10)&ht->hash_mask;
+            int64_t head=(ht->epoch[h]==ht->cur_epoch)?ht->pos[h]:-1;
+            ht->pos[h]=(int64_t)pos; ht->epoch[h]=ht->cur_epoch;
+            if(head>=0) ht->chain[pos & ht->chain_mask]=head;
+            int64_t cur=head; int att=8;
+            while(cur>=(int64_t)bstart && att-->0 && n<maxout && pos-cur<128){
+                uint32_t dist=(uint32_t)(pos-cur);
+                bool is_rep=false; for(int r=0;r<4;r++) if(dist==rep[r]){is_rep=true;break;}
+                if(!is_rep && *(uint32_t*)(src+pos)==*(uint32_t*)(src+cur)){
+                    uint32_t l=ext8(src+pos,src+cur,maxl>65535?65535:maxl);
+                    if(l>=6 && l<8) out[n++]={l,dist,-1};
+                }
+                int64_t nxt=ht->chain[cur & ht->chain_mask];
+                if(nxt<0||nxt>=cur) break; cur=nxt;
+            }
+        }
+        return n;
     }
     uint32_t h=((*(uint32_t*)(src+pos)*0x9E3779B1u)>>10)&ht->hash_mask;
     int64_t head=(ht->epoch[h]==ht->cur_epoch)?ht->pos[h]:-1;
@@ -158,6 +217,8 @@ static void compress_block(const uint8_t* src, size_t src_size,
     size_t lit_cap=cap, off_cap=cap*6, len_cap=cap*6, cmd_cap=cap+cap/4+4;
  
     ht->cur_epoch++;
+ 
+    if(ht->d8) ht->d8->cur++;
     if (ht->cur_epoch == 0) {
         memset(ht->epoch, 0, (ht->hash_mask+1)*sizeof(uint32_t)); ht->cur_epoch = 1;
     }
@@ -820,6 +881,7 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
         htabs[i]->hash_mask=hash_mask;
         htabs[i]->chain_mask=chain_mask;
         htabs[i]->max_attempts=(level>=2)?32:4;
+        htabs[i]->d8 = g_direct8 ? (Direct8*)calloc(1,sizeof(Direct8)) : nullptr;
     }
     BlockResult* results=(BlockResult*)calloc(num_blocks,sizeof(BlockResult));
     if(!results){return false;}
@@ -1233,6 +1295,7 @@ static void entropy_encode(
 static void load_forced(){  // PHASE2B
     { const char* nr=getenv("NO_REP"); g_norep = (nr && *nr=='1') ? 1 : 0; }
     { const char* mm=getenv("MIN_MATCH"); g_mm = mm ? atoi(mm) : 0; }
+    { const char* d8=getenv("DIRECT8"); g_direct8 = (d8 && *d8=='1') ? 1 : 0; init_nt(); }
     const char* fp=getenv("FORCED_BIN"); if(!fp) return;
     FILE* ff=fopen(fp,"rb"); if(!ff) return;
     fseek(ff,0,SEEK_END); long fs=ftell(ff); fseek(ff,0,SEEK_SET);
@@ -1835,6 +1898,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     const char* cmd=argv[1]; const char* in=nullptr; const char* out=nullptr; int thr=8; int level=2;
+    const char* profile=nullptr;
     uint64_t reg_off=0, reg_len=0;
     const char* fai_path=nullptr; const char* range_spec=nullptr;
     const char* view_mode="source";   // source | sequence | fasta
@@ -1851,6 +1915,22 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i],"--range")&&i+1<argc) range_spec=argv[++i];
         else if (!strcmp(argv[i],"--region")&&i+2<argc){
             reg_off=strtoull(argv[++i],0,10); reg_len=strtoull(argv[++i],0,10); }
+        else if (!strcmp(argv[i],"--profile")&&i+1<argc) profile=argv[++i];
+    }
+    // Профили — точки Парето-фронта из sweep.jsonl (324 точки, 09.09, все bit-perfect).
+    // Ни один не назначен вручную. Явная переменная окружения побеждает профиль.
+    if(profile){
+        struct { const char* n; const char* bs; const char* lit; const char* fse; const char* why; } P[]={
+            {"interactive","16384", "65536",  "4096", "seek 0.082 ms, ratio 3.655 (chr1)"},
+            {"seekable",   "262144","262144", "32768","seek 0.49 ms, ratio 3.769"},
+            {"dense",      "262144","1048576","32768","ratio 3.778, seek 0.85 ms"},
+            {"fast-decode","262144","1048576","4096", "decode 743 MB/s, ratio 3.761"},
+        };
+        int ok=0;
+        for(auto& e:P) if(!strcmp(profile,e.n)){
+            setenv("ACEAPEX_BS",e.bs,0); setenv("LIT_CHUNK",e.lit,0); setenv("FSE_CHUNK",e.fse,0);
+            fprintf(stderr,"  profile %s: %s\n",e.n,e.why); ok=1; break; }
+        if(!ok){ fprintf(stderr,"unknown profile '%s' (interactive|seekable|dense|fast-decode)\n",profile); return 1; }
     }
     if (!in) { fprintf(stderr,"--in required\n"); return 1; }
     if (!strcmp(cmd,"c")) {
