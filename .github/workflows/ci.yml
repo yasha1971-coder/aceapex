@@ -47,7 +47,9 @@ jobs:
       run: |
         ls -la ~/golden/genome/chr1.fa || { echo "корпус не на месте"; exit 1; }
         env -i PATH="$PATH" HOME="$HOME" CHR1="$HOME/golden/genome/chr1.fa" ./reproduce_paper5.sh 2>&1 | tee /tmp/contract.log
-        grep -qE "skipped-no-corpus" /tmp/contract.log && { echo "корпус пропущен"; exit 1; } || true
+        # chr1 обязателен; enwik/silesia/fastq на раннере нет и это нормально
+        grep -q "PASS chr1_md5" /tmp/contract.log || { echo "chr1 не проверен"; exit 1; }
+        grep -q "PASS lowlat_chr1_ratio" /tmp/contract.log || { echo "корпусные проверки не отработали"; exit 1; }
         grep -c "skipped-no-tool" /tmp/contract.log | xargs echo "  пропущено из-за отсутствующих инструментов:"
-        grep -q "0 fail" /tmp/contract.log || { echo "контракт упал"; grep FAIL /tmp/contract.log; exit 1; }
-        grep summary /tmp/contract.log
+        grep -qE "summary: [0-9]+ pass, 0 fail" /tmp/contract.log || { echo "контракт упал"; grep FAIL /tmp/contract.log; exit 1; }
+        grep -oE "summary: [0-9]+ pass, [0-9]+ fail, [0-9]+ skipped" /tmp/contract.log | head -1

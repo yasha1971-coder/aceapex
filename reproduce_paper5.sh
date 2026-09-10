@@ -402,10 +402,11 @@ if [ -f "$CHR1" ] && [ -f scripts/batch_test_ci.c ]; then
     echo "  (batch test build failed: $(head -1 /tmp/_p5b.err 2>/dev/null))"
   fi
   if [ -x /tmp/_p5b.bin ]; then
-    OUT=$(env ACEAPEX_BS=16384 FSE_CHUNK=4096 /tmp/_p5b.bin /tmp/_p5b.aet 2>/dev/null | cat)
-    BAD=$(echo "$OUT" | grep -c "РАСХОЖДЕНИЯ")
-    RATE=$(echo "$OUT" | awk '/uniform *5000 /{print $NF}')
-    LOOP=$(echo "$OUT" | awk '/uniform *5000 /{print $(NF-1)}')
+    # BOUT, не OUT: OUT на строке 28 — путь к отчёту, и он затирался этой таблицей
+    BOUT=$(env ACEAPEX_BS=16384 FSE_CHUNK=4096 /tmp/_p5b.bin /tmp/_p5b.aet 2>/dev/null | cat)
+    BAD=$(echo "$BOUT" | grep -c "РАСХОЖДЕНИЯ")
+    RATE=$(echo "$BOUT" | awk '/uniform *5000 /{print $NF}')
+    LOOP=$(echo "$BOUT" | awk '/uniform *5000 /{print $(NF-1)}')
     [ "$BAD" = 0 ] && V=pass || V=fail
     rec batch_ranges_exact R "no mismatches" 0 \
         "$([ "$BAD" = 0 ] && echo "30800 ranges match" || echo "$BAD mismatches")" "$V" \
