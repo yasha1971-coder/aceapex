@@ -238,7 +238,7 @@ static void compress_block(const uint8_t* src, size_t src_size,
                 // ULTRA: Chain flattening with validation
                 size_t local_pos = pos - bstart;
                 uint32_t flat_off = c_off;
-                if (c_off <= local_pos) {
+                if (c_off <= local_pos && local_pos < 1048576) {
                     size_t src_local = local_pos - c_off;
                     uint32_t orig_src = origin[src_local];
                     if (orig_src != src_local) {
