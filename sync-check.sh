@@ -15,6 +15,21 @@ for pair in "aceapex_depth.cpp:$HOME/aceapex/aceapex_depth.cpp" \
   else echo "  РАСХОЖДЕНИЕ $a != $b"; FAIL=1; fi
 done
 
+# Два наших источника расходились по существу: guard на origin был в
+# aceapex_depth.cpp и отсутствовал в src/aceapex_main.cpp, который собирает make.
+# Нашли снаружи под ASan 10.09. Полное совпадение не требуется — файлы разные
+# по назначению; сверяем ключевые границы.
+echo "--- границы массивов в обоих источниках ---"
+for PAT in "local_pos < 1048576" "local_pos < ORIGIN_CAP"; do :; done
+A=$(grep -c "c_off <= local_pos && local_pos <" aceapex_depth.cpp 2>/dev/null || echo 0)
+B=$(grep -c "c_off <= local_pos && local_pos <" src/aceapex_main.cpp 2>/dev/null || echo 0)
+if [ "$A" -ge 1 ] && [ "$B" -ge 1 ]; then
+  echo "  OK   guard на origin есть в обоих источниках"
+else
+  echo "  РАСХОЖДЕНИЕ guard на origin: aceapex_depth.cpp=$A, src/aceapex_main.cpp=$B"
+  RC=1
+fi
+
 echo "--- бинарь новее исходника? ---"
 for pair in "$HOME/aceapex/aceapex_region:aceapex_depth.cpp" \
             "$HOME/aceapex/aceapex_fai:aceapex_depth.cpp" \
