@@ -4,6 +4,10 @@
 
 Full device-resident GPU decode pipeline. Position-invariant random access on genomic data.
 
+Measured against bgzip and zstd-seekable on the same operation, six axes, every answer verified
+byte for byte: [hw-apex-bench](https://yasha1971-coder.github.io/hw-apex-bench/). ACEAPEX does not
+lead every column there, and the ones it loses are printed as they came out.
+
 [![CI](https://github.com/yasha1971-coder/aceapex/actions/workflows/ci.yml/badge.svg)](https://github.com/yasha1971-coder/aceapex/actions/workflows/ci.yml)
 
 [![arXiv](https://img.shields.io/badge/arXiv-2606.04268-b31b1b.svg)](https://arxiv.org/abs/2606.04268)
