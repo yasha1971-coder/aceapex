@@ -4,6 +4,8 @@
 
 Full device-resident GPU decode pipeline. Position-invariant random access on genomic data.
 
+[![CI](https://github.com/yasha1971-coder/aceapex/actions/workflows/ci.yml/badge.svg)](https://github.com/yasha1971-coder/aceapex/actions/workflows/ci.yml)
+
 [![arXiv](https://img.shields.io/badge/arXiv-2606.04268-b31b1b.svg)](https://arxiv.org/abs/2606.04268)
 [![arXiv](https://img.shields.io/badge/arXiv-2606.18900-b31b1b.svg)](https://arxiv.org/abs/2606.18900)
 [![arXiv](https://img.shields.io/badge/arXiv-2606.24531-b31b1b.svg)](https://arxiv.org/abs/2606.24531)
