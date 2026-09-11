@@ -90,18 +90,34 @@ echo ""
 echo "--- R: encoder claims on chr1 ---"
 if [ -f "$CHR1" ]; then
   SRC="$CHR1"
-  M=$(ratio_of MIN_MATCH=0); within "$M" 3.18065 0.032 && V=pass || V=fail
+  M=$(ratio_of LIT_CHUNK=0 MIN_MATCH=0); within "$M" 3.18065 0.032 && V=pass || V=fail
   rec chr1_baseline_ratio R 3.18065 1e-5 "$M" "$V" "MIN_MATCH=0 t --in chr1"
-  M=$(ratio_of NO_REP=1);   within "$M" 3.16347 0.032 && V=pass || V=fail
+  M=$(ratio_of LIT_CHUNK=0 NO_REP=1);   within "$M" 3.16347 0.032 && V=pass || V=fail
   rec norep_ratio R 3.16347 1e-5 "$M" "$V" "NO_REP=1 t --in chr1"
   M=$(python3 -c "print(f'{(3.18065/3.16347-1)*100:.3f}')")
   within "$M" 0.540 0.02 && V=pass || V=fail
   rec norep_cost_percent R 0.540 0.02 "$M" "$V" "derived from the two ratios"
-  M=$(ratio_of MIN_MATCH=16); within "$M" 3.22581 0.032 && V=pass || V=fail
+  M=$(ratio_of LIT_CHUNK=0 MIN_MATCH=16); within "$M" 3.22581 0.032 && V=pass || V=fail
   rec min_match16_ratio R 3.22581 1e-5 "$M" "$V" "MIN_MATCH=16 t --in chr1"
 else
   for C in chr1_baseline_ratio norep_ratio norep_cost_percent min_match16_ratio; do
     rec "$C" R - - "missing corpus" skipped-no-corpus "set CHR1"; done
+fi
+
+echo ""
+echo "--- R: default configuration, no environment at all ---"
+# То, что получает любой, кто склонировал репозиторий и запустил ./aceapex c.
+# До 11.09 дефолт не проверялся ни одним claim: каждый задаёт конфигурацию явно,
+# и дефект в нём (чанкование выключено => трансформ не работает, -17% на геноме)
+# прожил незамеченным. Нашла внешняя проверка, не мы.
+if [ -f "$CHR1" ]; then
+  M=$(env -u ACEAPEX_BS -u LIT_CHUNK -u FSE_CHUNK -u MIN_MATCH -u HASH_LOG \
+      "$BIN" t --in "$CHR1" --threads 8 2>&1 | grep -oE "Ratio: +[0-9.]+" | grep -oE "[0-9.]+")
+  within "$M" 3.72329 0.038 && V=pass || V=fail
+  rec default_chr1_ratio R 3.72329 0.038 "$M" "$V" \
+      "aceapex t --in chr1 with no ACEAPEX_* variables set"
+else
+  rec default_chr1_ratio R - - "missing corpus" skipped-no-corpus "set CHR1"
 fi
 
 echo ""
@@ -112,7 +128,7 @@ if python3 -c "import zstandard" 2>/dev/null; then
            "fastq:$FASTQ:3.96476:3.62875"; do
     NAME=${E%%:*}; R1=${E#*:}; P=${R1%%:*}; R2=${R1#*:}; EU=${R2%%:*}; EZ=${R2##*:}
     if [ ! -f "$P" ]; then rec "class_${NAME}" R "$EU" 1e-5 "missing" skipped-no-corpus "set path"; continue; fi
-    SRC="$P"; M=$(ratio_of MIN_MATCH=0); within "$M" "$EU" 0.03 && V=pass || V=fail
+    SRC="$P"; M=$(ratio_of LIT_CHUNK=0 MIN_MATCH=0); within "$M" "$EU" 0.03 && V=pass || V=fail
     rec "class_${NAME}_aceapex" R "$EU" 1e-5 "$M" "$V" "t --in $NAME"
     Z=$(python3 -c "
 import zstandard as z,os
