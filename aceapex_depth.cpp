@@ -849,6 +849,10 @@ static size_t compute_block_size(size_t src_size, int threads) {
     return bs;
 }
 
+// Объявлены до encode_file: определения ниже (dna_worth ~1001, флаг ~1136).
+static bool dna_worth(const uint8_t* s, size_t n);
+extern int g_input_is_dna;
+
 static bool encode_file(const uint8_t* src, size_t src_size, int threads, int level,
     std::vector<BlockOffsets>& boffs,
     uint8_t*& raw_lit, size_t& total_lit,
@@ -858,6 +862,9 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
     size_t& num_blocks)
 {
     g_block_size = compute_block_size(src_size, threads);
+    // Подсказка для lit_chunk_size(): проверяем сам вход, не литералы.
+    if(!getenv("LIT_CHUNK"))
+        g_input_is_dna = dna_worth(src, src_size < (1u<<22) ? src_size : (1u<<22)) ? 1 : -1;
     num_blocks = (src_size + g_block_size - 1) / g_block_size;
     boffs.resize(num_blocks);
  
@@ -1133,11 +1140,19 @@ static int lit_lanes(){
     return n>0 ? (int)n : 8;
 }
 
+// Выставляется один раз в encode_file по выборке из входа.
+// 0 = не проверяли, 1 = вход проходит dna_worth, -1 = нет.
+int g_input_is_dna = 0;
+
 static size_t lit_chunk_size(){
     const char* e=getenv("LIT_CHUNK");
-    if(!e) return 0;                       // 0 = legacy
-    size_t v=strtoull(e,0,10);
-    return v<(1u<<16) ? 0 : v;
+    if(e){ size_t v=strtoull(e,0,10); return v<(1u<<16) ? 0 : v; }
+    // Дефолт по данным (11.09): чанкование открывает DNA-трансформ, который на
+    // чистой ДНК окупает цену таблиц zstd на кусок. chr1 3.18065 -> 3.72329
+    // (+17.1%); enwik8 и silesia не трогаем — там трансформ не срабатывает,
+    // а чанкование стоило бы 6-8%. FASTQ тоже нет: половина байтов — качества.
+    // Явный LIT_CHUNK и --profile перекрывают эту ветку.
+    return g_input_is_dna == 1 ? 65536 : 0;
 }
 #define LIT_CHUNK lit_chunk_size()
 
