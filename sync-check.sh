@@ -21,14 +21,19 @@ done
 # по назначению; сверяем ключевые границы.
 echo "--- границы массивов в обоих источниках ---"
 for PAT in "local_pos < 1048576" "local_pos < ORIGIN_CAP"; do :; done
-A=$(grep -c "c_off <= local_pos && local_pos <" aceapex_depth.cpp 2>/dev/null || echo 0)
-B=$(grep -c "c_off <= local_pos && local_pos <" src/aceapex_main.cpp 2>/dev/null || echo 0)
-if [ "$A" -ge 1 ] && [ "$B" -ge 1 ]; then
-  echo "  OK   guard на origin есть в обоих источниках"
-else
-  echo "  РАСХОЖДЕНИЕ guard на origin: aceapex_depth.cpp=$A, src/aceapex_main.cpp=$B"
-  RC=1
-fi
+# Маркеры, которые обязаны быть в ОБОИХ источниках. Список растёт по мере
+# находок: guard на origin (09.09, дал SIGSEGV), дефолт чанкования (11.09,
+# стоил 17% ratio). Оба дефекта — правка в одном источнике и не в другом.
+for M in "c_off <= local_pos && local_pos <" "g_input_is_dna" "min_match_len" "epoch\[h\]==ht->cur_epoch"; do
+  A=$(grep -c "$M" aceapex_depth.cpp 2>/dev/null || echo 0)
+  B=$(grep -c "$M" src/aceapex_main.cpp 2>/dev/null || echo 0)
+  if [ "$A" -ge 1 ] && [ "$B" -ge 1 ]; then
+    echo "  OK   \"$M\" в обоих"
+  else
+    echo "  РАСХОЖДЕНИЕ \"$M\": depth=$A, main=$B"
+    RC=1
+  fi
+done
 
 echo "--- бинарь новее исходника? ---"
 for pair in "$HOME/aceapex/aceapex_region:aceapex_depth.cpp" \
