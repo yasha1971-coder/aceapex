@@ -760,6 +760,10 @@ static size_t compute_block_size(size_t src_size, int threads) {
     return bs;
 }
 
+// Объявлены до encode_file: определения ниже (dna_worth ~910, флаг ~1040).
+static bool dna_worth(const uint8_t* s, size_t n);
+extern int g_input_is_dna;
+
 static bool encode_file(const uint8_t* src, size_t src_size, int threads, int level,
     std::vector<BlockOffsets>& boffs,
     uint8_t*& raw_lit, size_t& total_lit,
@@ -769,6 +773,9 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
     size_t& num_blocks)
 {
     g_block_size = compute_block_size(src_size, threads);
+    // Подсказка для lit_chunk_size(): проверяем сам вход, не литералы.
+    if(!getenv("LIT_CHUNK"))
+        g_input_is_dna = dna_worth(src, src_size < (1u<<22) ? src_size : (1u<<22)) ? 1 : -1;
     num_blocks = (src_size + g_block_size - 1) / g_block_size;
     boffs.resize(num_blocks);
  
@@ -1032,11 +1039,23 @@ static uint8_t* lit_compress_legacy(const uint8_t* src, size_t sz, size_t& out_s
 // unpacking partial: a region needs one chunk rather than a quarter of the file.
 // Opt-in through LIT_CHUNK; without it the previous layout is used unchanged.
 // Bit 61 of the stream header marks the new scheme, the chunk count follows it.
+// Выставляется один раз в encode_file по выборке из входа.
+// 0 = не проверяли, 1 = входные данные проходят dna_worth, -1 = нет.
+int g_input_is_dna = 0;
+
 static size_t lit_chunk_size(){
     const char* e=getenv("LIT_CHUNK");
-    if(!e) return 0;
-    size_t v=strtoull(e,0,10);
-    return v<(1u<<16) ? 0 : v;
+    if(e){ size_t v=strtoull(e,0,10); return v<(1u<<16) ? 0 : v; }
+    // Дефолт по данным (11.09). Чанкование литералов стоит таблиц zstd на кусок,
+    // но открывает DNA-трансформ, который на чистой ДНК с лихвой окупает:
+    //   chr1 3.18065 -> 3.70807 (+16.6%), FASTQ 3.96476 -> 3.85914 (-2.7%),
+    //   enwik8 2.63791 -> 2.42272 (-8.2%), silesia 3.00457 -> 2.80984 (-6.5%).
+    // FASTQ геномный, но наполовину строки качества — трансформ не срабатывает,
+    // а цена чанкования остаётся. Порог по доле ACGT разделяет верно.
+    // Профили (--profile) задают LIT_CHUNK явно и эту ветку не используют:
+    // для регионального доступа чанкование обязательно на любых данных
+    // (без него seek 46 мс против 0.082).
+    return g_input_is_dna == 1 ? 65536 : 0;
 }
 #define LIT_CHUNK lit_chunk_size()
 
