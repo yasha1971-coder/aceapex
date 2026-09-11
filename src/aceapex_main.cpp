@@ -1377,6 +1377,13 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
     AetHeader hdr;
     fread(&hdr,sizeof(hdr),1,fin);
     if (memcmp(hdr.magic,"ACEPX2\0\0",8)!=0) { fprintf(stderr,"Bad magic\n"); return 1; }
+    // Версия писалась с первого дня и не проверялась ни разу. Архив, созданный
+    // более новым кодером, старый декодер читал как валидный и выдавал мусор:
+    // при интерпретации новых битов orig_size получалось 3.4 эксабайта.
+    if (hdr.version != 2) {
+        fprintf(stderr,"Unsupported format version %u (this build reads 2)\n", hdr.version);
+        return 1;
+    }
     fprintf(stderr,"[*] Decompress: %s -> %s\n",in_path,out_path);
  
     { // archive-level sanity before we trust any offset from the file
