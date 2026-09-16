@@ -21,6 +21,7 @@
 #endif
 #include <pthread.h>
 #include <atomic>
+#include <thread>
 #include <vector>
 #include <algorithm>
 #include <zstd.h>
@@ -1146,7 +1147,11 @@ static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_s
             if(d.in[0]==1) dna_decompress(d.in+1,d.out,d.raw);
             else           ZSTD_decompress(d.out,d.raw,d.in+1,d.isz-1); }
         return nullptr;};
-    const int LANES=std::min(8,NW);
+    // LANES был жёстко 8; на машинах с бо́льшим числом ядер половина простаивала.
+    // Чанки независимы как кадры zstd, пул динамический — берём по числу ядер.
+    int hw=(int)std::thread::hardware_concurrency(); if(hw<1) hw=8;
+    const char* le=getenv("LIT_LANES_DEC"); if(le) hw=atoi(le);
+    const int LANES=std::min(hw,NW);
     std::vector<pthread_t> pts(LANES);
     for(int t=0;t<LANES;t++) pthread_create(&pts[t],nullptr,dfn,&pool);
     for(int t=0;t<LANES;t++) pthread_join(pts[t],nullptr);
@@ -1445,8 +1450,10 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
     for(int i=0;i<3;i++) pthread_create(&fpts[i+1],nullptr,fdfn,&fds[i]);
     for(int i=0;i<4;i++) pthread_join(fpts[i],nullptr);
     if(!lit){free(off);free(len);free(cmd);free(zlit);free(zoff);free(zlen);free(zcmd);return 1;}
+    // Четыре потока формата (lit, off, len, cmd) распаковываются одновременно
+    // в pthread выше; раздельного времени у них нет, и печатать две одинаковые
+    // строки — вводить в заблуждение. Одно число: время самого долгого.
     double t_fse=now_sec()-t_lit;
-    t_lit=t_fse;
     free(zlit); free(zoff); free(zlen); free(zcmd);
     uint8_t* dst=(uint8_t*)malloc(hdr.orig_size);
     if(!dst){free(lit);free(off);free(len);free(cmd);return 1;}
@@ -1456,7 +1463,7 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
         free(lit);free(off);free(len);free(cmd);free(dst); return 1; }
     double t_lz=now_sec(); parallel_decode(lit,off,len,cmd,boffs.data(),nb,dst,hdr.orig_size,hdr.block_size,threads); t_lz=now_sec()-t_lz;
     dec_time=now_sec()-dec_time;
-    fprintf(stderr,"  Phase lit:  %.3fs\n  Phase fse:  %.3fs\n  Phase lz77: %.3fs\n",t_lit,t_fse,t_lz);
+    fprintf(stderr,"  Phase entropy (4 streams in parallel): %.3fs\n  Phase lz77: %.3fs\n",t_fse,t_lz);
  
     uint64_t dv=OUR_CHECKSUM(dst,hdr.orig_size);
     uint64_t hv3; memcpy(&hv3,hdr.xxhash,8);
