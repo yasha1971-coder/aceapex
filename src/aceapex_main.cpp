@@ -1455,7 +1455,19 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
     // строки — вводить в заблуждение. Одно число: время самого долгого.
     double t_fse=now_sec()-t_lit;
     free(zlit); free(zoff); free(zlen); free(zcmd);
-    uint8_t* dst=(uint8_t*)malloc(hdr.orig_size);
+    // Выходной буфер большой, и его первое касание внутри parallel_decode
+    // даёт 156 000 page fault на 254 MB. Просим huge pages: 94 000 вместо
+    // 156 000, и главное — разброс wall падает со 182 до 9 единиц.
+    // THP на этой машине в режиме madvise, поэтому просить обязательно.
+    uint8_t* dst=nullptr;
+    {
+        size_t align = 2u<<20, sz = (hdr.orig_size + align - 1) & ~(align - 1);
+        if (posix_memalign((void**)&dst, align, sz) != 0) dst = nullptr;
+#ifdef MADV_HUGEPAGE
+        if (dst) madvise(dst, sz, MADV_HUGEPAGE);
+#endif
+        if (!dst) dst = (uint8_t*)malloc(hdr.orig_size);
+    }
     if(!dst){free(lit);free(off);free(len);free(cmd);return 1;}
     // Last barrier: every block's slice must lie inside its decoded stream.
     if (!ax_boffs_ok(boffs.data(), nb, lit_sz, off_sz, len_sz, cmd_sz)) {
