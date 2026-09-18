@@ -15,7 +15,9 @@ lead every column there, and the ones it loses are printed as they came out.
 [![arXiv](https://img.shields.io/badge/arXiv-2606.24531-b31b1b.svg)](https://arxiv.org/abs/2606.24531)
 [![arXiv](https://img.shields.io/badge/arXiv-2607.18541-b31b1b.svg)](https://arxiv.org/abs/2607.18541)
 [![arXiv 2608.10188](https://img.shields.io/badge/arXiv-2608.10188-b31b1b.svg)](https://arxiv.org/abs/2608.10188)
+[![arXiv 2609.16731](https://img.shields.io/badge/arXiv-2609.16731-b31b1b.svg)](https://arxiv.org/abs/2609.16731)
 [![Paper 5 DOI](https://img.shields.io/badge/Paper%205-10.5281%2Fzenodo.21874972-1682d4.svg)](https://doi.org/10.5281/zenodo.21874972)
+[![Paper 6 DOI](https://img.shields.io/badge/Paper%206-10.5281%2Fzenodo.22758786-1682d4.svg)](https://doi.org/10.5281/zenodo.22758786)
 [![lzbench](https://img.shields.io/badge/lzbench-2.3-blue.svg)](https://github.com/inikep/lzbench/releases/tag/v2.3)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/yasha1971-coder?style=social)](https://github.com/sponsors/yasha1971-coder)
@@ -40,12 +42,14 @@ It is not the densest compressor (see [Honest Status](#honest-status)). Its edge
 - **Paper 2:** [Compressed-Resident Genomics: Full-Pipeline Device-Resident GPU LZ77 Decode with Position-Invariant Random Access](https://arxiv.org/abs/2606.18900) — Full GPU pipeline, genomic seek, 50 GB range-decode.
 - **Paper 3:** [Unified Position-Invariant Random Access Through Two Compression Layers via Absolute-Offset Coordinates: A Bit-Perfect Device-Resident Proof](https://arxiv.org/abs/2606.24531) — Unified seek through entropy+match on GPU, 0.334 ms, bit-perfect, three-phase verified.
 - **Paper 4:** [What Governs Decode Throughput in Absolute-Offset GPU LZ77? A Work-Granularity Mechanism and an Encode-Time Min-Match-Length Lever](https://arxiv.org/abs/2607.18541) — Decode throughput governed by work granularity, not occupancy; encode-time min-match-length lever improves ratio and throughput together on all eight datasets.
-
 - **Paper 5:** [What Actually Serializes GPU LZ77 Decode: Three Decoders, Three Mechanisms, and an Encode-Time Lever That Removes the Last One](https://arxiv.org/abs/2608.10188) — Parse, not copy, holds 64–72% of device-resident decode; bounding chain depth moves latency by at most 2.8% and provably nothing at all where the file's own spike lives; self-overlapping matches are periodic fills, not chains, giving 2.75–8.42× on the match layer; the last sequential parse element is removed by the encoder for 0.540% of ratio.
+- **Paper 6:** [The Price of Random Access: Measuring Block Granularity Across Four Compressed Formats](https://arxiv.org/abs/2609.16731) — Nine axes across four formats on a common corpus; cutting a 254 MB archive into 16 KiB independently addressable units costs 1.632% of the archive against 6.57% for seekable zstd, and the gap widens as the unit shrinks; three structural results with bit-perfect verification; seventeen rejected directions listed with their numbers.
 
-Code archived on Zenodo: [Papers 1–3: 10.5281/zenodo.20729380](https://doi.org/10.5281/zenodo.20729380) · [Paper 4: 10.5281/zenodo.21316748](https://doi.org/10.5281/zenodo.21316748) · [Paper 5: 10.5281/zenodo.21874972](https://doi.org/10.5281/zenodo.21874972)
+Code archived on Zenodo: [Papers 1–3: 10.5281/zenodo.20729380](https://doi.org/10.5281/zenodo.20729380) · [Paper 4: 10.5281/zenodo.21316748](https://doi.org/10.5281/zenodo.21316748) · [Paper 5: 10.5281/zenodo.21874972](https://doi.org/10.5281/zenodo.21874972) · [Paper 6: 10.5281/zenodo.22758786](https://doi.org/10.5281/zenodo.22758786)
 
-### Reproducing Paper 5
+Measurement tool and its 435 records: [hw-apex-bench, 10.5281/zenodo.22713364](https://doi.org/10.5281/zenodo.22713364)
+
+### Reproducing Papers 5 and 6
 
 Every claim carries a level — **R** reproducible here, **M** measured but not bit-perfect, **E** estimated — and the script writes one JSON record per claim:
 
@@ -54,7 +58,7 @@ git clone https://github.com/yasha1971-coder/aceapex.git && cd aceapex
 CHR1=/path/chr1.fa ENWIK9=/path/enwik9 ./reproduce_paper5.sh
 ```
 
-A fresh clone of tag `paper5-v1` on a CPU-only host gives **17 pass, 0 fail, 6 skipped** (3 GPU claims need a CUDA device; 3 are the declared M and E entries). The recorded run ships as `results.json`.
+A fresh clone of tag `paper5-v1` on a CPU-only host gives **17 pass, 0 fail, 6 skipped** (3 GPU claims need a CUDA device; 3 are the declared M and E entries). A fresh clone of tag `paper6-v1` gives **32 pass, 0 fail, 9 skipped** on an EPYC 4344P, and **19 pass, 0 fail, 17 skipped** on a four-core GitHub Actions runner — the difference being the GPU and large-corpus claims that runner cannot reach. The recorded run ships as `results.json`.
 
 ---
 
