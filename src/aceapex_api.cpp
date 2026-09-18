@@ -172,9 +172,9 @@ int64_t aceapex_decompress_region(
 
     size_t lit_sz = 0, wl=0, wo=0, wn=0, wc=0;
     uint8_t* lit = lit_range(zlit, hdr.zlit_sz, lit_sz, lf, lt, &wl);
-    uint8_t* off = fse_range(zoff, *(const uint64_t*)zoff & ~(uint64_t(1)<<63), of, ot, &wo);
-    uint8_t* len = fse_range(zlen, *(const uint64_t*)zlen & ~(uint64_t(1)<<63), nf, nt, &wn);
-    uint8_t* cmd = fse_range(zcmd, *(const uint64_t*)zcmd & ~(uint64_t(1)<<63), cf, ct, &wc);
+    uint8_t* off = fse_range(zoff, fse_stream_size(zoff), of, ot, &wo);
+    uint8_t* len = fse_range(zlen, fse_stream_size(zlen), nf, nt, &wn);
+    uint8_t* cmd = fse_range(zcmd, fse_stream_size(zcmd), cf, ct, &wc);
     if (!lit || !off || !len || !cmd) {
         free(lit); free(off); free(len); free(cmd);
         return ACEAPEX_ERR_MEMORY;

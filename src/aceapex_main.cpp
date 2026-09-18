@@ -875,12 +875,27 @@ static void parallel_decode(
 // Format: [8:orig_sz][nc*8:csizes][chunks...]
 static size_t fse_chunk_size(){
     const char* e=getenv("FSE_CHUNK");
-    if(e){ size_t v=strtoull(e,0,10); if(v>=4096) return v; }
+    if(e){ size_t v=strtoull(e,0,10); if(v>=4096){ v&=~(size_t)4095; if(v>((size_t)16<<20)) v=(size_t)16<<20; return v; } }
     return 512*1024;
+}
+// The first word of an FSE stream carries the stream's own size in bits 0..47 and
+// the chunk size, as CHUNK/4096, in bits 48..62; bit 63 stays a flag. The chunk
+// size therefore travels IN THE ARCHIVE: a reader no longer has to be told it
+// through the environment, which is the same rule LIT_CHUNK already follows.
+// Zero in the chunk field is an archive written before the field existed, and it
+// decodes with the environment value exactly as it did.
+// A 48-bit size caps one stream at 256 TB, far above any input the format takes.
+static inline size_t fse_stream_size(const uint8_t* src){
+    uint64_t h; memcpy(&h,src,8); return (size_t)(h & (((uint64_t)1<<48)-1));
+}
+static inline size_t fse_stream_chunk(const uint8_t* src){
+    uint64_t h; memcpy(&h,src,8);
+    size_t c=(size_t)((h>>48) & 0x7FFF);
+    return c ? (c<<12) : fse_chunk_size();
 }
 
 static void fse_chunked_decomp(const uint8_t* src, size_t orig_sz, uint8_t* dst) {
-    const size_t CHUNK=fse_chunk_size();
+    const size_t CHUNK=fse_stream_chunk(src);
     const uint64_t* cs = (const uint64_t*)(src + 8);
     size_t nc = (orig_sz + CHUNK - 1) / CHUNK;
     // Build chunk offsets for parallel decompress
@@ -1162,7 +1177,7 @@ static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_s
 // the requested span are left zero and are never read by the block decoder.
 static uint8_t* fse_range(const uint8_t* src, size_t orig_sz, size_t from, size_t to,
                           size_t* base_off=nullptr) {
-    const size_t CHUNK=fse_chunk_size();
+    const size_t CHUNK=fse_stream_chunk(src);
     const uint64_t* cs=(const uint64_t*)(src+8);
     size_t nc=(orig_sz+CHUNK-1)/CHUNK;
     // Пустой диапазон: поток len не нужен 29% регионов (7478 блоков chr1 из 15 499
@@ -1250,7 +1265,7 @@ static void entropy_encode(
         size_t cap=hdrsz+e->isz+nc*64;
         *e->out=(uint8_t*)malloc(cap);
         if(!*e->out) return nullptr;
-        *(uint64_t*)*e->out=e->isz;
+        *(uint64_t*)*e->out=(uint64_t)e->isz|((uint64_t)(CHUNK>>12)<<48);
         uint64_t* csizes=(uint64_t*)(*e->out+8);
         uint8_t* p=*e->out+hdrsz;
         size_t total=hdrsz;
@@ -1414,9 +1429,9 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
     // A stream shorter than its 8-byte size header can only be an EMPTY stream
     // (tiny inputs legitimately produce these), not a corrupt one: treat it as 0.
     size_t off_sz=0, len_sz=0, cmd_sz=0;
-    if (hdr.zoff_sz >= 8) { memcpy(&off_sz, zoff, 8); off_sz &= ~(uint64_t(1)<<63); }
-    if (hdr.zlen_sz >= 8) { memcpy(&len_sz, zlen, 8); len_sz &= ~(uint64_t(1)<<63); }
-    if (hdr.zcmd_sz >= 8) { memcpy(&cmd_sz, zcmd, 8); cmd_sz &= ~(uint64_t(1)<<63); }
+    if (hdr.zoff_sz >= 8) off_sz=fse_stream_size(zoff);
+    if (hdr.zlen_sz >= 8) len_sz=fse_stream_size(zlen);
+    if (hdr.zcmd_sz >= 8) cmd_sz=fse_stream_size(zcmd);
     // Bound decoded stream sizes. NOT by orig_size: on tiny inputs the command
     // stream legitimately exceeds the payload (format overhead > data). Bound by a
     // generous multiple of orig_size plus a floor, which still rejects the garbage
@@ -1443,7 +1458,7 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
     struct FD{const uint8_t*s;size_t sz;uint8_t*d;};
     FD fds[3]={{zoff,off_sz,off},{zlen,len_sz,len},{zcmd,cmd_sz,cmd}};
     auto fdfn=[](void*a)->void*{FD*f=(FD*)a;
-        size_t orig=*(const uint64_t*)f->s&~(uint64_t(1)<<63);
+        size_t orig=fse_stream_size(f->s);
         fse_chunked_decomp(f->s,orig,f->d); return nullptr;};
     pthread_t fpts[4];
     pthread_create(&fpts[0],nullptr,litfn,&larg);
@@ -1517,9 +1532,9 @@ static int do_test(const char* in_path, int threads, int level=2) {
  
     size_t total_z=zlit_sz+zoff_sz+zlen_sz+zcmd_sz;
  
-    size_t off_sz=*(uint64_t*)zoff;
-    size_t len_sz=*(uint64_t*)zlen;
-    size_t cmd_sz=*(uint64_t*)zcmd;
+    size_t off_sz=fse_stream_size(zoff);
+    size_t len_sz=fse_stream_size(zlen);
+    size_t cmd_sz=fse_stream_size(zcmd);
  
     size_t lit_sz=0; uint8_t* lit=lit_decompress(zlit,zlit_sz,lit_sz);
     if(!lit) return 1;
