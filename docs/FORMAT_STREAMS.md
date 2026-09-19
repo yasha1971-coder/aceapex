@@ -55,7 +55,12 @@ The offset, length and command streams share one layout; literals have two.
     [8]        uint64 x nc                compressed size of each chunk
     [8+8*nc]   chunks
 
-nc = ceil(orig_size / 524288); chunks hold 512 KB of uncompressed data. Bit 63 set in
+nc = ceil(orig_size / CHUNK). CHUNK IS READ FROM THE STREAM: bits 48..62 of the
+first word hold CHUNK/4096 (commit 3f2c4d5, 19.09.2026). The same archive therefore
+reads the same way on any machine. Zero in that field is an archive written before
+the field existed: CHUNK is then 512 KB, or the FSE_CHUNK value in the reader's
+environment, exactly as before. Bits 0..47 hold orig_size, capping one stream at
+256 TB, and every reader takes the size through fse_stream_size(). Bit 63 set in
 a size entry means the chunk is stored raw — the low bits are then the uncompressed
 length and the payload is copied rather than decoded. Chunk i covers uncompressed
 bytes [i*524288, min((i+1)*524288, orig_size)), and its file position is the running
@@ -105,8 +110,31 @@ For `length` bytes at `offset`: blocks floor(offset / block_size) through
 floor((offset+length-1) / block_size), and in each of the four streams only the chunks
 covering those blocks' ranges.
 
+With the interactive profile (LIT_CHUNK 64 KiB, CHUNK 4096) the same request unpacks
+about 0.92 MB, a read amplification of 6.216x, and takes 78.3 us p50 on chr1 over 200
+random ranges. The paragraph below describes the default profile.
+
 At 16 KB blocks and 512 KB entropy chunks a 16 KB request unpacks about 2 MB, roughly
 128 times what was asked for, against the 209 MB a full decode unpacks. This is
 measured. Read amplification is bounded by the chunk size, so a figure near 1.0 would
 require chunks near the block size, which costs ratio — see CLAIMS.md for the trade at
 1 MB literal chunks.
+
+
+## Chunk size: measured, 19.09.2026
+
+Before 3f2c4d5 the decoder took the chunk size from getenv("FSE_CHUNK"). An archive
+written with a non-default size decoded to garbage anywhere the variable was unset:
+chr1 at FSE_CHUNK=4096 gave a hash mismatch at byte nine, and region reads returned
+noise. Our own runs never showed it because one shell exported the variable to both
+sides. Seven readers of that first word had to change, across three files.
+
+Cost of the chunk size, chr1, g = R = 16 KiB, EPYC 4344P, instructions per region
+request (differential over 200 and 400 requests, every point bit-perfect):
+
+    CHUNK   512 -> 1.86 M | 1024 -> 1.60 M | 2048 -> 1.51 M
+            4096 -> 1.50 M | 8192 -> 1.61 M | 65536 -> 3.24 M
+
+The floor is at 2048-4096, so the interactive default of 4096 is already optimal and
+the axis is closed. Smaller chunks add no table overhead; the cost is amplification
+alone. Ratio is unchanged by the field: 3.72329 default, 3.70807 interactive.
