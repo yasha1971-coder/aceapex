@@ -419,8 +419,12 @@ if [ -f "$CHR1" ] && [ -f scripts/batch_test_ci.c ]; then
   fi
   if [ -x /tmp/_p5b.bin ]; then
     # BOUT, не OUT: OUT на строке 28 — путь к отчёту, и он затирался этой таблицей
+    # FSE_CHUNK=4096: $BIN is built from aceapex_depth.cpp (4f0797f, before 3f2c4d5), whose
+    # archives carry no chunk field; the library then falls back to the env variable.
     BOUT=$(env ACEAPEX_BS=16384 FSE_CHUNK=4096 /tmp/_p5b.bin /tmp/_p5b.aet 2>/dev/null | cat)
     BAD=$(echo "$BOUT" | grep -c "РАСХОЖДЕНИЯ")
+    # A crash prints no mismatch lines and must not count as clean: require the N=5000 row.
+    echo "$BOUT" | grep -q "uniform *5000 " || BAD="crash-or-no-output"
     RATE=$(echo "$BOUT" | awk '/uniform *5000 /{print $NF}')
     LOOP=$(echo "$BOUT" | awk '/uniform *5000 /{print $(NF-1)}')
     [ "$BAD" = 0 ] && V=pass || V=fail
@@ -440,6 +444,27 @@ if [ -f "$CHR1" ] && [ -f scripts/batch_test_ci.c ]; then
   else
     for C in batch_ranges_exact batch_ranges_rate batch_speedup_over_loop; do
       rec "$C" R - - "build failed" skipped-no-tool "needs gcc and zstd headers"; done
+  fi
+  # Full-decode library path on the same fresh archive. Added 21.09 after dcb8a44:
+  # region and batch were judged, aceapex_decompress was not, and a regression in it
+  # sat in main for two days behind a green contract.
+  if [ -x /tmp/_p5b.bin ]; then
+    cat > /tmp/_p5f.c <<'CEOF'
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "aceapex.h"
+static void* rd(const char* p,long* n){FILE*f=fopen(p,"rb");if(!f)return 0;fseek(f,0,SEEK_END);*n=ftell(f);fseek(f,0,SEEK_SET);void*b=malloc(*n);if(fread(b,1,*n,f)!=(size_t)*n){fclose(f);return 0;}fclose(f);return b;}
+int main(int c,char**v){long an,on;void*a=rd(v[1],&an);unsigned char*o=(unsigned char*)rd(v[2],&on);if(!a||!o)return 2;
+unsigned char*d=(unsigned char*)malloc(on);long long r=aceapex_decompress(a,an,d,on);
+printf("%s\n",(r==on&&!memcmp(d,o,on))?"FULL_API_OK":"FULL_API_FAIL");return 0;}
+CEOF
+    gcc -O2 -Isrc $ZI -o /tmp/_p5f.bin /tmp/_p5f.c src/aceapex_api.cpp -lstdc++ -lpthread -lzstd -lm 2>/dev/null
+    FOUT=$(env ACEAPEX_BS=16384 FSE_CHUNK=4096 /tmp/_p5f.bin /tmp/_p5b.aet "$CHR1" 2>/dev/null)
+    [ "$FOUT" = "FULL_API_OK" ] && V=pass || V=fail
+    rec full_api_roundtrip R "bit-perfect" 0 "${FOUT:-no output}" "$V" \
+        "aceapex_decompress on a fresh interactive archive, byte-compared to chr1"
+    rm -f /tmp/_p5f.c /tmp/_p5f.bin
   fi
   rm -f /tmp/_p5b.aet /tmp/_p5b.bin /tmp/_p5b.err
 else
