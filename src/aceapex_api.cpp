@@ -103,7 +103,7 @@ int64_t aceapex_decompress(
     memcpy(zo,p,hdr.zoff_sz); p+=hdr.zoff_sz;
     memcpy(zn,p,hdr.zlen_sz); p+=hdr.zlen_sz;
     memcpy(zc,p,hdr.zcmd_sz);
-    size_t os=*(uint64_t*)zo,ns=*(uint64_t*)zn,cs=*(uint64_t*)zc;
+    size_t os=fse_stream_size(zo),ns=fse_stream_size(zn),cs=fse_stream_size(zc);
     size_t ls=0; uint8_t* l=lit_decompress(zl,hdr.zlit_sz,ls);
     if(!l){free(zl);free(zo);free(zn);free(zc);return ACEAPEX_ERR_MEMORY;}
     uint8_t* o=(uint8_t*)malloc(os);
@@ -254,9 +254,9 @@ void* batch_worker(void* arg) {
 
         size_t lit_sz=0, wl=0, wo=0, wn=0, wc=0;
         uint8_t* lit=lit_range(t->zlit,h.zlit_sz,lit_sz,lf,lt,&wl);
-        uint8_t* off=fse_range(t->zoff,*(const uint64_t*)t->zoff&~(uint64_t(1)<<63),of,ot,&wo);
-        uint8_t* len=fse_range(t->zlen,*(const uint64_t*)t->zlen&~(uint64_t(1)<<63),nf,nt,&wn);
-        uint8_t* cmd=fse_range(t->zcmd,*(const uint64_t*)t->zcmd&~(uint64_t(1)<<63),cf,ct,&wc);
+        uint8_t* off=fse_range(t->zoff,fse_stream_size(t->zoff),of,ot,&wo);
+        uint8_t* len=fse_range(t->zlen,fse_stream_size(t->zlen),nf,nt,&wn);
+        uint8_t* cmd=fse_range(t->zcmd,fse_stream_size(t->zcmd),cf,ct,&wc);
         if(!lit||!off||!len||!cmd){
             free(lit);free(off);free(len);free(cmd);
             for(size_t k=G.first;k<G.last;k++) t->w[k].dst=nullptr;
