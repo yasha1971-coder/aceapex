@@ -1575,7 +1575,7 @@ static int do_test(const char* in_path, int threads, int level=2) {
     return ok?0:1;
 }
  
-#ifndef ACEAPEX_NO_MAIN
+#if !defined(ACEAPEX_NO_MAIN) || defined(ACEAPEX_CLI)
 int main(int argc, char** argv) {
     if (argc < 2) {
         fprintf(stderr,"ACEAPEX v3 FSE — Global FSE + Parallel decode\n\n"

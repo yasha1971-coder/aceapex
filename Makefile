@@ -1,6 +1,6 @@
 CC ?= gcc
 CXX ?= g++
-CXXFLAGS = -std=c++17 -O3 -march=native -funroll-loops
+CXXFLAGS = -std=c++17 -O3 -march=native -funroll-loops -DACEAPEX_CLI
 LD = $(CXX)
 PKG_CONFIG ?= pkg-config
 ZSTD_CFLAGS := $(shell $(PKG_CONFIG) --cflags libzstd 2>/dev/null)
@@ -11,7 +11,8 @@ ZSTD_LIBS := -lzstd
 endif
 
 PROG = aceapex
-SRCS = src/aceapex_main.cpp
+# The CLI is the library plus main(): one translation unit, one copy of the codec.
+SRCS = src/aceapex_api.cpp
 OBJS := $(SRCS:.cpp=.o)
 
 %.o: %.cpp
