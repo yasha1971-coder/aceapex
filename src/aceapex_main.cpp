@@ -1576,26 +1576,63 @@ static int do_test(const char* in_path, int threads, int level=2) {
 }
  
 #if !defined(ACEAPEX_NO_MAIN) || defined(ACEAPEX_CLI)
+#ifdef ACEAPEX_CLI
+// r: one region of the original through the public library entry point. The archive
+// is mapped read-only and advised random: the kernel pages in only the size tables
+// and the chunks the region touches, not the whole file.
+static int do_region_cli(const char* in_path,const char* out_path,uint64_t off,uint64_t len) {
+    int fd=open(in_path,O_RDONLY);
+    if(fd<0){fprintf(stderr,"Cannot open: %s\n",in_path);return 1;}
+    struct stat st;
+    if(fstat(fd,&st)!=0||st.st_size<=0){fprintf(stderr,"Cannot stat: %s\n",in_path);close(fd);return 1;}
+    void* map=mmap(nullptr,(size_t)st.st_size,PROT_READ,MAP_PRIVATE,fd,0);
+    if(map==MAP_FAILED){fprintf(stderr,"mmap failed\n");close(fd);return 1;}
+    madvise(map,(size_t)st.st_size,MADV_RANDOM);
+    uint8_t* dst=(uint8_t*)malloc(len);
+    if(!dst){fprintf(stderr,"out of memory\n");munmap(map,(size_t)st.st_size);close(fd);return 1;}
+    int64_t r=aceapex_decompress_region(map,(size_t)st.st_size,dst,(size_t)len,off,len);
+    munmap(map,(size_t)st.st_size); close(fd);
+    if(r<0){fprintf(stderr,"region decode failed (%lld)\n",(long long)r);free(dst);return 1;}
+    if((uint64_t)r!=len){fprintf(stderr,"region beyond end: %lld of %llu bytes\n",(long long)r,(unsigned long long)len);free(dst);return 1;}
+    FILE* fo=fopen(out_path,"wb");
+    if(!fo){fprintf(stderr,"Cannot create: %s\n",out_path);free(dst);return 1;}
+    size_t w=fwrite(dst,1,(size_t)len,fo); fclose(fo); free(dst);
+    if(w!=(size_t)len){fprintf(stderr,"short write: %s\n",out_path);return 1;}
+    return 0;
+}
+#endif
 int main(int argc, char** argv) {
     if (argc < 2) {
         fprintf(stderr,"ACEAPEX v3 FSE — Global FSE + Parallel decode\n\n"
             "Usage:\n  %s c --in <f> --out <f.aet> [--threads N]\n"
-            "  %s d --in <f.aet> --out <f>\n  %s t --in <f> [--threads N]\n",
-            argv[0],argv[0],argv[0]);
+            "  %s d --in <f.aet> --out <f>\n  %s t --in <f> [--threads N]\n"
+            "  %s r --in <f.aet> --out <f> --region OFFSET LENGTH   (bytes of the original)\n",
+            argv[0],argv[0],argv[0],argv[0]);
         return 1;
     }
     const char* cmd=argv[1]; const char* in=nullptr; const char* out=nullptr; int thr=8; int level=2;
+    uint64_t reg_off=0,reg_len=0;
     for(int i=2;i<argc;i++) {
         if (!strcmp(argv[i],"--in")&&i+1<argc) in=argv[++i];
         else if (!strcmp(argv[i],"--out")&&i+1<argc) out=argv[++i];
         else if (!strcmp(argv[i],"--threads")&&i+1<argc) thr=atoi(argv[++i]);
         else if (!strcmp(argv[i],"--level")&&i+1<argc) level=atoi(argv[++i]);
         else if (!strcmp(argv[i],"--fast")) level=1;
+        else if (!strcmp(argv[i],"--region")&&i+2<argc) { reg_off=strtoull(argv[++i],nullptr,10); reg_len=strtoull(argv[++i],nullptr,10); }
     }
     if (!in) { fprintf(stderr,"--in required\n"); return 1; }
     if (!strcmp(cmd,"c")) { if (!out) { fprintf(stderr,"--out required\n"); return 1; } return do_compress(in,out,thr,level); }
     if (!strcmp(cmd,"d")) { if (!out) { fprintf(stderr,"--out required\n"); return 1; } return do_decompress(in,out,thr); }
     if (!strcmp(cmd,"t")) return do_test(in,thr,level);
+    if (!strcmp(cmd,"r")) {
+        if (!out) { fprintf(stderr,"--out required\n"); return 1; }
+        if (reg_len==0) { fprintf(stderr,"--region OFFSET LENGTH required\n"); return 1; }
+#ifdef ACEAPEX_CLI
+        return do_region_cli(in,out,reg_off,reg_len);
+#else
+        fprintf(stderr,"r needs the library build (make); this binary was built from aceapex_main.cpp alone\n"); return 1;
+#endif
+    }
     return 1;
 }
 #endif // ACEAPEX_NO_MAIN
