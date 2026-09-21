@@ -1,0 +1,3 @@
+# tag	judge	note
+paper6-v1	verify/judges/paper6-v1.sh	Paper 6 contract, 32 checks
+paper5-v1	verify/judges/paper5-v1.sh	Paper 5 contract, 17 pass 6 skipped without GPU
