@@ -73,7 +73,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with: {fetch-depth: 0}
-    - run: sudo apt-get update && sudo apt-get install -y build-essential libzstd-dev
+    - run: sudo apt-get update && sudo apt-get install -y build-essential libzstd-dev python3-numpy
     - uses: actions/cache@v4
       with: {path: ~/golden/genome/chr1.fa, key: chr1-hg38-9465e0f0df6e2c6eb39729c39cee5465}
     - run: |
