@@ -12,19 +12,26 @@ FAILS=0; printf '%-14s %5s %5s %8s %9s %8s\n' tag pass fail skipped declared unj
 for T in $TAGS; do
   J="verify/judges/$T.sh"; D="$WT/$T"; R="$D/_records.json"
   if [ ! -f "$J" ]; then printf '%-14s no judge\n' "$T"; continue; fi
-  if ! git rev-parse -q --verify "refs/tags/$T^{commit}" >/dev/null; then printf '%-14s no tag\n' "$T"; continue; fi
-  git worktree remove --force "$D" >/dev/null 2>&1 || true
-  git worktree add --detach -q "$D" "$T"
+  if [ "$T" != HEAD ] && ! git rev-parse -q --verify "refs/tags/$T^{commit}" >/dev/null; then printf '%-14s no tag\n' "$T"; continue; fi
+  if [ "$T" = HEAD ]; then D="$ROOT"; R="$WT/HEAD_records.json"; else
+    git worktree remove --force "$D" >/dev/null 2>&1 || true
+    git worktree add --detach -q "$D" "$T"; fi
   ( cd "$D" && ROOT="$ROOT" RECORDS="$R" GOLDEN="${GOLDEN:-$HOME/golden}" bash "$ROOT/$J" ) >"$WT/$T.log" 2>&1 || echo "judge exit $? (see $WT/$T.log)"
   [ -s "$R" ] || echo '{"records":[]}' >"$R"
   python3 - "$T" "$(git rev-parse "$T^{commit}")" "$R" "$OUT/$T.json" <<'PY'
 import sys,json,subprocess,datetime,platform
 tag,sha,rec,out=sys.argv[1:]
 body=json.load(open(rec))
-txt=open(rec).read()
-c=lambda v: txt.count('"verdict":"%s"'%v)
+def walk(o):
+    if isinstance(o,dict):
+        if "verdict" in o: yield o["verdict"]
+        for v in o.values(): yield from walk(v)
+    elif isinstance(o,list):
+        for v in o: yield from walk(v)
+vs=list(walk(body)); c=lambda v: vs.count(v)
 prov={"tag":tag,"commit":sha,"date":datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%MZ"),
-      "host":platform.node(),"machine":platform.machine(),
+      "host":platform.node(),"machine":platform.machine(),"cores":__import__("os").cpu_count(),
+      "libzstd":(lambda h:".".join(next((l.split()[2] for l in h if l.startswith("#define ZSTD_VERSION_"+k)),"?") for k in ("MAJOR","MINOR","RELEASE")))(next((open(d+"/zstd.h").read().splitlines() for d in ("/usr/include","/usr/local/include") if __import__("os").path.exists(d+"/zstd.h")),[])),
       "compiler":subprocess.run(["g++","--version"],capture_output=True,text=True).stdout.split("\n")[0],
       "pass":c("pass"),"fail":c("fail"),"skipped":sum(c(v) for v in ("skipped-no-gpu","skipped-no-corpus","skipped-no-tool")),
       "declared":c("declared"),"unjudged":c("unjudged"),"build_failed":c("build-failed")}

@@ -13,10 +13,13 @@ for C in genome/chr1.fa text/enwik8 mixed/silesia.tar; do
   N=$(basename "$C" | sed 's/\..*//'); F="$GOLDEN/$C"
   if [ ! -f "$F" ]; then rec "${TAG}_roundtrip_$N" R bit-perfect - "no corpus" skipped-no-corpus "t --in $C"; continue; fi
   [ -x ./aceapex ] || { rec "${TAG}_roundtrip_$N" R bit-perfect - "no binary" build-failed "t --in $C"; continue; }
-  O=$(env -i PATH="$PATH" HOME="$HOME" ./aceapex t --in "$F" --threads 8 2>&1)
-  R=$(grep -o 'Ratio:  *[0-9.]*' <<<"$O" | grep -o '[0-9.]*$')
-  if grep -q 'BIT-PERFECT' <<<"$O"; then rec "${TAG}_roundtrip_$N" R bit-perfect - bit-perfect pass "aceapex t --in $C --threads 8"
-  else rec "${TAG}_roundtrip_$N" R bit-perfect - "not bit-perfect" fail "aceapex t --in $C --threads 8"; fi
+  W=$(mktemp -d); env -i PATH="$PATH" HOME="$HOME" ./aceapex c --in "$F" --out "$W/a.aet" --threads 8 >/dev/null 2>&1
+  env -i PATH="$PATH" HOME="$HOME" ./aceapex d --in "$W/a.aet" --out "$W/a.dec" --threads 8 >/dev/null 2>&1
+  if [ -s "$W/a.aet" ]; then R=$(python3 -c "import os,sys;print('%.5f'%(os.path.getsize(sys.argv[1])/os.path.getsize(sys.argv[2])))" "$F" "$W/a.aet"); H=$(sha256sum "$W/a.aet" | cut -c1-16); else R=""; H="-"; fi
+  if cmp -s "$W/a.dec" "$F"; then rec "${TAG}_roundtrip_$N" R bit-perfect - bit-perfect pass "aceapex c, d, cmp on $C (tag defaults)"
+  else rec "${TAG}_roundtrip_$N" R bit-perfect - "not bit-perfect" fail "aceapex c, d, cmp on $C (tag defaults)"; fi
+  rec "${TAG}_archive_sha256_$N" M "-" - "$H" declared "sha256 of the archive, first 16 hex; comparable only under the same libzstd (see provenance)"
+  rm -rf "$W"
   rec "${TAG}_ratio_$N" M "-" - "${R:-?}" declared "aceapex t --in $C (tag defaults)"
 done
 GPU=skipped-no-gpu; command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1 && GPU=declared

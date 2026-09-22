@@ -28,3 +28,6 @@ clean:
 
 # aceapex_api.cpp #includes aceapex_main.cpp; make must see that edge.
 src/aceapex_api.o: src/aceapex_main.cpp src/aceapex.h src/ax_align.h
+
+test:
+	./verify.sh HEAD

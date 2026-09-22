@@ -1,27 +1,27 @@
 {
  "provenance": {
-  "tag": "paper6-v1",
-  "commit": "b9e29102477f82a498ba49d15dc49306fb8c0013",
-  "date": "2026-09-22T08:43Z",
+  "tag": "HEAD",
+  "commit": "79ae55d62257fe6fe4085bbc4580e874d8e1fc4c",
+  "date": "2026-09-22T08:42Z",
   "host": "ace-core",
   "machine": "x86_64",
   "cores": 16,
   "libzstd": "1.4.8",
   "compiler": "g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0",
-  "pass": 32,
+  "pass": 34,
   "fail": 0,
   "skipped": 3,
-  "declared": 6,
+  "declared": 8,
   "unjudged": 0,
   "build_failed": 0
  },
  "result": {
   "paper": "What Actually Serializes GPU LZ77 Decode",
-  "date": "2026-09-22T08:43:25Z",
+  "date": "2026-09-22T08:42:00Z",
   "hardware": "x86_64 16 cores",
   "corpus_md5_expected": "9465e0f0df6e2c6eb39729c39cee5465",
   "summary": {
-   "pass": 32,
+   "pass": 33,
    "fail": 0,
    "skipped": 9
   },
@@ -319,7 +319,7 @@
     "level": "M",
     "expected": "0.081",
     "tolerance": "-",
-    "measured": "0.078",
+    "measured": "0.077",
     "verdict": "declared",
     "command": "FSE_CHUNK=4096 scripts/libseek on the low-latency archive, p50 of 200 reads; 0.081 on EPYC 4344P"
    },
@@ -328,7 +328,7 @@
     "level": "M",
     "expected": "1.218",
     "tolerance": "-",
-    "measured": "1.168",
+    "measured": "1.186",
     "verdict": "declared",
     "command": "samtools faidx on bgzip through a process; 1.218 on EPYC 4344P"
    },
@@ -337,7 +337,7 @@
     "level": "R",
     "expected": ">=5x",
     "tolerance": "-",
-    "measured": "15.0x",
+    "measured": "15.4x",
     "verdict": "pass",
     "command": "bgzip_region_p50_ms / lowlat_region_p50_ms, same machine, same session"
    },
@@ -355,7 +355,7 @@
     "level": "M",
     "expected": "685000 ranges/s on EPYC 4344P",
     "tolerance": "-",
-    "measured": "138339",
+    "measured": "142393",
     "verdict": "declared",
     "command": "uniform 5000 ranges, 8 threads"
    },
@@ -364,9 +364,18 @@
     "level": "R",
     "expected": ">=3x",
     "tolerance": "-",
-    "measured": "13.4x",
+    "measured": "13.3x",
     "verdict": "pass",
     "command": "batch/loop at N=5000, same machine; 13x on EPYC 4344P, 4.6-4.8 on Xeon and EPYC 9V74"
+   },
+   {
+    "claim_id": "full_api_roundtrip",
+    "level": "R",
+    "expected": "bit-perfect",
+    "tolerance": "0",
+    "measured": "FULL_API_OK",
+    "verdict": "pass",
+    "command": "aceapex_decompress on a fresh interactive archive, byte-compared to chr1"
    },
    {
     "claim_id": "seek_50gb_position_invariance",
@@ -394,6 +403,33 @@
     "measured": "parse 2.555 ms scaled by the 93.94 percent share; not verified on GPU",
     "verdict": "declared",
     "command": "no prototype yet"
+   },
+   {
+    "claim_id": "head_archive_sha256_chr1_interactive",
+    "level": "M",
+    "expected": "-",
+    "tolerance": "-",
+    "measured": "bbcdb377a6145af6",
+    "verdict": "declared",
+    "command": "sha256 of chr1 interactive archive, first 16 hex; same-libzstd comparison only"
+   },
+   {
+    "claim_id": "head_binary_sha256",
+    "level": "M",
+    "expected": "-",
+    "tolerance": "-",
+    "measured": "685fd37973573bb4",
+    "verdict": "declared",
+    "command": "sha256 of ./aceapex built by make, first 16 hex"
+   },
+   {
+    "claim_id": "head_region_200",
+    "level": "R",
+    "expected": "bad=0",
+    "tolerance": "0",
+    "measured": "regions=200 bad=0",
+    "verdict": "pass",
+    "command": "scripts/region_test.sh chr1 interactive 200"
    }
   ]
  }

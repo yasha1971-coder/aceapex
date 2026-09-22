@@ -2,9 +2,11 @@
  "provenance": {
   "tag": "paper5-v1",
   "commit": "22de9dc6910b2d505b8808960e441b077cdee958",
-  "date": "2026-09-22T06:46Z",
+  "date": "2026-09-22T08:44Z",
   "host": "ace-core",
   "machine": "x86_64",
+  "cores": 16,
+  "libzstd": "1.4.8",
   "compiler": "g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0",
   "pass": 17,
   "fail": 0,
@@ -15,7 +17,7 @@
  },
  "result": {
   "paper": "What Actually Serializes GPU LZ77 Decode",
-  "date": "2026-09-22T06:46:11Z",
+  "date": "2026-09-22T08:44:20Z",
   "hardware": "x86_64 16 cores",
   "corpus_md5_expected": "9465e0f0df6e2c6eb39729c39cee5465",
   "summary": {
