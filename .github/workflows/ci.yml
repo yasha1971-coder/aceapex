@@ -1,6 +1,11 @@
 name: CI
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '17 4 * * 1'   # weekly: judge every paper tag from its own sources
+  workflow_dispatch:
 
 jobs:
   build-and-test:
@@ -53,3 +58,30 @@ jobs:
         grep -c "skipped-no-tool" /tmp/contract.log | xargs echo "  пропущено из-за отсутствующих инструментов:"
         grep -qE "summary: [0-9]+ pass, 0 fail" /tmp/contract.log || { echo "контракт упал"; grep FAIL /tmp/contract.log; exit 1; }
         grep -oE "summary: [0-9]+ pass, [0-9]+ fail, [0-9]+ skipped" /tmp/contract.log | head -1
+
+    # One entry point, same as a stranger runs locally: contract + 200 regions, empty env.
+    - name: make test (verify.sh HEAD)
+      run: |
+        make test
+        python3 -c "import json;p=json.load(open('results/HEAD.json'))['provenance'];print(p);raise SystemExit(p['fail']+p['build_failed'])"
+    - uses: actions/upload-artifact@v4
+      with: {name: results-HEAD, path: results/HEAD.json}
+
+  verify-tags:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with: {fetch-depth: 0}
+    - run: sudo apt-get update && sudo apt-get install -y build-essential libzstd-dev
+    - uses: actions/cache@v4
+      with: {path: ~/golden/genome/chr1.fa, key: chr1-hg38-9465e0f0df6e2c6eb39729c39cee5465}
+    - run: |
+        mkdir -p ~/golden/genome
+        [ -s ~/golden/genome/chr1.fa ] || curl -sL https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr1.fa.gz | gunzip -c > ~/golden/genome/chr1.fa
+        echo "9465e0f0df6e2c6eb39729c39cee5465  $HOME/golden/genome/chr1.fa" | md5sum -c -
+    - name: verify.sh over every paper tag
+      run: ./verify.sh paper6-v1 paper5-v1 v4.0 v3.0 v2.0 v1.0.0
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with: {name: results-tags, path: results/}
