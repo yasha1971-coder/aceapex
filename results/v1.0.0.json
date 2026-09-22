@@ -2,7 +2,7 @@
  "provenance": {
   "tag": "v1.0.0",
   "commit": "4f7cc0b1153d6b8eb1c2507d6fe5144ae8d6c0c3",
-  "date": "2026-09-22T08:44Z",
+  "date": "2026-09-22T22:00Z",
   "host": "ace-core",
   "machine": "x86_64",
   "cores": 16,
@@ -13,6 +13,7 @@
   "skipped": 0,
   "declared": 6,
   "unjudged": 0,
+  "known": 0,
   "build_failed": 0
  },
  "result": {
@@ -52,7 +53,7 @@
     "tolerance": "-",
     "measured": "3.19172",
     "verdict": "declared",
-    "command": "aceapex t --in genome/chr1.fa (tag defaults)"
+    "command": "file ratio = original / archive file incl. header and block table; papers and the contract report the stream ratio from t, which is slightly higher"
    },
    {
     "claim_id": "v1.0.0_roundtrip_enwik8",
@@ -79,7 +80,7 @@
     "tolerance": "-",
     "measured": "2.65345",
     "verdict": "declared",
-    "command": "aceapex t --in text/enwik8 (tag defaults)"
+    "command": "file ratio = original / archive file incl. header and block table; papers and the contract report the stream ratio from t, which is slightly higher"
    },
    {
     "claim_id": "v1.0.0_roundtrip_silesia",
@@ -106,7 +107,7 @@
     "tolerance": "-",
     "measured": "3.08816",
     "verdict": "declared",
-    "command": "aceapex t --in mixed/silesia.tar (tag defaults)"
+    "command": "file ratio = original / archive file incl. header and block table; papers and the contract report the stream ratio from t, which is slightly higher"
    }
   ]
  }
