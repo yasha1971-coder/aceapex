@@ -190,6 +190,16 @@ See [BENCHMARK.md](BENCHMARK.md) for detailed benchmarks and [TECHNICAL_NOTE.md]
 
 ---
 
+## Verify every published number
+
+    ./verify.sh            # all paper tags; or ./verify.sh paper6-v1 v4.0
+
+Each paper's tag is checked out into a worktree and judged by a script kept in
+`verify/judges/`; `results/<tag>.json` records provenance and one verdict per claim:
+`pass`, `fail`, `skipped-no-gpu`, `skipped-no-corpus`, `skipped-no-tool`, `declared`
+(measured, no expectation) or `unjudged` (runner not written yet). Skips are verdicts,
+never silence. Corpora are read from `$GOLDEN` (default `~/golden`).
+
 ## Papers
 
 > ACEAPEX is an ongoing engineering investigation. These papers document specific stages of the project and may be superseded by later ones. Current claims and their reproduction status are maintained in [CLAIMS.md](CLAIMS.md) and `results.json`.

@@ -1,0 +1,84 @@
+{
+ "provenance": {
+  "tag": "v1.0.0",
+  "commit": "4f7cc0b1153d6b8eb1c2507d6fe5144ae8d6c0c3",
+  "date": "2026-09-22T06:46Z",
+  "host": "ace-core",
+  "machine": "x86_64",
+  "compiler": "g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0",
+  "pass": 4,
+  "fail": 0,
+  "skipped": 0,
+  "declared": 3,
+  "unjudged": 0,
+  "build_failed": 0
+ },
+ "result": {
+  "tag": "v1.0.0",
+  "claims": [
+   {
+    "claim_id": "v1.0.0_build",
+    "level": "R",
+    "expected": "builds",
+    "tolerance": "-",
+    "measured": "built",
+    "verdict": "pass",
+    "command": "make"
+   },
+   {
+    "claim_id": "v1.0.0_roundtrip_chr1",
+    "level": "R",
+    "expected": "bit-perfect",
+    "tolerance": "-",
+    "measured": "bit-perfect",
+    "verdict": "pass",
+    "command": "aceapex t --in genome/chr1.fa --threads 8"
+   },
+   {
+    "claim_id": "v1.0.0_ratio_chr1",
+    "level": "M",
+    "expected": "-",
+    "tolerance": "-",
+    "measured": "3.19235",
+    "verdict": "declared",
+    "command": "aceapex t --in genome/chr1.fa (tag defaults)"
+   },
+   {
+    "claim_id": "v1.0.0_roundtrip_enwik8",
+    "level": "R",
+    "expected": "bit-perfect",
+    "tolerance": "-",
+    "measured": "bit-perfect",
+    "verdict": "pass",
+    "command": "aceapex t --in text/enwik8 --threads 8"
+   },
+   {
+    "claim_id": "v1.0.0_ratio_enwik8",
+    "level": "M",
+    "expected": "-",
+    "tolerance": "-",
+    "measured": "2.65389",
+    "verdict": "declared",
+    "command": "aceapex t --in text/enwik8 (tag defaults)"
+   },
+   {
+    "claim_id": "v1.0.0_roundtrip_silesia",
+    "level": "R",
+    "expected": "bit-perfect",
+    "tolerance": "-",
+    "measured": "bit-perfect",
+    "verdict": "pass",
+    "command": "aceapex t --in mixed/silesia.tar --threads 8"
+   },
+   {
+    "claim_id": "v1.0.0_ratio_silesia",
+    "level": "M",
+    "expected": "-",
+    "tolerance": "-",
+    "measured": "3.08875",
+    "verdict": "declared",
+    "command": "aceapex t --in mixed/silesia.tar (tag defaults)"
+   }
+  ]
+ }
+}

@@ -2,7 +2,7 @@
  "provenance": {
   "tag": "v4.0",
   "commit": "fb27234b3bcbb57f572cf4ca1337dec5b1d7ebf3",
-  "date": "2026-09-22T06:40Z",
+  "date": "2026-09-22T06:46Z",
   "host": "ace-core",
   "machine": "x86_64",
   "compiler": "g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0",
