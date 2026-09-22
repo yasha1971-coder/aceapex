@@ -20,7 +20,7 @@ for C in genome/chr1.fa text/enwik8 mixed/silesia.tar; do
   else rec "${TAG}_roundtrip_$N" R bit-perfect - "not bit-perfect" fail "aceapex c, d, cmp on $C (tag defaults)"; fi
   rec "${TAG}_archive_sha256_$N" M "-" - "$H" declared "sha256 of the archive, first 16 hex; comparable only under the same libzstd (see provenance)"
   rm -rf "$W"
-  rec "${TAG}_ratio_$N" M "-" - "${R:-?}" declared "aceapex t --in $C (tag defaults)"
+  rec "${TAG}_ratio_$N" M "-" - "${R:-?}" declared "file ratio = original / archive file incl. header and block table; papers and the contract report the stream ratio from t, which is slightly higher"
 done
 GPU=skipped-no-gpu; command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1 && GPU=declared
 [ -f "$CL" ] && while IFS=$'\t' read -r id lvl exp tol needs cmd; do
