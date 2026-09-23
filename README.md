@@ -192,6 +192,8 @@ See [BENCHMARK.md](BENCHMARK.md) for detailed benchmarks and [TECHNICAL_NOTE.md]
 
 ## Verify every published number
 
+Decisions and their reasons: [docs/DECISIONS.md](docs/DECISIONS.md).
+
     ./verify.sh            # all paper tags; or ./verify.sh paper6-v1 v4.0
 
 Each paper's tag is checked out into a worktree and judged by a script kept in
