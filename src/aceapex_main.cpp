@@ -851,6 +851,14 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
     return true;
 }
  
+// Fail-closed decode: every zstd frame must decode without error and to exactly the
+// expected size. Parallel paths raise g_dec_err, which entry points reset and check;
+// the serial range paths return nullptr. Before this an error left malloc garbage in
+// the output and the call reported success (region on a legacy archive, 21.09).
+static std::atomic<int> g_dec_err{0};
+static inline bool zdec_ok(void* dst,size_t raw,const void* src,size_t csz){
+    size_t r=ZSTD_decompress(dst,raw,src,csz); return !ZSTD_isError(r)&&r==raw; }
+
 static void parallel_decode(
     const uint8_t* lit, const uint8_t* off,
     const uint8_t* len, const uint8_t* cmd,
@@ -913,7 +921,7 @@ static void fse_chunked_decomp(const uint8_t* src, size_t orig_sz, uint8_t* dst)
     for (size_t i = 0; i < nc; i++) {
         const uint8_t* p = src + src_off[i];
         if (cs[i] >> 63) memcpy(dst + dst_off[i], p, raw_sz[i]);
-        else ZSTD_decompress(dst + dst_off[i], raw_sz[i], p, cs[i] & ~(uint64_t(1)<<63));
+        else if(!zdec_ok(dst + dst_off[i], raw_sz[i], p, cs[i] & ~(uint64_t(1)<<63))) g_dec_err=1;
     }
 }
  
@@ -983,10 +991,10 @@ static void dna_decompress(const uint8_t* src, uint8_t* dst, size_t n){
     uint8_t* cse=(uint8_t*)malloc(nc?nc:1);
     uint32_t* gap=(uint32_t*)malloc((nexc?nexc:1)*4);
     uint8_t*  val=(uint8_t*)malloc(nexc?nexc:1);
-    ZSTD_decompress(seq,np,p,h[1]); p+=h[1];
-    ZSTD_decompress(cse,nc,p,h[2]); p+=h[2];
-    if(h[3]) ZSTD_decompress(gap,nexc*4,p,h[3]); p+=h[3];
-    if(h[4]) ZSTD_decompress(val,nexc,p,h[4]);
+    if(!zdec_ok(seq,np,p,h[1])) g_dec_err=1; p+=h[1];
+    if(!zdec_ok(cse,nc,p,h[2])) g_dec_err=1; p+=h[2];
+    if(h[3]&&!zdec_ok(gap,nexc*4,p,h[3])) g_dec_err=1; p+=h[3];
+    if(h[4]&&!zdec_ok(val,nexc,p,h[4])) g_dec_err=1;
     // Таблица на 256 входов: один упакованный байт разворачивается в четыре
     // основания одним 32-битным store вместо четырёх сдвигов с условием.
     static uint32_t T4[256]; static bool T4_ready=false;
@@ -1159,9 +1167,9 @@ static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_s
         Pool* p=(Pool*)a;
         for(;;){ int i=p->next.fetch_add(1); if(i>=p->n) break;
             DW& d=p->w[i]; if(!d.isz) continue;
-            if(!d.tg){ ZSTD_decompress(d.out,d.raw,d.in,d.isz); continue; }
+            if(!d.tg){ if(!zdec_ok(d.out,d.raw,d.in,d.isz)) g_dec_err=1; continue; }
             if(d.in[0]==1) dna_decompress(d.in+1,d.out,d.raw);
-            else           ZSTD_decompress(d.out,d.raw,d.in+1,d.isz-1); }
+            else if(!zdec_ok(d.out,d.raw,d.in+1,d.isz-1)) g_dec_err=1; }
         return nullptr;};
     // LANES был жёстко 8; на машинах с бо́льшим числом ядер половина простаивала.
     // Чанки независимы как кадры zstd, пул динамический — берём по числу ядер.
@@ -1202,7 +1210,7 @@ static uint8_t* fse_range(const uint8_t* src, size_t orig_sz, size_t from, size_
         if(d_off<to && d_off+raw>from){
             uint8_t* dst=out+(d_off-win_lo);
             if(cs[i]>>63) memcpy(dst,src+p_off,raw);
-            else ZSTD_decompress(dst,raw,src+p_off,csz);
+            else if(!zdec_ok(dst,raw,src+p_off,csz)){ free(out); return nullptr; }
         }
         p_off+=csz;
     }
@@ -1238,9 +1246,9 @@ static uint8_t* lit_range(const uint8_t* src, size_t src_sz, size_t& orig_sz,
         size_t raw=(off+csz<=orig_sz)?csz:(orig_sz-off);
         if(off<to && off+raw>from){
             uint8_t* d2=out+(off-win_lo);
-            if(!tagged)          ZSTD_decompress(d2,raw,p,(size_t)zsz[t]);
-            else if(p[0]==1)     dna_decompress(p+1,d2,raw);
-            else                 ZSTD_decompress(d2,raw,p+1,(size_t)zsz[t]-1);
+            if(!tagged)        { if(!zdec_ok(d2,raw,p,(size_t)zsz[t])){ free(out); return nullptr; } }
+            else if(p[0]==1)   { dna_decompress(p+1,d2,raw); if(g_dec_err){ free(out); return nullptr; } }
+            else               { if(!zdec_ok(d2,raw,p+1,(size_t)zsz[t]-1)){ free(out); return nullptr; } }
         }
         p+=(size_t)zsz[t];
     }
@@ -1392,6 +1400,7 @@ static int do_compress(const char* in_path, const char* out_path, int threads, i
 }
  
 static int do_decompress(const char* in_path, const char* out_path, int threads=8) {
+    g_dec_err=0;
     double t_wall=now_sec();
     FILE* fin=fopen(in_path,"rb");
     if (!fin) { fprintf(stderr,"Cannot open: %s\n",in_path); return 1; }
@@ -1501,13 +1510,15 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
     double wall=now_sec()-t_wall;
     fprintf(stderr,"  Decode: %.2f MB/s  (%.3fs, algorithmic)\n",hdr.orig_size/dec_time/1e6,dec_time);
     fprintf(stderr,"  Decode wall: %.2f MB/s  (%.3fs, wall clock)\n",hdr.orig_size/wall/1e6,wall);
-    if(!ok) fprintf(stderr,"  Status: ❌ HASH MISMATCH\n");
+    if(g_dec_err){ ok=false; fprintf(stderr,"  Status: ❌ DECODE ERROR (zstd frame)\n"); }
+    else if(!ok) fprintf(stderr,"  Status: ❌ HASH MISMATCH\n");
  
     free(lit); free(off); free(len); free(cmd); free(dst);
     return ok?0:1;
 }
  
 static int do_test(const char* in_path, int threads, int level=2) {
+    g_dec_err=0;
     FILE* fin=fopen(in_path,"rb");
     if (!fin) { fprintf(stderr,"Cannot open: %s\n",in_path); return 1; }
     fseek(fin,0,SEEK_END); size_t src_size=(size_t)ftell(fin); fseek(fin,0,SEEK_SET);
@@ -1565,7 +1576,8 @@ static int do_test(const char* in_path, int threads, int level=2) {
     fprintf(stderr,"  Encode: %.2f MB/s  (%.3fs)\n",src_size/real_enc_t/1e6,real_enc_t);
     fprintf(stderr,"  Decode: n/a (timing removed from library)\n");
     fprintf(stderr,"  SHA256: %.16s...\n",sha_hex);
-    fprintf(stderr,"  Status: %s\n",ok?"✅ BIT-PERFECT":"❌ HASH MISMATCH");
+    if(g_dec_err) ok=false;
+    fprintf(stderr,"  Status: %s\n",ok?"✅ BIT-PERFECT":g_dec_err?"❌ DECODE ERROR (zstd frame)":"❌ HASH MISMATCH");
     fprintf(stderr,"  ====================================================\n");
  
     free(src); free(dst);

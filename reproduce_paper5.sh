@@ -475,6 +475,21 @@ CEOF
     [ "$FOUT" = "FULL_API_OK" ] && V=pass || V=fail
     rec full_api_roundtrip R "bit-perfect" 0 "${FOUT:-no output}" "$V" \
         "aceapex_decompress on a fresh interactive archive, byte-compared to chr1"
+    # Fail-closed guard (D-01, 23.09): the same legacy interactive archive read through
+    # the library WITHOUT FSE_CHUNK must return an error, never rc=0 with garbage.
+    cat > /tmp/_p5g.c <<'CEOF'
+#include <stdio.h>
+#include <stdlib.h>
+#include "aceapex.h"
+int main(int c,char**v){FILE*f=fopen(v[1],"rb");fseek(f,0,SEEK_END);long n=ftell(f);fseek(f,0,SEEK_SET);
+void*a=malloc(n);if(fread(a,1,n,f)!=(size_t)n)return 2;unsigned char*d=malloc(16000);
+long long r=aceapex_decompress_region(a,n,d,16000,5000000,16000);printf("%lld\n",r);return 0;}
+CEOF
+    gcc -O2 -Isrc $ZI -o /tmp/_p5g.bin /tmp/_p5g.c src/aceapex_api.cpp -lstdc++ -lpthread -lzstd -lm 2>/dev/null
+    GOUT=$(env -i PATH="$PATH" ACEAPEX_BS=16384 /tmp/_p5g.bin /tmp/_p5b.aet 2>/dev/null)
+    case "$GOUT" in -*) V=pass;; *) V=fail;; esac
+    rec region_fails_closed_legacy R "error (<0)" 0 "${GOUT:-no output}" "$V" \
+        "aceapex_decompress_region on a pre-field interactive archive with no FSE_CHUNK in env"
     rm -f /tmp/_p5f.c /tmp/_p5f.bin
   fi
   rm -f /tmp/_p5b.aet /tmp/_p5b.bin /tmp/_p5b.err

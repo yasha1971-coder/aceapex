@@ -103,6 +103,7 @@ int64_t aceapex_decompress(
     memcpy(zo,p,hdr.zoff_sz); p+=hdr.zoff_sz;
     memcpy(zn,p,hdr.zlen_sz); p+=hdr.zlen_sz;
     memcpy(zc,p,hdr.zcmd_sz);
+    g_dec_err=0;
     size_t os=fse_stream_size(zo),ns=fse_stream_size(zn),cs=fse_stream_size(zc);
     size_t ls=0; uint8_t* l=lit_decompress(zl,hdr.zlit_sz,ls);
     if(!l){free(zl);free(zo);free(zn);free(zc);return ACEAPEX_ERR_MEMORY;}
@@ -111,6 +112,7 @@ int64_t aceapex_decompress(
     uint8_t* c=(uint8_t*)malloc(cs);
     if(!o||!n||!c){free(o);free(n);free(c);free(zl);free(zo);free(zn);free(zc);return ACEAPEX_ERR_MEMORY;}
     fse_chunked_decomp(zo,os,o); fse_chunked_decomp(zn,ns,n); fse_chunked_decomp(zc,cs,c);
+    if(g_dec_err){free(l);free(o);free(n);free(c);free(zl);free(zo);free(zn);free(zc);return ACEAPEX_ERR_DATA;}
     free(zl);free(zo);free(zn);free(zc);
 
     // Every block's stream slice must lie inside its decoded stream.
@@ -171,13 +173,16 @@ int64_t aceapex_decompress_region(
     size_t cf=boffs[b0].cmd_off, ct=boffs[b1].cmd_off+boffs[b1].cmd_sz;
 
     size_t lit_sz = 0, wl=0, wo=0, wn=0, wc=0;
+    g_dec_err=0;
     uint8_t* lit = lit_range(zlit, hdr.zlit_sz, lit_sz, lf, lt, &wl);
     uint8_t* off = fse_range(zoff, fse_stream_size(zoff), of, ot, &wo);
     uint8_t* len = fse_range(zlen, fse_stream_size(zlen), nf, nt, &wn);
     uint8_t* cmd = fse_range(zcmd, fse_stream_size(zcmd), cf, ct, &wc);
-    if (!lit || !off || !len || !cmd) {
+    // A range function returns nullptr when a zstd frame fails to decode (or on malloc
+    // failure); either way the caller must not read the buffers: fail closed.
+    if (!lit || !off || !len || !cmd || g_dec_err) {
         free(lit); free(off); free(len); free(cmd);
-        return ACEAPEX_ERR_MEMORY;
+        return ACEAPEX_ERR_DATA;
     }
 
     size_t span_start = b0 * (size_t)hdr.block_size;
@@ -257,7 +262,7 @@ void* batch_worker(void* arg) {
         uint8_t* off=fse_range(t->zoff,fse_stream_size(t->zoff),of,ot,&wo);
         uint8_t* len=fse_range(t->zlen,fse_stream_size(t->zlen),nf,nt,&wn);
         uint8_t* cmd=fse_range(t->zcmd,fse_stream_size(t->zcmd),cf,ct,&wc);
-        if(!lit||!off||!len||!cmd){
+        if(!lit||!off||!len||!cmd||g_dec_err){
             free(lit);free(off);free(len);free(cmd);
             for(size_t k=G.first;k<G.last;k++) t->w[k].dst=nullptr;
             t->failed.store(1); continue;
@@ -295,6 +300,7 @@ int64_t aceapex_decompress_ranges(
     const void* src, size_t src_size,
     aceapex_range_t* ranges, size_t count, int threads)
 {
+    g_dec_err=0;
     if(!src||!ranges) return ACEAPEX_ERR_DATA;
     if(count==0) return 0;
     if(src_size<sizeof(AetHeader)) return ACEAPEX_ERR_DATA;
