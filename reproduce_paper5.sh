@@ -33,7 +33,10 @@ export ACEAPEX_BS=16384
 # libzstd packs the literal stream differently (1.5.5: +0.58% on chr1), so the judged
 # tolerance is 1% and the record says so; one number is used for judging and reporting.
 ZV=$(grep -h '#define ZSTD_VERSION_\(MAJOR\|MINOR\|RELEASE\)' /usr/include/zstd.h /usr/local/include/zstd.h 2>/dev/null | awk '{print $3}' | paste -sd. -)
-RT=1e-5; [ "$ZV" = 1.4.8 ] || RT=0.01; RTOL="$RT (libzstd ${ZV:-unknown})"
+RT=1e-5; case "$ZV" in 1.4.8|1.5.5) ;; *) RT=0.01;; esac; RTOL="$RT (libzstd ${ZV:-unknown})"
+# exp <v148> <v155>: the figure for the libzstd in use; 1.5.5 values measured 23.09 on two
+# hosts (12-core laptop, 4-core GitHub runner) identical to five decimals. Unknown version: 1.4.8 figure, 1%.
+exp () { [ "$ZV" = 1.5.5 ] && echo "$2" || echo "$1"; }
 CHR1_MD5_EXPECTED=9465e0f0df6e2c6eb39729c39cee5465
 
 HW="$(uname -m) $(nproc) cores"
@@ -95,15 +98,15 @@ echo ""
 echo "--- R: encoder claims on chr1 ---"
 if [ -f "$CHR1" ]; then
   SRC="$CHR1"
-  M=$(ratio_of LIT_CHUNK=0 MIN_MATCH=0); within "$M" 3.18065 $RT && V=pass || V=fail
-  rec chr1_baseline_ratio R 3.18065 "$RTOL" "$M" "$V" "MIN_MATCH=0 t --in chr1"
-  M=$(ratio_of LIT_CHUNK=0 NO_REP=1);   within "$M" 3.16347 $RT && V=pass || V=fail
-  rec norep_ratio R 3.16347 "$RTOL" "$M" "$V" "NO_REP=1 t --in chr1"
+  M=$(ratio_of LIT_CHUNK=0 MIN_MATCH=0); within "$M" $(exp 3.18065 3.19928) $RT && V=pass || V=fail
+  rec chr1_baseline_ratio R $(exp 3.18065 3.19928) "$RTOL" "$M" "$V" "MIN_MATCH=0 t --in chr1"
+  M=$(ratio_of LIT_CHUNK=0 NO_REP=1);   within "$M" $(exp 3.16347 3.18167) $RT && V=pass || V=fail
+  rec norep_ratio R $(exp 3.16347 3.18167) "$RTOL" "$M" "$V" "NO_REP=1 t --in chr1"
   M=$(python3 -c "print(f'{(3.18065/3.16347-1)*100:.3f}')")
   within "$M" 0.540 0.02 && V=pass || V=fail
   rec norep_cost_percent R 0.540 0.02 "$M" "$V" "derived from the two ratios"
-  M=$(ratio_of LIT_CHUNK=0 MIN_MATCH=16); within "$M" 3.22581 $RT && V=pass || V=fail
-  rec min_match16_ratio R 3.22581 "$RTOL" "$M" "$V" "MIN_MATCH=16 t --in chr1"
+  M=$(ratio_of LIT_CHUNK=0 MIN_MATCH=16); within "$M" $(exp 3.22581 3.24915) $RT && V=pass || V=fail
+  rec min_match16_ratio R $(exp 3.22581 3.24915) "$RTOL" "$M" "$V" "MIN_MATCH=16 t --in chr1"
 else
   for C in chr1_baseline_ratio norep_ratio norep_cost_percent min_match16_ratio; do
     rec "$C" R - - "missing corpus" skipped-no-corpus "set CHR1"; done
@@ -118,8 +121,8 @@ echo "--- R: default configuration, no environment at all ---"
 if [ -f "$CHR1" ]; then
   M=$(env -u ACEAPEX_BS -u LIT_CHUNK -u FSE_CHUNK -u MIN_MATCH -u HASH_LOG \
       "$BIN" t --in "$CHR1" --threads 8 2>&1 | grep -oE "Ratio: +[0-9.]+" | grep -oE "[0-9.]+")
-  within "$M" 3.72329 0.038 && V=pass || V=fail
-  rec default_chr1_ratio R 3.72329 0.038 "$M" "$V" \
+  within "$M" $(exp 3.72821 3.73164) $RT && V=pass || V=fail
+  rec default_chr1_ratio R $(exp 3.72821 3.73164) "$RTOL" "$M" "$V" \
       "aceapex t --in chr1 with no ACEAPEX_* variables set"
 else
   rec default_chr1_ratio R - - "missing corpus" skipped-no-corpus "set CHR1"
@@ -224,8 +227,8 @@ echo "--- R: genomic literal transform and region read ---"
 if [ -f "$CHR1" ]; then
   SRC="$CHR1"
   M=$(ratio_of MIN_MATCH=0 LIT_CHUNK=1048576)
-  within "$M" 3.77696 $RT && V=pass || V=fail
-  rec transform_chr1_ratio R 3.77696 "$RTOL" "$M" "$V" "LIT_CHUNK=1048576 aceapex t --in chr1"
+  within "$M" $(exp 3.77696 3.78053) $RT && V=pass || V=fail
+  rec transform_chr1_ratio R $(exp 3.77696 3.78053) "$RTOL" "$M" "$V" "LIT_CHUNK=1048576 aceapex t --in chr1"
 
   env MIN_MATCH=0 ACEAPEX_BS=16384 LIT_CHUNK=1048576 "$BIN" c --in "$CHR1" \
       --out /tmp/_p5r.aet --threads 8 >/dev/null 2>&1
@@ -340,8 +343,8 @@ echo ""
 echo "--- R: low-latency configuration ---"
 if [ -f "$CHR1" ]; then
   M=$(ratio_of MIN_MATCH=0 LIT_CHUNK=65536 FSE_CHUNK=4096)
-  within "$M" 3.70807 $RT && V=pass || V=fail
-  rec lowlat_chr1_ratio R 3.70807 "$RTOL" "$M" "$V" \
+  within "$M" $(exp 3.70807 3.71148) $RT && V=pass || V=fail
+  rec lowlat_chr1_ratio R $(exp 3.70807 3.71148) "$RTOL" "$M" "$V" \
       "LIT_CHUNK=65536 FSE_CHUNK=4096 aceapex t --in chr1"
 
   env MIN_MATCH=0 ACEAPEX_BS=16384 LIT_CHUNK=65536 FSE_CHUNK=4096 "$BIN" c \
