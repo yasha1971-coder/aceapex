@@ -264,6 +264,24 @@
     "measured": "density at 16 KiB: chr1 69473882 B (3.655) vs nvCOMP zstd 80929265 (+16.5%), T2T 897252056 (3.518) vs 1063300990 (+18.5%); LZ4 2.41-2.45x denser",
     "verdict": "declared",
     "command": "CAVEAT: ACEAPEX GPU figure (134/197 GB/s) is the match layer from entropy-decoded streams; nvCOMP figures are full decode. Speed comparison waits for e2e_full (DietGPU ANS on GPU, B2)."
+   },
+   {
+    "claim_id": "pod_gpu_step2_full_pipeline_chr1",
+    "level": "R",
+    "expected": "MATCHES OK",
+    "measured": "4/4 MATCHES OK; ANS decode 2.04-2.18 ms + match 1.90-1.93 ms = ~3.97 ms -> 64 GB/s on 253.9 MB",
+    "tolerance": "-",
+    "verdict": "pass",
+    "command": "e2e_full (DietGPU ANS on GPU + v7-RA), chr1 interactive 16 KiB; ANS layer is a per-block prototype re-encoding of the streams (LIT 2.23, OFF/LEN/CMD expanded), NOT the .aet entropy layer; T2T OOM in DietGPU statistics scratch"
+   },
+   {
+    "claim_id": "pod_finding_aet_is_zstd_frames",
+    "level": "E",
+    "expected": "-",
+    "measured": "all four .aet streams are standard zstd frames per chunk; nvCOMP batched Zstd (35-38 GB/s measured today) could decode the archive as-is on GPU, removing the ANS re-encoding: next experiment",
+    "tolerance": "-",
+    "verdict": "declared",
+    "command": "design note from src/aceapex_main.cpp decode paths"
    }
   ]
  }
