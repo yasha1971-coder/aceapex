@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <vector>
+static float g_ans_ms=0;   // ANS decode time, printed before the match phase (28.09.2026)
 #include <cuda_runtime.h>
 #include "dietgpu/ans/GpuANSCodec.h"
 #include "dietgpu/utils/StackDeviceMemory.h"
@@ -160,7 +161,9 @@ static void ans_roundtrip(uint8_t* dStream, const vector<BlockOffsets>& bo,
   uint64_t comp=0,raw=0; for(uint32_t i=0;i<n;i++){comp+=cs[i];raw+=inSizes[i];}
   uint8_t* d_succ; cudaMalloc(&d_succ,n);
   uint32_t* d_dsz; cudaMalloc(&d_dsz,n*4);
+  { cudaEvent_t a0,a1; cudaEventCreate(&a0); cudaEventCreate(&a1); cudaEventRecord(a0,stream);
   ansDecodeBatchPointer(res,cfg,n,(const void**)out_ptrs.data(),dec_ptrs.data(),caps.data(),d_succ,d_dsz,stream);
+  cudaEventRecord(a1,stream); cudaEventSynchronize(a1); float ms=0; cudaEventElapsedTime(&ms,a0,a1); g_ans_ms+=ms; }
   cudaStreamSynchronize(stream);
   printf("  %s: %u blocks, raw=%.1fMB comp=%.1fMB ratio=%.2f (decoded back in-place)\n",
          name,n,raw/1e6,comp/1e6,(double)raw/comp);
@@ -218,6 +221,7 @@ int main(int argc, char** argv){
       ans_roundtrip(dCMD,boffs,&BlockOffsets::cmd_off,&BlockOffsets::cmd_sz,rstart,rend,res2,s2,"CMD");
       cudaStreamDestroy(s2);
       printf("[E2E] streams ANS-decoded in-place, now running match-decode on them...\n");
+      printf("[timed] ANS decode of 4 streams: %.3f ms\n",g_ans_ms);
     }
 
 
