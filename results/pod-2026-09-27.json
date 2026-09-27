@@ -1,0 +1,153 @@
+{
+ "provenance": {
+  "tag": "pod-2026-09-27",
+  "host": "runpod e14f0d4759b6",
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "cuda": "12.4.131",
+  "compiler": "g++ 11.4.0",
+  "libzstd": "1.4.8",
+  "cores": 160,
+  "commit": "a833414",
+  "date": "2026-09-27T23:30Z",
+  "note": "v7-RA range-decode on streams.bin from the current public CLI (ACEAPEX_DUMP=1), 16 KiB blocks, interactive profile; [timed] = CUDA event around the kernel path, H2D/D2H excluded; FNV of output == FNV of original on every run. e2e_* (ANS layer, DietGPU) not built on this pod."
+ },
+ "result": {
+  "claims": [
+   {
+    "claim_id": "pod_gate_chr1_matches_ok",
+    "level": "R",
+    "expected": "8 MATCHES OK",
+    "tolerance": "-",
+    "measured": "8/8 (default+interactive x4)",
+    "verdict": "pass",
+    "command": "full_gpu_decode_v7_ra streams.bin chr1.fa 16"
+   },
+   {
+    "claim_id": "pod_gate_t2t_matches_ok",
+    "level": "R",
+    "expected": "MATCHES OK",
+    "tolerance": "-",
+    "measured": "6/6 (full x4, slices 0 and 100000 x1024 blocks)",
+    "verdict": "pass",
+    "command": "full_gpu_decode_v7_ra streams.bin t2t.fa 16 [start count]"
+   },
+   {
+    "claim_id": "pod_t2t_md5",
+    "level": "R",
+    "expected": "cd1e52ce400c027ed0b7ab4b9d613f5a",
+    "tolerance": "-",
+    "measured": "cd1e52ce400c027ed0b7ab4b9d613f5a",
+    "verdict": "pass",
+    "command": "md5sum t2t.fa (NCBI GCA_009914755.4, 3156259565 B)"
+   },
+   {
+    "claim_id": "pod_t2t_ratio_interactive_16k",
+    "level": "M",
+    "expected": "-",
+    "tolerance": "-",
+    "measured": "3.5177 (file ratio, 897252056 B)",
+    "verdict": "declared",
+    "command": "aceapex c ACEAPEX_BS=16384 LIT_CHUNK=65536 FSE_CHUNK=4096"
+   },
+   {
+    "claim_id": "pod_chr1_full_range_gbps_G8",
+    "level": "M",
+    "expected": "-",
+    "tolerance": "-",
+    "measured": "124.7 GB/s (median of 4; 123.7-125.8)",
+    "verdict": "declared",
+    "command": "v7-RA G=8 full range, chr1"
+   },
+   {
+    "claim_id": "pod_chr1_full_range_gbps_G16",
+    "level": "M",
+    "expected": "-",
+    "tolerance": "-",
+    "measured": "133.9 GB/s (median of 4; 132.4-137.6)",
+    "verdict": "declared",
+    "command": "v7-RA G=16 full range, chr1"
+   },
+   {
+    "claim_id": "pod_chr1_full_range_gbps_G32",
+    "level": "M",
+    "expected": "-",
+    "tolerance": "-",
+    "measured": "142.3 GB/s (median of 4; 137.1-143.1)",
+    "verdict": "declared",
+    "command": "v7-RA G=32 full range, chr1"
+   },
+   {
+    "claim_id": "pod_t2t_full_range_gbps_G8",
+    "level": "M",
+    "expected": "-",
+    "tolerance": "-",
+    "measured": "179.8 GB/s (median of 4; 179.2-180.3)",
+    "verdict": "declared",
+    "command": "v7-RA G=8 full range, t2t"
+   },
+   {
+    "claim_id": "pod_t2t_full_range_gbps_G16",
+    "level": "M",
+    "expected": "-",
+    "tolerance": "-",
+    "measured": "196.9 GB/s (median of 4; 196.7-197.3)",
+    "verdict": "declared",
+    "command": "v7-RA G=16 full range, t2t"
+   },
+   {
+    "claim_id": "pod_t2t_full_range_gbps_G32",
+    "level": "M",
+    "expected": "-",
+    "tolerance": "-",
+    "measured": "184.9 GB/s (median of 4; 184.8-185.0)",
+    "verdict": "declared",
+    "command": "v7-RA G=32 full range, t2t"
+   },
+   {
+    "claim_id": "pod_chr1_seek_1blk_us",
+    "level": "M",
+    "expected": "-",
+    "tolerance": "-",
+    "measured": "76.5 us (76.3-76.6, 4 runs, start 8000)",
+    "verdict": "declared",
+    "command": "v7-RA G=16 start 8000 count 1"
+   },
+   {
+    "claim_id": "pod_chr1_seek_100blk_us",
+    "level": "M",
+    "expected": "-",
+    "tolerance": "-",
+    "measured": "142 us (142.0-142.5)",
+    "verdict": "declared",
+    "command": "v7-RA G=16 start 8000 count 100"
+   },
+   {
+    "claim_id": "pod_t2t_seek_1blk_us",
+    "level": "M",
+    "expected": "-",
+    "tolerance": "-",
+    "measured": "363 us (362.3-363.3)",
+    "verdict": "declared",
+    "command": "v7-RA G=16 start 50000 count 1; 4.8x chr1 for one block -> size-dependent term in the call path (C-036 hypothesis: block table H2D per call)"
+   },
+   {
+    "claim_id": "pod_t2t_seek_100blk_us",
+    "level": "M",
+    "expected": "-",
+    "tolerance": "-",
+    "measured": "663 us (662.1-673.6)",
+    "verdict": "declared",
+    "command": "v7-RA G=16 start 50000 count 100"
+   },
+   {
+    "claim_id": "pod_empty_launch_us",
+    "level": "M",
+    "expected": "-",
+    "tolerance": "-",
+    "measured": "7.5 us (chr1 start past end, 0 blocks)",
+    "verdict": "declared",
+    "command": "floor of the launch path"
+   }
+  ]
+ }
+}
