@@ -108,9 +108,9 @@
     "level": "M",
     "expected": "-",
     "tolerance": "-",
-    "measured": "76.5 us (76.3-76.6, 4 runs, start 8000)",
+    "measured": "76.5 us at block 8000 (an easy block); 398 us at block 15000",
     "verdict": "declared",
-    "command": "v7-RA G=16 start 8000 count 1"
+    "command": "v7-RA G=16 count 1; latency is set by the block content (serial token parse on one lane group), not by archive size"
    },
    {
     "claim_id": "pod_chr1_seek_100blk_us",
@@ -126,9 +126,9 @@
     "level": "M",
     "expected": "-",
     "tolerance": "-",
-    "measured": "363 us (362.3-363.3)",
+    "measured": "363 us at block 50000; 373 / 417 / 306 us at blocks 0 / 8000 / 150000",
     "verdict": "declared",
-    "command": "v7-RA G=16 start 50000 count 1; 4.8x chr1 for one block -> size-dependent term in the call path (C-036 hypothesis: block table H2D per call)"
+    "command": "v7-RA G=16 count 1; same finding: content-dependent, 306-417 us typical, C-036 archive-size hypothesis refuted"
    },
    {
     "claim_id": "pod_t2t_seek_100blk_us",
@@ -147,6 +147,15 @@
     "measured": "7.5 us (chr1 start past end, 0 blocks)",
     "verdict": "declared",
     "command": "floor of the launch path"
+   },
+   {
+    "claim_id": "pod_single_block_latency_summary",
+    "level": "M",
+    "expected": "-",
+    "tolerance": "-",
+    "measured": "typical 306-417 us (median ~373) on H100; easy blocks down to 76 us; CPU region path 78 us on EPYC",
+    "verdict": "declared",
+    "command": "one 16 KiB block decoded by one lane group; path to lower it = intra-block parallel parse (wf_par, Paper 5) = C-037"
    }
   ]
  }
