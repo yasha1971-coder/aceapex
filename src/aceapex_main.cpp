@@ -1498,6 +1498,14 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
     if (!ax_boffs_ok(boffs.data(), nb, lit_sz, off_sz, len_sz, cmd_sz)) {
         fprintf(stderr,"Corrupt archive (block offsets)\n");
         free(lit);free(off);free(len);free(cmd);free(dst); return 1; }
+    // ACEAPEX_DUMP=1: write streams.bin (header, block table, decoded lit/off/len/cmd) for
+    // the GPU harnesses (e2e_full.cu and kin); same layout the depth tool has written since v2.
+    if(getenv("ACEAPEX_DUMP")){
+        FILE* fs=fopen("streams.bin","wb");
+        if(fs){ fwrite(&hdr,sizeof(hdr),1,fs); fwrite(boffs.data(),sizeof(BlockOffsets),nb,fs);
+            fwrite(lit,1,lit_sz,fs); fwrite(off,1,off_sz,fs); fwrite(len,1,len_sz,fs); fwrite(cmd,1,cmd_sz,fs);
+            fclose(fs); fprintf(stderr,"Dumped streams.bin (%u blocks)\n",(unsigned)nb); }
+    }
     double t_lz=now_sec(); parallel_decode(lit,off,len,cmd,boffs.data(),nb,dst,hdr.orig_size,hdr.block_size,threads); t_lz=now_sec()-t_lz;
     dec_time=now_sec()-dec_time;
     fprintf(stderr,"  Phase entropy (4 streams in parallel): %.3fs\n  Phase lz77: %.3fs\n",t_fse,t_lz);
