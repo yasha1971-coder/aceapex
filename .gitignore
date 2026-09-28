@@ -22,3 +22,6 @@ streams.bin
 *.o
 aceapex_p5
 lzbench/
+
+# cross-version fixtures are tracked on purpose
+!verify/fixtures/*.aet

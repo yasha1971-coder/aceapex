@@ -3,7 +3,7 @@
 # versions, kept in verify/fixtures. Each fixture is decoded here and checked by sha256, then
 # the decoded slice is re-encoded and compared with the fixture that matches this host's
 # libzstd. No corpus needed. Output lines: claim_id <TAB> verdict <TAB> measured
-set -uo pipefail
+set -uo pipefail; shopt -s nullglob
 B=${BIN:-./aceapex}; F=verify/fixtures; EXP=$(cat $F/chr1_4MiB.sha256); T=$(mktemp -d)
 ZV=$(for d in /usr/include /usr/local/include; do [ -f $d/zstd.h ] || continue
   awk '/#define ZSTD_VERSION_(MAJOR|MINOR|RELEASE) /{v=v (v?".":"") $3} END{print v}' \
