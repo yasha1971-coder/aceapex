@@ -25,8 +25,8 @@ def test_pickle_reopens_handle():
     ds2 = pickle.loads(pickle.dumps(ds))
     assert ds2._a is None and ds2.numpy_batch([1]).shape == (1, 1000)
 
-torch = pytest.importorskip("torch")
 def test_torch_tensors():
+    torch = pytest.importorskip("torch")
     full = aceapex.open(A).decompress()
     ds = at.RandomWindows(A, length=8192, count=16, seed=7)
     t = ds[0]; o, l = ds.spans[0]
