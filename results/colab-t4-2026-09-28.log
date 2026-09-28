@@ -1,0 +1,14 @@
+# colab-t4, 2026-09-28, aceapex 3de5520, full_gpu_decode_v7_ra.cu -arch=sm_75
+Tesla T4 15360 MiB (driver 580.82.07); cuda_12.8; libzstd 1.5.5; 2 CPU cores; Google Colab
+corpus chr1.fa md5 9465e0f0df6e2c6eb39729c39cee5465
+env ACEAPEX_BS=16384 LIT_CHUNK=65536 FSE_CHUNK=4096; archive 68418921 B; ratio 3.71148; 15499 blocks
+verify.sh HEAD (GOLDEN=/content/golden): pass 21 fail 0 skipped 11 declared 8
+verify.sh HEAD without corpus: head_region_200 = fail (should be skipped-no-corpus); judge fixed
+v7-RA full range, 7 runs, median/min/max us:
+  G=8  14403/14188/16307 -> 17.6 GB/s
+  G=16 10842/10752/10940 -> 23.4 GB/s
+  G=32  9810/ 9767/ 9906 -> 25.9 GB/s; FNV MATCHES OK all
+single block median us: G=32 blk7000 598 (586-637), blk15498 329 (297-364); G=8 674, 444; all OK
+clocks after runs: SM 1155 MHz (boost 1590), mem 5000 MHz, 67 C, throttle 0x0; before: idle 300
+CPU encode 2 threads: 22.45 MB/s (LZ77 8.0 s of 11.3 s); CPU decode wall 161 MB/s
+open: chr1 ratio 3.711 (colab, ace-core) vs 3.655 in pod nvCOMP row; profile difference not found yet

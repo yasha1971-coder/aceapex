@@ -4,9 +4,13 @@
 set -uo pipefail
 env -i PATH="$PATH" HOME="$HOME" GOLDEN="$GOLDEN" NO_DOWNLOAD=1 bash ./reproduce_paper5.sh >/dev/null 2>&1
 make -s >/dev/null 2>&1
+if [ ! -f "$GOLDEN/genome/chr1.fa" ]; then V=skipped-no-corpus; M="chr1.fa not under GOLDEN"; HA=-
+else
 env -i PATH="$PATH" LIT_CHUNK=65536 FSE_CHUNK=4096 ./aceapex c --in "$GOLDEN/genome/chr1.fa" --out /tmp/_vh.aet --threads 8 >/dev/null 2>&1
 if env -i PATH="$PATH" HOME="$HOME" BIN=./aceapex bash scripts/region_test.sh "$GOLDEN/genome/chr1.fa" /tmp/_vh.aet 200 >/tmp/_vh.log 2>&1; then V=pass; M=$(tail -1 /tmp/_vh.log); else V=fail; M=$(tail -1 /tmp/_vh.log); fi
-HA=$(sha256sum /tmp/_vh.aet | cut -c1-16); HB=$(sha256sum ./aceapex | cut -c1-16)
+HA=$(sha256sum /tmp/_vh.aet | cut -c1-16)
+fi
+HB=$(sha256sum ./aceapex | cut -c1-16)
 python3 - "$V" "$M" "$HA" "$HB" <<'PY'
 import json,sys
 d=json.load(open('results.json')); c=d.setdefault('claims',[])
