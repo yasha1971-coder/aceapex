@@ -26,3 +26,7 @@ gpu_zstd_batch (C++ nvcompBatchedZstdDecompressAsync, one call, warm, 7 runs), T
   pipeline lower bound, sequential: H2D 5.6 + zstd 20.1 + v7-RA 9.8 = 35.5 ms -> 7.2 GB/s delivered
   build: nvcc -arch=sm_75 -I<nvcomp>/include -L<nvcomp>/lib64 -l:libnvcomp.so.5; run with
   LD_LIBRARY_PATH=<nvcomp>/lib64:$LD_LIBRARY_PATH (Colab keeps libcuda in /usr/lib64-nvidia)
+GPU DNA unpack (k_unpack + k_exc), 2935 chunks, 7 runs: median 3.959 ms (3.948-3.969), bit-perfect
+  entropy layer on GPU: zstd 17.819 + unpack 3.959 = 21.778 ms for 209.5 MB -> 9.6 GB/s; 4/4 bit-perfect
+  full on-device path on the .aet as written by the CPU encoder: zstd + unpack + v7-RA (9.81) = 31.6 ms
+  -> 8.0 GB/s chr1 on T4; with H2D 5.6 ms sequential: 37.2 ms -> 6.8 GB/s delivered; CPU decode 306 MB/s

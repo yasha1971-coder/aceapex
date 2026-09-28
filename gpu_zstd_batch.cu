@@ -2,7 +2,7 @@
 // nvCOMP's batched zstd decompressor (C API), timed properly: temp and output buffers allocated
 // once, warm-up, N repeats on CUDA events, median. Output is reassembled and compared byte for
 // byte with streams.bin (ACEAPEX_DUMP=1). The DNA unpack of the literal stream runs on the CPU
-// here (its own timer); the GPU unpack kernel is the next step.
+// and on the GPU (two kernels, timed), both compared with the CPU-decoded reference.
 // Build: nvcc -O3 -arch=sm_XX -I$NVCOMP/include -L$NVCOMP/lib -lnvcomp -o gpu_zstd_batch gpu_zstd_batch.cu
 // Usage: gpu_zstd_batch <archive.aet> <streams.bin> [repeats=7]
 #include <cstdio>
@@ -18,6 +18,25 @@
 
 #define CK(x) do{cudaError_t e=(x); if(e!=cudaSuccess){fprintf(stderr,"CUDA %s @%d: %s\n",#x,__LINE__,cudaGetErrorString(e)); exit(2);} }while(0)
 #define NV(x) do{nvcompStatus_t s=(x); if(s!=nvcompSuccess){fprintf(stderr,"nvcomp %s @%d: status %d\n",#x,__LINE__,(int)s); exit(3);} }while(0)
+
+
+// --- GPU unpack of DNA literal chunks: 2-bit bases (MSB first) -> ACGT, case-mask bit -> |0x20,
+// then exceptions: cumulative gaps give positions, val gives the byte (0 when no val stream).
+struct DnaDesc { const uint8_t *seq,*cse,*gap,*val; uint8_t* dst; uint32_t raw, nexc; };
+__global__ void k_unpack(const DnaDesc* d){
+  const DnaDesc c=d[blockIdx.x]; uint32_t i0=(blockIdx.y*blockDim.x+threadIdx.x)*4; if(i0>=c.raw) return;
+  uint8_t v=c.seq[i0>>2], m=c.cse[i0>>3]; uint32_t n=c.raw-i0; if(n>4) n=4;
+  #pragma unroll
+  for(uint32_t k=0;k<4;k++){ if(k<n){ uint8_t b="ACGT"[(v>>(6-2*k))&3]; if(m&(0x80>>((i0+k)&7))) b|=0x20; c.dst[i0+k]=b; } }
+}
+__global__ void k_exc(const DnaDesc* d){
+  const DnaDesc c=d[blockIdx.x]; if(!c.nexc) return; __shared__ uint32_t s[256]; uint32_t carry=0;
+  for(uint32_t base=0; base<c.nexc; base+=256){
+    uint32_t e=base+threadIdx.x; uint32_t g = e<c.nexc ? ((const uint32_t*)c.gap)[e] : 0; s[threadIdx.x]=g; __syncthreads();
+    for(uint32_t o=1;o<256;o<<=1){ uint32_t t = threadIdx.x>=o ? s[threadIdx.x-o] : 0; __syncthreads(); s[threadIdx.x]+=t; __syncthreads(); }
+    uint32_t pos=carry+s[threadIdx.x]; if(e<c.nexc && pos<c.raw) c.dst[pos] = c.val ? c.val[e] : 0;
+    carry+=s[255]; __syncthreads(); }
+}
 
 static std::vector<uint8_t> slurp(const char* p){ FILE* f=fopen(p,"rb"); if(!f){perror(p); exit(1);} fseek(f,0,SEEK_END); long n=ftell(f); fseek(f,0,SEEK_SET); std::vector<uint8_t> v(n); if(fread(v.data(),1,n,f)!=(size_t)n){fprintf(stderr,"short read %s\n",p); exit(1);} fclose(f); return v; }
 static inline uint64_t rd64(const uint8_t* p){ uint64_t v; memcpy(&v,p,8); return v; }
@@ -116,6 +135,30 @@ int main(int argc, char** argv){
   double unpack_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count();
   printf("CPU DNA unpack of %zu chunks: %.1f ms (GPU kernel is the next step)\n",dna.size(),unpack_ms);
   const char* nm[4]={"lit","off","len","cmd"}; int ok=0;
+  // --- GPU unpack: device literal buffer, plain chunks copied D2D, DNA chunks by two kernels (timed)
+  { uint64_t sz=out[0].size(); uint8_t* dlit; CK(cudaMalloc(&dlit,sz)); std::vector<DnaDesc> hd(dna.size());
+    std::vector<size_t> dnaJob(dna.size()*4,(size_t)-1);   // (dna idx, kind-1) -> job index
+    std::vector<int64_t> byChunk; for(size_t k=0;k<dna.size();k++){ if(dna[k].chunk>=byChunk.size()) byChunk.resize(dna[k].chunk+1,-1); byChunk[dna[k].chunk]=k; }
+    for(size_t i=0;i<N;i++){ const Job& j=jobs[i]; if(j.stream!=0) continue;
+      if(j.kind==K_PLAIN) CK(cudaMemcpyAsync(dlit+(size_t)j.chunk*CH, dout+ooff[i], j.osz, cudaMemcpyDeviceToDevice, str));
+      else dnaJob[byChunk[j.chunk]*4+(j.kind-1)]=i; }
+    for(size_t k=0;k<dna.size();k++){ auto P=[&](int kind)->const uint8_t*{ size_t i=dnaJob[k*4+kind-1]; return i==(size_t)-1?nullptr:dout+ooff[i]; };
+      hd[k]={P(K_SEQ),P(K_CSE),P(K_GAP),P(K_VAL), dlit+(size_t)dna[k].chunk*CH, (uint32_t)dna[k].raw, dna[k].nexc}; }
+    DnaDesc* dd; CK(cudaMalloc(&dd,hd.size()*sizeof(DnaDesc))); CK(cudaMemcpyAsync(dd,hd.data(),hd.size()*sizeof(DnaDesc),cudaMemcpyHostToDevice,str));
+    dim3 g1((unsigned)dna.size(), (unsigned)((CH/4+255)/256));
+    auto runk=[&](){ k_unpack<<<g1,256,0,str>>>(dd); k_exc<<<(unsigned)dna.size(),256,0,str>>>(dd); };
+    runk(); CK(cudaStreamSynchronize(str)); CK(cudaGetLastError());
+    std::vector<float> um(reps);
+    for(int r=0;r<reps;r++){ CK(cudaEventRecord(e0,str)); runk(); CK(cudaEventRecord(e1,str)); CK(cudaEventSynchronize(e1)); CK(cudaEventElapsedTime(&um[r],e0,e1)); }
+    std::sort(um.begin(),um.end()); float umed=um[reps/2];
+    std::vector<uint8_t> hl(sz); CK(cudaMemcpy(hl.data(),dlit,sz,cudaMemcpyDeviceToHost));
+    bool eq = memcmp(hl.data(),ref[0],sz)==0;
+    printf("[timed] GPU DNA unpack (2 kernels), %zu chunks, %d runs: median %.3f ms (min %.3f max %.3f) -> %.1f GB/s of literals; bit-perfect=%s\n",
+           dna.size(),reps,umed,um[0],um[reps-1],sz/umed/1e6,eq?"true":"FALSE");
+    printf("[pipeline] entropy layer on GPU = zstd %.3f + unpack %.3f = %.3f ms for %.1f MB of streams -> %.1f GB/s\n",
+           med,umed,med+umed,(tot[0]+tot[1]+tot[2]+tot[3])/1e6,(tot[0]+tot[1]+tot[2]+tot[3])/(med+umed)/1e6);
+    if(!eq) ok=-100; }
+
   for(int i=0;i<4;i++){ bool eq = out[i].size()==tot[i] && memcmp(out[i].data(),ref[i],tot[i])==0; ok+=eq; printf("%s: %llu B bit-perfect=%s\n",nm[i],(unsigned long long)tot[i],eq?"true":"FALSE"); }
   printf("%d/4 streams bit-perfect; entropy layer GPU time %.3f ms for %.1f MB of streams -> %.1f GB/s\n", ok, med, (tot[0]+tot[1]+tot[2]+tot[3])/1e6, (tot[0]+tot[1]+tot[2]+tot[3])/med/1e6);
   return ok==4?0:5;
