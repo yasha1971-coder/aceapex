@@ -33,3 +33,8 @@ GPU DNA unpack (k_unpack + k_exc), 2935 chunks, 7 runs: median 3.959 ms (3.948-3
 laptop WSL (12 cores, libzstd 1.5.5), fresh clone 1563201: make test 21/0 with ~/golden auto-found
   symlinked corpus: head_region_200 fail (stat sized the link) -> fixed aa06270 (stat -L); rerun 21/0
 one-command verify confirmed today on 3 environments: Colab T4, laptop WSL, ace-core
+cross-version fixtures (verify/fixtures, 4 MiB chr1 slice @100 MiB, sha256 be1059b6..):
+  zstd-1.4.8 fixture 1200520 B (ace-core), zstd-1.5.5 fixture 1199432 B (laptop)
+  ace-core 1.4.8: decode 1.4.8 pass, decode 1.5.5 pass, re-encode == fixture pass
+  laptop  1.5.5: decode 1.4.8 pass, decode 1.5.5 pass, re-encode == fixture pass
+  claims head_fixture_* in HEAD judge, no corpus needed; found .gitignore *.aet swallowing fixtures
