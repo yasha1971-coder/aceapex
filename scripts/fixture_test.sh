@@ -35,4 +35,17 @@ if [ -f $F/empty.aet ]; then
   cmp -s $T/e0.aet $F/empty.aet && r=pass || r=fail
   printf 'head_fixture_empty_encode\t%s\tencode of 0 bytes == empty.aet (68 B)\n' "$r"
 fi
+# conformance set (docs/FORMAT_ACEPX2.md s7): every archive in verify/fixtures/conf decodes to the
+# sha256 in the manifest; the 4th column is the decode environment a LEGACY archive needs.
+if [ -f $F/conf/manifest.tsv ]; then
+  ok=0; n=0; bad=""
+  while IFS=$'\t' read -r name sz sha denv; do
+    n=$((n+1)); E=""; [ "$denv" != "-" ] && E="$denv"
+    env -i PATH="$PATH" $E $B d --in $F/conf/$name.aet --out $T/c_$name --threads 2 >/dev/null 2>&1
+    got=$(sha256sum $T/c_$name 2>/dev/null | cut -c1-64)
+    if [ "$got" = "$sha" ]; then ok=$((ok+1)); else bad="$bad $name"; fi
+  done < $F/conf/manifest.tsv
+  [ $n -gt 0 ] && [ $ok = $n ] && r=pass || r=fail
+  printf 'head_conformance_cli\t%s\t%d/%d fixtures decode to manifest sha256%s\n' "$r" $ok $n "${bad:+; failed:$bad}"
+fi
 rm -rf $T

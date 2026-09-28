@@ -25,6 +25,13 @@ Full GPU path on the archive as written, one process (nvCOMP zstd + unpack kerne
 Pod-day record: [`results/pod-2026-09-27.json`](results/pod-2026-09-27.json) (31 claims), raw log, [decisions](docs/DECISIONS.md).
 Details: [Verify every published number](#verify-every-published-number).
 
+**Embedding.** The whole decoder is [`c/aceapex_decode.c`](c/aceapex_decode.c): 261 lines of C99, libzstd the only
+dependency, region and batch API with the names of [`src/aceapex.h`](src/aceapex.h); `make axdec libaceapex_decode.so`.
+The format is specified in [`docs/FORMAT_ACEPX2.md`](docs/FORMAT_ACEPX2.md) and pinned by the conformance fixtures in
+[`verify/fixtures/`](verify/fixtures/) (14 archives + cross-libzstd + empty), which `make test` judges for both decoders.
+Python: `pip install ./python` (needs libzstd-dev), then `aceapex.open("x.aet").read(offset, length)` or `.ranges([...])`.
+GPU: [`aceapex_gpu.cu`](aceapex_gpu.cu) reads the same archive on the device through nvCOMP's zstd, two unpack kernels and the match kernel.
+
 Measured against bgzip and zstd-seekable on the same operation, nine axes, every answer verified
 byte for byte: [hw-apex-bench](https://yasha1971-coder.github.io/hw-apex-bench/). ACEAPEX does not
 lead every column there, and the ones it loses are printed as they came out.

@@ -36,4 +36,26 @@ if [ -f $F/empty.aet ]; then
   [ $rc = 0 ] && [ "$(stat -c%s $T/ce.out 2>/dev/null)" = 0 ] && r=pass || r=fail
   printf 'head_cdecoder_empty\t%s\tC decoder on empty.aet: rc=%s, %s bytes\n' "$r" "$rc" "$(stat -c%s $T/ce.out 2>/dev/null)"
 fi
+if [ -f $F/conf/manifest.tsv ]; then
+  ok=0; n=0; bad=""
+  while IFS=$'\t' read -r name sz sha denv; do
+    n=$((n+1)); E=""; [ "$denv" != "-" ] && E="$denv"
+    env -i PATH="$PATH" $E $T/axdec $F/conf/$name.aet $T/cc_$name >/dev/null 2>&1
+    got=$(sha256sum $T/cc_$name 2>/dev/null | cut -c1-64)
+    if [ "$got" = "$sha" ]; then ok=$((ok+1)); else bad="$bad $name"; fi
+  done < $F/conf/manifest.tsv
+  [ $n -gt 0 ] && [ $ok = $n ] && r=pass || r=fail
+  printf 'head_conformance_cdecoder\t%s\t%d/%d fixtures decode to manifest sha256%s\n' "$r" $ok $n "${bad:+; failed:$bad}"
+fi
+# the pip package compiles its own copy of the decoder: it must be byte-identical to c/
+if cmp -s c/aceapex_decode.c python/csrc/aceapex_decode.c && cmp -s c/aceapex_decode.h python/csrc/aceapex_decode.h; then r=pass; else r=fail; fi
+printf 'head_python_csrc_in_sync\t%s\tpython/csrc == c/ (aceapex_decode.c, .h)\n' "$r"
+# python layer over the same fixtures, without installing: ctypes loads a fresh .so
+if python3 -c "import pytest" 2>/dev/null; then
+  if ${CC:-gcc} -std=c99 -O2 -fPIC -shared -Ic -o $T/libaceapex_decode.so c/aceapex_decode.c -lzstd 2>/dev/null \
+     && ACEAPEX_DECODE_SO=$T/libaceapex_decode.so PYTHONPATH=python python3 -m pytest -q python/tests >$T/py.log 2>&1; then r=pass; else r=fail; fi
+  printf 'head_python_tests\t%s\t%s\n' "$r" "$(tail -n 1 $T/py.log | tr '\t' ' ' | head -c 120)"
+else
+  printf 'head_python_tests\tdeclared\tpytest not installed on this host\n'
+fi
 rm -rf $T

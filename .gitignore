@@ -1,5 +1,5 @@
-# бинари (собираются из исходников)
-aceapex
+# бинари (собираются из исходников); the CLI binary only at the root
+/aceapex
 aceapex_depth*
 aceapex_dl
 aceapex_enc
@@ -25,3 +25,11 @@ lzbench/
 
 # cross-version fixtures are tracked on purpose
 !verify/fixtures/*.aet
+!verify/fixtures/conf/*.aet
+
+# python package build artefacts
+python/build/
+python/*.egg-info/
+python/aceapex/_aceapex_decode*.so
+__pycache__/
+.pytest_cache/
