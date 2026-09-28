@@ -24,10 +24,17 @@ $(PROG): $(OBJS)
 	$(LD) -o $@ $^ -lpthread $(ZSTD_LIBS)
 
 clean:
-	rm -rf $(OBJS) $(PROG)
+	rm -rf $(OBJS) $(PROG) axdec libaceapex_decode.so
 
 # aceapex_api.cpp #includes aceapex_main.cpp; make must see that edge.
 src/aceapex_api.o: src/aceapex_main.cpp src/aceapex.h src/ax_align.h
+
+# Standalone C99 decoder (no C++, no threads): CLI and a shared library for bindings.
+axdec: c/axdec.c c/aceapex_decode.c c/aceapex_decode.h
+	$(CC) -std=c99 -O2 -Wall -Ic $(ZSTD_CFLAGS) -o $@ c/axdec.c c/aceapex_decode.c $(ZSTD_LIBS)
+
+libaceapex_decode.so: c/aceapex_decode.c c/aceapex_decode.h
+	$(CC) -std=c99 -O2 -Wall -fPIC -shared -Ic $(ZSTD_CFLAGS) -o $@ c/aceapex_decode.c $(ZSTD_LIBS)
 
 test:
 	./verify.sh HEAD
