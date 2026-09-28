@@ -13,3 +13,9 @@ clocks after runs: SM 1155 MHz (boost 1590), mem 5000 MHz, 67 C, throttle 0x0; b
 CPU encode 2 threads: 22.45 MB/s (LZ77 8.0 s of 11.3 s); CPU decode wall 161 MB/s
 resolved: pod chr1 16K = 69473882 B (libzstd 1.4.8), reproduced on ace-core byte-exact;
   colab 68418921 B at same profile = libzstd 1.5.5, 1.5% smaller on 16 KiB chunks
+nvCOMP 5.3.0 python, RAW zstd, T4: off/len/cmd/lit all bit-perfect (4/4), 2 profiles
+  timings via python API are call-overhead bound (len: 2 frames, 65 KB, 16.6 ms) - not GPU numbers
+  proper measurement: C++ nvcompBatchedZstdDecompressAsync, warm, events (POD DAY 2 item, doable on T4)
+PCIe Gen3 x16: H2D 69.4 MB compressed pinned 5.65 ms = 12.3 GB/s (pageable 6.9 GB/s)
+  delivered lower bound, sequential H2D + v7-RA G=32: 16.4 GB/s of original bytes
+FSE_CHUNK=65536 same block size: 68122726 B ratio 3.7276 (vs 3.7115 at 4096), RT_OK
