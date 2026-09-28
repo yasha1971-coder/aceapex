@@ -282,6 +282,15 @@
     "tolerance": "-",
     "verdict": "declared",
     "command": "design note from src/aceapex_main.cpp decode paths"
+   },
+   {
+    "claim_id": "pod_aet_entropy_layer_is_standard_zstd",
+    "level": "R",
+    "expected": "all 4 streams bit-perfect via nvCOMP",
+    "measured": "off 1472 + len 17 + cmd 2580 frames (4 KiB chunks) and lit 11748 frames (2935 DNA chunks x 4 sub-frames + 8 plain, 64 KiB chunks): all byte-identical to the CPU dump",
+    "tolerance": "-",
+    "verdict": "pass",
+    "command": "scripts/aet_gpu_zstd.py + scripts/aet_gpu_lit.py on chr1 interactive (nvCOMP 5.3.0 RAW zstd bitstream, H100); throughput of this Python path (0.2-2.9 GB/s) is not a figure: per-frame Python arrays; C++ batched API is the next test"
    }
   ]
  }
