@@ -19,6 +19,7 @@ Judges the contract, 200 random regions and all 6 paper tags from a clean enviro
 writes `results/<tag>.json` with provenance (host, cores, libzstd, compiler) and prints
 pass / fail / known-deviation per claim. GPU claims need an H100 + nvCOMP 5.3;
 without one they are marked `skipped-gpu`, never `pass`.
+Encode is CPU-only, one pass: chr1 (254 MB) in 0.94 s on 8 threads = 270 MB/s, peak RSS 0.87 GB; archive bytes do not depend on thread count (ace-core, libzstd 1.4.8).
 Pod-day record: [`results/pod-2026-09-27.json`](results/pod-2026-09-27.json) (31 claims), raw log, [decisions](docs/DECISIONS.md).
 Details: [Verify every published number](#verify-every-published-number).
 
