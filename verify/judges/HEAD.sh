@@ -11,12 +11,18 @@ if env -i PATH="$PATH" HOME="$HOME" BIN=./aceapex bash scripts/region_test.sh "$
 HA=$(sha256sum /tmp/_vh.aet | cut -c1-16)
 fi
 HB=$(sha256sum ./aceapex | cut -c1-16)
+bash scripts/fixture_test.sh > /tmp/_vh_fx.tsv 2>/dev/null
 python3 - "$V" "$M" "$HA" "$HB" <<'PY'
 import json,sys
 d=json.load(open('results.json')); c=d.setdefault('claims',[])
 c.append({"claim_id":"head_archive_sha256_chr1_interactive","level":"M","expected":"-","tolerance":"-","measured":sys.argv[3],"verdict":"declared","command":"sha256 of chr1 interactive archive, first 16 hex; same-libzstd comparison only"})
 c.append({"claim_id":"head_binary_sha256","level":"M","expected":"-","tolerance":"-","measured":sys.argv[4],"verdict":"declared","command":"sha256 of ./aceapex built by make, first 16 hex"})
+EX=open('verify/fixtures/chr1_4MiB.sha256').read().strip()[:16]+'..'
+for l in open('/tmp/_vh_fx.tsv'):
+    cid,v,m=l.rstrip('\n').split('\t')
+    c.append({"claim_id":cid,"level":"R","expected":EX if 'decode' in cid else 'bytes==',
+      "tolerance":"0","measured":m,"verdict":v,"command":"scripts/fixture_test.sh"})
 c.append({"claim_id":"head_region_200","level":"R","expected":"bad=0","tolerance":"0","measured":sys.argv[2],"verdict":sys.argv[1],"command":"scripts/region_test.sh chr1 interactive 200"})
 json.dump(d,open(__import__('os').environ['RECORDS'],'w'))
 PY
-git checkout -q -- results.json 2>/dev/null; rm -f /tmp/_vh.aet /tmp/_vh.log
+git checkout -q -- results.json 2>/dev/null; rm -f /tmp/_vh.aet /tmp/_vh.log /tmp/_vh_fx.tsv
