@@ -39,3 +39,11 @@ cross-version fixtures (verify/fixtures, 4 MiB chr1 slice @100 MiB, sha256 be105
   ace-core 1.4.8: decode 1.4.8 pass, decode 1.5.5 pass, re-encode == fixture pass
   laptop  1.5.5: decode 1.4.8 pass, decode 1.5.5 pass, re-encode == fixture pass
   claims head_fixture_* in HEAD judge, no corpus needed; found .gitignore *.aet swallowing fixtures
+aceapex_gpu.cu (one process on the .aet: nvCOMP zstd into stream buffers, unpack, v7-RA), T4, chr1:
+  G probe 8/16/32 on 2048 blocks: 2.882/2.138/1.624 ms -> chosen G=32 automatically
+  sequential: H2D 5.56 + zstd 12.7-13.0 + unpack 4.1 + match 10.4-10.7 = 32.7-33.4 ms -> 7.6-7.8 GB/s delivered
+  on-device 27.2-27.8 ms -> 9.1-9.3 GB/s; FNV bit-perfect on warm-up, sequential and pipeline passes
+  H2D/zstd overlap: batches=1 -0.5%, 2 +1.5%, 4 +0.7%, 8 -24% -> ~1.1 ms per extra nvCOMP call;
+  on T4 the bus (5.6 ms) is 2.3x shorter than the entropy decode, so overlap cannot pay; decode-bound
+  FSE_CHUNK=65536 archive (69114730 B, -0.5%): 12004 frames, zstd 14.2 ms (slower than 4K: 12.7); 34.2 ms
+  -> the interactive profile (FSE 4K) is also the best GPU profile on T4; no separate gpu profile needed

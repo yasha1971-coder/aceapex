@@ -21,7 +21,7 @@ pass / fail / known-deviation per claim. GPU claims need an H100 + nvCOMP 5.3;
 without one they are marked `skipped-gpu`, never `pass`.
 Encode is CPU-only, one pass: chr1 (254 MB) in 0.94 s on 8 threads = 270 MB/s, peak RSS 0.87 GB; archive bytes do not depend on thread count (ace-core, libzstd 1.4.8).
 Consumer-class GPU: Tesla T4 (Colab, CUDA 12.8, libzstd 1.5.5) decodes chr1 at 25.9 GB/s, bit-perfect, 7-run median; make test there: 21 pass / 0 fail. Log: [results/colab-t4-2026-09-28.log](results/colab-t4-2026-09-28.log).
-Full GPU path on the archive as written (nvCOMP zstd + unpack kernels + match kernel), T4: 31.6 ms for chr1 = 8.0 GB/s on-device, bit-perfect; harness `gpu_zstd_batch.cu`.
+Full GPU path on the archive as written, one process (nvCOMP zstd + unpack kernels + match kernel, G chosen by a probe), T4: 27.8 ms on-device for chr1 = 9.1 GB/s, 33.4 ms with H2D = 7.6 GB/s delivered, bit-perfect; harness `aceapex_gpu.cu`.
 Pod-day record: [`results/pod-2026-09-27.json`](results/pod-2026-09-27.json) (31 claims), raw log, [decisions](docs/DECISIONS.md).
 Details: [Verify every published number](#verify-every-published-number).
 
