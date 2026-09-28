@@ -14,3 +14,13 @@ use the `aceapex` CLI.
 Every call fails closed: a corrupted archive raises `aceapex.DecodeError`, never returns
 partial bytes. The same fixtures that judge the C decoder (`verify/fixtures/`) run under
 `pytest python/tests`.
+
+## Windows for sequence models (PyTorch optional)
+
+    import aceapex.torch as at, torch
+    ds = at.RandomWindows("t2t.aet", length=8192, count=100_000, seed=1)   # or TiledWindows
+    dl = torch.utils.data.DataLoader(ds, batch_size=64, num_workers=4)
+    for x in dl: ...                       # uint8 [64, 8192], ASCII bases, decoded per batch from the archive
+
+`ds.batch(idx)` decodes a batch through one `ranges` call (each block once); `ds.numpy_batch(idx)`
+does the same without torch. Workers re-open their own decoder handle after pickling.
