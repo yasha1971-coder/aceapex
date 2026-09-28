@@ -13,6 +13,7 @@ fi
 HB=$(sha256sum ./aceapex | cut -c1-16)
 bash scripts/fixture_test.sh > /tmp/_vh_fx.tsv 2>/dev/null
 bash scripts/cdec_test.sh >> /tmp/_vh_fx.tsv 2>/dev/null
+bash scripts/arm_test.sh >> /tmp/_vh_fx.tsv 2>/dev/null
 python3 - "$V" "$M" "$HA" "$HB" <<'PY'
 import json,sys
 d=json.load(open('results.json')); c=d.setdefault('claims',[])

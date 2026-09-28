@@ -67,6 +67,22 @@ jobs:
     - uses: actions/upload-artifact@v4
       with: {name: results-HEAD, path: results/HEAD.json}
 
+  # A4: the C decoder and the CLI on aarch64 and armv7 under qemu-user, all fixtures bit-perfect,
+  # and the ARM encoders must produce the same bytes as the x86 fixture of the same libzstd line.
+  arm:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Cross toolchains and qemu
+      run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf qemu-user-static
+    - name: Static libzstd for both targets
+      run: git clone -q --depth 1 --branch v1.5.6 https://github.com/facebook/zstd.git /tmp/zstd && sudo bash scripts/arm_zstd.sh /tmp/zstd /opt/zstd-arm
+    - name: Judge
+      run: |
+        bash scripts/arm_test.sh | tee /tmp/arm.tsv
+        grep -q fail /tmp/arm.tsv && exit 1
+        [ "$(grep -c pass /tmp/arm.tsv)" = 4 ] || { echo "expected 4 pass"; exit 1; }
+
   verify-tags:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest

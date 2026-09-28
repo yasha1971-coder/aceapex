@@ -47,3 +47,10 @@ aceapex_gpu.cu (one process on the .aet: nvCOMP zstd into stream buffers, unpack
   on T4 the bus (5.6 ms) is 2.3x shorter than the entropy decode, so overlap cannot pay; decode-bound
   FSE_CHUNK=65536 archive (69114730 B, -0.5%): 12004 frames, zstd 14.2 ms (slower than 4K: 12.7); 34.2 ms
   -> the interactive profile (FSE 4K) is also the best GPU profile on T4; no separate gpu profile needed
+ARM (A4), 28.09 evening, container x86-64 host, qemu-user, zstd v1.5.6 static cross-built:
+  aarch64: C decoder 17/17 fixtures bit-perfect; C++ CLI decode 14/14 conf; encode of the 4 MiB
+    slice = 1199432 B, byte-identical to the x86 libzstd-1.5.5 fixture; round-trip bit-perfect
+  armv7 (32-bit, gnueabihf): same, 17/17, CLI 14/14, encode bytes identical, batch 200 bit-perfect
+  archive bytes independent of CPU architecture (x86-64/1.5.5 == arm64/1.5.6 == armv7/1.5.6)
+  qemu-user does not trap unaligned access: alignment rests on the UBSan run (28.09, C decoder)
+  judge: scripts/arm_test.sh (4 claims head_arm64_*/head_armv7_*; declared without toolchain), CI job arm
