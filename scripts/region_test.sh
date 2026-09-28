@@ -4,7 +4,7 @@
 set -euo pipefail
 ORIG=$1; AET=$2; N=${3:-200}; BIN=${BIN:-./aceapex}
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
-SZ=$(stat -c%s "$ORIG")
+SZ=$(stat -L -c%s "$ORIG")
 python3 - "$ORIG" "$SZ" "$N" "$W" <<'PY'
 import sys,random
 orig,sz,n,w=sys.argv[1],int(sys.argv[2]),int(sys.argv[3]),sys.argv[4]
