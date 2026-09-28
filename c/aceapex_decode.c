@@ -1,6 +1,7 @@
 /* aceapex_decode.c - standalone C99 decoder for ACEPX2 archives. See aceapex_decode.h.
  *
  * Archive layout (all little-endian, packed):
+ *   Empty input = one AetHeader: num_blocks 0, orig_size 0, stream sizes 0, block_size nonzero.
  *   AetHeader 68 B: magic "ACEPX2\0\0", u32 version, u64 orig_size, u32 block_size,
  *                   u32 num_blocks, u8 xxh3[8], u64 zlit_sz, zoff_sz, zlen_sz, zcmd_sz
  *   BlockOffsets 64 B x num_blocks: lit_off, off_off, len_off, cmd_off, then the 4 sizes,
@@ -42,7 +43,10 @@ static int open_arc(const void* src, size_t n, Arc* a){
     if(!src || n<68 || memcmp(p,"ACEPX2\0\0",8)) return ACEAPEX_ERR_DATA;
     a->orig=rd64(p+12); a->bs=rd32(p+20); a->nb=rd32(p+24);
     a->zls=rd64(p+36); a->zos=rd64(p+44); a->zns=rd64(p+52); a->zcs=rd64(p+60);
-    if(!a->bs || !a->nb || (uint64_t)a->nb*a->bs < a->orig) return ACEAPEX_ERR_DATA;
+    if(!a->bs) return ACEAPEX_ERR_DATA;
+    if(!a->nb){ /* empty archive: one header, orig 0, no streams */
+        if(a->orig || a->zls || a->zos || a->zns || a->zcs) return ACEAPEX_ERR_DATA; }
+    else if((uint64_t)a->nb*a->bs < a->orig) return ACEAPEX_ERR_DATA;
     uint64_t need=68+(uint64_t)a->nb*64+a->zls+a->zos+a->zns+a->zcs;
     if(need>n) return ACEAPEX_ERR_DATA;
     a->bo=p+68; a->zl=p+68+(size_t)a->nb*64;

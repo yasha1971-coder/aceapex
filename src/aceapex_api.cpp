@@ -19,7 +19,10 @@ int64_t aceapex_compress(
     // Empty input: nothing to encode. Returning 0 avoids a division by
     // num_blocks==0 further down (SIGFPE). Reported paths never hit this in
     // lzbench, but the public API must not crash on an empty buffer.
-    if (src_size == 0) return 0;
+    if (src_size == 0) {                               // empty input -> empty archive (one header)
+        if (!dst) return ACEAPEX_ERR_DATA;
+        if (dst_capacity < sizeof(AetHeader)) return ACEAPEX_ERR_BUFFER;
+        AetHeader eh; ax_empty_header(eh); memcpy(dst,&eh,sizeof(eh)); return (int64_t)sizeof(eh); }
     if (!src || !dst) return ACEAPEX_ERR_DATA;
     if (threads <= 0) threads = 8;
     if (level <= 0)   level   = 2;
@@ -70,9 +73,11 @@ int64_t aceapex_decompress(
     const void* src, size_t src_size,
     void*       dst, size_t dst_capacity)
 {
+    if (!src || src_size < sizeof(AetHeader)) return ACEAPEX_ERR_DATA;
     const uint8_t* p=(const uint8_t*)src;
     AetHeader hdr; memcpy(&hdr,p,sizeof(hdr));
     if (memcmp(hdr.magic,"ACEPX2\0\0",8)!=0) return ACEAPEX_ERR_DATA;
+    if (hdr.num_blocks == 0) return ax_is_empty_archive(hdr) ? 0 : ACEAPEX_ERR_DATA;
     if (hdr.orig_size>dst_capacity) return ACEAPEX_ERR_BUFFER;
 
     // ---- Header validation. Runs once per archive, costs nothing in the hot loop.
@@ -141,7 +146,8 @@ int64_t aceapex_decompress_region(
     const uint8_t* p = (const uint8_t*)src;
     AetHeader hdr; memcpy(&hdr, p, sizeof(hdr));
     if (memcmp(hdr.magic,"ACEPX2\0\0",8) != 0) return ACEAPEX_ERR_DATA;
-    if (hdr.block_size == 0 || hdr.num_blocks == 0) return ACEAPEX_ERR_DATA;
+    if (hdr.num_blocks == 0) return (ax_is_empty_archive(hdr) && length == 0) ? 0 : ACEAPEX_ERR_DATA;
+    if (hdr.block_size == 0) return ACEAPEX_ERR_DATA;
     if (length == 0) return 0;
     if (offset > hdr.orig_size || length > hdr.orig_size - offset) return ACEAPEX_ERR_DATA;
     if (length > dst_capacity) return ACEAPEX_ERR_BUFFER;
@@ -308,7 +314,10 @@ int64_t aceapex_decompress_ranges(
     const uint8_t* p=(const uint8_t*)src;
     AetHeader hdr; memcpy(&hdr,p,sizeof(hdr));
     if(memcmp(hdr.magic,"ACEPX2\0\0",8)!=0) return ACEAPEX_ERR_DATA;
-    if(hdr.block_size==0||hdr.num_blocks==0) return ACEAPEX_ERR_DATA;
+    if(hdr.num_blocks==0){ if(!ax_is_empty_archive(hdr)) return ACEAPEX_ERR_DATA;
+        int64_t okn=0; for(size_t i=0;i<count;i++){ ranges[i].written = ranges[i].length==0 ? 0 : ACEAPEX_ERR_DATA; if(!ranges[i].length) okn++; }
+        return okn; }
+    if(hdr.block_size==0) return ACEAPEX_ERR_DATA;
     uint64_t need=(uint64_t)sizeof(hdr)+(uint64_t)hdr.num_blocks*sizeof(BlockOffsets)
                  +hdr.zlit_sz+hdr.zoff_sz+hdr.zlen_sz+hdr.zcmd_sz;
     if(need>src_size) return ACEAPEX_ERR_DATA;

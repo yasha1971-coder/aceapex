@@ -687,8 +687,21 @@ struct AetHeader {
 // pointers into arbitrary memory (SIGSEGV). Absolute offsets make this cheap: every
 // bound is a constant known before decoding starts, so all of this runs once per
 // archive and costs nothing in the hot loop.
+// Empty archive (28.09): an empty input is a valid archive of exactly one header,
+// num_blocks == 0, orig_size == 0, all four stream sizes 0, block_size nonzero
+// (encoders write 65536). Before this the API returned 0 bytes for an empty input,
+// which is "no archive" - a caller could not round-trip it (lzbench CI, tiny inputs).
+static inline bool ax_is_empty_archive(const AetHeader& h) {
+    return h.num_blocks == 0 && h.orig_size == 0 && h.block_size != 0 &&
+           h.zlit_sz == 0 && h.zoff_sz == 0 && h.zlen_sz == 0 && h.zcmd_sz == 0;
+}
+static inline void ax_empty_header(AetHeader& h) {
+    memset(&h, 0, sizeof(h)); memcpy(h.magic, "ACEPX2\0\0", 8); h.version = 2; h.block_size = 65536;
+    uint64_t hv = OUR_CHECKSUM(nullptr, 0); memcpy(h.xxhash, &hv, 8);
+}
 static bool ax_header_ok(const AetHeader& h, uint64_t src_size) {
-    if (h.block_size == 0 || h.num_blocks == 0) return false;
+    if (h.num_blocks == 0) return ax_is_empty_archive(h) && src_size >= sizeof(AetHeader);
+    if (h.block_size == 0) return false;
     if ((uint64_t)h.num_blocks * (uint64_t)h.block_size < h.orig_size) return false;
     uint64_t need = (uint64_t)sizeof(AetHeader)
                   + (uint64_t)h.num_blocks * sizeof(BlockOffsets)
@@ -1314,6 +1327,11 @@ static int do_compress(const char* in_path, const char* out_path, int threads, i
     if (fin_fd<0) { fprintf(stderr,"Cannot open: %s\n",in_path); return 1; }
     struct stat fin_st; fstat(fin_fd,&fin_st);
     size_t src_size=(size_t)fin_st.st_size;
+    if (src_size == 0) {                               // empty input -> empty archive (one header)
+        close(fin_fd); AetHeader eh; ax_empty_header(eh);
+        FILE* fo=fopen(out_path,"wb"); if(!fo){ fprintf(stderr,"Cannot write: %s\n",out_path); return 1; }
+        fwrite(&eh,sizeof(eh),1,fo); fclose(fo);
+        fprintf(stderr,"[*] Compress: %s (0 bytes) -> empty archive, %zu bytes\n",in_path,sizeof(eh)); return 0; }
     uint8_t* src=(uint8_t*)mmap(nullptr,src_size,PROT_READ,MAP_SHARED|MAP_POPULATE,fin_fd,0);
     close(fin_fd);
     if (src==MAP_FAILED) { fprintf(stderr,"mmap failed\n"); return 1; }
@@ -1420,6 +1438,10 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
       fseek(fin,0,SEEK_END); long fsz=ftell(fin); fseek(fin,sizeof(hdr),SEEK_SET);
       if (fsz < 0 || !ax_header_ok(hdr,(uint64_t)fsz)) {
           fprintf(stderr,"Corrupt archive (header)\n"); fclose(fin); return 1; } }
+    if (hdr.num_blocks == 0) {                        // empty archive: one header, no blocks
+        fclose(fin); FILE* fo=fopen(out_path,"wb"); if(!fo){ fprintf(stderr,"Cannot write: %s\n",out_path); return 1; }
+        fclose(fo); uint64_t dv=OUR_CHECKSUM(nullptr,0), hv3; memcpy(&hv3,hdr.xxhash,8);
+        fprintf(stderr,"  Empty archive: 0 bytes written, %s\n", dv==hv3?"hash OK":"HASH MISMATCH"); return dv==hv3?0:1; }
 
     uint32_t nb=hdr.num_blocks;
     std::vector<BlockOffsets> boffs(nb);

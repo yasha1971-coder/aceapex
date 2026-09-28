@@ -31,4 +31,9 @@ exp=b''.join(ref[o:o+l] for o,l in rg)
 v='pass' if got==exp else 'fail'
 print(f"head_cdecoder_ranges_200\t{v}\t200 random ranges via aceapex_decompress_ranges, {len(exp)} bytes, rc={r.returncode}")
 PY
+if [ -f $F/empty.aet ]; then
+  $T/axdec $F/empty.aet $T/ce.out >/dev/null 2>&1; rc=$?
+  [ $rc = 0 ] && [ "$(stat -c%s $T/ce.out 2>/dev/null)" = 0 ] && r=pass || r=fail
+  printf 'head_cdecoder_empty\t%s\tC decoder on empty.aet: rc=%s, %s bytes\n' "$r" "$rc" "$(stat -c%s $T/ce.out 2>/dev/null)"
+fi
 rm -rf $T

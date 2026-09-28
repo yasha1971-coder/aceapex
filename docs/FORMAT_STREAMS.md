@@ -18,6 +18,12 @@ unless stated otherwise.
     [...]                  length stream,   zlen_sz bytes
     [...]                  command stream,  zcmd_sz bytes
 
+**Empty archive (28.09.2026).** An empty input is a valid archive of exactly one
+header: `num_blocks = 0`, `orig_size = 0`, all four stream sizes 0, `block_size` nonzero
+(encoders write 65536), `xxhash` = XXH3 of zero bytes. Readers accept `num_blocks = 0`
+only under these conditions; a region read of length 0 returns 0, any other length is
+an error. Fixture: `verify/fixtures/empty.aet` (68 bytes).
+
 ### AetHeader — 68 bytes, `#pragma pack(1)`
 
 | offset | size | field | note |

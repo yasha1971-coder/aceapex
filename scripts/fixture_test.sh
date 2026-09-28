@@ -25,4 +25,14 @@ if [ -f $F/chr1_4MiB.zstd-$ZV.aet ] && [ -s $T/o_$ZV ]; then
 else
   printf 'head_fixture_encode_determinism\tdeclared\tno fixture for host libzstd %s yet\n' "$ZV"
 fi
+# empty archive: one header, num_blocks 0 (28.09). Decode gives 0 bytes; encode of an empty
+# input reproduces the fixture byte for byte on every libzstd (no zstd frames inside).
+if [ -f $F/empty.aet ]; then
+  : > $T/e0; env -i PATH="$PATH" $B d --in $F/empty.aet --out $T/e0.out --threads 2 >/dev/null 2>&1
+  [ "$(stat -c%s $T/e0.out 2>/dev/null)" = 0 ] && r=pass || r=fail
+  printf 'head_fixture_empty_decode\t%s\tempty.aet -> %s bytes\n' "$r" "$(stat -c%s $T/e0.out 2>/dev/null)"
+  env -i PATH="$PATH" $B c --in $T/e0 --out $T/e0.aet --threads 2 >/dev/null 2>&1
+  cmp -s $T/e0.aet $F/empty.aet && r=pass || r=fail
+  printf 'head_fixture_empty_encode\t%s\tencode of 0 bytes == empty.aet (68 B)\n' "$r"
+fi
 rm -rf $T

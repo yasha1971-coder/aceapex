@@ -21,7 +21,7 @@ c.append({"claim_id":"head_binary_sha256","level":"M","expected":"-","tolerance"
 EX=open('verify/fixtures/chr1_4MiB.sha256').read().strip()[:16]+'..'
 for l in open('/tmp/_vh_fx.tsv'):
     cid,v,m=l.rstrip('\n').split('\t')
-    c.append({"claim_id":cid,"level":"R","expected":EX if 'fixture' in cid and 'determinism' not in cid else 'bytes==',
+    c.append({"claim_id":cid,"level":"R","expected":EX if 'fixture_decode_zstd' in cid else 'bytes==',
       "tolerance":"0","measured":m,"verdict":v,"command":"scripts/fixture_test.sh"})
 c.append({"claim_id":"head_region_200","level":"R","expected":"bad=0","tolerance":"0","measured":sys.argv[2],"verdict":sys.argv[1],"command":"scripts/region_test.sh chr1 interactive 200"})
 json.dump(d,open(__import__('os').environ['RECORDS'],'w'))

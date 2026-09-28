@@ -47,10 +47,46 @@ through `FSE_CHUNK` in the environment, stated in the contract. Only the fork ca
 `--fai`, `--region/--range`, `--profile`, `--view`. Porting the field into the fork or
 merging the fork into `src/` is a separate decision; the contract is not the place.
 
+## ADR-008 (2026-09-28) Cross-version fixtures are the format-safety claim
+A 4 MiB slice of chr1 (offset 100 MiB) archived on each libzstd version we ship
+against lives in `verify/fixtures/` (`chr1_4MiB.zstd-<ver>.aet`, tracked on purpose
+through a `.gitignore` exception). The HEAD judge decodes every fixture on every host
+and re-encodes the decoded slice against the fixture of the host's own libzstd. No
+corpus is needed, so the claim runs in CI. Archive bytes depend on the libzstd version
+(0.09 % between 1.4.8 and 1.5.5 at 16 KiB chunks); decodability does not.
+
+## ADR-009 (2026-09-28) A second decoder, in C99, judged like the first
+`c/aceapex_decode.c` is a standalone decoder: one translation unit, libzstd the only
+dependency, no threads or globals, the same names and error codes as `aceapex.h`
+(`aceapex_decompress`, `_region`, `_ranges`, plus `aceapex_decoded_size`). It reads
+every layout the C++ decoder reads and fails closed on every frame and bound. The
+BlockOffsets table sits at offset 68 and is read with `memcpy` (UBSan, ARM). It is
+judged against the same fixtures (`head_cdecoder_*`) and is the piece meant for
+embedding (bindings, databases, tools). Speed is not its goal; the C++ library keeps
+the parallel paths.
+
+## ADR-010 (2026-09-28) The GPU path reads the archive as written; G is probed
+`aceapex_gpu.cu` decodes an `.aet` in one process: nvCOMP batched zstd writes frames
+directly into the stream buffers, two kernels unpack DNA literal chunks, the v7-RA match
+kernel finishes. The parser group width G is chosen at run time by a short probe
+(T4 -> 32, H100 expected 8) instead of a compile-time constant. Measured on T4: the
+bus is 2.3x shorter than the entropy decode, so H2D/decode overlap does not pay there
+(each extra nvCOMP call costs ~1.1 ms); FSE chunks of 4 KiB decode faster than 64 KiB
+on nvCOMP, so the interactive profile is also the GPU profile. No `--profile gpu`.
+
+## ADR-011 (2026-09-28) An empty input is a valid archive of one header
+`aceapex_compress` on zero bytes used to return 0 - "no archive" - which no caller
+could round-trip (lzbench runs every codec on tiny inputs). An empty archive is now
+exactly one 68-byte header: `num_blocks 0`, `orig_size 0`, four stream sizes 0,
+`block_size 65536`, `xxhash` of zero bytes. Both decoders accept `num_blocks 0` only
+under these conditions; a region of length 0 returns 0, any other length is an error.
+Fixture `verify/fixtures/empty.aet`, claims `head_fixture_empty_*`, `head_cdecoder_empty`.
+
 ## Open
 - GPU figures in the README were taken in July on code that predates the literal
   transform, literal chunking and the chunk field. The README front page is rewritten
   only after they are re-measured on the current code (plan B3), with dates.
-- Second independent decoder: none. Blocks any path to a standard.
+- Second decoder: ours, in C99 (ADR-009). A third-party implementation from the
+  format document is still missing; that is what a standard needs.
 - `rans1_v4` (order-1 literals) replaces the DNA transform rather than adding to it;
   the default ratio would be recomputed as a whole. Undecided.
