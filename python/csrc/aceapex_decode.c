@@ -34,8 +34,8 @@ typedef struct {
 static uint64_t rd64(const uint8_t* p){ uint64_t v; memcpy(&v,p,8); return v; }
 static uint32_t rd32(const uint8_t* p){ uint32_t v; memcpy(&v,p,4); return v; }
 static BO bo_at(const uint8_t* t, size_t b){ BO o; memcpy(&o,t+64*b,64); return o; }
-static int zdec(void* d, size_t raw, const void* s, size_t n){
-    size_t r=ZSTD_decompress(d,raw,s,n); return !ZSTD_isError(r) && r==raw; }
+static int zdec(ZSTD_DCtx* x, void* d, size_t raw, const void* s, size_t n){
+    size_t r = x ? ZSTD_decompressDCtx(x,d,raw,s,n) : ZSTD_decompress(d,raw,s,n); return !ZSTD_isError(r) && r==raw; }
 
 /* ---- archive header / bounds ------------------------------------------------------- */
 static int open_arc(const void* src, size_t n, Arc* a){
@@ -61,7 +61,10 @@ typedef struct {
     int kind;                          /* 0 = FSE layout, 1 = lit chunked, 2 = lit legacy */
     int tagged; const uint8_t* tab; const uint8_t* data;   /* size table, first chunk */
     size_t* coff;                      /* compressed offset of each chunk (prefix sums) */
-    uint8_t* win; uint64_t wlo, whi;   /* decoded window [wlo,whi) */
+    uint8_t* win; size_t wcap;         /* assembly buffer for slices that span chunks */
+    struct { size_t idx; uint8_t* buf; size_t raw; unsigned age; } cc[4];   /* last decoded chunks */
+    unsigned tick;
+    ZSTD_DCtx* dctx;                   /* reused across chunks: one workspace per cursor */
 } Cur;
 static uint64_t fse_default_chunk(void){
     const char* e=getenv("FSE_CHUNK"); uint64_t v=e?strtoull(e,0,10):0;
@@ -69,7 +72,7 @@ static uint64_t fse_default_chunk(void){
     return 512*1024;
 }
 static int cur_open(Cur* c, const uint8_t* z, size_t zsz, int is_lit){
-    memset(c,0,sizeof *c); c->z=z; c->zsz=zsz;
+    memset(c,0,sizeof *c); c->z=z; c->zsz=zsz; for(int k=0;k<4;k++) c->cc[k].idx=(size_t)-1;
     if(zsz<8){ c->size=0; c->nc=0; return ACEAPEX_OK; }   /* empty stream (tiny inputs) */
     uint64_t h=rd64(z);
     if(is_lit && (h&((uint64_t)1<<62))){
@@ -98,9 +101,11 @@ static int cur_open(Cur* c, const uint8_t* z, size_t zsz, int is_lit){
     if((size_t)(c->data-z)+p>zsz) { free(c->coff); c->coff=0; return ACEAPEX_ERR_DATA; }
     return ACEAPEX_OK;
 }
-static void cur_close(Cur* c){ free(c->coff); free(c->win); c->coff=0; c->win=0; }
+static void cur_close(Cur* c){ free(c->coff); free(c->win); c->coff=0; c->win=0;
+    for(int k=0;k<4;k++){ free(c->cc[k].buf); c->cc[k].buf=0; }
+    if(c->dctx){ ZSTD_freeDCtx(c->dctx); c->dctx=0; } }
 
-static int dna_unpack(const uint8_t* s, size_t n, uint8_t* dst, size_t raw){
+static int dna_unpack(ZSTD_DCtx* x, const uint8_t* s, size_t n, uint8_t* dst, size_t raw){
     if(n<20) return 0;
     uint32_t nexc=rd32(s),h1=rd32(s+4),h2=rd32(s+8),h3=rd32(s+12),h4=rd32(s+16);
     if(20+(size_t)h1+h2+h3+h4>n) return 0;
@@ -108,41 +113,61 @@ static int dna_unpack(const uint8_t* s, size_t n, uint8_t* dst, size_t raw){
     uint8_t* seq=(uint8_t*)malloc(np+1); uint8_t* cse=(uint8_t*)malloc(nq+1);
     uint32_t* gap=(uint32_t*)malloc((size_t)nexc*4+4); uint8_t* val=(uint8_t*)malloc((size_t)nexc+1);
     if(!seq||!cse||!gap||!val){ ok=0; goto out; }
-    ok = zdec(seq,np,p,h1); p+=h1;
-    ok = ok && zdec(cse,nq,p,h2); p+=h2;
-    if(h3){ ok = ok && zdec(gap,(size_t)nexc*4,p,h3); } else memset(gap,0,(size_t)nexc*4); p+=h3;
-    if(h4){ ok = ok && zdec(val,nexc,p,h4); } else memset(val,0,nexc);
+    ok = zdec(x,seq,np,p,h1); p+=h1;
+    ok = ok && zdec(x,cse,nq,p,h2); p+=h2;
+    if(h3){ ok = ok && zdec(x,gap,(size_t)nexc*4,p,h3); } else memset(gap,0,(size_t)nexc*4); p+=h3;
+    if(h4){ ok = ok && zdec(x,val,nexc,p,h4); } else memset(val,0,nexc);
     if(!ok) goto out;
-    for(size_t i=0;i<raw;i++) dst[i]="ACGT"[(seq[i>>2]>>(6-2*(i&3)))&3];
-    for(size_t k=0;k<nq;k++){ uint8_t m=cse[k]; if(!m) continue;
-        size_t b=k<<3, lim=b+8<=raw?8:raw-b; for(size_t j=0;j<lim;j++) if(m&(0x80>>j)) dst[b+j]|=0x20; }
+    { /* bases: one packed byte -> four ASCII bases through a 256-entry u32 table, one store each */
+      static uint32_t T4[256]; static int ready=0;
+      if(!ready){ for(int v=0;v<256;v++){ uint8_t q[4]={(uint8_t)"ACGT"[(v>>6)&3],(uint8_t)"ACGT"[(v>>4)&3],(uint8_t)"ACGT"[(v>>2)&3],(uint8_t)"ACGT"[v&3]}; uint32_t w; memcpy(&w,q,4); T4[v]=w; } ready=1; }
+      size_t full=raw>>2; uint32_t* d32=(uint32_t*)dst;                 /* dst comes from malloc: aligned */
+      for(size_t k=0;k<full;k++) d32[k]=T4[seq[k]];
+      for(size_t i=full<<2;i<raw;i++) dst[i]=(uint8_t)"ACGT"[(seq[i>>2]>>(6-2*(i&3)))&3]; }
+    { /* case: one mask byte -> eight bytes of 0x20/0x00 through a 256-entry u64 table, one OR each */
+      static uint64_t M8[256]; static int mready=0;
+      if(!mready){ for(int v=0;v<256;v++){ uint8_t q[8]; for(int j=0;j<8;j++) q[j]=(v&(0x80>>j))?0x20:0; uint64_t w; memcpy(&w,q,8); M8[v]=w; } mready=1; }
+      size_t fullq=raw>>3; uint64_t* d64=(uint64_t*)dst;
+      for(size_t k=0;k<fullq;k++){ uint8_t m=cse[k]; if(m) d64[k]|=M8[m]; }
+      if(fullq<nq){ uint8_t m=cse[fullq]; size_t b=fullq<<3; for(size_t j=0;b+j<raw;j++) if(m&(0x80>>j)) dst[b+j]|=0x20; } }
     { uint64_t pos=0; for(uint32_t k=0;k<nexc;k++){ pos+=gap[k]; if(pos<raw) dst[pos]=val[k]; } }
 out:
     free(seq); free(cse); free(gap); free(val); return ok;
 }
 /* decode chunk i into dst (raw bytes) */
-static int cur_chunk(const Cur* c, size_t i, uint8_t* dst, size_t raw){
+static int cur_chunk(Cur* c, size_t i, uint8_t* dst, size_t raw){
+    if(!c->dctx) c->dctx=ZSTD_createDCtx();   /* NULL -> fall back to one-shot decompress */
     uint64_t e=rd64(c->tab+8*i); const uint8_t* p=c->data+c->coff[i]; size_t n=c->coff[i+1]-c->coff[i];
-    if(c->kind==0){ if(e>>63){ memcpy(dst,p,raw); return 1; } return zdec(dst,raw,p,n); }
+    if(c->kind==0){ if(e>>63){ memcpy(dst,p,raw); return 1; } return zdec(c->dctx,dst,raw,p,n); }
     if(!n) return raw==0;
-    if(!c->tagged) return zdec(dst,raw,p,n);
-    if(p[0]==1) return dna_unpack(p+1,n-1,dst,raw);
-    return zdec(dst,raw,p+1,n-1);
+    if(!c->tagged) return zdec(c->dctx,dst,raw,p,n);
+    if(p[0]==1) return dna_unpack(c->dctx,p+1,n-1,dst,raw);
+    return zdec(c->dctx,dst,raw,p+1,n-1);
 }
-/* make [from,to) of the decoded stream available; returns pointer to byte 'from' */
+/* decoded chunk i, from the 4-entry cache or freshly decoded into the least recently used slot */
+static const uint8_t* cur_chunk_get(Cur* c, size_t i, size_t* raw_out, int* err){
+    uint64_t o=(uint64_t)i*c->chunk; size_t raw=(size_t)((o+c->chunk<=c->size)?c->chunk:c->size-o); *raw_out=raw;
+    int slot=-1; unsigned oldest=~0u; int victim=0;
+    for(int k=0;k<4;k++){ if(c->cc[k].idx==i){ slot=k; break; } if(c->cc[k].age<oldest){ oldest=c->cc[k].age; victim=k; } }
+    if(slot<0){ slot=victim; uint8_t* b=(uint8_t*)realloc(c->cc[slot].buf,raw+64); if(!b){ *err=ACEAPEX_ERR_MEMORY; return 0; }
+        c->cc[slot].buf=b; c->cc[slot].idx=(size_t)-1;
+        if(!cur_chunk(c,i,b,raw)){ *err=ACEAPEX_ERR_DATA; return 0; }
+        c->cc[slot].idx=i; c->cc[slot].raw=raw; }
+    c->cc[slot].age=++c->tick; return c->cc[slot].buf;
+}
+/* make [from,to) of the decoded stream available; returns pointer to byte 'from'. A slice inside one
+ * chunk is served from that chunk's buffer; a slice spanning chunks is assembled by copying. */
 static const uint8_t* cur_get(Cur* c, uint64_t from, uint64_t to, int* err){
     if(to<=from) return c->z;                       /* empty slice: any valid pointer */
     if(to>c->size){ *err=ACEAPEX_ERR_DATA; return 0; }
-    if(c->win && from>=c->wlo && to<=c->whi) return c->win+(from-c->wlo);
-    size_t c0=(size_t)(from/c->chunk), c1=(size_t)((to-1)/c->chunk);
-    uint64_t lo=(uint64_t)c0*c->chunk, hi=(uint64_t)(c1+1)*c->chunk; if(hi>c->size) hi=c->size;
-    uint8_t* w=(uint8_t*)realloc(c->win,(size_t)(hi-lo)+1); if(!w){ *err=ACEAPEX_ERR_MEMORY; return 0; }
-    c->win=w; c->wlo=lo; c->whi=hi;
-    for(size_t i=c0;i<=c1;i++){
-        uint64_t o=(uint64_t)i*c->chunk; size_t raw=(size_t)((o+c->chunk<=c->size)?c->chunk:c->size-o);
-        if(!cur_chunk(c,i,w+(o-lo),raw)){ *err=ACEAPEX_ERR_DATA; c->whi=c->wlo; return 0; }
-    }
-    return w+(from-lo);
+    size_t c0=(size_t)(from/c->chunk), c1=(size_t)((to-1)/c->chunk), raw;
+    if(c0==c1){ const uint8_t* b=cur_chunk_get(c,c0,&raw,err); return b ? b+(from-(uint64_t)c0*c->chunk) : 0; }
+    size_t need=(size_t)(to-from); if(need+64>c->wcap){ uint8_t* w=(uint8_t*)realloc(c->win,need+64); if(!w){ *err=ACEAPEX_ERR_MEMORY; return 0; } c->win=w; c->wcap=need+64; }
+    size_t done=0;
+    for(size_t i=c0;i<=c1;i++){ const uint8_t* b=cur_chunk_get(c,i,&raw,err); if(!b) return 0;
+        uint64_t o=(uint64_t)i*c->chunk; uint64_t lo = from>o ? from : o; uint64_t hi = to<o+raw ? to : o+raw;
+        if(hi>lo){ memcpy(c->win+done,b+(lo-o),(size_t)(hi-lo)); done+=(size_t)(hi-lo); } }
+    return c->win;
 }
 
 /* ---- one block: literals + matches ----------------------------------------------- */
@@ -262,4 +287,45 @@ int64_t aceapex_decompress_ranges(const void* src, size_t n, aceapex_range_t* rg
     (void)threads;
     Dec d; int r=dec_open(&d,src,n); if(r){ dec_close(&d); return r; }
     int64_t k=serve(&d,rg,count); dec_close(&d); return k;
+}
+
+/* ---- persistent handle ------------------------------------------------------------ */
+struct aceapex_dec { Dec d; uint8_t* blk; size_t cur; };
+aceapex_dec_t* aceapex_dec_open(const void* src, size_t n){
+    aceapex_dec_t* h=(aceapex_dec_t*)calloc(1,sizeof *h); if(!h) return 0;
+    if(dec_open(&h->d,src,n)){ dec_close(&h->d); free(h); return 0; }
+    h->blk=(uint8_t*)malloc((size_t)h->d.a.bs+64); h->cur=(size_t)-1;
+    if(!h->blk){ dec_close(&h->d); free(h); return 0; }
+    return h;
+}
+int64_t aceapex_dec_size(const aceapex_dec_t* h){ return h ? (int64_t)h->d.a.orig : ACEAPEX_ERR_DATA; }
+void aceapex_dec_close(aceapex_dec_t* h){ if(!h) return; dec_close(&h->d); free(h->blk); free(h); }
+/* serve from the handle's block cache: a range that stays in the last decoded block costs no decode */
+static int64_t serve_h(aceapex_dec_t* h, aceapex_range_t* rg, size_t count){
+    Dec* d=&h->d; int64_t okn=0;
+    for(size_t i=0;i<count;i++){
+        aceapex_range_t* r=&rg[i];
+        if(r->length==0){ r->written=0; okn++; continue; }
+        if(!r->dst || r->offset>d->a.orig || r->length>d->a.orig-r->offset){ r->written=ACEAPEX_ERR_DATA; continue; }
+        uint64_t pos=r->offset, end=r->offset+r->length; uint8_t* out=(uint8_t*)r->dst; int64_t st=ACEAPEX_OK;
+        while(pos<end){
+            size_t b=(size_t)(pos/d->a.bs);
+            if(b!=h->cur){ h->cur=(size_t)-1; int e=dec_block(d,b,h->blk); if(e){ st=e; break; } h->cur=b; }
+            uint64_t bst=(uint64_t)b*d->a.bs, take=bst+d->a.bs-pos; if(take>end-pos) take=end-pos;
+            memcpy(out,h->blk+(pos-bst),(size_t)take); out+=take; pos+=take;
+        }
+        r->written= st? st : (int64_t)r->length; if(!st) okn++;
+    }
+    return okn;
+}
+int64_t aceapex_dec_region(aceapex_dec_t* h, void* dst, size_t cap, uint64_t off, uint64_t len){
+    if(!h) return ACEAPEX_ERR_DATA;
+    if(len==0) return 0;
+    if(cap<len) return ACEAPEX_ERR_BUFFER;
+    aceapex_range_t rg={off,len,dst,0}; int64_t k=serve_h(h,&rg,1); if(k<0) return k;
+    return rg.written;
+}
+int64_t aceapex_dec_ranges(aceapex_dec_t* h, aceapex_range_t* rg, size_t count){
+    if(!h||(!rg&&count)) return ACEAPEX_ERR_DATA;
+    return serve_h(h,rg,count);
 }

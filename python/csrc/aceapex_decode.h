@@ -42,6 +42,17 @@ typedef struct {
 int64_t aceapex_decompress_ranges(const void* src, size_t src_size,
                                   aceapex_range_t* ranges, size_t count, int threads);
 
+/* Persistent decoder: parses the archive once and keeps the per-stream chunk tables and
+ * the last decoded window of each stream between calls, so consecutive region reads that
+ * touch the same chunks do not decode them twice. The archive bytes must stay valid and
+ * unchanged for the life of the handle. A handle is not thread-safe; open one per thread. */
+typedef struct aceapex_dec aceapex_dec_t;
+aceapex_dec_t* aceapex_dec_open(const void* src, size_t src_size);   /* NULL on a bad archive or OOM */
+int64_t        aceapex_dec_size(const aceapex_dec_t* d);
+int64_t        aceapex_dec_region(aceapex_dec_t* d, void* dst, size_t dst_capacity, uint64_t offset, uint64_t length);
+int64_t        aceapex_dec_ranges(aceapex_dec_t* d, aceapex_range_t* ranges, size_t count);
+void           aceapex_dec_close(aceapex_dec_t* d);
+
 #ifdef __cplusplus
 }
 #endif

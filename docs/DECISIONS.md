@@ -82,6 +82,20 @@ exactly one 68-byte header: `num_blocks 0`, `orig_size 0`, four stream sizes 0,
 under these conditions; a region of length 0 returns 0, any other length is an error.
 Fixture `verify/fixtures/empty.aet`, claims `head_fixture_empty_*`, `head_cdecoder_empty`.
 
+## ADR-012 (2026-09-28) The C decoder gets a persistent handle and per-cursor caches
+`aceapex_dec_open/size/region/ranges/close` keep the parsed chunk tables, one
+`ZSTD_DCtx` per stream and the last four decoded chunks of each stream between calls;
+slices that span chunks are assembled by copying, never by decoding a chunk twice. The
+stateless functions stay for one-shot use. Measured on a 64 MB DNA archive, random 16 KiB
+regions: 492 -> 135 us (C++ library: 114); full decode 0.79 -> 0.245 s. The DNA unpack
+writes bases and case through typed 256-entry tables (`uint32_t`, `uint64_t`), not
+per-byte loops; the `__memcpy_chk` per 4 bytes that Ubuntu's fortified glibc turned the
+first table version into was 44 % of the profile. The handle and table idea came from
+the user's second agent as an uncommitted edit in the working tree; it was set aside,
+judged like an external patch (three compilers, 17 fixtures, ASan/UBSan, 900 fuzz runs),
+then extended with the DCtx and chunk cache. Rule from this: a second agent works on a
+branch and lands through `make test`, never by editing another session's working tree.
+
 ## Open
 - GPU figures in the README were taken in July on code that predates the literal
   transform, literal chunking and the chunk field. The README front page is rewritten

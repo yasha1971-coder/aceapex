@@ -30,6 +30,16 @@ def _load():
     lib.aceapex_decompress_region.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint64, ctypes.c_uint64]
     lib.aceapex_decompress_ranges.restype = ctypes.c_int64
     lib.aceapex_decompress_ranges.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.POINTER(_Range), ctypes.c_size_t, ctypes.c_int]
+    lib.aceapex_dec_open.restype = ctypes.c_void_p
+    lib.aceapex_dec_open.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+    lib.aceapex_dec_size.restype = ctypes.c_int64
+    lib.aceapex_dec_size.argtypes = [ctypes.c_void_p]
+    lib.aceapex_dec_region.restype = ctypes.c_int64
+    lib.aceapex_dec_region.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint64, ctypes.c_uint64]
+    lib.aceapex_dec_ranges.restype = ctypes.c_int64
+    lib.aceapex_dec_ranges.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Range), ctypes.c_size_t]
+    lib.aceapex_dec_close.restype = None
+    lib.aceapex_dec_close.argtypes = [ctypes.c_void_p]
     return lib
 
 _lib = None
@@ -56,6 +66,9 @@ class Archive:
         self._cbuf = (ctypes.c_char * self._n).from_buffer(self._store) if self._n else (ctypes.c_char * 1)()
         self._addr = ctypes.cast(self._cbuf, ctypes.c_void_p)
         self.size = _check(_l().aceapex_decoded_size(self._addr, self._n))
+        # persistent decoder: chunk tables parsed once, last chunks and the zstd context kept between reads
+        self._h = _l().aceapex_dec_open(self._addr, self._n)
+        if not self._h: raise DecodeError(_ERR[-2])
 
     def _ptr(self):
         return self._addr
@@ -64,7 +77,7 @@ class Archive:
         """Original bytes [offset, offset+length)."""
         if length == 0: return b""
         out = ctypes.create_string_buffer(length)
-        n = _check(_l().aceapex_decompress_region(self._ptr(), self._n, out, length, offset, length))
+        n = _check(_l().aceapex_dec_region(self._h, out, length, offset, length))
         return out.raw[:n]
 
     def ranges(self, spans):
@@ -73,7 +86,7 @@ class Archive:
         for i, (o, l) in enumerate(spans):
             b = ctypes.create_string_buffer(max(l, 1)); bufs.append(b)
             arr[i].offset = o; arr[i].length = l; arr[i].dst = ctypes.cast(b, ctypes.c_void_p); arr[i].written = 0
-        _check(_l().aceapex_decompress_ranges(self._ptr(), self._n, arr, k, 0))
+        _check(_l().aceapex_dec_ranges(self._h, arr, k))
         res = []
         for i in range(k):
             w = arr[i].written
@@ -87,8 +100,12 @@ class Archive:
         return out.raw[:n]
 
     def close(self):
+        if getattr(self, "_h", None): _l().aceapex_dec_close(self._h); self._h = None
         self._cbuf = None; self._addr = None
         if self._mm is not None: self._mm.close(); self._mm = None
+    def __del__(self):
+        try: self.close()
+        except Exception: pass
     def __enter__(self): return self
     def __exit__(self, *a): self.close()
 
