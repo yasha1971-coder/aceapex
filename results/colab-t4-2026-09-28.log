@@ -11,4 +11,5 @@ v7-RA full range, 7 runs, median/min/max us:
 single block median us: G=32 blk7000 598 (586-637), blk15498 329 (297-364); G=8 674, 444; all OK
 clocks after runs: SM 1155 MHz (boost 1590), mem 5000 MHz, 67 C, throttle 0x0; before: idle 300
 CPU encode 2 threads: 22.45 MB/s (LZ77 8.0 s of 11.3 s); CPU decode wall 161 MB/s
-open: chr1 ratio 3.711 (colab, ace-core) vs 3.655 in pod nvCOMP row; profile difference not found yet
+resolved: pod chr1 16K = 69473882 B (libzstd 1.4.8), reproduced on ace-core byte-exact;
+  colab 68418921 B at same profile = libzstd 1.5.5, 1.5% smaller on 16 KiB chunks
