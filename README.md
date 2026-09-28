@@ -9,6 +9,19 @@ Full device-resident GPU decode pipeline. Position-invariant random access on ge
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![papers](https://img.shields.io/badge/papers-arXiv%20%C2%B7%20Zenodo-b31b1b.svg)](#papers)
 
+![ACEAPEX passport: 197 GB/s range-decode on T2T, +18.5% denser than nvCOMP zstd, 4/4 streams NVIDIA-decodable, 0.3-0.4 ms per 16 KiB block](docs/aceapex_passport.png)
+
+**Every number on that card has a judge. One command runs them all:**
+
+    make test && ./verify.sh
+
+Judges the contract, 200 random regions and all 6 paper tags from a clean environment;
+writes `results/<tag>.json` with provenance (host, cores, libzstd, compiler) and prints
+pass / fail / known-deviation per claim. GPU claims need an H100 + nvCOMP 5.3;
+without one they are marked `skipped-gpu`, never `pass`.
+Pod-day record: [`results/pod-2026-09-27.json`](results/pod-2026-09-27.json) (31 claims), raw log, [decisions](docs/DECISIONS.md).
+Details: [Verify every published number](#verify-every-published-number).
+
 Measured against bgzip and zstd-seekable on the same operation, nine axes, every answer verified
 byte for byte: [hw-apex-bench](https://yasha1971-coder.github.io/hw-apex-bench/). ACEAPEX does not
 lead every column there, and the ones it loses are printed as they came out.
