@@ -30,3 +30,6 @@ GPU DNA unpack (k_unpack + k_exc), 2935 chunks, 7 runs: median 3.959 ms (3.948-3
   entropy layer on GPU: zstd 17.819 + unpack 3.959 = 21.778 ms for 209.5 MB -> 9.6 GB/s; 4/4 bit-perfect
   full on-device path on the .aet as written by the CPU encoder: zstd + unpack + v7-RA (9.81) = 31.6 ms
   -> 8.0 GB/s chr1 on T4; with H2D 5.6 ms sequential: 37.2 ms -> 6.8 GB/s delivered; CPU decode 306 MB/s
+laptop WSL (12 cores, libzstd 1.5.5), fresh clone 1563201: make test 21/0 with ~/golden auto-found
+  symlinked corpus: head_region_200 fail (stat sized the link) -> fixed aa06270 (stat -L); rerun 21/0
+one-command verify confirmed today on 3 environments: Colab T4, laptop WSL, ace-core
