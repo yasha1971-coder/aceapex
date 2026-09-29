@@ -226,6 +226,12 @@ found in code older than this ADR: the literal chunk table is validated against 
 (it was read unchecked: heap overflows on a corrupt size), the DNA pack of mode 1 checks its
 sub-frame sizes and nexc before reading, the reserved bit 63 of the literal word is rejected;
 and the block decoder's varint no longer shifts past 31 bits on a corrupt stream.
+Tesla T4, chr1, T4 profile (results/colab-t4-2026-09-29-gpu-open.log, median of 7, all passes
+and the five open fixtures bit-perfect, no nvCOMP call on the open archive): on-device 29.35
+(zstd) -> 28.24 (rANS tokens) -> 22.56 ms (open), 11.3 GB/s; with H2D 34.88 -> 27.98 ms.
+lit 11.68 -> 4.38 ms (pieces: seq 2.15, cse 0.71, gap 0.64, val 0.60, plain 0.67); unpack
+4.19 -> 6.56 ms (bases 1.90, case runs 2.80, exceptions 1.84); match 10.5 ms is now the
+largest stage.
 
 ## Open
 - GPU figures in the README were taken in July on code that predates the literal
