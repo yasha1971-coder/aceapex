@@ -6,7 +6,10 @@
 #   !rm -rf /content/aceapex && git clone -q -b main https://github.com/yasha1971-coder/aceapex /content/aceapex && bash /content/aceapex/scripts/colab_gpu_open.sh
 # Corpora (read from Google Drive when mounted, folder $DRV = MyDrive/aceapex_corpus):
 #   chr1.fa   hg38 chr1, md5 pinned; from Drive, else downloaded from UCSC (with a hint to keep it)
-#   t2t.fa    CHM13 v2.0 whole genome (or t2t.fa.gz), md5 pinned; only if it is on Drive. The CLI
+#   t2t.fa    CHM13 v2.0 whole genome (or t2t.fa.gz), md5 pinned; only if it is on Drive. Source: NCBI
+#             GenBank GCA_009914755.4_T2T-CHM13v2.0_genomic.fna.gz (932 696 125 B, md5 9280657210e4161147cbe13b022225b9;
+#             UCSC hs1.fa.gz is the same sequence with other names, 50-column lines and 54.6 % soft-masked
+#             against 40.3 % - a different file, not comparable). The CLI
 #             encoder needs 11.2 GB RSS on it: encoded where the host has >= 20 GB RAM, and the
 #             archives are cached in $DRV/cache (sizes pinned: bytes of the archive are the same
 #             on every machine), so a later run on a small-RAM host takes them from there.
