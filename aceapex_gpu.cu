@@ -199,6 +199,7 @@ __global__ void __launch_bounds__(AXO_NT) k_open_exc(const OpenDesc* __restrict_
     if(tid==0 && any){ atomicAdd(err,1u); atomicMin(err+1,k); }
 }
 
+__global__ void k_set(uint32_t* p, uint32_t v){ *p=v; }
 __global__ void k_fnv(const uint8_t* buf, size_t n, uint64_t* out){
     if(blockIdx.x==0&&threadIdx.x==0){ uint64_t h=0xcbf29ce484222325ULL; for(size_t i=0;i<n;i++) h=(h^buf[i])*0x100000001b3ULL; *out=h; }
 }
@@ -215,14 +216,16 @@ struct RawCopy { const uint8_t* src; size_t n; int stream; uint64_t dst_off; };
 // a piece for k_rans: class 0 = token chunk, 1..4 = seq/cse/gap/val of an open DNA pack, 5 = open
 // plain chunk; stream -1 = the open scratch buffer
 enum { P_TOK=0, P_SEQ=1, P_CSE=2, P_GAP=3, P_VAL=4, P_PLAIN=5, P_NCLS=6 };
-struct RansJob { const uint8_t* src; size_t csz, n; int stream; uint64_t dst_off; uint32_t mode; int cls; };
+struct RansJob { const uint8_t* src; size_t csz, n; int stream; uint64_t dst_off; uint32_t mode; int cls; uint64_t lo; };   // lo: literal-stream offset of an open piece's chunk
 struct OpenChunk { uint32_t chunk, raw, ncse, ngap, nexc; uint64_t off[4]; };
 struct DnaChunk { uint32_t chunk; size_t raw; uint32_t nexc; bool has_gap, has_val; size_t job[4]; };
 
 static float median_ms(std::vector<float> v){ std::sort(v.begin(),v.end()); return v[v.size()/2]; }
 
 int main(int argc, char** argv){
-    if(argc<3){ fprintf(stderr,"usage: %s <archive.aet> <original> [G=auto|8|16|32] [repeats=7] [batches=4]\n",argv[0]); return 1; }
+    int PK=0;                                        // --pipeline[=K]: K block batches, H2D of batch k+1 under the decode of batch k
+    { int j=1; for(int i=1;i<argc;i++){ if(!strncmp(argv[i],"--pipeline",10)){ PK = argv[i][10]=='=' ? atoi(argv[i]+11) : 8; if(PK<1) PK=1; } else argv[j++]=argv[i]; } argc=j; }
+    if(argc<3){ fprintf(stderr,"usage: %s <archive.aet> <original> [G=auto|8|16|32] [repeats=7] [batches=4] [--pipeline[=K]]\n",argv[0]); return 1; }
     int Gwant = (argc>3 && strcmp(argv[3],"auto")!=0) ? atoi(argv[3]) : 0;
     int reps = argc>4 ? atoi(argv[4]) : 7; int NB = argc>5 ? atoi(argv[5]) : 4; if(NB<1) NB=1;
     std::vector<uint8_t> a=slurp(argv[1]);
@@ -261,7 +264,7 @@ int main(int argc, char** argv){
             AxoParts P; if(csz<2 || axo_parse(c+1,csz-1,(uint32_t)raw,&P)){ fprintf(stderr,"literal chunk %llu: bad open DNA pack framing\n",(unsigned long long)t); return 1; }
             OpenChunk oc; oc.chunk=(uint32_t)t; oc.raw=(uint32_t)raw; oc.ncse=P.ncse; oc.ngap=P.ngap; oc.nexc=P.nexc;
             for(int q=0;q<4;q++){ oc.off[q]=oscr; oscr+=((uint64_t)P.n[q]+64)&~63ull;
-                if(P.n[q]) rans.push_back({c+1+P.off[q],P.h[q],P.n[q],-1,oc.off[q],P.mode[q],P_SEQ+q}); }
+                if(P.n[q]) rans.push_back({c+1+P.off[q],P.h[q],P.n[q],-1,oc.off[q],P.mode[q],P_SEQ+q,o}); }
             opn.push_back(oc); continue; }
         if(tagged && csz && c[0]==3){                      // open plain: one piece into the literal stream
             if(csz<2 || c[1]>1 || (c[1]==0 && csz-2!=raw)){ fprintf(stderr,"literal chunk %llu: bad open piece\n",(unsigned long long)t); return 1; }
@@ -417,11 +420,99 @@ int main(int argc, char** argv){
     printf("[pipeline] %d batches, H2D overlapped with zstd: %.3f ms -> %.1f GB/s delivered (sequential %.3f ms, gain %.1f%%)\n",NB,mP,orig/mP/1e6,seq,100.0*(seq-mP)/seq);
     rans_check("pipeline");
     ok = fnv_check("pipeline") && ok;
+
+    // ---- H2D of the archive bytes: pageable (a malloc'd copy) against pinned (hc, cudaHostAlloc)
+    float gbPg=0, gbPn=0;
+    { std::vector<uint8_t> pg(hc,hc+cbytes); std::vector<float> a1,a2;
+      for(int r=0;r<reps;r++){ a1.push_back(elapsed(s0,[&]{ CK(cudaMemcpyAsync(dC,pg.data(),cbytes,cudaMemcpyHostToDevice,s0)); }));
+                               a2.push_back(elapsed(s0,[&]{ h2d(s0); })); }
+      gbPg=cbytes/median_ms(a1)/1e6; gbPn=cbytes/median_ms(a2)/1e6;
+      printf("[h2d] %.1f MB: pageable %.3f ms (%.1f GB/s), pinned %.3f ms (%.1f GB/s)\n",cbytes/1e6,median_ms(a1),gbPg,median_ms(a2),gbPn); }
+
+    // ---- stream pipeline (--pipeline=K): the blocks in K batches; every frame, piece and literal chunk
+    // belongs to the batch of the first block that reads its output, and its compressed bytes are laid out
+    // batch by batch in a second pinned buffer. Stream s1 copies batch k+1 while s0 decodes batch k
+    // (frames, pieces, unpack, match of its blocks); s0 runs the batches in order, so a chunk decoded
+    // for an earlier batch is in place when a later block reads it.
+    float mSP=0;
+    if(PK){
+        const int K=(int)std::min<uint32_t>((uint32_t)PK,nb);
+        std::vector<uint32_t> bc(K+1); for(int k=0;k<=K;k++) bc[k]=(uint32_t)((uint64_t)nb*k/K);
+        auto bend=[&](int st,uint32_t b)->uint64_t{ const BlockOffsets& x=bo[b]; return st==0?x.lit_off+x.lit_sz:st==1?x.off_off+x.off_sz:st==2?x.len_off+x.len_sz:x.cmd_off+x.cmd_sz; };
+        for(int st=0;st<4;st++) for(uint32_t b=1;b<nb;b++) if(bend(st,b)<bend(st,b-1)){ fprintf(stderr,"[stream-pipeline] stream %d block ends not monotonic - not run\n",st); exit(7); }
+        auto kof=[&](uint32_t b)->int{ return (int)(std::upper_bound(bc.begin(),bc.end(),b)-bc.begin())-1; };
+        auto batch_of=[&](int st,uint64_t o)->int{ uint32_t lo=0,hi=nb; while(lo<hi){ uint32_t m=(lo+hi)/2; if(bend(st,m)>o) hi=m; else lo=m+1; } return kof(lo<nb?lo:nb-1); };
+        std::vector<int> jb(N), rb(NR), ob(NO), db(dna.size());
+        for(size_t i=0;i<N;i++){ const Job& j=jobs[i]; jb[i]= j.kind==K_PLAIN ? batch_of(j.stream,j.dst_off) : batch_of(0,(uint64_t)j.chunk*chunk[0]); }
+        for(size_t k=0;k<NR;k++){ const RansJob& r=rans[k]; rb[k]= r.stream<0 ? batch_of(0,r.lo) : batch_of(r.stream,r.dst_off); }
+        for(size_t k=0;k<NO;k++) ob[k]=batch_of(0,(uint64_t)opn[k].chunk*chunk[0]);
+        for(size_t k=0;k<dna.size();k++) db[k]=batch_of(0,(uint64_t)dna[k].chunk*chunk[0]);
+        for(size_t k=1;k<NO;k++) if(ob[k]<ob[k-1]){ fprintf(stderr,"[stream-pipeline] open chunks out of order - not run\n"); exit(7); }
+        for(size_t k=1;k<dna.size();k++) if(db[k]<db[k-1]){ fprintf(stderr,"[stream-pipeline] DNA chunks out of order - not run\n"); exit(7); }
+        std::vector<size_t> pj(N), pr(NR); for(size_t i=0;i<N;i++) pj[i]=i; for(size_t k=0;k<NR;k++) pr[k]=k;
+        std::stable_sort(pj.begin(),pj.end(),[&](size_t x,size_t y){ return jb[x]<jb[y]; });
+        std::stable_sort(pr.begin(),pr.end(),[&](size_t x,size_t y){ return rb[x]<rb[y]; });
+        std::vector<size_t> jc(K+1,0), rc(K+1,0), oc(K+1,0), dc(K+1,0), cc(K+1,0);
+        for(size_t i=0;i<N;i++) jc[jb[i]+1]++; for(size_t k=0;k<NR;k++) rc[rb[k]+1]++;
+        for(size_t k=0;k<NO;k++) oc[ob[k]+1]++; for(size_t k=0;k<dna.size();k++) dc[db[k]+1]++;
+        for(int k=0;k<K;k++){ jc[k+1]+=jc[k]; rc[k+1]+=rc[k]; oc[k+1]+=oc[k]; dc[k+1]+=dc[k]; }
+        // batch-ordered bytes: batch k = its frames, then its pieces
+        uint8_t* hc2; CK(cudaHostAlloc(&hc2,cbytes+1,cudaHostAllocDefault)); uint8_t* dC2; CK(cudaMalloc(&dC2,cbytes+256));
+        std::vector<const void*> qcp(N); std::vector<void*> qop(N); std::vector<size_t> qcs(N), qos(N); std::vector<RansDesc> qr(NR);
+        size_t w=0;
+        for(int k=0;k<K;k++){ cc[k]=w;
+            for(size_t i=jc[k];i<jc[k+1];i++){ const size_t x=pj[i]; memcpy(hc2+w,jobs[x].src,jobs[x].csz); qcp[i]=dC2+w; qop[i]=hop[x]; qcs[i]=hcs[x]; qos[i]=hos[x]; w+=jobs[x].csz; }
+            for(size_t i=rc[k];i<rc[k+1];i++){ const size_t x=pr[i]; memcpy(hc2+w,rans[x].src,rans[x].csz); qr[i]=hr[x]; qr[i].src=w; w+=rans[x].csz; } }
+        cc[K]=w; if(w!=cbytes){ fprintf(stderr,"[stream-pipeline] layout %zu != %zu bytes\n",w,cbytes); exit(7); }
+        const void** qdcp; void** qdop; size_t *qdcs,*qdos,*qdact; nvcompStatus_t* qdst; RansDesc* qdRD;
+        CK(cudaMalloc(&qdcp,N*8+8)); CK(cudaMalloc(&qdop,N*8+8)); CK(cudaMalloc(&qdcs,N*8+8)); CK(cudaMalloc(&qdos,N*8+8)); CK(cudaMalloc(&qdact,N*8+8));
+        CK(cudaMalloc(&qdst,N*sizeof(nvcompStatus_t)+8)); CK(cudaMalloc(&qdRD,(NR+1)*sizeof(RansDesc)));
+        if(N){ CK(cudaMemcpy(qdcp,qcp.data(),N*8,cudaMemcpyHostToDevice)); CK(cudaMemcpy(qdop,qop.data(),N*8,cudaMemcpyHostToDevice));
+               CK(cudaMemcpy(qdcs,qcs.data(),N*8,cudaMemcpyHostToDevice)); CK(cudaMemcpy(qdos,qos.data(),N*8,cudaMemcpyHostToDevice)); }
+        if(NR) CK(cudaMemcpy(qdRD,qr.data(),NR*sizeof(RansDesc),cudaMemcpyHostToDevice));
+        size_t qtemp=0; for(int k=0;k<K;k++){ size_t n=jc[k+1]-jc[k], o=0, t=0; for(size_t i=jc[k];i<jc[k+1];i++) o+=qos[i];
+            if(n){ NV(nvcompBatchedZstdDecompressGetTempSizeAsync(n,maxo,opts,&t,o)); qtemp=std::max(qtemp,t); } }
+        void* qdtemp; CK(cudaMalloc(&qdtemp,qtemp+256));
+        uint32_t* dCTR2; CK(cudaMalloc(&dCTR2,4*(K+1)));
+        kern_t kG = G==8?k_decode_g<8>:G==16?k_decode_g<16>:k_decode_g<32>;
+        int maxblk=0; CK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&maxblk,kG,TPB,0));
+        std::vector<cudaEvent_t> cev(K); for(auto& e:cev) CK(cudaEventCreateWithFlags(&e,cudaEventDisableTiming));
+        cudaEvent_t st0; CK(cudaEventCreateWithFlags(&st0,cudaEventDisableTiming));
+        auto spipe=[&](){
+            CK(cudaEventRecord(st0,s0)); CK(cudaStreamWaitEvent(s1,st0,0));
+            for(int k=0;k<K;k++){ if(cc[k+1]>cc[k]) CK(cudaMemcpyAsync(dC2+cc[k],hc2+cc[k],cc[k+1]-cc[k],cudaMemcpyHostToDevice,s1)); CK(cudaEventRecord(cev[k],s1)); }
+            for(int k=0;k<K;k++){ CK(cudaStreamWaitEvent(s0,cev[k],0));
+                const size_t j0=jc[k], nj=jc[k+1]-j0, r0=rc[k], nr=rc[k+1]-r0, o0=oc[k], no=oc[k+1]-o0, d0=dc[k], nd=dc[k+1]-d0;
+                if(nj) NV(nvcompBatchedZstdDecompressAsync(qdcp+j0,qdcs+j0,qdos+j0,qdact+j0,nj,qdtemp,qtemp,qdop+j0,opts,qdst+j0,s0));
+                if(nr) k_rans<<<(unsigned)((nr+AXW_WARPS-1)/AXW_WARPS),32*AXW_WARPS,0,s0>>>(dC2,qdRD+r0,(uint32_t)nr,dErr);
+                if(nd){ k_unpack<<<dim3((unsigned)nd,g1.y),256,0,s0>>>(dDD+d0); k_exc<<<(unsigned)nd,256,0,s0>>>(dDD+d0); }
+                if(no){ k_open_cse<<<(unsigned)no,AXO_NT,0,s0>>>(dOD+o0,dErr+2); k_open_bases<<<dim3((unsigned)no,go.y),256,0,s0>>>(dOD+o0); k_open_exc<<<(unsigned)no,AXO_NT,0,s0>>>(dOD+o0,dErr+2); }
+                const uint32_t b0=bc[k], b1=bc[k+1]; if(b1>b0){
+                    uint64_t lanes=(uint64_t)(b1-b0)*G; uint32_t want=(uint32_t)((lanes+TPB-1)/TPB), grid=(uint32_t)nsm*maxblk; if(grid>want) grid=want; if(grid<1) grid=1;
+                    k_set<<<1,1,0,s0>>>(dCTR2+k,b0); kG<<<grid,TPB,0,s0>>>(dS[0],dS[1],dS[2],dS[3],dBO,orig,bs,dOUT,dCTR2+k,b1); } } };
+        // cold pass on cleared buffers (output, decoded streams, scratch; raw chunks copied back): the hash
+        // below checks this path alone, a batch that ran before its bytes arrived cannot hide behind old data
+        CK(cudaMemset(dOUT,0,orig)); for(int i=0;i<4;i++) CK(cudaMemset(dS[i],0,ssz[i]+256));
+        CK(cudaMemset(dScr,0,scratch+256)); CK(cudaMemset(dOS,0,oscr+256));
+        for(auto& r:raws) CK(cudaMemcpy(dS[r.stream]+r.dst_off,r.src,r.n,cudaMemcpyHostToDevice));
+        spipe(); CK(cudaStreamSynchronize(s0)); CK(cudaGetLastError());
+        rans_check("stream-pipeline");
+        if(N){ std::vector<nvcompStatus_t> hst(N); CK(cudaMemcpy(hst.data(),qdst,N*sizeof(nvcompStatus_t),cudaMemcpyDeviceToHost)); size_t bad=0; for(auto x:hst) if(x!=nvcompSuccess) bad++;
+            if(bad){ fprintf(stderr,"[stream-pipeline] %zu frames failed\n",bad); ok=false; } }
+        ok = fnv_check("stream-pipeline cold") && ok;
+        std::vector<float> tS; for(int r=0;r<reps;r++) tS.push_back(elapsed(s0,[&]{ spipe(); }));
+        mSP=median_ms(tS); size_t mb=0; for(int k=0;k<K;k++) mb=std::max(mb,cc[k+1]-cc[k]);
+        printf("[stream-pipeline] %d batches (largest %.1f MB), copy stream + decode stream: %.3f ms -> %.1f GB/s delivered; sequential %.3f (H2D %.3f + on-device %.3f), gain %.1f%%\n",
+            K,mb/1e6,mSP,orig/mSP/1e6,seq,mH,mD,100.0*(seq-mSP)/seq);
+        rans_check("stream-pipeline");
+        ok = fnv_check("stream-pipeline") && ok;
+    }
     printf("%s: %s, %d SMs, G=%d, %s\n", ok?"RESULT OK":"RESULT FAIL", prop.name, nsm, G, ok?"bit-perfect on all passes":"hash mismatch");
     // one tab-separated row for tables: archive, bytes, token coder, literal coder, tok, lit, unpack, match, on-device,
     // H2D+on-device (ms), GB/s, verdict, then the parts: lit zstd, seq, cse, gap, val, plain; unpack zstd-pack, bases, case, exceptions
-    printf("ROW\t%s\t%zu\t%s\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.2f\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n",
+    // then: stream pipeline ms (0 without --pipeline), H2D pageable GB/s, H2D pinned GB/s
+    printf("ROW\t%s\t%zu\t%s\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.2f\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.1f\t%.1f\n",
         argv[1],a.size(),tmode,lmode,mT,mL,mU,mM,mD,seq,orig/mD/1e6,ok?"bit-perfect":"MISMATCH",
-        mLz,mLp[P_SEQ],mLp[P_CSE],mLp[P_GAP],mLp[P_VAL],mLp[P_PLAIN],mUd,mUs,mUc,mUe);
+        mLz,mLp[P_SEQ],mLp[P_CSE],mLp[P_GAP],mLp[P_VAL],mLp[P_PLAIN],mUd,mUs,mUc,mUe,mSP,gbPg,gbPn);
     return ok?0:5;
 }
