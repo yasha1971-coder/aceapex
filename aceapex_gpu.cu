@@ -2,7 +2,7 @@
 //   token streams: nvCOMP batched zstd frames and/or rANS chunks (ADR-018, k_rans: one warp
 //   per chunk) -> literal chunks: nvCOMP batched zstd (modes 0, 1) and/or pieces of the open
 //   profile (ADR-019, modes 2, 3: k_rans on raw/rANS pieces) -> DNA unpack kernels (mode 1:
-//   k_unpack, k_exc; mode 2: k_open_seq, k_open_cse, k_open_exc) -> v7-RA match kernel
+//   k_unpack, k_exc; mode 2: k_open_cse, k_open_bases, k_open_exc) -> v7-RA match kernel
 //   k_decode_g<G>. All frames and chunks land in the stream buffers. An archive of the open
 //   profile (AX_PROFILE=open) is decoded without nvCOMP calls.
 // G is chosen at run time by a short probe on this GPU (8/16/32) unless given.
@@ -139,54 +139,61 @@ __global__ void __launch_bounds__(32*AXW_WARPS) k_rans(const uint8_t* __restrict
 }
 
 // ---------------------------------------------------------------- open DNA pack (ADR-019, spec 3.4)
-// After the pieces are decoded into the open scratch: bases (a thread per 4 bytes), then the
-// case runs and the exceptions with one warp per chunk (steps in src/ax_open_warp.h, judged on
-// the CPU by scripts/open_warp_emu.cpp). err[0] counts bad chunks, err[1] the lowest index.
-struct OpenDesc { const uint8_t *seq,*cse,*gap,*val; uint8_t* dst; uint32_t raw, ncse, ngap, nexc; };
-__global__ void k_open_seq(const OpenDesc* d){
-    const OpenDesc c=d[blockIdx.x]; const uint32_t i0=(blockIdx.y*blockDim.x+threadIdx.x)*4; if(i0>=c.raw) return;
-    const uint8_t v=c.seq[i0>>2];
-    if(i0+4<=c.raw){ uchar4 q; q.x="ACGT"[(v>>6)&3]; q.y="ACGT"[(v>>4)&3]; q.z="ACGT"[(v>>2)&3]; q.w="ACGT"[v&3]; *(uchar4*)(c.dst+i0)=q; }
-    else for(uint32_t k=0;i0+k<c.raw;k++) c.dst[i0+k]="ACGT"[(v>>(6-2*k))&3];
-}
-__device__ static inline uint64_t w_scan64_incl(uint64_t v, uint32_t lane){
+// After the pieces are decoded into the open scratch: the case runs are parsed into run ends
+// (k_open_cse, one block per chunk), the bases are written with their case (k_open_bases,
+// 16 positions per thread, binary search over the run ends), then the exceptions (k_open_exc,
+// one block per chunk). Steps in src/ax_open_warp.h, judged on the CPU by
+// scripts/open_warp_emu.cpp. err[0] counts bad chunks, err[1] the lowest index; a bad chunk
+// stores 0 runs.
+struct OpenDesc { const uint8_t *seq,*cse,*gap,*val; uint8_t* dst; uint32_t* ends; uint32_t* nrun; uint32_t raw, ncse, ngap, nexc; };
+// exclusive scan over the block of AXO_NT threads; total of all threads in `total`
+__device__ static inline uint64_t b_scan64(uint64_t v, uint64_t& total, uint64_t* sh){
+    const uint32_t lane=threadIdx.x&31, w=threadIdx.x>>5, NW=AXO_NT/32; uint64_t inc=v;
     #pragma unroll
-    for(int o=1;o<32;o<<=1){ uint64_t t=__shfl_up_sync(0xffffffffu,v,o); if(lane>=(uint32_t)o) v+=t; }
-    return v;
+    for(int o=1;o<32;o<<=1){ uint64_t t=__shfl_up_sync(0xffffffffu,inc,o); if(lane>=(uint32_t)o) inc+=t; }
+    if(lane==31) sh[w]=inc;
+    __syncthreads();
+    if(w==0){ uint64_t x=lane<NW?sh[lane]:0;
+        #pragma unroll
+        for(int o=1;o<32;o<<=1){ uint64_t t=__shfl_up_sync(0xffffffffu,x,o); if(lane>=(uint32_t)o) x+=t; }
+        if(lane<NW) sh[lane]=x; }
+    __syncthreads();
+    const uint64_t before=w?sh[w-1]:0; total=sh[NW-1];
+    __syncthreads();
+    return before+inc-v;
 }
-__global__ void __launch_bounds__(32*AXW_WARPS) k_open_cse(const OpenDesc* __restrict__ d, uint32_t nd, uint32_t* __restrict__ err){
-    const uint32_t FULL=0xffffffffu, lane=threadIdx.x&31, lt=(1u<<lane)-1u, k=blockIdx.x*AXW_WARPS+(threadIdx.x>>5);
-    if(k>=nd) return;
-    const OpenDesc c=d[k]; const uint8_t* b=c.cse; const uint32_t n=c.ncse;
-    bool bad = lane==0 && axl_tail_bad(b,n); uint64_t carry=0; uint32_t jb=0;
-    for(uint32_t r=0; 32*r<n; r++){
-        const bool t=axl_term(lane,b,n,r); const uint32_t m=__ballot_sync(FULL,t);
-        const uint32_t v=axl_value(lane,b,r,t,bad);
-        const uint64_t incl=w_scan64_incl(v,lane), end=carry+incl;
-        const bool paint=axl_cse_check(t,jb+__popc(m&lt),v,end,c.raw,bad);
-        uint32_t pm=__ballot_sync(FULL,paint);
-        while(pm){ const int s=__ffs(pm)-1; pm&=pm-1;
-            const uint64_t e=__shfl_sync(FULL,end,s); const uint32_t len=__shfl_sync(FULL,v,s); axl_paint(lane,c.dst,e-len,len); }
-        carry+=__shfl_sync(FULL,incl,31); jb+=__popc(m);
+__global__ void __launch_bounds__(AXO_NT) k_open_cse(const OpenDesc* __restrict__ d, uint32_t* __restrict__ err){
+    __shared__ uint64_t sh[AXO_NT/32];
+    const uint32_t k=blockIdx.x, tid=threadIdx.x; const OpenDesc c=d[k]; const uint8_t* b=c.cse; const uint32_t n=c.ncse;
+    bool bad = tid==0 && axl_tail_bad(b,n); uint64_t carry=0; uint32_t jb=0;
+    for(uint32_t base=0; base<n; base+=AXO_NT){
+        const uint32_t t=base+tid; const bool term=axl_term(t,b,n); const uint32_t v=axl_value(t,b,term,bad);
+        uint64_t total; const uint64_t ex=b_scan64(term?(AXO_KEY_J|v):0,total,sh);
+        axl_cse_end(term,jb+(uint32_t)(ex>>44),v,carry+(ex&(AXO_KEY_J-1))+v,c.raw,c.ends,bad);
+        jb+=(uint32_t)(total>>44); carry+=total&(AXO_KEY_J-1);
     }
-    if(lane==0 && carry!=c.raw) bad=true;
-    if(__any_sync(FULL,bad) && lane==0){ atomicAdd(err,1u); atomicMin(err+1,k); }
+    if(tid==0 && carry!=c.raw) bad=true;
+    const int any=__syncthreads_or(bad);
+    if(tid==0){ *c.nrun = any?0:jb; if(any){ atomicAdd(err,1u); atomicMin(err+1,k); } }
 }
-__global__ void __launch_bounds__(32*AXW_WARPS) k_open_exc(const OpenDesc* __restrict__ d, uint32_t nd, uint32_t* __restrict__ err){
-    const uint32_t FULL=0xffffffffu, lane=threadIdx.x&31, lt=(1u<<lane)-1u, k=blockIdx.x*AXW_WARPS+(threadIdx.x>>5);
-    if(k>=nd) return;
-    const OpenDesc c=d[k]; if(!c.nexc) return;
+__global__ void __launch_bounds__(256) k_open_bases(const OpenDesc* __restrict__ d){
+    const OpenDesc c=d[blockIdx.x]; const uint32_t g=blockIdx.y*blockDim.x+threadIdx.x;
+    if(16*g<c.raw) axl_bases16(g,c.seq,c.ends,*c.nrun,c.raw,c.dst);
+}
+__global__ void __launch_bounds__(AXO_NT) k_open_exc(const OpenDesc* __restrict__ d, uint32_t* __restrict__ err){
+    __shared__ uint64_t sh[AXO_NT/32];
+    const uint32_t k=blockIdx.x, tid=threadIdx.x; const OpenDesc c=d[k]; if(!c.nexc) return;   // uniform per block
     const uint8_t* b=c.gap; const uint32_t n=c.ngap;
-    bool bad = lane==0 && axl_tail_bad(b,n); uint64_t carry=0; uint32_t jb=0;
-    for(uint32_t r=0; 32*r<n; r++){
-        const bool t=axl_term(lane,b,n,r); const uint32_t m=__ballot_sync(FULL,t);
-        const uint32_t v=axl_value(lane,b,r,t,bad);
-        const uint64_t incl=w_scan64_incl(v,lane);
-        axl_exc(t,jb+__popc(m&lt),v,carry+incl,c.nexc,c.raw,c.val,c.dst,bad);
-        carry+=__shfl_sync(FULL,incl,31); jb+=__popc(m);
+    bool bad = tid==0 && axl_tail_bad(b,n); uint64_t carry=0; uint32_t jb=0;
+    for(uint32_t base=0; base<n; base+=AXO_NT){
+        const uint32_t t=base+tid; const bool term=axl_term(t,b,n); const uint32_t v=axl_value(t,b,term,bad);
+        uint64_t total; const uint64_t ex=b_scan64(term?(AXO_KEY_J|v):0,total,sh);
+        axl_exc(term,jb+(uint32_t)(ex>>44),v,carry+(ex&(AXO_KEY_J-1))+v,c.nexc,c.raw,c.val,c.dst,bad);
+        jb+=(uint32_t)(total>>44); carry+=total&(AXO_KEY_J-1);
     }
-    if(lane==0 && jb!=c.nexc) bad=true;
-    if(__any_sync(FULL,bad) && lane==0){ atomicAdd(err,1u); atomicMin(err+1,k); }
+    if(tid==0 && jb!=c.nexc) bad=true;
+    const int any=__syncthreads_or(bad);
+    if(tid==0 && any){ atomicAdd(err,1u); atomicMin(err+1,k); }
 }
 
 __global__ void k_fnv(const uint8_t* buf, size_t n, uint64_t* out){
@@ -291,7 +298,10 @@ int main(int argc, char** argv){
     if(NR) CK(cudaMemcpy(dRD,hr.data(),NR*sizeof(RansDesc),cudaMemcpyHostToDevice));
     { const uint32_t e0[4]={0u,0xffffffffu,0u,0xffffffffu}; CK(cudaMemcpy(dErr,e0,16,cudaMemcpyHostToDevice)); }
     const size_t NO=opn.size(); std::vector<OpenDesc> ho(NO); OpenDesc* dOD; CK(cudaMalloc(&dOD,(NO+1)*sizeof(OpenDesc)));
-    for(size_t k=0;k<NO;k++){ const OpenChunk& q=opn[k]; ho[k]={dOS+q.off[0],dOS+q.off[1],dOS+q.off[2],dOS+q.off[3],dS[0]+(uint64_t)q.chunk*chunk[0],q.raw,q.ncse,q.ngap,q.nexc}; }
+    uint64_t nends=0; for(const OpenChunk& q:opn) nends+=q.ncse;          // run ends: at most one per case-run byte
+    uint32_t *dEnds, *dNrun; CK(cudaMalloc(&dEnds,(nends+1)*4)); CK(cudaMalloc(&dNrun,(NO+1)*4));
+    for(size_t k=0;k<NO;k++){ const OpenChunk& q=opn[k]; ho[k]={dOS+q.off[0],dOS+q.off[1],dOS+q.off[2],dOS+q.off[3],dS[0]+(uint64_t)q.chunk*chunk[0],nullptr,dNrun+k,q.raw,q.ncse,q.ngap,q.nexc}; }
+    { uint64_t e=0; for(size_t k=0;k<NO;k++){ ho[k].ends=dEnds+e; e+=opn[k].ncse; } }
     if(NO) CK(cudaMemcpy(dOD,ho.data(),NO*sizeof(OpenDesc),cudaMemcpyHostToDevice));
     for(auto& r:raws) CK(cudaMemcpy(dS[r.stream]+r.dst_off,r.src,r.n,cudaMemcpyHostToDevice));
     std::vector<const void*> hcp(N); std::vector<void*> hop(N); std::vector<size_t> hcs(N), hos(N);
@@ -330,12 +340,12 @@ int main(int argc, char** argv){
         if(e[0]){ fprintf(stderr,"[%s] rANS/pieces: %u of %zu failed the spec 3.1.1/3.4 checks (first: piece %u) - archive rejected\n",tag,e[0],NR,e[1]); exit(6); }
         if(e[2]){ fprintf(stderr,"[%s] open DNA pack: %u of %zu chunks failed the spec 3.4 checks (first: %u) - archive rejected\n",tag,e[2],NO,e[3]); exit(6); } };
     dim3 g1((unsigned)std::max<size_t>(dna.size(),1), (unsigned)((chunk[0]/4+255)/256));
-    dim3 go((unsigned)std::max<size_t>(NO,1), (unsigned)((chunk[0]/4+255)/256)); const unsigned gw=(unsigned)((NO+AXW_WARPS-1)/AXW_WARPS);
-    auto un_seq=[&](cudaStream_t s){ if(NO) k_open_seq<<<go,256,0,s>>>(dOD); };
-    auto un_cse=[&](cudaStream_t s){ if(NO) k_open_cse<<<gw,32*AXW_WARPS,0,s>>>(dOD,(uint32_t)NO,dErr+2); };
-    auto un_exc=[&](cudaStream_t s){ if(NO) k_open_exc<<<gw,32*AXW_WARPS,0,s>>>(dOD,(uint32_t)NO,dErr+2); };
+    dim3 go((unsigned)std::max<size_t>(NO,1), (unsigned)((chunk[0]/16+255)/256));
+    auto un_seq=[&](cudaStream_t s){ if(NO) k_open_bases<<<go,256,0,s>>>(dOD); };                     // bases + case
+    auto un_cse=[&](cudaStream_t s){ if(NO) k_open_cse<<<(unsigned)NO,AXO_NT,0,s>>>(dOD,dErr+2); };   // case runs -> run ends
+    auto un_exc=[&](cudaStream_t s){ if(NO) k_open_exc<<<(unsigned)NO,AXO_NT,0,s>>>(dOD,dErr+2); };
     auto unpack=[&](cudaStream_t s){ if(!dna.empty()){ k_unpack<<<g1,256,0,s>>>(dDD); k_exc<<<(unsigned)dna.size(),256,0,s>>>(dDD); }
-        un_seq(s); un_cse(s); un_exc(s); };
+        un_cse(s); un_seq(s); un_exc(s); };
     const int TPB=128; int dev=0,nsm=0; CK(cudaGetDevice(&dev)); CK(cudaDeviceGetAttribute(&nsm,cudaDevAttrMultiProcessorCount,dev));
     cudaDeviceProp prop; CK(cudaGetDeviceProperties(&prop,dev));
     auto match=[&](int G, cudaStream_t s, uint32_t b0, uint32_t b1){
@@ -370,7 +380,7 @@ int main(int argc, char** argv){
         tLz.push_back(elapsed(s0,[&]{zstd_rng(s0,NT,N);}));
         for(int q=P_SEQ;q<P_NCLS;q++) tLp[q].push_back(elapsed(s0,[&]{pieces(s0,q,q+1);}));
         tUd.push_back(elapsed(s0,[&]{ if(!dna.empty()){ k_unpack<<<g1,256,0,s0>>>(dDD); k_exc<<<(unsigned)dna.size(),256,0,s0>>>(dDD); } }));
-        tUs.push_back(elapsed(s0,[&]{un_seq(s0);})); tUc.push_back(elapsed(s0,[&]{un_cse(s0);})); tUe.push_back(elapsed(s0,[&]{un_exc(s0);})); }
+        tUc.push_back(elapsed(s0,[&]{un_cse(s0);})); tUs.push_back(elapsed(s0,[&]{un_seq(s0);})); tUe.push_back(elapsed(s0,[&]{un_exc(s0);})); }
     rans_check("sequential");
     float mH=median_ms(tH),mT=median_ms(tT),mL=median_ms(tL),mU=median_ms(tU),mM=median_ms(tM), mD=mT+mL+mU+mM, seq=mH+mD;
     float mLz=median_ms(tLz), mLp[P_NCLS]={0}; for(int q=P_SEQ;q<P_NCLS;q++) mLp[q]=median_ms(tLp[q]);

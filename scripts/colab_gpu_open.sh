@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Colab (or any CUDA host): the open profile on the GPU (ADR-019) - chr1 decoded without a
 # zstd frame - against the zstd default and the rANS token profile. One Colab cell:
-#   !rm -rf /content/aceapex && git clone -q -b open-lit https://github.com/yasha1971-coder/aceapex /content/aceapex && bash /content/aceapex/scripts/colab_gpu_open.sh
+#   !rm -rf /content/aceapex && git clone -q -b main https://github.com/yasha1971-coder/aceapex /content/aceapex && bash /content/aceapex/scripts/colab_gpu_open.sh
 # Steps: provenance, libzstd + nvCOMP (pip nvidia-nvcomp-cu12; the open archive makes no nvCOMP
 # call, the other two need it), CLI + aceapex_gpu build, both warp-step emulators, the open
 # conformance fixtures on the GPU, chr1 (hg38, md5 pinned) in three archives with the T4
