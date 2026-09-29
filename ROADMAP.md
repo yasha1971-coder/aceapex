@@ -60,6 +60,9 @@ StreamLZ (конкурент) декодирует своей GPU-энтропи
 4. Выход наружу: просьба о чужой реализации (ворота 3), пост X №2, письмо Бонфилду.
 5. (решено 29.09: делать, ADR-019)
 6. dense-open: order-1 литералы (rans1_v4) новым режимом чанка — chr1 -4.68 % к open; меняет формат. GPU-декод (k_r1) есть: lit в 2.7-3.3x медленнее open-пака (Blackwell).
+7. Из SALVAGE (меняет байты/ratio энкодера): маленький хеш в L1 из «v3 batched» (29.03: энкод 1582 MB/s
+   на enwik9 при 3.896x — сейчас энкод ~232-280 MB/s), окно поиска 1 MB (радиус доказан: +0.0000 %),
+   lazy-вставка, DP/cost-парс v4/v5. Каждое — замер на silesia/enwik/chr1 до решения (DIAMONDS «SALVAGE»).
 
 ## Не делать (закрыто замером; подробности DECISIONS/CONTEXT)
 order-0 на литералах не-ДНК; OpenMP в декоде; branch-light декодер токенов; два блока на нить;
@@ -69,7 +72,8 @@ order-0 на литералах не-ДНК; OpenMP в декоде; branch-ligh
 - Код и судья: github.com/yasha1971-coder/aceapex (make test на ace-core = 50/0).
 - История/передача: github.com/yasha1971-coder/yasha-context/ACEAPEX (CONTEXT.md, HANDOFF.md).
 - Измеренные механизмы (в сборке / лежит / закрыт, с числами): yasha-context/ACEAPEX/DIAMONDS.md.
-- Всё по ACEAPEX на сервере вне pubrepo (ревизия 29.09): yasha-context/ACEAPEX/SERVER_INVENTORY.md.
+- Всё по ACEAPEX на сервере вне pubrepo (ревизия 29.09): yasha-context/ACEAPEX/SERVER_INVENTORY.md;
+  собранное ценное — yasha-context/ACEAPEX/SALVAGE/ (INDEX.md). Ветка fse-chunk-in-archive устарела (= 3f2c4d5).
 - Разборы конкурентов и стандарта: документы проекта Claude «Проэкт ACEAPEX»
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
