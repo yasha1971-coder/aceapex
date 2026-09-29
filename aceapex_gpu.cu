@@ -252,26 +252,34 @@ __global__ void __launch_bounds__(32) k_r1(const uint8_t* __restrict__ C, const 
 // The literal stream coded by components/rans1_seg.c (container "AR2L": per 64 KiB chunk [n u32][cs u32] then
 // [flag][K][sym K][bit-packed order-1 table][NS=32 x u16 substream lengths][32 substreams]). One warp per chunk,
 // lane = segment: segment s holds symbols [s*q, s*q+q) (q = (n/32)&~3, the last one runs to n) with its own state
-// and substream; the context restarts at alphabet symbol 0 at the segment start. The symbol comes from a
-// slot->symbol table per context in shared memory (K x 4096 B; NIB: two slots per byte, K x 2048 B): no search.
-// K <= 16 (host checks). Output in 32-bit words (segment starts are multiples of 4).
+// and substream; the context restarts at alphabet symbol 0 at the segment start. Symbol lookup by variant V:
+//   0: slot->symbol table per context in shared memory, one byte per slot (K x 4096 B)
+//   1: the same, two slots per byte (K x 2048 B)
+//   2: no table: the context's cumulative row (16 x u16 in 8 words) against the slot, __vcmpleu2 + popc
+//      (shared ~1 KB per block: every chunk of chr1 resident at once)
+//   3: wide chunks (K > 16, e.g. T2T), binary search over a K x (K+1) row as k_r1 does
+// Variants 0-2 take K <= 16; the host sends wider chunks to variant 3 in a second launch.
+// Output in 32-bit words (segment starts are multiples of 4).
 struct R2Desc { uint64_t src, dst; uint32_t cs, n; };
-template<int NIB> __global__ void __launch_bounds__(32) k_r2(const uint8_t* __restrict__ C, const R2Desc* __restrict__ d, uint8_t* __restrict__ out, uint32_t* __restrict__ err){
-    extern __shared__ uint8_t slot[];                 // [K][4096 >> NIB]
-    __shared__ uint16_t cum[16][17]; __shared__ uint8_t sym[16]; __shared__ const uint8_t* lens; __shared__ int K_s, raw_s;
+template<int V> __global__ void __launch_bounds__(32) k_r2(const uint8_t* __restrict__ C, const R2Desc* __restrict__ d, uint8_t* __restrict__ out, uint32_t* __restrict__ err){
+    constexpr int KC = V==3 ? 64 : 16;
+    extern __shared__ uint8_t slot[];                 // V 0/1: [K][4096 >> V]
+    __shared__ uint16_t cum[KC][KC+1]; __shared__ uint8_t sym[KC]; __shared__ const uint8_t* lens; __shared__ int K_s, raw_s;
+    __shared__ uint32_t cw[V==2 ? 16 : 1][9];         // V 2: cum[i][1..16] as 8 words, 0xFFFF past K, row stride 9
     const R2Desc c=d[blockIdx.x]; const uint8_t* p=C+c.src; uint8_t* o=out+c.dst; const uint32_t n=c.n; const int ln=threadIdx.x;
     if(ln==0){
         raw_s = n==0 || p[0]==1;
         if(!raw_s){ const int K=p[1]; K_s=K; const uint8_t* q=p+2;
-            if(K>16){ atomicAdd(err,1u); raw_s=2; }
+            if(K>KC){ atomicAdd(err,1u); raw_s=2; }
             else {
-            for(int i=0;i<K;i++) sym[i]=q[i]; q+=K;
+            for(int i=0;i<K;i++) sym[i]=q[i];
+            q+=K;
             uint64_t acc=0; int nb=0;
             auto get=[&](int bits)->uint32_t{ while(nb<bits){ acc|=(uint64_t)(*q++)<<nb; nb+=8; } uint32_t v=(uint32_t)(acc&((1u<<bits)-1)); acc>>=bits; nb-=bits; return v; };
-            uint32_t ru=0; for(int i=0;i<K;i++) ru|=get(1)<<i;
+            uint64_t ru=0; for(int i=0;i<K;i++) ru|=(uint64_t)get(1)<<i;
             for(int i=0;i<K;i++){ cum[i][0]=0;
                 if(!((ru>>i)&1)){ for(int j=0;j<K;j++) cum[i][j+1]=0; continue; }
-                uint32_t cu=0; for(int j=0;j<K;j++) cu|=get(1)<<j;
+                uint64_t cu=0; for(int j=0;j<K;j++) cu|=(uint64_t)get(1)<<j;
                 uint32_t cc=0; for(int j=0;j<K;j++){ if((cu>>j)&1) cc+=get(12)+1; cum[i][j+1]=(uint16_t)cc; } }
             if(*q++!=32) { atomicAdd(err,1u); raw_s=2; }
             lens=q; }
@@ -281,13 +289,19 @@ template<int NIB> __global__ void __launch_bounds__(32) k_r2(const uint8_t* __re
     if(raw_s==2) return;
     if(raw_s){ if(n) for(uint32_t i=ln;i<n;i+=32) o[i]=p[1+i]; return; }
     const int K=K_s;
-    // slot table: lane ln fills slots [128 ln, 128 ln + 128) of every used row
-    for(int i=0;i<K;i++){ if(cum[i][K]==0) continue;
-        uint32_t m0=ln*128; int j=0; while(cum[i][j+1]<=m0) j++;
-        if(NIB){ uint32_t* w=(uint32_t*)(slot+i*2048+ln*64);
-            for(int k=0;k<16;k++){ uint32_t v=0; for(int b=0;b<8;b++){ uint32_t m=m0+k*8+b; while(cum[i][j+1]<=m) j++; v|=(uint32_t)j<<(4*b); } w[k]=v; } }
-        else { uint32_t* w=(uint32_t*)(slot+i*4096+ln*128);
-            for(int k=0;k<32;k++){ uint32_t v=0; for(int b=0;b<4;b++){ uint32_t m=m0+k*4+b; while(cum[i][j+1]<=m) j++; v|=(uint32_t)j<<(8*b); } w[k]=v; } }
+    if(V<=1){                                         // slot table: lane ln fills slots [128 ln, 128 ln + 128) of every used row
+        for(int i=0;i<K;i++){ if(cum[i][K]==0) continue;
+            uint32_t m0=ln*128; int j=0; while(cum[i][j+1]<=m0) j++;
+            if(V==1){ uint32_t* w=(uint32_t*)(slot+i*2048+ln*64);
+                for(int k=0;k<16;k++){ uint32_t v=0; for(int b=0;b<8;b++){ uint32_t m=m0+k*8+b; while(cum[i][j+1]<=m) j++; v|=(uint32_t)j<<(4*b); } w[k]=v; } }
+            else { uint32_t* w=(uint32_t*)(slot+i*4096+ln*128);
+                for(int k=0;k<32;k++){ uint32_t v=0; for(int b=0;b<4;b++){ uint32_t m=m0+k*4+b; while(cum[i][j+1]<=m) j++; v|=(uint32_t)j<<(8*b); } w[k]=v; } }
+        }
+    }
+    if(V==2){                                         // lane ln < 16*8: row ln>>3, word ln&7 (and + 32 ...)
+        for(int e=ln;e<K*8;e+=32){ const int i=e>>3, w=e&7; const int j0=2*w+1, j1=2*w+2;
+            const uint32_t lo = j0<=K ? cum[i][j0] : 0xFFFFu, hi = j1<=K ? cum[i][j1] : 0xFFFFu;
+            cw[i][w]=lo|hi<<16; }
     }
     // own substream: offset = exclusive prefix of the lengths
     const uint32_t L=lens[2*ln]|(uint32_t)lens[2*ln+1]<<8; uint32_t incl=L;
@@ -299,7 +313,14 @@ template<int NIB> __global__ void __launch_bounds__(32) k_r2(const uint8_t* __re
     uint32_t* ow=(uint32_t*)(o+lo);
     for(uint32_t t=0;t<len;t++){
         const uint32_t m=x&4095u;
-        const uint32_t j = NIB ? (slot[ctx*2048+(m>>1)]>>((m&1)*4))&15u : slot[ctx*4096+m];
+        uint32_t j;
+        if(V==0) j=slot[ctx*4096+m];
+        else if(V==1) j=(slot[ctx*2048+(m>>1)]>>((m&1)*4))&15u;
+        else if(V==2){ const uint32_t mm=m|m<<16; const uint32_t* r=cw[ctx]; uint32_t cnt=0;
+            #pragma unroll
+            for(int k=0;k<8;k++) cnt+=__popc(__vcmpleu2(r[k],mm));
+            j=cnt>>4; }
+        else { const uint16_t* r=cum[ctx]; int a=0, h=K; while(a<h){ const int mid=(a+h)>>1; if(r[mid+1]<=m) a=mid+1; else h=mid; } j=(uint32_t)a; }
         const uint32_t st=cum[ctx][j], f=cum[ctx][j+1]-st;
         x=f*(x>>12)+m-st; ctx=j;
         w|=(uint32_t)sym[j]<<(8*(t&3));
@@ -654,37 +675,51 @@ int main(int argc, char** argv){
             R1,r.size(),hd1.size(),nraw,mR1,mL,mU,r1bad==0?"MATCHES":"DIFFERS",hb,(unsigned long long)ssz[0],he,mT,mR1,mM,mR1D,orig/mR1D/1e6);
         if(r1bad) ok=false;
     }
-    // ---- dense-open v2 (--dense2-lit): 32 segments per chunk, slot tables; byte table (k_r2<0>) and nibble table (k_r2<1>)
-    float mR2[2]={0,0}, mR2D=0; long long r2bad=-1;
+    // ---- dense-open v2 (--dense2-lit): 32 segments per chunk; variants byte table / nibble table / cum compare
+    // (k_r2<0..2>, chunks with K <= 16) plus k_r2<3> for wider chunks in a second launch, timed together
+    float mR2[3]={-1,-1,-1}, mR2D=0; long long r2bad=-1;
     if(R2){
         std::vector<uint8_t> r=slurp(R2); if(r.size()<8 || memcmp(r.data(),"AR2L",4) || r[5]!=32 || r[6]!=12){ fprintf(stderr,"%s: not an AR2L NS=32 TF=12 stream\n",R2); return 1; }
-        std::vector<R2Desc> hd2; size_t pos=8; uint64_t dst=0; size_t nraw=0; int Kmax=1;
-        while(pos+8<=r.size()){ uint32_t cn=rd32(&r[pos]), cs=rd32(&r[pos+4]); pos+=8; if(pos+cs>r.size()){ fprintf(stderr,"AR2L chunk past the end\n"); return 1; }
-            if(cs&&r[pos]==1) nraw++; else if(cs>1) Kmax=std::max(Kmax,(int)r[pos+1]); hd2.push_back({pos,dst,cs,cn}); pos+=cs; dst+=cn; }
-        if(dst!=ssz[0]){ fprintf(stderr,"AR2L holds %llu bytes, literal stream %llu\n",(unsigned long long)dst,(unsigned long long)ssz[0]); return 1; }
-        if(Kmax>16){ fprintf(stderr,"AR2L: alphabet %d > 16, k_r2 takes K <= 16\n",Kmax); return 1; }
-        uint8_t *dR2,*dL2; R2Desc* dRD2; unsigned long long* dBad; uint32_t* dE2;
-        CK(cudaMalloc(&dR2,r.size()+256)); CK(cudaMalloc(&dL2,ssz[0]+256)); CK(cudaMalloc(&dRD2,hd2.size()*sizeof(R2Desc)+8)); CK(cudaMalloc(&dBad,8)); CK(cudaMalloc(&dE2,4));
-        CK(cudaMemcpy(dR2,r.data(),r.size(),cudaMemcpyHostToDevice)); CK(cudaMemcpy(dRD2,hd2.data(),hd2.size()*sizeof(R2Desc),cudaMemcpyHostToDevice));
-        const size_t sh[2]={(size_t)Kmax*4096,(size_t)Kmax*2048};
-        CK(cudaFuncSetAttribute(k_r2<0>,cudaFuncAttributeMaxDynamicSharedMemorySize,(int)sh[0]));
-        CK(cudaFuncSetAttribute(k_r2<1>,cudaFuncAttributeMaxDynamicSharedMemorySize,(int)sh[1]));
-        unsigned long long hbs[2]={0,0}; uint32_t hes[2]={0,0};
-        for(int v=0;v<2;v++){
-            auto r2=[&](cudaStream_t s){ if(hd2.empty()) return; if(v) k_r2<1><<<(unsigned)hd2.size(),32,sh[1],s>>>(dR2,dRD2,dL2,dE2); else k_r2<0><<<(unsigned)hd2.size(),32,sh[0],s>>>(dR2,dRD2,dL2,dE2); };
+        std::vector<R2Desc> hn, hw; size_t pos=8; uint64_t dst=0; size_t nraw=0; int Kn=1, Kw=0; bool bad=false;
+        while(pos+8<=r.size()){ uint32_t cn=rd32(&r[pos]), cs=rd32(&r[pos+4]); pos+=8; if(pos+cs>r.size()){ bad=true; break; }
+            int K = (cs>1 && r[pos]!=1) ? r[pos+1] : 0; if(cs&&r[pos]==1) nraw++;
+            if(K>16){ hw.push_back({pos,dst,cs,cn}); Kw=std::max(Kw,K); } else { hn.push_back({pos,dst,cs,cn}); Kn=std::max(Kn,K); }
+            pos+=cs; dst+=cn; }
+        if(bad || dst!=ssz[0] || Kw>64){ printf("[dense2-lit] %s: unusable (chunk past the end, %llu of %llu bytes, or K %d > 64) - skipped\n",R2,(unsigned long long)dst,(unsigned long long)ssz[0],Kw); }
+        else {
+        uint8_t *dR2,*dL2; R2Desc *dN,*dW; unsigned long long* dBad; uint32_t* dE2;
+        CK(cudaMalloc(&dR2,r.size()+256)); CK(cudaMalloc(&dL2,ssz[0]+256)); CK(cudaMalloc(&dN,hn.size()*sizeof(R2Desc)+8)); CK(cudaMalloc(&dW,hw.size()*sizeof(R2Desc)+8)); CK(cudaMalloc(&dBad,8)); CK(cudaMalloc(&dE2,4));
+        CK(cudaMemcpy(dR2,r.data(),r.size(),cudaMemcpyHostToDevice));
+        if(!hn.empty()) CK(cudaMemcpy(dN,hn.data(),hn.size()*sizeof(R2Desc),cudaMemcpyHostToDevice));
+        if(!hw.empty()) CK(cudaMemcpy(dW,hw.data(),hw.size()*sizeof(R2Desc),cudaMemcpyHostToDevice));
+        const size_t sh[3]={(size_t)Kn*4096,(size_t)Kn*2048,0};
+        bool can[3]={true,true,true};
+        for(int v=0;v<2;v++) if(sh[v]+2048>(size_t)prop.sharedMemPerBlockOptin) can[v]=false;
+        if(can[0]) CK(cudaFuncSetAttribute(k_r2<0>,cudaFuncAttributeMaxDynamicSharedMemorySize,(int)sh[0]));
+        if(can[1]) CK(cudaFuncSetAttribute(k_r2<1>,cudaFuncAttributeMaxDynamicSharedMemorySize,(int)sh[1]));
+        unsigned long long hbs[3]={0,0,0}; uint32_t hes[3]={0,0,0}; r2bad=0;
+        for(int v=0;v<3;v++){ if(!can[v]) continue;
+            auto r2=[&](cudaStream_t s){
+                if(!hn.empty()){ const unsigned g=(unsigned)hn.size();
+                    if(v==0) k_r2<0><<<g,32,sh[0],s>>>(dR2,dN,dL2,dE2); else if(v==1) k_r2<1><<<g,32,sh[1],s>>>(dR2,dN,dL2,dE2); else k_r2<2><<<g,32,0,s>>>(dR2,dN,dL2,dE2); }
+                if(!hw.empty()) k_r2<3><<<(unsigned)hw.size(),32,0,s>>>(dR2,dW,dL2,dE2); };
             CK(cudaMemset(dL2,0,ssz[0]+256)); CK(cudaMemset(dBad,0,8)); CK(cudaMemset(dE2,0,4));
             r2(s0); CK(cudaStreamSynchronize(s0)); CK(cudaGetLastError());
             k_cmp<<<1024,256,0,s0>>>(dL2,dS[0],ssz[0],dBad);
             CK(cudaMemcpy(&hbs[v],dBad,8,cudaMemcpyDeviceToHost)); CK(cudaMemcpy(&hes[v],dE2,4,cudaMemcpyDeviceToHost));
+            r2bad+=(long long)(hbs[v]+hes[v]);
             std::vector<float> t; for(int q=0;q<reps;q++) t.push_back(elapsed(s0,[&]{ r2(s0); })); mR2[v]=median_ms(t);
         }
-        r2bad=(long long)(hbs[0]+hbs[1]+hes[0]+hes[1]);
-        const float best=std::min(mR2[0],mR2[1]); mR2D=mT+best+mM;
-        printf("[dense2-lit] %s: %zu B, %zu chunks (%zu raw), K max %d, order-1 rANS 32 segments/chunk, slot tables: lit %.3f ms (byte table %zu B) / %.3f ms (nibble table %zu B) "
-               "against this archive's lit %.3f + unpack %.3f = %.3f ms; literal stream %s (byte %llu / nibble %llu bytes differ, framing errors %u / %u); "
+        float best=1e30f; for(int v=0;v<3;v++) if(mR2[v]>=0) best=std::min(best,mR2[v]);
+        mR2D=mT+best+mM;
+        printf("[dense2-lit] %s: %zu B, %zu chunks (%zu raw, %zu with K > 16 up to %d via binary search), K max %d in the rest; order-1 rANS 32 segments/chunk: "
+               "lit byte table %.3f ms (%zu B shared), nibble table %.3f ms (%zu B), cum compare %.3f ms (no table) against this archive's lit %.3f + unpack %.3f = %.3f ms "
+               "(-1 = does not fit this GPU's shared memory); literal stream %s (differing bytes %llu / %llu / %llu, framing errors %u / %u / %u); "
                "on-device estimate tok %.3f + lit %.3f + match %.3f = %.3f ms -> %.1f GB/s\n",
-            R2,r.size(),hd2.size(),nraw,Kmax,mR2[0],sh[0],mR2[1],sh[1],mL,mU,mL+mU,r2bad==0?"MATCHES":"DIFFERS",hbs[0],hbs[1],hes[0],hes[1],mT,best,mM,mR2D,orig/mR2D/1e6);
+            R2,r.size(),hn.size()+hw.size(),nraw,hw.size(),Kw,Kn,mR2[0],sh[0],mR2[1],sh[1],mR2[2],mL,mU,mL+mU,r2bad==0?"MATCHES":"DIFFERS",
+            hbs[0],hbs[1],hbs[2],hes[0],hes[1],hes[2],mT,best,mM,mR2D,orig/mR2D/1e6);
         if(r2bad) ok=false;
+        }
     }
     const float mAuto = KR ? mSP : seq;               // the path this run would take
     printf("%s: %s, %d SMs, G=%d, %s\n", ok?"RESULT OK":"RESULT FAIL", prop.name, nsm, G, ok?"bit-perfect on all passes":"hash mismatch");
@@ -692,10 +727,10 @@ int main(int argc, char** argv){
     // H2D+on-device (ms), GB/s, verdict, then the parts: lit zstd, seq, cse, gap, val, plain; unpack zstd-pack, bases, case, exceptions
     // then: chosen path ms (stream pipeline, or sequential when --pipeline=auto declines), H2D pageable GB/s,
     // H2D pinned GB/s, batches of the stream pipeline (0 = sequential); dense-lit ms, dense on-device estimate ms,
-    // dense-lit differing bytes (-1 = not run); dense2-lit ms byte table, ms nibble table, v2 on-device estimate ms,
+    // dense-lit differing bytes (-1 = not run); dense2-lit ms byte table, ms nibble table, ms cum compare, v2 on-device estimate ms,
     // dense2-lit differing bytes + framing errors (-1 = not run)
-    printf("ROW\t%s\t%zu\t%s\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.2f\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.1f\t%.1f\t%d\t%.3f\t%.3f\t%lld\t%.3f\t%.3f\t%.3f\t%lld\n",
+    printf("ROW\t%s\t%zu\t%s\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.2f\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.1f\t%.1f\t%d\t%.3f\t%.3f\t%lld\t%.3f\t%.3f\t%.3f\t%.3f\t%lld\n",
         argv[1],a.size(),tmode,lmode,mT,mL,mU,mM,mD,seq,orig/mD/1e6,ok?"bit-perfect":"MISMATCH",
-        mLz,mLp[P_SEQ],mLp[P_CSE],mLp[P_GAP],mLp[P_VAL],mLp[P_PLAIN],mUd,mUs,mUc,mUe,mAuto,gbPg,gbPn,KR,mR1,mR1D,r1bad,mR2[0],mR2[1],mR2D,r2bad);
+        mLz,mLp[P_SEQ],mLp[P_CSE],mLp[P_GAP],mLp[P_VAL],mLp[P_PLAIN],mUd,mUs,mUc,mUe,mAuto,gbPg,gbPn,KR,mR1,mR1D,r1bad,mR2[0],mR2[1],mR2[2],mR2D,r2bad);
     return ok?0:5;
 }
