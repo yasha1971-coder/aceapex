@@ -224,8 +224,8 @@ static float median_ms(std::vector<float> v){ std::sort(v.begin(),v.end()); retu
 
 int main(int argc, char** argv){
     int PK=0;                                        // --pipeline[=K]: K block batches, H2D of batch k+1 under the decode of batch k
-    { int j=1; for(int i=1;i<argc;i++){ if(!strncmp(argv[i],"--pipeline",10)){ PK = argv[i][10]=='=' ? atoi(argv[i]+11) : 8; if(PK<1) PK=1; } else argv[j++]=argv[i]; } argc=j; }
-    if(argc<3){ fprintf(stderr,"usage: %s <archive.aet> <original> [G=auto|8|16|32] [repeats=7] [batches=4] [--pipeline[=K]]\n",argv[0]); return 1; }
+    { int j=1; for(int i=1;i<argc;i++){ if(!strncmp(argv[i],"--pipeline",10)){ PK = argv[i][10]!='=' ? 8 : !strcmp(argv[i]+11,"auto") ? -1 : atoi(argv[i]+11); if(PK==0) PK=1; } else argv[j++]=argv[i]; } argc=j; }
+    if(argc<3){ fprintf(stderr,"usage: %s <archive.aet> <original> [G=auto|8|16|32] [repeats=7] [batches=4] [--pipeline[=K|auto]]\n",argv[0]); return 1; }
     int Gwant = (argc>3 && strcmp(argv[3],"auto")!=0) ? atoi(argv[3]) : 0;
     int reps = argc>4 ? atoi(argv[4]) : 7; int NB = argc>5 ? atoi(argv[5]) : 4; if(NB<1) NB=1;
     std::vector<uint8_t> a=slurp(argv[1]);
@@ -434,9 +434,16 @@ int main(int argc, char** argv){
     // batch by batch in a second pinned buffer. Stream s1 copies batch k+1 while s0 decodes batch k
     // (frames, pieces, unpack, match of its blocks); s0 runs the batches in order, so a chunk decoded
     // for an earlier batch is in place when a later block reads it.
-    float mSP=0;
-    if(PK){
-        const int K=(int)std::min<uint32_t>((uint32_t)PK,nb);
+    // --pipeline=auto: the stream pipeline only when the copy is worth hiding - estimated H2D (archive bytes
+    // at the measured pinned rate) >= half the on-device decode - and there are >= 2 batches of >= 64 MB;
+    // otherwise the sequential path (a small archive loses more to per-batch launches than the copy costs)
+    float mSP=0; int KR=PK;
+    if(PK<0){ const double estH=cbytes/(gbPn*1e6); const int kb=(int)std::min<size_t>(8,cbytes/(64ull<<20));
+        KR = (estH>=0.5*mD && kb>=2) ? kb : 0;
+        printf("[auto] estimated H2D %.3f ms (%.1f MB at %.1f GB/s pinned), on-device %.3f ms, batches of >= 64 MB: %d -> %s\n",
+            estH,cbytes/1e6,gbPn,mD,kb,KR?"stream pipeline":"sequential"); }
+    if(KR){
+        const int K=(int)std::min<uint32_t>((uint32_t)KR,nb);
         std::vector<uint32_t> bc(K+1); for(int k=0;k<=K;k++) bc[k]=(uint32_t)((uint64_t)nb*k/K);
         auto bend=[&](int st,uint32_t b)->uint64_t{ const BlockOffsets& x=bo[b]; return st==0?x.lit_off+x.lit_sz:st==1?x.off_off+x.off_sz:st==2?x.len_off+x.len_sz:x.cmd_off+x.cmd_sz; };
         for(int st=0;st<4;st++) for(uint32_t b=1;b<nb;b++) if(bend(st,b)<bend(st,b-1)){ fprintf(stderr,"[stream-pipeline] stream %d block ends not monotonic - not run\n",st); exit(7); }
@@ -507,12 +514,14 @@ int main(int argc, char** argv){
         rans_check("stream-pipeline");
         ok = fnv_check("stream-pipeline") && ok;
     }
+    const float mAuto = KR ? mSP : seq;               // the path this run would take
     printf("%s: %s, %d SMs, G=%d, %s\n", ok?"RESULT OK":"RESULT FAIL", prop.name, nsm, G, ok?"bit-perfect on all passes":"hash mismatch");
     // one tab-separated row for tables: archive, bytes, token coder, literal coder, tok, lit, unpack, match, on-device,
     // H2D+on-device (ms), GB/s, verdict, then the parts: lit zstd, seq, cse, gap, val, plain; unpack zstd-pack, bases, case, exceptions
-    // then: stream pipeline ms (0 without --pipeline), H2D pageable GB/s, H2D pinned GB/s
-    printf("ROW\t%s\t%zu\t%s\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.2f\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.1f\t%.1f\n",
+    // then: chosen path ms (stream pipeline, or sequential when --pipeline=auto declines), H2D pageable GB/s,
+    // H2D pinned GB/s, batches of the stream pipeline (0 = sequential)
+    printf("ROW\t%s\t%zu\t%s\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.2f\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.1f\t%.1f\t%d\n",
         argv[1],a.size(),tmode,lmode,mT,mL,mU,mM,mD,seq,orig/mD/1e6,ok?"bit-perfect":"MISMATCH",
-        mLz,mLp[P_SEQ],mLp[P_CSE],mLp[P_GAP],mLp[P_VAL],mLp[P_PLAIN],mUd,mUs,mUc,mUe,mSP,gbPg,gbPn);
+        mLz,mLp[P_SEQ],mLp[P_CSE],mLp[P_GAP],mLp[P_VAL],mLp[P_PLAIN],mUd,mUs,mUc,mUe,mAuto,gbPg,gbPn,KR);
     return ok?0:5;
 }
