@@ -113,16 +113,16 @@ for X in $CORP; do
   for P in zstd rans open; do [ -s $W/$X.$P.aet ] || continue
     R=${REPS:-3}
     echo "== aceapex_gpu $X.$P" | tee -a $L
-    $W/aceapex_gpu $W/$X.$P.aet $C auto $R 4 --pipeline=${PIPE:-8} 2>&1 | tee -a $L; echo "exit ${PIPESTATUS[0]} $X.$P" | tee -a $L
+    $W/aceapex_gpu $W/$X.$P.aet $C auto $R 4 --pipeline=${PIPE:-auto} 2>&1 | tee -a $L; echo "exit ${PIPESTATUS[0]} $X.$P" | tee -a $L
   done
 done
 
 # tables per corpus; TSV lines (gpu, corpus, row) for the table across GPUs
 for X in $CORP; do
   grep -q "^ROW	$W/$X\." $L || continue
-  echo; echo "$X on $GPU, ms, median of ${REPS:-3}; pipeline = H2D of batch k+1 under the decode of batch k (${PIPE:-8} batches)" | tee -a $L.t1
-  { printf 'archive\tbytes\ttokens\tliterals\ttok\tlit\tunpack\tmatch\ton-device\t+H2D\tpipeline\tGB/s\tcheck\tH2D-pageable\tH2D-pinned\n'
-    grep "^ROW	$W/$X\." $L | awk -F'\t' -v OFS='\t' '{print $2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$24,$12,$13,$25" GB/s",$26" GB/s"}' | sed "s#$W/##"; } | column -t -s $'\t' | tee -a $L.t1
+  echo; echo "$X on $GPU, ms, median of ${REPS:-3}; pipeline = chosen path (${PIPE:-auto}: stream pipeline when H2D >= on-device/2 and >= 2 batches of 64 MB, else sequential); batches 0 = sequential" | tee -a $L.t1
+  { printf 'archive\tbytes\ttokens\tliterals\ttok\tlit\tunpack\tmatch\ton-device\t+H2D\tpipeline\tbatches\tGB/s\tcheck\tH2D-pageable\tH2D-pinned\n'
+    grep "^ROW	$W/$X\." $L | awk -F'\t' -v OFS='\t' '{print $2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$24,$27,$12,$13,$25" GB/s",$26" GB/s"}' | sed "s#$W/##"; } | column -t -s $'\t' | tee -a $L.t1
   echo "parts, ms: lit = zstd frames + pieces by class; unpack = zstd-pack kernels + open kernels" | tee -a $L.t1
   { printf 'archive\tlit.zstd\tseq\tcse\tgap\tval\tplain\tun.zstdpack\tbases\tcase\texceptions\n'
     grep "^ROW	$W/$X\." $L | awk -F'\t' -v OFS='\t' '{print $2,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23}' | sed "s#$W/##"; } | column -t -s $'\t' | tee -a $L.t1
