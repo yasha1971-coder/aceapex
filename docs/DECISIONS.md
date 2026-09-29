@@ -236,6 +236,13 @@ thread block per chunk in rounds of 256 bytes (a chunk with tens of thousands of
 exceptions was one warp's serial chain), the case is applied while the bases are written
 (k_open_bases: 16 positions per thread, binary search over the run ends, one 16-byte store)
 instead of a second read-modify-write pass.
+Measured (907a470, results/gpu-open-table.md, chr1, median of 7, all bit-perfect): T4 case
+runs 2.80 -> 0.25 ms, bases 1.90 -> 2.78 (the case now lands in the base pass), exceptions
+1.84 -> 1.72; unpack 6.56 -> 4.71, on-device 22.56 -> 20.51 ms (12.4 GB/s). Other GPUs, open
+vs zstd on-device: A100 9.87 -> 6.17 ms (41.2 GB/s), RTX PRO 6000 Blackwell (sm_120) 5.22 ->
+3.72 ms (68.3 GB/s). First T4 run of gpu-case failed (illegal instruction): thread 0's tail
+check before the round loop left warp 0 diverged at the block scan's shuffles; the check
+moved after the loop, __syncwarp at the scan (76d71eb).
 
 ## Open
 - GPU figures in the README were taken in July on code that predates the literal
