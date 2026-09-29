@@ -109,7 +109,9 @@ MUST reject a chunk that decodes to any other number or fails to decode.
 ### 3.1 Offset, length and command streams ("FSE layout")
 
     [0]       u64 word:  bits 0..47 = decoded size S; bits 48..62 = CHUNK / 4096; bit 63 = 0
-    [8]       u64 cs[nc]           per-chunk stored size; bit 63 set = chunk stored raw
+    [8]       u64 cs[nc]           per-chunk entry: bits 0..47 stored size;
+                                   bit 63 = stored raw; bit 62 = rANS chunk (§3.1.1);
+                                   bits 48..61 reserved (0); 62 and 63 never both set
     [8+8*nc]  chunks, in order
 
 `nc = ceil(S / CHUNK)`. Chunk `i` decodes to bytes `[i*CHUNK, min((i+1)*CHUNK, S))` of
@@ -118,6 +120,28 @@ length when raw; chunk `i` starts at the running sum of the preceding stored siz
 `S` fits in 48 bits (256 TB per stream). CHUNK is a multiple of 4096.
 
 A stream shorter than 8 bytes is empty (S = 0). This happens for tiny inputs.
+
+A reader MUST check the whole chunk table before decoding: every entry well-formed and
+`8 + 8*nc + sum(stored sizes) <= stored stream length`.
+
+#### 3.1.1 rANS chunks (the zstd-free token profile, 2026-09-29)
+A chunk whose entry has bit 62 set is a 32-lane interleaved static rANS stream (order 0,
+12-bit probabilities, 32-bit states, 16-bit renormalisation), laid out as
+
+    [32]     bitmap of present symbols (bit s of byte s/8)
+    [..]     frequency of each present symbol, ascending, unsigned LEB128; sum = 4096
+    [128]    32 initial states, u32, each in [2^16, 2^32)
+    [4]      W, the number of 16-bit words
+    [2W]     renormalisation words
+
+Symbol `i` of the chunk belongs to lane `i mod 32`; groups of 32 symbols decode in order,
+lanes ascending. Lane `l` decodes `slot = x & 4095`, the symbol `s` with
+`cum[s] <= slot < cum[s] + f[s]`, then `x = f[s] * (x >> 12) + slot - cum[s]`, and if
+`x < 2^16` takes the next word: `x = (x << 16) | w`. A reader MUST reject: frequencies
+not summing to 4096, a state out of range, a read past W, unread words, or any lane not
+ending at state 2^16. Reference code: `src/ax_rans.h` (the same file is `c/ax_rans.h`).
+Writers emit rANS chunks only when asked for the profile (`AX_TOK=rans`); decoders
+without §3.1.1 see a reserved-bit error.
 
 LEGACY: a zero in bits 48..62 is an archive written before the chunk field existed
 (before 2026-09-19). Its CHUNK is 524288 unless the writer was run with `FSE_CHUNK`, in

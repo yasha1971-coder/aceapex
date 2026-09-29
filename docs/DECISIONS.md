@@ -168,6 +168,31 @@ DNA-like bytes x both levels x 3 encode x 3 decode thread counts, 468 round-trip
 bit-perfect; on the unfixed code it fails 204 of them. Rule: every public entry point
 gets a round-trip claim, not only the CLI.
 
+## ADR-018 (2026-09-29) A zstd-free token profile: 32-lane rANS chunks, entry bit 62
+The GPU path decodes the entropy layer with nvCOMP, whose zstd decoder is closed since
+2.3; lzbench builds the open 2.2 and so cannot run it, and the Blackwell hardware engine
+does not read zstd. StreamLZ (encode.su 4526) shows where this ends: its own GPU entropy
+decodes at 32-77 GB/s. E1 (2026-09-29) priced order-0 rANS on the token streams at +3.5 %
+of the streams in 4 KiB chunks; measured with a real coder in 64 KiB chunks the cost is
+gone on genomes: chr1 slice offsets +0.28 %, commands -0.37 % against zstd -1 in the same
+chunks, the whole archive +0.12 % against the default 512 KiB zstd chunks. Literals of DNA
+archives are already the 2-bit pack decoded by our own kernel, so with this profile a
+genome archive needs no zstd on the GPU at all. On text it costs more (silesia commands
++6.8 %) and literals stay zstd: the profile is for the genome niche, opt-in.
+Decision: chunk entry bit 62 marks a rANS chunk (`src/ax_rans.h`, spec 3.1.1): 32 lanes
+so one warp decodes one chunk, words stored in lane order so a lane finds its word by a
+ballot and popcount, the chunk self-checks (every lane must end at the start state).
+`AX_TOK=rans` writes it, with 64 KiB token chunks unless FSE_CHUNK is set; the default
+output is unchanged byte for byte. All decoders read it: C++ (full, region, batch), C99,
+Python, ARM; the two GPU tools decode such chunks on the host for now - the warp kernel
+is the next step. Also fixed on the way, in every C++ reader: the chunk table is validated
+against the stored stream length before use (a bad or future entry sent readers past the
+buffer - v2.1.0 crashes on a bit-62 archive instead of refusing it), and chunk tables and
+the block table are read with byte copies, not through misaligned uint64/BlockOffsets
+pointers (UBSan in the region paths). Claims: conformance fixtures dna_rans_2MiB,
+dna_rans_4k, text_rans_200K (CLI, C99, ARM64, ARMv7), ax_rans.h identical in src/, c/,
+python/csrc/; 3000 unit round-trips and 300 bit-flip runs under ASan/UBSan clean.
+
 ## Open
 - GPU figures in the README were taken in July on code that predates the literal
   transform, literal chunking and the chunk field. The README front page is rewritten

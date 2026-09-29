@@ -5,6 +5,7 @@
 // and on the GPU (two kernels, timed), both compared with the CPU-decoded reference.
 // Build: nvcc -O3 -arch=sm_XX -I$NVCOMP/include -L$NVCOMP/lib -lnvcomp -o gpu_zstd_batch gpu_zstd_batch.cu
 // Usage: gpu_zstd_batch <archive.aet> <streams.bin> [repeats=7]
+#include "src/ax_rans.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -71,7 +72,9 @@ int main(int argc, char** argv){
     uint64_t nc=(osz+ch-1)/ch; out[st].assign(osz,0); size_t pos=8+8*nc; int raws=0;
     for(uint64_t i=0;i<nc;i++){ uint64_t cs=rd64(z+8+8*i); size_t raw=std::min<uint64_t>(ch,osz-i*ch);
       if(cs>>63){ memcpy(&out[st][i*ch], z+pos, raw); pos+=raw; raws++; }
-      else { size_t csz=cs&((1ull<<63)-1); jobs.push_back({z+pos,csz,raw,st,(uint32_t)i,K_PLAIN}); pos+=csz; } }
+      else if((cs>>62)&1){ size_t csz=cs&((1ull<<48)-1);   // rANS token chunk (ADR-018): host decode
+        if(axr_decode(z+pos,csz,&out[st][i*ch],raw)){ fprintf(stderr,"rANS chunk corrupt\n"); return 4; } pos+=csz; raws++; }
+      else { size_t csz=cs&((1ull<<48)-1); jobs.push_back({z+pos,csz,raw,st,(uint32_t)i,K_PLAIN}); pos+=csz; } }
     printf("stream %d: size=%llu chunk=%llu frames=%llu raw=%d\n", st,(unsigned long long)osz,(unsigned long long)ch,(unsigned long long)(nc-raws),raws);
     if(osz!=tot[st]){ fprintf(stderr,"size mismatch stream %d: archive %llu vs streams.bin %llu\n",st,(unsigned long long)osz,(unsigned long long)tot[st]); return 4; }
   }

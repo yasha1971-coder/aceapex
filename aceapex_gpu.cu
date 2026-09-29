@@ -7,6 +7,8 @@
 // Output is hashed (FNV-1a) against the original file: bit-perfect or nothing.
 // Build: nvcc -O3 -arch=sm_XX -I<nvcomp>/include -L<nvcomp>/lib64 -l:libnvcomp.so.5 -o aceapex_gpu aceapex_gpu.cu
 // Usage: aceapex_gpu <archive.aet> <original> [G=auto|8|16|32] [repeats=7] [batches=4]
+#include "src/ax_rans.h"
+#include <deque>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -15,6 +17,7 @@
 #include <algorithm>
 #include <cuda_runtime.h>
 #include <nvcomp/zstd.h>
+static std::deque<std::vector<uint8_t>> g_rans_keep;   // host-decoded rANS token chunks (stable addresses)
 
 #define CK(x) do{cudaError_t ck_e_=(x); if(ck_e_!=cudaSuccess){fprintf(stderr,"CUDA %s @%d: %s\n",#x,__LINE__,cudaGetErrorString(ck_e_)); exit(2);} }while(0)
 #define NV(x) do{nvcompStatus_t nv_s_=(x); if(nv_s_!=nvcompSuccess){fprintf(stderr,"nvcomp %s @%d: status %d\n",#x,__LINE__,(int)nv_s_); exit(3);} }while(0)
@@ -119,8 +122,13 @@ int main(int argc, char** argv){
         uint64_t ch=((w>>48)&0x7fff)*4096; if(!ch){ const char* e=getenv("FSE_CHUNK"); ch=e?strtoull(e,0,10):524288; }
         ssz[st]=osz; chunk[st]=ch; uint64_t nc=(osz+ch-1)/ch; size_t pos=8+8*nc;
         for(uint64_t i=0;i<nc;i++){ uint64_t cs=rd64(z+8+8*i); size_t raw=(size_t)std::min<uint64_t>(ch,osz-i*ch);
+            if(((cs>>48)&0x3fff) || ((cs>>63)&&((cs>>62)&1))){ fprintf(stderr,"corrupt chunk entry, stream %d chunk %llu\n",st,(unsigned long long)i); return 1; }
             if(cs>>63){ raws.push_back({z+pos,raw,st,i*ch}); pos+=raw; }
-            else { size_t csz=cs&((1ull<<63)-1); jobs.push_back({z+pos,csz,raw,st,K_PLAIN,i*ch,(uint32_t)i}); pos+=csz; } }
+            else if((cs>>62)&1){                    // rANS token chunk (ADR-018): decoded on the host, sent as raw
+                size_t csz=cs&((1ull<<48)-1); g_rans_keep.emplace_back(raw);
+                if(axr_decode(z+pos,csz,g_rans_keep.back().data(),raw)){ fprintf(stderr,"rANS chunk %llu of stream %d: corrupt\n",(unsigned long long)i,st); return 1; }
+                raws.push_back({g_rans_keep.back().data(),raw,st,i*ch}); pos+=csz; }
+            else { size_t csz=cs&((1ull<<48)-1); jobs.push_back({z+pos,csz,raw,st,K_PLAIN,i*ch,(uint32_t)i}); pos+=csz; } }
     }
     { const uint8_t* z=zs[0]; uint64_t h=rd64(z); bool zl62=h&(1ull<<62); bool chunked=h&(1ull<<61); bool tagged=h&(1ull<<60);
       if(!zl62){ fprintf(stderr,"literal stream without bit62 (FSE layout) not handled here\n"); return 1; }

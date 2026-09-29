@@ -22,6 +22,7 @@
  *   off, reps shift. Distances never leave the block (that is the whole point).
  */
 #include "aceapex_decode.h"
+#include "ax_rans.h"   /* rANS token chunks (entry bit 62); identical copy of src/ax_rans.h */
 #include <stdlib.h>
 #include <string.h>
 #include <zstd.h>
@@ -95,7 +96,16 @@ static int cur_open(Cur* c, const uint8_t* z, size_t zsz, int is_lit){
         uint64_t e=rd64(c->tab+8*i); c->coff[i]=p;
         uint64_t raw=c->chunk; uint64_t o=(uint64_t)i*c->chunk;
         if(o>=c->size) raw=0; else if(o+raw>c->size) raw=c->size-o;
-        p+= c->kind==0 && (e>>63) ? (size_t)raw : (size_t)(e&~((uint64_t)1<<63));
+        if(c->kind==0){
+            /* bits 48..61 reserved; raw (63) and rANS (62) exclusive */
+            if(((e>>48)&0x3FFF) || ((e>>63) && ((e>>62)&1))){ free(c->coff); c->coff=0; return ACEAPEX_ERR_DATA; }
+            p+= (e>>63) ? (size_t)raw : (size_t)(e&(((uint64_t)1<<48)-1));
+        } else {
+            uint64_t n=e&~((uint64_t)1<<63);
+            if(n>zsz){ free(c->coff); c->coff=0; return ACEAPEX_ERR_DATA; }
+            p+=(size_t)n;
+        }
+        if(p>zsz){ free(c->coff); c->coff=0; return ACEAPEX_ERR_DATA; }
     }
     c->coff[c->nc]=p;
     if((size_t)(c->data-z)+p>zsz) { free(c->coff); c->coff=0; return ACEAPEX_ERR_DATA; }
@@ -138,7 +148,9 @@ out:
 static int cur_chunk(Cur* c, size_t i, uint8_t* dst, size_t raw){
     if(!c->dctx) c->dctx=ZSTD_createDCtx();   /* NULL -> fall back to one-shot decompress */
     uint64_t e=rd64(c->tab+8*i); const uint8_t* p=c->data+c->coff[i]; size_t n=c->coff[i+1]-c->coff[i];
-    if(c->kind==0){ if(e>>63){ memcpy(dst,p,raw); return 1; } return zdec(c->dctx,dst,raw,p,n); }
+    if(c->kind==0){ if(e>>63){ memcpy(dst,p,raw); return 1; }
+        if((e>>62)&1) return axr_decode(p,n,dst,raw)==0;
+        return zdec(c->dctx,dst,raw,p,n); }
     if(!n) return raw==0;
     if(!c->tagged) return zdec(c->dctx,dst,raw,p,n);
     if(p[0]==1) return dna_unpack(c->dctx,p+1,n-1,dst,raw);

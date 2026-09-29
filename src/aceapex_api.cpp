@@ -121,7 +121,11 @@ static int64_t ax_entropy_decode(const void* src, size_t src_size, int threads, 
     memcpy(zn,p,hdr.zlen_sz); p+=hdr.zlen_sz;
     memcpy(zc,p,hdr.zcmd_sz);
     g_dec_err=0;
-    size_t os=fse_stream_size(zo),ns=fse_stream_size(zn),cs=fse_stream_size(zc);
+    size_t os=0,ns=0,cs=0;
+    if (!ax_fse_check(zo,hdr.zoff_sz,&os) || !ax_fse_check(zn,hdr.zlen_sz,&ns) || !ax_fse_check(zc,hdr.zcmd_sz,&cs)) {
+        free(zl);free(zo);free(zn);free(zc); return ACEAPEX_ERR_DATA; }
+    { uint64_t cap = hdr.orig_size * 4 + ((uint64_t)1 << 20);
+      if (os > cap || ns > cap || cs > cap) { free(zl);free(zo);free(zn);free(zc); return ACEAPEX_ERR_DATA; } }
     uint8_t* o=(uint8_t*)malloc(os?os:1);
     uint8_t* n=(uint8_t*)malloc(ns?ns:1);
     uint8_t* c=(uint8_t*)malloc(cs?cs:1);
@@ -193,6 +197,12 @@ void aceapex_streams_free(aceapex_streams_t* s)
     s->lit=s->off=s->len=s->cmd=nullptr; s->boffs_vec=nullptr; s->boffs=nullptr;
 }
 
+// The block table sits at offset 68 of the archive (4-byte aligned) and the region paths
+// read it in place: load entries with a byte copy, never through a BlockOffsets*
+// (UBSan: misaligned 8-byte member access; strict-alignment CPUs may trap).
+static inline BlockOffsets ax_bo(const BlockOffsets* t, size_t i) {
+    BlockOffsets b; memcpy(&b, (const uint8_t*)t + i * sizeof(BlockOffsets), sizeof b); return b; }
+
 int64_t aceapex_decompress_region(
     const void* src, size_t src_size,
     void*       dst, size_t dst_capacity,
@@ -224,15 +234,17 @@ int64_t aceapex_decompress_region(
     const uint8_t* zoff = zlit + hdr.zlit_sz;
     const uint8_t* zlen = zoff + hdr.zoff_sz;
     const uint8_t* zcmd = zlen + hdr.zlen_sz;
+    { size_t a,b,c; if (!ax_fse_check(zoff,hdr.zoff_sz,&a) || !ax_fse_check(zlen,hdr.zlen_sz,&b) ||
+                        !ax_fse_check(zcmd,hdr.zcmd_sz,&c)) return ACEAPEX_ERR_DATA; }
 
     size_t b0 = (size_t)(offset / hdr.block_size);
     size_t b1 = (size_t)((offset + length - 1) / hdr.block_size);
     if (b1 >= hdr.num_blocks) return ACEAPEX_ERR_DATA;
 
-    size_t lf=boffs[b0].lit_off, lt=boffs[b1].lit_off+boffs[b1].lit_sz;
-    size_t of=boffs[b0].off_off, ot=boffs[b1].off_off+boffs[b1].off_sz;
-    size_t nf=boffs[b0].len_off, nt=boffs[b1].len_off+boffs[b1].len_sz;
-    size_t cf=boffs[b0].cmd_off, ct=boffs[b1].cmd_off+boffs[b1].cmd_sz;
+    size_t lf=ax_bo(boffs,b0).lit_off, lt=ax_bo(boffs,b1).lit_off+ax_bo(boffs,b1).lit_sz;
+    size_t of=ax_bo(boffs,b0).off_off, ot=ax_bo(boffs,b1).off_off+ax_bo(boffs,b1).off_sz;
+    size_t nf=ax_bo(boffs,b0).len_off, nt=ax_bo(boffs,b1).len_off+ax_bo(boffs,b1).len_sz;
+    size_t cf=ax_bo(boffs,b0).cmd_off, ct=ax_bo(boffs,b1).cmd_off+ax_bo(boffs,b1).cmd_sz;
 
     size_t lit_sz = 0, wl=0, wo=0, wn=0, wc=0;
     g_dec_err=0;
@@ -254,7 +266,7 @@ int64_t aceapex_decompress_region(
     if (!span) { free(lit); free(off); free(len); free(cmd); return ACEAPEX_ERR_MEMORY; }
 
     for (size_t b = b0; b <= b1; b++) {
-        const BlockOffsets& bo = boffs[b];
+        const BlockOffsets bo = ax_bo(boffs,b);
         size_t bstart = b * (size_t)hdr.block_size;
         size_t bsize  = (size_t)(hdr.orig_size - bstart);
         if (bsize > hdr.block_size) bsize = hdr.block_size;
@@ -314,10 +326,10 @@ void* batch_worker(void* arg) {
         size_t i = G.first, grp_end = G.last;
         RangeWork& r = t->w[i];
 
-        size_t lf=t->boffs[G.b0].lit_off, lt=t->boffs[G.b1].lit_off+t->boffs[G.b1].lit_sz;
-        size_t of=t->boffs[G.b0].off_off, ot=t->boffs[G.b1].off_off+t->boffs[G.b1].off_sz;
-        size_t nf=t->boffs[G.b0].len_off, nt=t->boffs[G.b1].len_off+t->boffs[G.b1].len_sz;
-        size_t cf=t->boffs[G.b0].cmd_off, ct=t->boffs[G.b1].cmd_off+t->boffs[G.b1].cmd_sz;
+        size_t lf=ax_bo(t->boffs,G.b0).lit_off, lt=ax_bo(t->boffs,G.b1).lit_off+ax_bo(t->boffs,G.b1).lit_sz;
+        size_t of=ax_bo(t->boffs,G.b0).off_off, ot=ax_bo(t->boffs,G.b1).off_off+ax_bo(t->boffs,G.b1).off_sz;
+        size_t nf=ax_bo(t->boffs,G.b0).len_off, nt=ax_bo(t->boffs,G.b1).len_off+ax_bo(t->boffs,G.b1).len_sz;
+        size_t cf=ax_bo(t->boffs,G.b0).cmd_off, ct=ax_bo(t->boffs,G.b1).cmd_off+ax_bo(t->boffs,G.b1).cmd_sz;
 
         size_t lit_sz=0, wl=0, wo=0, wn=0, wc=0;
         uint8_t* lit=lit_range(t->zlit,h.zlit_sz,lit_sz,lf,lt,&wl);
@@ -338,7 +350,7 @@ void* batch_worker(void* arg) {
                    t->failed.store(1); continue; }
 
         for(uint32_t b=G.b0;b<=G.b1;b++){
-            const BlockOffsets& bo=t->boffs[b];
+            const BlockOffsets bo=ax_bo(t->boffs,b);
             size_t bs=(size_t)b*h.block_size;
             size_t bsz=(size_t)(h.orig_size-bs);
             if(bsz>h.block_size) bsz=h.block_size;
@@ -385,6 +397,8 @@ int64_t aceapex_decompress_ranges(
     const uint8_t* zoff=zlit+hdr.zlit_sz;
     const uint8_t* zlen=zoff+hdr.zoff_sz;
     const uint8_t* zcmd=zlen+hdr.zlen_sz;
+    { size_t a,b,c; if (!ax_fse_check(zoff,hdr.zoff_sz,&a) || !ax_fse_check(zlen,hdr.zlen_sz,&b) ||
+                        !ax_fse_check(zcmd,hdr.zcmd_sz,&c)) return ACEAPEX_ERR_DATA; }
 
     // Проверяем каждый запрос отдельно: плохой диапазон не должен ронять батч.
     std::vector<RangeWork> w; w.reserve(count);

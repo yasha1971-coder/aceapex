@@ -56,6 +56,10 @@ CASES = [
     ('dna_default',    2 << 20, 12, '',                                              '-'),
     ('zeros_1MiB',     1 << 20, 13, 'ACEAPEX_BS=16384 LIT_CHUNK=65536 FSE_CHUNK=4096', '-'),
     ('dna_depth_legacy', 300000, 14, 'DEPTH FSE_CHUNK=4096',                          'FSE_CHUNK=4096'),
+    # rANS token profile (ADR-018): chunk entry bit 62, 64 KiB token chunks by default
+    ('dna_rans_2MiB',  2 << 20, 15, 'AX_TOK=rans',                                   '-'),
+    ('dna_rans_4k',    300000, 16, 'ACEAPEX_BS=16384 LIT_CHUNK=65536 FSE_CHUNK=4096 AX_TOK=rans', '-'),
+    ('text_rans_200K', 200000, 17, 'AX_TOK=rans',                                    '-'),
 ]
 
 def main():
@@ -64,10 +68,13 @@ def main():
     ap.add_argument('--depth', default='')
     ap.add_argument('--out', default='verify/fixtures/conf')
     ap.add_argument('--regen', action='store_true', help='only regenerate inputs into /tmp/conf_inputs')
+    ap.add_argument('--only', default='', help='comma list: build these cases and APPEND them to the manifest')
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     rows = []
+    only = set(x for x in a.only.split(',') if x)
     for name, n, seed, env, denv in CASES:
+        if only and name not in only: continue
         data = gen(name, n, seed); sha = hashlib.sha256(data).hexdigest()
         if a.regen:
             os.makedirs('/tmp/conf_inputs', exist_ok=True); open(f'/tmp/conf_inputs/{name}', 'wb').write(data); continue
@@ -85,7 +92,7 @@ def main():
                 print(f'FAIL {name}: {r.stderr[-300:]}'); sys.exit(1)
             rows.append((name, n, sha, denv)); print(f'{name}: {n} B -> {os.path.getsize(dst)} B')
     if a.regen: print('inputs in /tmp/conf_inputs'); return
-    with open(os.path.join(a.out, 'manifest.tsv'), 'w') as f:
+    with open(os.path.join(a.out, 'manifest.tsv'), 'a' if only else 'w') as f:
         for name, n, sha, denv in rows: f.write(f'{name}\t{n}\t{sha}\t{denv}\n')
     print(f'{len(rows)} fixtures, manifest written')
 

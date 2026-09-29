@@ -33,6 +33,7 @@
 #include "xxhash.h"
 #define OUR_CHECKSUM(buf,sz) XXH3_64bits(buf,sz)
 #include "lit_fse.cpp"
+#include "ax_rans.h"
 
  
 #define HASH_SIZE    0xFFFF
@@ -932,6 +933,23 @@ static void parallel_decode(
  
 // Helper: chunked FSE decompress a stream
 // Format: [8:orig_sz][nc*8:csizes][chunks...]
+// Chunk entry: bits 0..47 stored size, bit 63 = stored raw, bit 62 = 32-lane rANS chunk
+// (ax_rans.h, the zstd-free "rANS token profile", ADR-018). Bits 48..61 are reserved: a
+// set bit, or 62 and 63 together, is a corrupt archive.
+// Chunk tables live at arbitrary offsets inside the archive: read them byte-wise.
+struct AxU64s { const uint8_t* p; uint64_t operator[](size_t i) const { uint64_t v; memcpy(&v, p + 8 * i, 8); return v; } };
+static inline size_t ax_ce_size(uint64_t e){ return (size_t)(e & (((uint64_t)1<<48)-1)); }
+static inline bool   ax_ce_raw (uint64_t e){ return (e >> 63) != 0; }
+static inline bool   ax_ce_rans(uint64_t e){ return ((e >> 62) & 1) != 0; }
+static inline bool   ax_ce_bad (uint64_t e){ return ((e >> 48) & 0x3FFF) != 0 || (ax_ce_raw(e) && ax_ce_rans(e)); }
+static inline bool   ax_tok_rans(){ const char* e=getenv("AX_TOK"); return e && !strcmp(e,"rans"); }
+// decode one token chunk of any kind; false on any error
+static inline bool ax_tok_chunk(uint64_t e, uint8_t* dst, size_t raw, const uint8_t* p, size_t z){
+    if (ax_ce_bad(e)) return false;
+    if (ax_ce_raw(e)) { memcpy(dst, p, raw); return true; }
+    if (ax_ce_rans(e)) return axr_decode(p, z, dst, raw) == 0;
+    return zdec_ok(dst, raw, p, z);
+}
 static size_t fse_chunk_size(){
     const char* e=getenv("FSE_CHUNK");
     if(e){ size_t v=strtoull(e,0,10); if(v>=4096){ v&=~(size_t)4095; if(v>((size_t)16<<20)) v=(size_t)16<<20; return v; } }
@@ -953,17 +971,39 @@ static inline size_t fse_stream_chunk(const uint8_t* src){
     return c ? (c<<12) : fse_chunk_size();
 }
 
+// Validate a stored token stream against its stored length before anything reads it:
+// the chunk table must fit, every entry must be well-formed, and the chunks must end
+// inside the stream. A stream shorter than 8 bytes is the empty stream. Without this a
+// corrupted (or future-format) chunk size sent the readers past the buffer.
+static bool ax_fse_check(const uint8_t* z, size_t zsz, size_t* orig) {
+    if (zsz < 8) { *orig = 0; return true; }
+    size_t S = fse_stream_size(z), CH = fse_stream_chunk(z);
+    uint64_t h; memcpy(&h, z, 8); if (h >> 63) return false;
+    if (!CH) return false;
+    size_t nc = (S + CH - 1) / CH;
+    if (nc > (zsz - 8) / 8) return false;
+    uint64_t sum = 8 + (uint64_t)nc * 8;
+    for (size_t i = 0; i < nc; i++) {
+        uint64_t e; memcpy(&e, z + 8 + 8 * i, 8);
+        if (ax_ce_bad(e)) return false;
+        size_t raw = std::min<size_t>(CH, S - i * CH);
+        sum += ax_ce_raw(e) ? raw : ax_ce_size(e);
+        if (sum > zsz) return false;
+    }
+    *orig = S; return true;
+}
+
 static void fse_chunked_decomp(const uint8_t* src, size_t orig_sz, uint8_t* dst) {
     const size_t CHUNK=fse_stream_chunk(src);
-    const uint64_t* cs = (const uint64_t*)(src + 8);
+    const AxU64s cs{src + 8};
     size_t nc = (orig_sz + CHUNK - 1) / CHUNK;
     size_t p_off = 8 + nc * 8;
     for (size_t i = 0; i < nc; i++) {
         size_t raw = std::min<size_t>(CHUNK, orig_sz - i * CHUNK);
         const uint8_t* p = src + p_off;
-        if (cs[i] >> 63) { memcpy(dst + i * CHUNK, p, raw); p_off += raw; }
-        else { size_t z = (size_t)(cs[i] & ~(uint64_t(1)<<63));
-               if(!zdec_ok(dst + i * CHUNK, raw, p, z)) g_dec_err=1; p_off += z; }
+        size_t z = ax_ce_raw(cs[i]) ? raw : ax_ce_size(cs[i]);
+        if (!ax_tok_chunk(cs[i], dst + i * CHUNK, raw, p, z)) g_dec_err=1;
+        p_off += z;
     }
 }
 
@@ -973,19 +1013,19 @@ static void fse_chunked_decomp(const uint8_t* src, size_t orig_sz, uint8_t* dst)
 // with -fopenmp it oversubscribed the cores (one pool per stream): measured 42 ms
 // against 32 ms sequential on 8 threads, silesia. Each job is a whole chunk
 // (4 KiB..512 KiB decoded), so the atomic counter costs nothing next to zstd.
-struct AxTokJob { const uint8_t* p; uint8_t* d; size_t raw; size_t z; bool is_raw; };
+struct AxTokJob { const uint8_t* p; uint8_t* d; size_t raw; size_t z; uint64_t e; };
 struct FseStream { const uint8_t* s; size_t orig; uint8_t* d; };
 static void fse_multi_decomp(const FseStream* st, int n, int threads) {
     std::vector<AxTokJob> jobs;
     for (int k = 0; k < n; k++) {
         if (st[k].orig == 0) continue;
         const size_t CHUNK=fse_stream_chunk(st[k].s);
-        const uint64_t* cs = (const uint64_t*)(st[k].s + 8);
+        const AxU64s cs{st[k].s + 8};
         size_t nc = (st[k].orig + CHUNK - 1) / CHUNK, p_off = 8 + nc * 8;
         for (size_t i = 0; i < nc; i++) {
             AxTokJob j; j.raw = std::min<size_t>(CHUNK, st[k].orig - i * CHUNK);
-            j.p = st[k].s + p_off; j.d = st[k].d + i * CHUNK; j.is_raw = (cs[i] >> 63) != 0;
-            j.z = j.is_raw ? j.raw : (size_t)(cs[i] & ~(uint64_t(1)<<63));
+            j.p = st[k].s + p_off; j.d = st[k].d + i * CHUNK; j.e = cs[i];
+            j.z = ax_ce_raw(cs[i]) ? j.raw : ax_ce_size(cs[i]);
             p_off += j.z; jobs.push_back(j);
         }
     }
@@ -996,8 +1036,7 @@ static void fse_multi_decomp(const FseStream* st, int n, int threads) {
     Pool pool{&jobs, {0}};
     auto fn=[](void* a)->void* { Pool* q=(Pool*)a; size_t n=q->jobs->size();
         for (size_t i; (i = q->next.fetch_add(1)) < n; ) { const AxTokJob& j=(*q->jobs)[i];
-            if (j.is_raw) memcpy(j.d, j.p, j.raw);
-            else if(!zdec_ok(j.d, j.raw, j.p, j.z)) g_dec_err=1; }
+            if (!ax_tok_chunk(j.e, j.d, j.raw, j.p, j.z)) g_dec_err=1; }
         return nullptr; };
     std::vector<pthread_t> pts(threads - 1);
     for (int t = 0; t < threads - 1; t++) pthread_create(&pts[t], nullptr, fn, &pool);
@@ -1243,9 +1282,9 @@ static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_s
     if(!out) return nullptr;
     if(!(h & (uint64_t(1)<<62))){fse_chunked_decomp(src,orig_sz,out);return out;}
     // Размер чанка читается ИЗ ФАЙЛА: архив не должен зависеть от окружения читателя.
-    size_t csz = chunked ? (size_t)(*(const uint64_t*)(src+8)) : (orig_sz+NW_LEGACY-1)/NW_LEGACY;
+    size_t csz = chunked ? (size_t)AxU64s{src+8}[0] : (orig_sz+NW_LEGACY-1)/NW_LEGACY;
     const int NW = chunked ? (int)((orig_sz + csz - 1)/csz) : NW_LEGACY;
-    const uint64_t* zsz=(const uint64_t*)(src+(chunked?16:8));
+    const AxU64s zsz{src+(chunked?16:8)};
     const uint8_t* p0=src+(chunked?16:8)+(size_t)NW*8;
     struct DW{uint8_t*out;size_t raw;const uint8_t*in;size_t isz;bool tg;};
     std::vector<DW> dws(NW); const uint8_t* p=p0;
@@ -1286,7 +1325,7 @@ static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_s
 static uint8_t* fse_range(const uint8_t* src, size_t orig_sz, size_t from, size_t to,
                           size_t* base_off=nullptr) {
     const size_t CHUNK=fse_stream_chunk(src);
-    const uint64_t* cs=(const uint64_t*)(src+8);
+    const AxU64s cs{src+8};
     size_t nc=(orig_sz+CHUNK-1)/CHUNK;
     // Пустой диапазон: поток len не нужен 29% регионов (7478 блоков chr1 из 15 499
     // имеют len_sz=0, медиана 1 байт при таблице 16 байт на блок). Вызов ради нуля
@@ -1305,11 +1344,10 @@ static uint8_t* fse_range(const uint8_t* src, size_t orig_sz, size_t from, size_
     for(size_t i=0;i<nc;i++){
         size_t d_off=i*CHUNK;
         size_t raw=std::min<size_t>(CHUNK,orig_sz-d_off);
-        size_t csz=(cs[i]>>63)?raw:(size_t)(cs[i]&~(uint64_t(1)<<63));
+        size_t csz=ax_ce_raw(cs[i])?raw:ax_ce_size(cs[i]);
         if(d_off<to && d_off+raw>from){
             uint8_t* dst=out+(d_off-win_lo);
-            if(cs[i]>>63) memcpy(dst,src+p_off,raw);
-            else if(!zdec_ok(dst,raw,src+p_off,csz)){ free(out); return nullptr; }
+            if(!ax_tok_chunk(cs[i],dst,raw,src+p_off,csz)){ free(out); return nullptr; }
         }
         p_off+=csz;
     }
@@ -1325,9 +1363,9 @@ static uint8_t* lit_range(const uint8_t* src, size_t src_sz, size_t& orig_sz,
     const bool tagged=(h&(uint64_t(1)<<60))!=0;
     orig_sz=h&~((uint64_t(1)<<62)|(uint64_t(1)<<61)|(uint64_t(1)<<60));
     if(!(h&(uint64_t(1)<<62))) return fse_range(src,orig_sz,from,to);
-    size_t csz=chunked?(size_t)(*(const uint64_t*)(src+8)):(orig_sz+3)/4;
+    size_t csz=chunked?(size_t)AxU64s{src+8}[0]:(orig_sz+3)/4;
     const int NW=chunked?(int)((orig_sz+csz-1)/csz):4;
-    const uint64_t* zsz=(const uint64_t*)(src+(chunked?16:8));
+    const AxU64s zsz{src+(chunked?16:8)};
     const uint8_t* p=src+(chunked?16:8)+(size_t)NW*8;
     size_t win_lo=(from/csz)*csz;
     size_t win_hi=std::min(orig_sz,((to?to-1:0)/csz+1)*csz);
@@ -1367,10 +1405,15 @@ static void entropy_encode(
     struct EA{const uint8_t*in;size_t isz;uint8_t**out;size_t*osz;};
     auto ew=[](void*a)->void*{
         EA*e=(EA*)a;
-        const size_t CHUNK=fse_chunk_size();
+        const bool rans=ax_tok_rans();
+        // rANS profile: 64 KiB chunks unless FSE_CHUNK says otherwise (4 KiB chunks
+        // carry a 32-lane state block and a table each: +5-6 % on chr1 tokens)
+        const size_t CHUNK=(rans && !getenv("FSE_CHUNK")) ? (size_t)65536 : fse_chunk_size();
         size_t nc=(e->isz+CHUNK-1)/CHUNK;
         size_t hdrsz=8+nc*8;
-        size_t cap=hdrsz+e->isz+nc*64;
+        size_t cap=hdrsz+e->isz+nc*(64+axr_bound(0));
+        std::vector<uint16_t> rw(rans ? CHUNK+2*AXR_LANES : 0);
+        std::vector<uint8_t>  rb(rans ? axr_bound(CHUNK) : 0);
         *e->out=(uint8_t*)malloc(cap);
         if(!*e->out) return nullptr;
         AX_write64(*e->out, (uint64_t)e->isz|((uint64_t)(CHUNK>>12)<<48));
@@ -1380,6 +1423,12 @@ static void entropy_encode(
         for(size_t i=0;i<nc;i++){
             size_t off=i*CHUNK;
             size_t isz=std::min<size_t>(CHUNK,e->isz-off);
+            if(rans){
+                size_t r=axr_encode(e->in+off,isz,rb.data(),rw.data());
+                if(!r||r>=isz){memcpy(p,e->in+off,isz);csizes[i]=isz|(uint64_t(1)<<63);total+=isz;p+=isz;}
+                else{memcpy(p,rb.data(),r);csizes[i]=r|(uint64_t(1)<<62);total+=r;p+=r;}
+                continue;
+            }
             size_t b=ZSTD_compressBound(isz)+4;
             size_t r=ZSTD_compress(p,b,e->in+off,isz,1);
             if(!r||ZSTD_isError(r)){memcpy(p,e->in+off,isz);csizes[i]=isz|(uint64_t(1)<<63);total+=isz;p+=isz;}
@@ -1540,9 +1589,10 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
     // A stream shorter than its 8-byte size header can only be an EMPTY stream
     // (tiny inputs legitimately produce these), not a corrupt one: treat it as 0.
     size_t off_sz=0, len_sz=0, cmd_sz=0;
-    if (hdr.zoff_sz >= 8) off_sz=fse_stream_size(zoff);
-    if (hdr.zlen_sz >= 8) len_sz=fse_stream_size(zlen);
-    if (hdr.zcmd_sz >= 8) cmd_sz=fse_stream_size(zcmd);
+    if (!ax_fse_check(zoff,hdr.zoff_sz,&off_sz) || !ax_fse_check(zlen,hdr.zlen_sz,&len_sz) ||
+        !ax_fse_check(zcmd,hdr.zcmd_sz,&cmd_sz)) {
+        fprintf(stderr,"Corrupt archive (token stream table)\n");
+        free(zlit);free(zoff);free(zlen);free(zcmd); return 1; }
     // Bound decoded stream sizes. NOT by orig_size: on tiny inputs the command
     // stream legitimately exceeds the payload (format overhead > data). Bound by a
     // generous multiple of orig_size plus a floor, which still rejects the garbage
