@@ -199,6 +199,58 @@ __global__ void __launch_bounds__(AXO_NT) k_open_exc(const OpenDesc* __restrict_
     if(tid==0 && any){ atomicAdd(err,1u); atomicMin(err+1,k); }
 }
 
+
+// ---------------------------------------------------------------- dense-open measurement (not in the format)
+// The literal stream coded by components/rans1_v4.c (container "AR1L": per 64 KiB chunk [n u32][cs u32]
+// then [flag][K][sym K][bit-packed order-1 table][4 line lengths][nck][checkpoints 9 B x 4 x nck][4 line
+// substreams]). One block per chunk: thread 0 parses the table into shared cumulative frequencies, then
+// lane = (line, checkpoint segment): 4 x (nck+1) lanes, each decodes <= 4096 symbols serially from the
+// state saved at its checkpoint. Order-1 context = previous symbol (index into the chunk's alphabet).
+struct R1Desc { uint64_t src, dst; uint32_t cs, n; };
+__global__ void __launch_bounds__(32) k_r1(const uint8_t* __restrict__ C, const R1Desc* __restrict__ d, uint8_t* __restrict__ out, uint32_t* __restrict__ err){
+    __shared__ uint16_t cum[64][65]; __shared__ uint8_t sym[64], rmap[256];
+    __shared__ const uint8_t* base[4]; __shared__ const uint8_t* ckp; __shared__ int nck_s, K_s, raw_s;
+    const R1Desc c=d[blockIdx.x]; const uint8_t* p=C+c.src; uint8_t* o=out+c.dst; const uint32_t n=c.n;
+    if(threadIdx.x==0){
+        raw_s = n==0 || p[0]==1;
+        if(!raw_s){ const int K=p[1]; K_s=K; const uint8_t* q=p+2;
+            for(int i=0;i<K;i++){ sym[i]=q[i]; rmap[q[i]]=(uint8_t)i; } q+=K;
+            uint64_t acc=0; int nb=0;
+            auto get=[&](int bits)->uint32_t{ while(nb<bits){ acc|=(uint64_t)(*q++)<<nb; nb+=8; } uint32_t v=(uint32_t)(acc&((1u<<bits)-1)); acc>>=bits; nb-=bits; return v; };
+            uint64_t ru=0; for(int i=0;i<K;i++) ru|=(uint64_t)get(1)<<i;
+            for(int i=0;i<K;i++){ cum[i][0]=0;
+                if(!((ru>>i)&1)){ for(int j=0;j<K;j++) cum[i][j+1]=0; continue; }
+                uint64_t cu=0; for(int j=0;j<K;j++) cu|=(uint64_t)get(1)<<j;
+                uint32_t cc=0; for(int j=0;j<K;j++){ if((cu>>j)&1) cc+=get(12)+1; cum[i][j+1]=(uint16_t)cc; } }
+            uint32_t sl[4]; for(int j=0;j<4;j++){ sl[j]=q[0]|q[1]<<8|q[2]<<16|(uint32_t)q[3]<<24; q+=4; }
+            nck_s=*q++; ckp=q; q+=9*4*nck_s; for(int j=0;j<4;j++){ base[j]=q; q+=sl[j]; }
+            if(q>p+c.cs) atomicAdd(err,1u); }
+    }
+    __syncthreads();
+    if(raw_s){ if(n) for(uint32_t i=threadIdx.x;i<n;i+=blockDim.x) o[i]=p[1+i]; return; }
+    const int K=K_s, nck=nck_s; const uint32_t q4=n/4, CK=4096;
+    for(int lane=threadIdx.x; lane<4*(nck+1); lane+=blockDim.x){
+        const int j=lane/(nck+1), sg=lane%(nck+1); const uint32_t len = j==3 ? n-3*q4 : q4;
+        uint32_t t0=sg*CK, t1= sg<nck ? (sg+1)*CK : len; if(t0>=len) continue;
+        uint32_t x, ctx; const uint8_t* pk;
+        if(sg==0){ const uint8_t* b=base[j]; x=b[0]|b[1]<<8|b[2]<<16|(uint32_t)b[3]<<24; pk=b+4; ctx=0; }
+        else { const uint8_t* e=ckp+(size_t)(j*nck+sg-1)*9; x=e[0]|e[1]<<8|e[2]<<16|(uint32_t)e[3]<<24;
+               pk=base[j]+(e[4]|e[5]<<8|e[6]<<16|(uint32_t)e[7]<<24); ctx=rmap[e[8]]; }
+        uint8_t* ol=o+(size_t)j*q4;
+        for(uint32_t t=t0;t<t1;t++){
+            const uint32_t m=x&4095u; const uint16_t* r=cum[ctx];
+            int lo=0, hi=K;                                   // first s with r[s+1] > m
+            while(lo<hi){ const int mid=(lo+hi)>>1; if(r[mid+1]<=m) lo=mid+1; else hi=mid; }
+            const uint32_t st=r[lo], f=r[lo+1]-st;
+            x=f*(x>>12)+m-st; ol[t]=sym[lo]; ctx=(uint32_t)lo;
+            if(x<(1u<<15)){ x=(x<<16)|pk[0]|((uint32_t)pk[1]<<8); pk+=2; }
+        }
+    }
+}
+__global__ void k_cmp(const uint8_t* a, const uint8_t* b, size_t n, unsigned long long* bad){
+    unsigned long long c=0; for(size_t i=blockIdx.x*(size_t)blockDim.x+threadIdx.x;i<n;i+=(size_t)gridDim.x*blockDim.x) c+= a[i]!=b[i];
+    if(c) atomicAdd(bad,c);
+}
 __global__ void k_set(uint32_t* p, uint32_t v){ *p=v; }
 __global__ void k_fnv(const uint8_t* buf, size_t n, uint64_t* out){
     if(blockIdx.x==0&&threadIdx.x==0){ uint64_t h=0xcbf29ce484222325ULL; for(size_t i=0;i<n;i++) h=(h^buf[i])*0x100000001b3ULL; *out=h; }
@@ -223,8 +275,9 @@ struct DnaChunk { uint32_t chunk; size_t raw; uint32_t nexc; bool has_gap, has_v
 static float median_ms(std::vector<float> v){ std::sort(v.begin(),v.end()); return v[v.size()/2]; }
 
 int main(int argc, char** argv){
+    const char* R1=nullptr;                          // --dense-lit=<file>: literal stream coded by rans1_v4 (measurement)
     int PK=0;                                        // --pipeline[=K]: K block batches, H2D of batch k+1 under the decode of batch k
-    { int j=1; for(int i=1;i<argc;i++){ if(!strncmp(argv[i],"--pipeline",10)){ PK = argv[i][10]!='=' ? 8 : !strcmp(argv[i]+11,"auto") ? -1 : atoi(argv[i]+11); if(PK==0) PK=1; } else argv[j++]=argv[i]; } argc=j; }
+    { int j=1; for(int i=1;i<argc;i++){ if(!strncmp(argv[i],"--dense-lit=",12)) R1=argv[i]+12; else if(!strncmp(argv[i],"--pipeline",10)){ PK = argv[i][10]!='=' ? 8 : !strcmp(argv[i]+11,"auto") ? -1 : atoi(argv[i]+11); if(PK==0) PK=1; } else argv[j++]=argv[i]; } argc=j; }
     if(argc<3){ fprintf(stderr,"usage: %s <archive.aet> <original> [G=auto|8|16|32] [repeats=7] [batches=4] [--pipeline[=K|auto]]\n",argv[0]); return 1; }
     int Gwant = (argc>3 && strcmp(argv[3],"auto")!=0) ? atoi(argv[3]) : 0;
     int reps = argc>4 ? atoi(argv[4]) : 7; int NB = argc>5 ? atoi(argv[5]) : 4; if(NB<1) NB=1;
@@ -514,14 +567,39 @@ int main(int argc, char** argv){
         rans_check("stream-pipeline");
         ok = fnv_check("stream-pipeline") && ok;
     }
+    // ---- dense-open (--dense-lit): order-1 literals decoded on the GPU, compared with the literal stream
+    // this archive decoded to (dS[0] after the passes above)
+    float mR1=0, mR1D=0; long long r1bad=-1;
+    if(R1){
+        std::vector<uint8_t> r=slurp(R1); if(r.size()<8 || memcmp(r.data(),"AR1L",4) || r[5]!=4 || r[6]!=12){ fprintf(stderr,"%s: not an AR1L N=4 TF=12 stream\n",R1); return 1; }
+        std::vector<R1Desc> hd1; size_t pos=8; uint64_t dst=0; size_t nraw=0;
+        while(pos+8<=r.size()){ uint32_t cn=rd32(&r[pos]), cs=rd32(&r[pos+4]); pos+=8; if(pos+cs>r.size()){ fprintf(stderr,"AR1L chunk past the end\n"); return 1; }
+            if(cs&&r[pos]==1) nraw++; hd1.push_back({pos,dst,cs,cn}); pos+=cs; dst+=cn; }
+        if(dst!=ssz[0]){ fprintf(stderr,"AR1L holds %llu bytes, literal stream %llu\n",(unsigned long long)dst,(unsigned long long)ssz[0]); return 1; }
+        uint8_t *dR1,*dL1; R1Desc* dRD1; unsigned long long* dBad; uint32_t* dE1;
+        CK(cudaMalloc(&dR1,r.size()+256)); CK(cudaMalloc(&dL1,ssz[0]+256)); CK(cudaMalloc(&dRD1,hd1.size()*sizeof(R1Desc)+8)); CK(cudaMalloc(&dBad,8)); CK(cudaMalloc(&dE1,4));
+        CK(cudaMemcpy(dR1,r.data(),r.size(),cudaMemcpyHostToDevice)); CK(cudaMemcpy(dRD1,hd1.data(),hd1.size()*sizeof(R1Desc),cudaMemcpyHostToDevice));
+        CK(cudaMemset(dL1,0,ssz[0]+256)); CK(cudaMemset(dBad,0,8)); CK(cudaMemset(dE1,0,4));
+        auto r1=[&](cudaStream_t s){ if(!hd1.empty()) k_r1<<<(unsigned)hd1.size(),32,0,s>>>(dR1,dRD1,dL1,dE1); };
+        r1(s0); CK(cudaStreamSynchronize(s0)); CK(cudaGetLastError());
+        std::vector<float> t; for(int q=0;q<reps;q++) t.push_back(elapsed(s0,[&]{ r1(s0); })); mR1=median_ms(t);
+        k_cmp<<<1024,256,0,s0>>>(dL1,dS[0],ssz[0],dBad); unsigned long long hb=0; uint32_t he=0;
+        CK(cudaMemcpy(&hb,dBad,8,cudaMemcpyDeviceToHost)); CK(cudaMemcpy(&he,dE1,4,cudaMemcpyDeviceToHost)); r1bad=(long long)hb+he;
+        mR1D=mT+mR1+mM;
+        printf("[dense-lit] %s: %zu B, %zu chunks (%zu raw), order-1 rANS 4 lines x checkpoints: lit %.3f ms against this archive's lit %.3f + unpack %.3f ms; "
+               "literal stream %s (%llu of %llu bytes differ, %u framing errors); on-device estimate tok %.3f + lit %.3f + match %.3f = %.3f ms -> %.1f GB/s\n",
+            R1,r.size(),hd1.size(),nraw,mR1,mL,mU,r1bad==0?"MATCHES":"DIFFERS",hb,(unsigned long long)ssz[0],he,mT,mR1,mM,mR1D,orig/mR1D/1e6);
+        if(r1bad) ok=false;
+    }
     const float mAuto = KR ? mSP : seq;               // the path this run would take
     printf("%s: %s, %d SMs, G=%d, %s\n", ok?"RESULT OK":"RESULT FAIL", prop.name, nsm, G, ok?"bit-perfect on all passes":"hash mismatch");
     // one tab-separated row for tables: archive, bytes, token coder, literal coder, tok, lit, unpack, match, on-device,
     // H2D+on-device (ms), GB/s, verdict, then the parts: lit zstd, seq, cse, gap, val, plain; unpack zstd-pack, bases, case, exceptions
     // then: chosen path ms (stream pipeline, or sequential when --pipeline=auto declines), H2D pageable GB/s,
-    // H2D pinned GB/s, batches of the stream pipeline (0 = sequential)
-    printf("ROW\t%s\t%zu\t%s\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.2f\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.1f\t%.1f\t%d\n",
+    // H2D pinned GB/s, batches of the stream pipeline (0 = sequential); dense-lit ms, dense on-device estimate ms,
+    // dense-lit differing bytes (-1 = not run)
+    printf("ROW\t%s\t%zu\t%s\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.2f\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.1f\t%.1f\t%d\t%.3f\t%.3f\t%lld\n",
         argv[1],a.size(),tmode,lmode,mT,mL,mU,mM,mD,seq,orig/mD/1e6,ok?"bit-perfect":"MISMATCH",
-        mLz,mLp[P_SEQ],mLp[P_CSE],mLp[P_GAP],mLp[P_VAL],mLp[P_PLAIN],mUd,mUs,mUc,mUe,mAuto,gbPg,gbPn,KR);
+        mLz,mLp[P_SEQ],mLp[P_CSE],mLp[P_GAP],mLp[P_VAL],mLp[P_PLAIN],mUd,mUs,mUc,mUe,mAuto,gbPg,gbPn,KR,mR1,mR1D,r1bad);
     return ok?0:5;
 }

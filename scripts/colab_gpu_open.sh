@@ -20,6 +20,9 @@
 #   zstd   FSE_CHUNK=4096       tokens and literals in zstd frames (nvCOMP)
 #   rans   AX_TOK=rans          tokens rANS (k_rans), literals zstd (ADR-018)
 #   open   AX_PROFILE=open      tokens rANS, literals open DNA pack / open plain (ADR-019)
+# plus dense-open (measurement): the open archive's literal stream coded by components/rans1_v4.c and
+# decoded on the GPU (k_r1), compared byte for byte with the stream the archive decodes to; its row in
+# the table is an estimate (tok + dense lit + match; bytes = open - literal stream + AR1L file).
 # CPU round-trip of each archive, aceapex_gpu on each, then per corpus two tables: stages, and the
 # parts of lit (per piece class) and unpack (per kernel). Log: results/colab-<date>-<gpu>-gpu-open.log.
 set -uo pipefail
@@ -110,10 +113,27 @@ for X in $CORP; do
       || echo "$X.$P: CPU ROUND-TRIP FAILED" | tee -a $L
     rm -f $W/rt.bin
   done
+  # dense-open (measurement, not the format): the literal stream of the open archive coded by
+  # components/rans1_v4.c (order-1 rANS, 4 lines, checkpoints every 4096), decoded on the GPU by k_r1
+  if [ -s $W/$X.open.aet ]; then
+    [ -x $W/rans1_v4 ] || gcc -O3 -march=native -o $W/rans1_v4 components/rans1_v4.c -lm
+    R0=$(pwd); ( cd $W && env -i PATH=$PATH ACEAPEX_DUMP=1 $R0/aceapex d --in $X.open.aet --out rt.bin >/dev/null 2>&1 ); rm -f $W/rt.bin
+    python3 - $W/streams.bin $W/$X.lit <<'PY'
+import struct,sys
+s=open(sys.argv[1],'rb').read(); nb=struct.unpack_from('<I',s,24)[0]; H=68; b=H+64*(nb-1)
+lo=struct.unpack_from('<Q',s,b)[0]; ls=struct.unpack_from('<Q',s,b+32)[0]
+open(sys.argv[2],'wb').write(s[H+64*nb:H+64*nb+lo+ls])
+PY
+    rm -f $W/streams.bin; $W/rans1_v4 c $W/$X.lit $W/$X.r1 >/dev/null 2>&1; rm -f $W/$X.lit
+    DB=$(python3 -c "import struct,os;a=open('$W/$X.open.aet','rb').read(80);print(os.path.getsize('$W/$X.open.aet')-struct.unpack_from('<Q',a,36)[0]+os.path.getsize('$W/$X.r1'))")
+    echo "$DB" > $W/$X.dense.bytes
+    echo "$X.dense (open + rans1_v4 order-1 literals, estimate = open - literal stream + AR1L file): $DB B, AR1L $(stat -c%s $W/$X.r1) B" | tee -a $L
+  fi
   for P in zstd rans open; do [ -s $W/$X.$P.aet ] || continue
+    DL=""; [ $P = open ] && [ -s $W/$X.r1 ] && DL="--dense-lit=$W/$X.r1"
     R=${REPS:-3}
     echo "== aceapex_gpu $X.$P" | tee -a $L
-    $W/aceapex_gpu $W/$X.$P.aet $C auto $R 4 --pipeline=${PIPE:-auto} 2>&1 | tee -a $L; echo "exit ${PIPESTATUS[0]} $X.$P" | tee -a $L
+    $W/aceapex_gpu $W/$X.$P.aet $C auto $R 4 --pipeline=${PIPE:-auto} $DL 2>&1 | tee -a $L; echo "exit ${PIPESTATUS[0]} $X.$P" | tee -a $L
   done
 done
 
@@ -122,7 +142,8 @@ for X in $CORP; do
   grep -q "^ROW	$W/$X\." $L || continue
   echo; echo "$X on $GPU, ms, median of ${REPS:-3}; pipeline = chosen path (${PIPE:-auto}: stream pipeline when H2D >= on-device/2 and >= 2 batches of 64 MB, else sequential); batches 0 = sequential" | tee -a $L.t1
   { printf 'archive\tbytes\ttokens\tliterals\ttok\tlit\tunpack\tmatch\ton-device\t+H2D\tpipeline\tbatches\tGB/s\tcheck\tH2D-pageable\tH2D-pinned\n'
-    grep "^ROW	$W/$X\." $L | awk -F'\t' -v OFS='\t' '{print $2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$24,$27,$12,$13,$25" GB/s",$26" GB/s"}' | sed "s#$W/##"; } | column -t -s $'\t' | tee -a $L.t1
+    grep "^ROW	$W/$X\." $L | awk -F'\t' -v OFS='\t' '{print $2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$24,$27,$12,$13,$25" GB/s",$26" GB/s"}' | sed "s#$W/##"
+    DBY=$(cat $W/$X.dense.bytes 2>/dev/null); grep "^ROW	$W/$X\.open" $L | awk -F'\t' -v OFS='\t' -v db="$DBY" -v x="$X" '$30!="-1"{print x".dense (est.)",db,"rANS","order-1",$6,$28,"0",$9,$29,"-","-","-","-",($30=="0"?"bit-perfect":"DIFFERS"),"-","-"}'; } | column -t -s $'\t' | tee -a $L.t1
   echo "parts, ms: lit = zstd frames + pieces by class; unpack = zstd-pack kernels + open kernels" | tee -a $L.t1
   { printf 'archive\tlit.zstd\tseq\tcse\tgap\tval\tplain\tun.zstdpack\tbases\tcase\texceptions\n'
     grep "^ROW	$W/$X\." $L | awk -F'\t' -v OFS='\t' '{print $2,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23}' | sed "s#$W/##"; } | column -t -s $'\t' | tee -a $L.t1
