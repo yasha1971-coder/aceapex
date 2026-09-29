@@ -5,7 +5,7 @@
 Full device-resident GPU decode pipeline. Position-invariant random access on genomic data.
 
 [![CI](https://github.com/yasha1971-coder/aceapex/actions/workflows/ci.yml/badge.svg)](https://github.com/yasha1971-coder/aceapex/actions/workflows/ci.yml)
-[![lzbench](https://img.shields.io/badge/lzbench-2.3-blue.svg)](https://github.com/inikep/lzbench/releases/tag/v2.3)
+[![lzbench](https://img.shields.io/badge/lzbench-2.4-blue.svg)](https://github.com/inikep/lzbench/releases/tag/v2.4)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![papers](https://img.shields.io/badge/papers-arXiv%20%C2%B7%20Zenodo-b31b1b.svg)](#papers)
 
@@ -72,9 +72,9 @@ Two separate mechanisms, not one. Confining the search is what removes cross-blo
 
 ---
 
-## lzbench 2.3
+## lzbench 2.3 / 2.4
 
-ACEAPEX (CPU) and `aceapex_cuda` (GPU) are included in the [official lzbench 2.3 release](https://github.com/inikep/lzbench/releases/tag/v2.3) — third-party validation by construction. GPU decoders for LZ77-family formats have been in lzbench since nvcomp's LZ4 and GDeflate; what `aceapex_cuda` adds is a GPU decode path for a format with absolute offsets and position-invariant random access.
+ACEAPEX (CPU) and `aceapex_cuda` (GPU) are included in the [official lzbench 2.3 release](https://github.com/inikep/lzbench/releases/tag/v2.3) and carried as `aceapex 1.0.1` in [lzbench 2.4](https://github.com/inikep/lzbench/releases/tag/v2.4) (format 1 line; this repository is format 2, see CHANGELOG.md) — third-party validation by construction. GPU decoders for LZ77-family formats have been in lzbench since nvcomp's LZ4 and GDeflate; what `aceapex_cuda` adds is a GPU decode path for a format with absolute offsets and position-invariant random access.
 
 ---
 

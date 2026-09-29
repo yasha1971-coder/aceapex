@@ -2,7 +2,7 @@
 import ctypes, glob, mmap, os
 
 __all__ = ["open", "Archive", "DecodeError", "__version__"]
-__version__ = "2.1.0a1"
+__version__ = "2.1.0"
 
 class DecodeError(Exception):
     pass

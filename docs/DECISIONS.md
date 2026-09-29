@@ -96,6 +96,15 @@ judged like an external patch (three compilers, 17 fixtures, ASan/UBSan, 900 fuz
 then extended with the DCtx and chunk cache. Rule from this: a second agent works on a
 branch and lands through `make test`, never by editing another session's working tree.
 
+## ADR-013 (2026-09-29) Software releases are vX.Y.Z; vN.0 tags are paper artifacts
+The repository carries `v2.0`, `v3.0`, `v4.0` (paper 2-4 artifacts, June-July 2026),
+`paper5-v1`, `paper6-v1` and the software tags `v1.0.0`, `v1.0.0-beta`. From now on a
+software release is always a three-component tag that equals `ACEAPEX_VERSION_STRING`
+in `src/aceapex.h` (`v2.1.0`, later `v3.0.0` - distinct from the paper tag `v3.0`), with
+a CHANGELOG entry and `make test && ./verify.sh` green on the tagged commit. Paper tags
+stay frozen (ADR-005) and are never reused for software. The python package and the C
+decoder header carry the same string. lzbench integrations name the software version.
+
 ## Open
 - GPU figures in the README were taken in July on code that predates the literal
   transform, literal chunking and the chunk field. The README front page is rewritten

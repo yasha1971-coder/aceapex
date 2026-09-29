@@ -54,3 +54,16 @@ ARM (A4), 28.09 evening, container x86-64 host, qemu-user, zstd v1.5.6 static cr
   archive bytes independent of CPU architecture (x86-64/1.5.5 == arm64/1.5.6 == armv7/1.5.6)
   qemu-user does not trap unaligned access: alignment rests on the UBSan run (28.09, C decoder)
   judge: scripts/arm_test.sh (4 claims head_arm64_*/head_armv7_*; declared without toolchain), CI job arm
+
+E1/E2 (29.09, container, scripts/e1_entropy_profile.py on verify/fixtures/chr1_4MiB.zstd-1.5.5.aet,
+  4K chunks, streams off/len/cmd; literals on DNA are the 2-bit pack, not zstd):
+  stream   zstd    order-0(H0+table)  order-1(H1+table)  zlib-9
+  off     56781    +6.0%              +98.5%             -0.3%
+  cmd     88966    +2.0%              +22.1%             +4.1%
+  all    145841    +3.5%              +51.9%             +2.4%      (len: 94 B)
+  token streams = 12.2% of the archive (1199432 B) -> a rANS order-0 profile costs +0.4% of the
+  archive, a Deflate profile +0.3%; static order-1 per 4K chunk loses to zstd (table cost): closed.
+  text_200K: +4.3% / +1.7% of token streams (42% of archive); dna_mixed_300K: +2.7% / +1.5% (8.3%).
+  Consequence: a GPU-open entropy profile (DietGPU rANS, MIT - already used in the paper-4 tile
+  pipeline, tag v4.0 - or Deflate for the Blackwell DE / nvcomp 2.2 open source) is near free on
+  genomes. Format v1 unchanged: a new profile is a new flag bit in the stream word.
