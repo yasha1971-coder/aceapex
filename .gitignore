@@ -33,3 +33,6 @@ python/*.egg-info/
 python/aceapex/_aceapex_decode*.so
 __pycache__/
 .pytest_cache/
+
+# local Claude Code settings
+.claude/settings.local.json
