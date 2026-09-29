@@ -60,6 +60,12 @@ CASES = [
     ('dna_rans_2MiB',  2 << 20, 15, 'AX_TOK=rans',                                   '-'),
     ('dna_rans_4k',    300000, 16, 'ACEAPEX_BS=16384 LIT_CHUNK=65536 FSE_CHUNK=4096 AX_TOK=rans', '-'),
     ('text_rans_200K', 200000, 17, 'AX_TOK=rans',                                    '-'),
+    # open profile (ADR-019): literal chunks mode 2 (open DNA pack) / mode 3 (open plain), no zstd
+    ('dna_open_2MiB',  2 << 20, 18, 'AX_PROFILE=open',                               '-'),
+    ('dna_open_mixed_300K', 300000, 19, 'ACEAPEX_BS=16384 FSE_CHUNK=4096 AX_PROFILE=open', '-'),
+    ('dna_open_4097B', 4097,   20, 'ACEAPEX_BS=4096 AX_PROFILE=open',                '-'),
+    ('dna_openlit_300K', 300000, 21, 'ACEAPEX_BS=16384 AX_LIT=open',                 '-'),
+    ('text_open_200K', 200000, 22, 'AX_PROFILE=open',                                '-'),
 ]
 
 def main():

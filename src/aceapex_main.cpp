@@ -34,6 +34,7 @@
 #define OUR_CHECKSUM(buf,sz) XXH3_64bits(buf,sz)
 #include "lit_fse.cpp"
 #include "ax_rans.h"
+#include "ax_lit_open.h"
 
  
 #define HASH_SIZE    0xFFFF
@@ -339,7 +340,7 @@ static inline uint32_t read_varint(const uint8_t* buf, size_t& ptr, size_t limit
         }
     }
     uint32_t val=0, shift=0;
-    while (ptr<limit) {
+    while (ptr<limit && shift<=28) {                 // a valid varint has <= 5 bytes; a corrupt one must not shift past 31 (UBSan)
         uint8_t b=buf[ptr++]; val|=(uint32_t)(b&0x7F)<<shift;
         if (!(b&0x80)) return val; shift+=7;
     }
@@ -942,7 +943,10 @@ static inline size_t ax_ce_size(uint64_t e){ return (size_t)(e & (((uint64_t)1<<
 static inline bool   ax_ce_raw (uint64_t e){ return (e >> 63) != 0; }
 static inline bool   ax_ce_rans(uint64_t e){ return ((e >> 62) & 1) != 0; }
 static inline bool   ax_ce_bad (uint64_t e){ return ((e >> 48) & 0x3FFF) != 0 || (ax_ce_raw(e) && ax_ce_rans(e)); }
-static inline bool   ax_tok_rans(){ const char* e=getenv("AX_TOK"); return e && !strcmp(e,"rans"); }
+static inline bool   ax_profile_open(){ const char* e=getenv("AX_PROFILE"); return e && !strcmp(e,"open"); }
+static inline bool   ax_tok_rans(){ const char* e=getenv("AX_TOK"); return (e && !strcmp(e,"rans")) || ax_profile_open(); }
+// zstd-free literal chunks (ax_lit_open.h, ADR-019): mode 2 open DNA pack, mode 3 open plain
+static inline bool   ax_lit_open(){ const char* e=getenv("AX_LIT"); return (e && !strcmp(e,"open")) || ax_profile_open(); }
 // decode one token chunk of any kind; false on any error
 static inline bool ax_tok_chunk(uint64_t e, uint8_t* dst, size_t raw, const uint8_t* p, size_t z){
     if (ax_ce_bad(e)) return false;
@@ -1117,8 +1121,11 @@ static uint8_t* dna_compress(const uint8_t* s, size_t n, size_t& out_sz){
     return buf;
 }
 
-static void dna_decompress(const uint8_t* src, uint8_t* dst, size_t n){
+static void dna_decompress(const uint8_t* src, size_t src_sz, uint8_t* dst, size_t n){
+    // framing checked before any read: 20-byte header, sub-frames inside the chunk, nexc <= n
+    if(src_sz<20){ g_dec_err=1; return; }
     uint32_t h[5]; memcpy(h,src,20);
+    if((uint64_t)20+h[1]+h[2]+h[3]+h[4]>src_sz || h[0]>n){ g_dec_err=1; return; }
     size_t nexc=h[0], np=(n+3)/4, nc=(n+7)/8;
     const uint8_t* p=src+20;
     uint8_t* seq=(uint8_t*)malloc(np?np:1);
@@ -1214,7 +1221,8 @@ static size_t lit_chunk_size(){
     // Профили (--profile) задают LIT_CHUNK явно и эту ветку не используют:
     // для регионального доступа чанкование обязательно на любых данных
     // (без него seek 46 мс против 0.082).
-    return g_input_is_dna == 1 ? 65536 : 0;
+    // the open literal profile has no 4-part zstd layout: it always writes tagged chunks
+    return (g_input_is_dna == 1 || ax_lit_open()) ? 65536 : 0;
 }
 #define LIT_CHUNK lit_chunk_size()
 
@@ -1229,7 +1237,7 @@ static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
     for(int t=0;t<NW;t++){
         size_t off=(size_t)t*csz; if(off>sz) off=sz;
         size_t isz=(off+csz<=sz)?csz:(sz-off);
-        zws[t]={src+off,isz,nullptr,0,ZSTD_compressBound(isz)+8};
+        zws[t]={src+off,isz,nullptr,0,std::max(ZSTD_compressBound(isz),axo_piece_bound(isz))+8};  // a piece writes rANS before choosing raw
         zws[t].out=(uint8_t*)malloc(zws[t].cap);
         if(!zws[t].out){out_sz=0;return nullptr;}}
     struct CPool{ ZW* w; int n; std::atomic<int> next; };
@@ -1243,6 +1251,16 @@ static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
             ZW& z=p->w[i];
             // Байт режима перед данными: 0 = обычный zstd, 1 = DNA-трансформ.
             // Считаем оба и берём меньший, поэтому режим не может ухудшить размер.
+            if(ax_lit_open()){                              // zstd-free: mode 3 plain, or mode 2 when smaller
+                std::vector<uint16_t> scr(z.isz+2*AXR_LANES);
+                size_t ps=axo_piece_encode(z.in,z.isz,z.out+1,scr.data()); z.out[0]=3; z.osz=ps+1;
+                if(dna_worth(z.in,z.isz)){
+                    std::vector<uint8_t> db(axo_dna_bound(z.isz));
+                    size_t ds=axo_dna_encode(z.in,z.isz,db.data());
+                    if(ds && ds<ps){ z.out[0]=2; memcpy(z.out+1,db.data(),ds); z.osz=ds+1; }
+                }
+                continue;
+            }
             size_t zs=ZSTD_compress2(ctx,z.out+1,z.cap-1,z.in,z.isz);
             uint8_t* db=nullptr; size_t dsz=0;
             if(dna_worth(z.in,z.isz)) db=dna_compress(z.in,z.isz,dsz);
@@ -1268,6 +1286,19 @@ static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
     for(int t=0;t<NW;t++){zsz[t]=zws[t].osz;memcpy(p,zws[t].out,zws[t].osz);p+=zws[t].osz;free(zws[t].out);}
     out_sz=totalsz; return res;
 }
+// Literal chunk table (spec 3.2.1/3.2.2) checked against the stored stream before use: chunk
+// size > 0, table inside the stream, every chunk inside the stream. Returns NW, or -1.
+static long long lit_table_check(const uint8_t* src, size_t src_sz, bool chunked, uint64_t orig_sz, size_t& csz){
+    const size_t hdr = chunked ? 16 : 8;
+    if(src_sz < hdr) return -1;
+    if(chunked){ uint64_t c; memcpy(&c,src+8,8); if(!c) return -1; csz=(size_t)c; }
+    else csz=(size_t)((orig_sz+3)/4);
+    const uint64_t NW = chunked ? (csz ? (orig_sz+csz-1)/csz : 0) : 4;
+    if(NW > (src_sz-hdr)/8) return -1;
+    uint64_t rest = src_sz-hdr-8*NW;
+    for(uint64_t t=0;t<NW;t++){ uint64_t z; memcpy(&z,src+hdr+8*t,8); if(z>rest) return -1; rest-=z; }
+    return (long long)NW;
+}
 static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_sz, int lanes_req = 0) {
     // An empty or truncated literal stream must not be read as an 8-byte header.
     // Tiny inputs give zlit_sz==0; the out-of-bounds read corrupted heap metadata
@@ -1277,13 +1308,18 @@ static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_s
     const int NW_LEGACY=4;
     const bool chunked=(h & (uint64_t(1)<<61))!=0;
     const bool tagged=(h & (uint64_t(1)<<60))!=0;
+    // spec 3.2: bit 63 is reserved, bit 60 needs 61; such a word is an error, not a size
+    if((h>>63) || (tagged && !chunked)){ orig_sz=0; g_dec_err=1; return nullptr; }
     orig_sz=h & ~((uint64_t(1)<<62)|(uint64_t(1)<<61)|(uint64_t(1)<<60));
+    size_t csz=0; long long nwc=-1;
+    if(h & (uint64_t(1)<<62)){ nwc=lit_table_check(src,src_sz,chunked,orig_sz,csz);
+        if(nwc<0 || nwc>INT32_MAX){ orig_sz=0; g_dec_err=1; return nullptr; } }
     uint8_t* out=(uint8_t*)malloc(orig_sz?orig_sz:1);
     if(!out) return nullptr;
     if(!(h & (uint64_t(1)<<62))){fse_chunked_decomp(src,orig_sz,out);return out;}
     // Размер чанка читается ИЗ ФАЙЛА: архив не должен зависеть от окружения читателя.
-    size_t csz = chunked ? (size_t)AxU64s{src+8}[0] : (orig_sz+NW_LEGACY-1)/NW_LEGACY;
-    const int NW = chunked ? (int)((orig_sz + csz - 1)/csz) : NW_LEGACY;
+    (void)NW_LEGACY;
+    const int NW = (int)nwc;
     const AxU64s zsz{src+(chunked?16:8)};
     const uint8_t* p0=src+(chunked?16:8)+(size_t)NW*8;
     struct DW{uint8_t*out;size_t raw;const uint8_t*in;size_t isz;bool tg;};
@@ -1300,9 +1336,11 @@ static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_s
     auto dfn=[](void*a)->void*{
         Pool* p=(Pool*)a;
         for(;;){ int i=p->next.fetch_add(1); if(i>=p->n) break;
-            DW& d=p->w[i]; if(!d.isz) continue;
+            DW& d=p->w[i]; if(!d.isz){ if(d.raw) g_dec_err=1; continue; }   // a chunk with bytes needs a body
             if(!d.tg){ if(!zdec_ok(d.out,d.raw,d.in,d.isz)) g_dec_err=1; continue; }
-            if(d.in[0]==1) dna_decompress(d.in+1,d.out,d.raw);
+            if(d.in[0]==1) dna_decompress(d.in+1,d.isz-1,d.out,d.raw);
+            else if(d.in[0]==2){ if(axo_dna_decode(d.in+1,d.isz-1,d.out,d.raw)) g_dec_err=1; }
+            else if(d.in[0]==3){ if(axo_piece_decode(d.in+1,d.isz-1,d.out,d.raw)) g_dec_err=1; }
             else if(!zdec_ok(d.out,d.raw,d.in+1,d.isz-1)) g_dec_err=1; }
         return nullptr;};
     // LANES был жёстко 8; на машинах с бо́льшим числом ядер половина простаивала.
@@ -1361,10 +1399,12 @@ static uint8_t* lit_range(const uint8_t* src, size_t src_sz, size_t& orig_sz,
     uint64_t h; memcpy(&h,src,8);
     const bool chunked=(h&(uint64_t(1)<<61))!=0;
     const bool tagged=(h&(uint64_t(1)<<60))!=0;
+    if((h>>63) || (tagged && !chunked)){ orig_sz=0; return nullptr; }   // spec 3.2 reserved combinations
     orig_sz=h&~((uint64_t(1)<<62)|(uint64_t(1)<<61)|(uint64_t(1)<<60));
     if(!(h&(uint64_t(1)<<62))) return fse_range(src,orig_sz,from,to);
-    size_t csz=chunked?(size_t)AxU64s{src+8}[0]:(orig_sz+3)/4;
-    const int NW=chunked?(int)((orig_sz+csz-1)/csz):4;
+    size_t csz=0; const long long nwc=lit_table_check(src,src_sz,chunked,orig_sz,csz);
+    if(nwc<0 || nwc>INT32_MAX){ orig_sz=0; return nullptr; }
+    const int NW=(int)nwc;
     const AxU64s zsz{src+(chunked?16:8)};
     const uint8_t* p=src+(chunked?16:8)+(size_t)NW*8;
     size_t win_lo=(from/csz)*csz;
@@ -1383,8 +1423,11 @@ static uint8_t* lit_range(const uint8_t* src, size_t src_sz, size_t& orig_sz,
         size_t raw=(off+csz<=orig_sz)?csz:(orig_sz-off);
         if(off<to && off+raw>from){
             uint8_t* d2=out+(off-win_lo);
+            if(!zsz[t]){ free(out); return nullptr; }                      // a chunk with bytes needs a body
             if(!tagged)        { if(!zdec_ok(d2,raw,p,(size_t)zsz[t])){ free(out); return nullptr; } }
-            else if(p[0]==1)   { dna_decompress(p+1,d2,raw); if(g_dec_err){ free(out); return nullptr; } }
+            else if(p[0]==1)   { dna_decompress(p+1,(size_t)zsz[t]-1,d2,raw); if(g_dec_err){ free(out); return nullptr; } }
+            else if(p[0]==2)   { if(axo_dna_decode(p+1,(size_t)zsz[t]-1,d2,raw)){ free(out); return nullptr; } }
+            else if(p[0]==3)   { if(axo_piece_decode(p+1,(size_t)zsz[t]-1,d2,raw)){ free(out); return nullptr; } }
             else               { if(!zdec_ok(d2,raw,p+1,(size_t)zsz[t]-1)){ free(out); return nullptr; } }
         }
         p+=(size_t)zsz[t];

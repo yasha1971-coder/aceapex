@@ -12,7 +12,7 @@ ACEAPEX — параллельный блочный LZ77-компрессор с
   добавить строку в `CONTEXT.md`, закоммитить явными путями (оба репо).
 
 ## Судья
-- `make test` = `./verify.sh HEAD`. Ожидание на ace-core: HEAD 49 pass / 0 fail (новые
+- `make test` = `./verify.sh HEAD`. Ожидание на ace-core: HEAD 50 pass / 0 fail (новые
   претензии поднимают pass; fail всегда 0).
 - Результат пишется в `results/HEAD.json` — его не коммитить.
 

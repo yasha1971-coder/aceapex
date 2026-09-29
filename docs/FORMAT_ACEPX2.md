@@ -185,7 +185,10 @@ Each chunk begins with one mode byte; the remaining `zsz[t] - 1` bytes are:
 
 - mode `0`: one zstd frame decoding to the chunk's `raw` bytes.
 - mode `1`: the DNA pack of §3.3.
+- mode `2`: the open DNA pack of §3.4 (zstd-free, 2026-09-29).
+- mode `3`: open plain, one piece (§3.4) holding the chunk's `raw` bytes.
 - other values are reserved and MUST NOT be written; the reference decoders read them as mode 0.
+  Decoders older than §3.4 read modes 2 and 3 as mode 0, where they fail as zstd frames.
 
 ### 3.3 DNA pack (literal chunk, mode 1)
 
@@ -205,6 +208,38 @@ for k in 0..nexc: pos += gap[k]; dst[pos] = val[k]`. An exception position `>= r
 ignored by the reference decoders. Exception bytes carry their own case; the mask bit at
 an exception position is written by the encoder as the byte's own case and is
 overwritten by `val` anyway.
+
+### 3.4 Open DNA pack (literal chunk, mode 2) and pieces
+
+The zstd-free literal profile (ADR-019). A **piece** is one mode byte and a payload whose
+decoded length `n` is always known from the context: `0` = the `n` raw bytes (stored size
+`1 + n`); `1` = one rANS chunk of §3.1.1 decoding to `n` bytes. Other piece modes are an
+error. A piece of `n = 0` has stored size 0. Mode 3 is one piece of the chunk's `raw` bytes.
+
+Mode 2 is the DNA pack of §3.3 with two parts recoded and every part a piece:
+
+    [0]   u32 nexc          number of exception bytes (anything that is not ACGT/acgt)
+    [4]   u32 ncse          bytes of the case-run stream
+    [8]   u32 ngap          bytes of the gap stream
+    [12]  u32 h1, h2, h3, h4   stored sizes of the four pieces below (h3 = h4 = 0 iff nexc = 0)
+    [28]  seq  piece -> ceil(raw/4) bytes, as in §3.3
+          cse  piece -> ncse bytes: run lengths, unsigned LEB128, alternating upper, lower,
+               upper, ... and starting with upper; only the first run may be 0; they sum to raw
+          gap  piece -> ngap bytes: nexc unsigned LEB128 gaps; exception k is at the running
+               sum of gaps 0..k; only the first gap may be 0; every position < raw
+          val  piece -> nexc bytes: the exception byte itself
+
+Reconstruction is that of §3.3: bases, then `|= 0x20` over every lower run, then
+`dst[pos_k] = val[k]`. The case rule of the writer is the same as for mode 1 (a byte in
+`a..z` is lower). A reader MUST reject: `28 + h1 + h2 + h3 + h4` different from the stored
+size, an unknown piece mode, a piece not decoding to its length, a LEB128 value over 32
+bits or not terminated inside its stream, bytes left after the last run or gap, runs not
+summing to `raw`, a zero run or gap where forbidden, a position `>= raw`, fewer than `nexc`
+gaps. Reference code: `src/ax_lit_open.h` (the same file is `c/ax_lit_open.h`).
+Writers emit modes 2 and 3 only for the open profile (`AX_LIT=open`, or `AX_PROFILE=open`,
+which also sets `AX_TOK=rans`); there every literal chunk is mode 2 or 3 (whichever is
+smaller when the chunk qualifies for the DNA pack), and the literal stream is always the
+tagged chunked layout. An archive of this profile contains no zstd frame.
 
 ## 4. Region reads
 

@@ -193,6 +193,46 @@ pointers (UBSan in the region paths). Claims: conformance fixtures dna_rans_2MiB
 dna_rans_4k, text_rans_200K (CLI, C99, ARM64, ARMv7), ax_rans.h identical in src/, c/,
 python/csrc/; 3000 unit round-trips and 300 bit-flip runs under ASan/UBSan clean.
 
+## ADR-019 (2026-09-29) The open profile: zstd-free literal chunks, modes 2 and 3
+After ADR-018 the tokens of a genome archive decode without zstd, but its literals did not:
+on a Tesla T4 (chr1, 16 KiB blocks, 64 KiB literal chunks) the nvCOMP decode of the DNA-pack
+sub-frames took 12.4 of 29.4 ms on the device, the largest stage (results/colab-t4-2026-09-29-
+gpu-rans.log). E3 (results/e3-dna-pack-2026-09-29.log) measured what zstd buys there: replacing
+it by raw or order-0 rANS per sub-frame costs +4.37 % of the chr1 archive (seq +0.93, cse
++2.51, gap +0.32, val +0.63; each small rANS piece carries ~170 bytes of header), but the case
+mask as run lengths and the exception gaps as LEB128, then raw/rANS, is -1.81 % - smaller than
+zstd. Decision: tagged literal chunk mode 2 = open DNA pack (spec 3.4: header of nexc, ncse,
+ngap and four piece sizes; seq and val as pieces, cse as alternating upper/lower run lengths,
+gap as LEB128, a piece being raw or one rANS chunk of spec 3.1.1, whichever is smaller per
+piece), mode 3 = open plain (one piece of the chunk's bytes). `AX_LIT=open` writes them;
+`AX_PROFILE=open` = `AX_LIT=open` + `AX_TOK=rans`, and an archive of that profile contains no
+zstd frame; the literal stream is then always chunked and tagged. Default output unchanged byte
+for byte (chr1 default 68 127 499 B before and after).
+Numbers, chr1 on ace-core (libzstd 1.4.8): default profile zstd 68 127 499 B, rANS tokens
+68 099 895, open 66 904 489 (-1.80 % against zstd, -1.76 % against rANS tokens); T4 profile
+69 473 882 / 69 169 770 / 67 975 888 (-2.16 %). Cost on the CPU: the entropy phase of the CLI
+decode 0.034 -> 0.070 s (the rANS token chunks, same as AX_TOK=rans), the C99 decoder 0.58 ->
+0.88 s for chr1 (bytewise base expansion, not tuned); encode 295 -> 284 MB/s.
+Readers: C++ (full, region, batch), C99, Python (csrc), ARM through the C99/C++ sources, the GPU
+tool: pieces through k_rans (mode 0 = warp copy), bases k_open_seq, case runs k_open_cse and
+exceptions k_open_exc, one warp per chunk with ballot/popcount LEB128 parsing and a 64-bit warp
+scan (steps in src/ax_open_warp.h, emulated on the CPU by scripts/open_warp_emu.cpp, claim
+head_open_warp_emu). Checks: every size, piece mode, LEB128 length and value, run sum, zero
+runs and gaps, positions, gap count (spec 3.4). Fixtures dna_open_2MiB, dna_open_mixed_300K,
+dna_open_4097B, dna_openlit_300K, text_open_200K (both modes, raw and rANS pieces, exceptions,
+zstd tokens with open literals). Fuzz: 3000 corrupted fixture archives through the C99 decoder
+and the C++ CLI under ASan/UBSan, 0 crashes, after three fixes to the C++ reader that the fuzz
+found in code older than this ADR: the literal chunk table is validated against the stream
+(it was read unchecked: heap overflows on a corrupt size), the DNA pack of mode 1 checks its
+sub-frame sizes and nexc before reading, the reserved bit 63 of the literal word is rejected;
+and the block decoder's varint no longer shifts past 31 bits on a corrupt stream.
+Tesla T4, chr1, T4 profile (results/colab-t4-2026-09-29-gpu-open.log, median of 7, all passes
+and the five open fixtures bit-perfect, no nvCOMP call on the open archive): on-device 29.35
+(zstd) -> 28.24 (rANS tokens) -> 22.56 ms (open), 11.3 GB/s; with H2D 34.88 -> 27.98 ms.
+lit 11.68 -> 4.38 ms (pieces: seq 2.15, cse 0.71, gap 0.64, val 0.60, plain 0.67); unpack
+4.19 -> 6.56 ms (bases 1.90, case runs 2.80, exceptions 1.84); match 10.5 ms is now the
+largest stage.
+
 ## Open
 - GPU figures in the README were taken in July on code that predates the literal
   transform, literal chunking and the chunk field. The README front page is rewritten

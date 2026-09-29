@@ -4,6 +4,16 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
+## Unreleased (main)
+
+- rANS token profile (ADR-018, `AX_TOK=rans`, chunk entry bit 62) and the open profile
+  (ADR-019, `AX_PROFILE=open`: tokens rANS, literal chunks mode 2 open DNA pack / mode 3 open
+  plain, spec §3.4): a genome archive without a single zstd frame, chr1 66 904 489 B against
+  68 127 499 B default (-1.80 %). Opt-in; default bytes unchanged. Read by the C++, C99,
+  Python and GPU decoders; GPU: k_rans, k_open_seq/cse/exc (no nvCOMP call on such an archive).
+- C++ reader: literal chunk table validated against the stream, DNA pack (mode 1) framing
+  checked, reserved literal flags rejected, varint shift bounded (found by fuzzing, 3000 runs).
+
 ## v2.1.0 — 2026-09-29
 
 Format ACEPX2 (`version 2` in the header), specified in `docs/FORMAT_ACEPX2.md`. Archives
