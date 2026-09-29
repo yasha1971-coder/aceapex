@@ -76,16 +76,18 @@ int64_t aceapex_decompress(
     return aceapex_decompress_mt(src, src_size, dst, dst_capacity, 0);
 }
 
-int64_t aceapex_decompress_mt(
-    const void* src, size_t src_size,
-    void*       dst, size_t dst_capacity, int threads)
+// Header validation + entropy phase shared by aceapex_decompress_mt and
+// aceapex_decode_streams. On success the four decoded streams and the block table are
+// owned by the caller; on failure nothing is allocated and a negative code is returned.
+struct AxStreams { uint8_t *l,*o,*n,*c; size_t ls,os,ns,cs; std::vector<BlockOffsets> boffs; AetHeader hdr; };
+static int64_t ax_entropy_decode(const void* src, size_t src_size, int threads, AxStreams& S)
 {
     if (!src || src_size < sizeof(AetHeader)) return ACEAPEX_ERR_DATA;
     const uint8_t* p=(const uint8_t*)src;
     AetHeader hdr; memcpy(&hdr,p,sizeof(hdr));
     if (memcmp(hdr.magic,"ACEPX2\0\0",8)!=0) return ACEAPEX_ERR_DATA;
+    S.hdr = hdr;
     if (hdr.num_blocks == 0) return ax_is_empty_archive(hdr) ? 0 : ACEAPEX_ERR_DATA;
-    if (hdr.orig_size>dst_capacity) return ACEAPEX_ERR_BUFFER;
 
     // ---- Header validation. Runs once per archive, costs nothing in the hot loop.
     // A single corrupted byte in the header or in the BlockOffsets table used to send
@@ -101,8 +103,8 @@ int64_t aceapex_decompress_mt(
         if (need > src_size) return ACEAPEX_ERR_DATA;
     }
     p+=sizeof(hdr);
-    std::vector<BlockOffsets> boffs(hdr.num_blocks);
-    memcpy(boffs.data(),p,hdr.num_blocks*sizeof(BlockOffsets));
+    S.boffs.assign(hdr.num_blocks, BlockOffsets());
+    memcpy(S.boffs.data(),p,hdr.num_blocks*sizeof(BlockOffsets));
     p+=hdr.num_blocks*sizeof(BlockOffsets);
     // malloc(0) may legally return NULL; an empty stream is not an error.
     // The old !zl check turned zlit_sz==0 (tiny inputs) into ACEAPEX_ERR_MEMORY.
@@ -132,13 +134,13 @@ int64_t aceapex_decompress_mt(
     if (budget == 1) { litfn(&larg); fse_multi_decomp(fst,3,1); }
     else { pthread_t lt; pthread_create(&lt,nullptr,litfn,&larg);
            fse_multi_decomp(fst,3,tok_t); pthread_join(lt,nullptr); }
-    if(!l){free(o);free(n);free(c);free(zl);free(zo);free(zn);free(zc);return ACEAPEX_ERR_MEMORY;}
-    if(g_dec_err){free(l);free(o);free(n);free(c);free(zl);free(zo);free(zn);free(zc);return ACEAPEX_ERR_DATA;}
     free(zl);free(zo);free(zn);free(zc);
+    if(!l){free(o);free(n);free(c);return ACEAPEX_ERR_MEMORY;}
+    if(g_dec_err){free(l);free(o);free(n);free(c);return ACEAPEX_ERR_DATA;}
 
     // Every block's stream slice must lie inside its decoded stream.
     for (size_t b = 0; b < hdr.num_blocks; b++) {
-        const BlockOffsets& bo = boffs[b];
+        const BlockOffsets& bo = S.boffs[b];
         if (bo.lit_off + bo.lit_sz > ls || bo.lit_off > ls ||
             bo.off_off + bo.off_sz > os || bo.off_off > os ||
             bo.len_off + bo.len_sz > ns || bo.len_off > ns ||
@@ -147,10 +149,45 @@ int64_t aceapex_decompress_mt(
             return ACEAPEX_ERR_DATA;
         }
     }
-    parallel_decode(l,o,n,c,boffs.data(),hdr.num_blocks,
-                    (uint8_t*)dst,hdr.orig_size,hdr.block_size,budget);
-    free(l);free(o);free(n);free(c);
+    S.l=l; S.o=o; S.n=n; S.c=c; S.ls=ls; S.os=os; S.ns=ns; S.cs=cs;
     return (int64_t)hdr.orig_size;
+}
+
+int64_t aceapex_decompress_mt(
+    const void* src, size_t src_size,
+    void*       dst, size_t dst_capacity, int threads)
+{
+    AxStreams S; int64_t r = ax_entropy_decode(src, src_size, threads, S);
+    if (r <= 0) return r;                                    // error, or the empty archive
+    if (S.hdr.orig_size > dst_capacity) { free(S.l);free(S.o);free(S.n);free(S.c); return ACEAPEX_ERR_BUFFER; }
+    int budget=threads>0?threads:(int)std::thread::hardware_concurrency(); if(budget<1) budget=8;
+    parallel_decode(S.l,S.o,S.n,S.c,S.boffs.data(),S.hdr.num_blocks,
+                    (uint8_t*)dst,S.hdr.orig_size,S.hdr.block_size,budget);
+    free(S.l);free(S.o);free(S.n);free(S.c);
+    return (int64_t)S.hdr.orig_size;
+}
+
+int aceapex_decode_streams(const void* src, size_t src_size, aceapex_streams_t* out)
+{
+    if (!out) return ACEAPEX_ERR_DATA;
+    memset(out, 0, sizeof(*out));
+    AxStreams S; int64_t r = ax_entropy_decode(src, src_size, 0, S);
+    if (r < 0) return (int)r;
+    if (r == 0) { out->block_size = S.hdr.block_size; return 0; }   // empty archive: no streams
+    std::vector<BlockOffsets>* bv = new std::vector<BlockOffsets>(std::move(S.boffs));
+    out->lit=S.l; out->off=S.o; out->len=S.n; out->cmd=S.c;
+    out->lit_sz=S.ls; out->off_sz=S.os; out->len_sz=S.ns; out->cmd_sz=S.cs;
+    out->boffs_vec=(void*)bv; out->boffs=(const void*)bv->data();
+    out->num_blocks=S.hdr.num_blocks; out->block_size=S.hdr.block_size; out->orig_size=S.hdr.orig_size;
+    return 0;
+}
+
+void aceapex_streams_free(aceapex_streams_t* s)
+{
+    if(!s) return;
+    free(s->lit); free(s->off); free(s->len); free(s->cmd);
+    delete (std::vector<BlockOffsets>*)s->boffs_vec;
+    s->lit=s->off=s->len=s->cmd=nullptr; s->boffs_vec=nullptr; s->boffs=nullptr;
 }
 
 int64_t aceapex_decompress_region(

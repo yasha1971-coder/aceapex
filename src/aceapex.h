@@ -98,6 +98,22 @@ void aceapex_stream_free(aceapex_stream_t* s);
 #define ACEAPEX_ERR_DATA    -2
 #define ACEAPEX_ERR_MEMORY  -3
 
+/* The entropy layer only: the four decoded streams and the block table of an archive,
+   for a caller that runs the match phase itself (the lzbench CUDA decoder). Returns 0
+   or a negative error code; free with aceapex_streams_free. An empty archive yields
+   zero streams and num_blocks 0. */
+typedef struct {
+    uint8_t *lit, *off, *len, *cmd;     /* decoded streams (malloc'd) */
+    uint64_t lit_sz, off_sz, len_sz, cmd_sz;
+    void    *boffs_vec;                 /* owner (opaque), freed by aceapex_streams_free */
+    const void *boffs;                  /* BlockOffsets[num_blocks], 64 bytes each */
+    size_t   num_blocks;
+    uint32_t block_size;
+    uint64_t orig_size;
+} aceapex_streams_t;
+int  aceapex_decode_streams(const void* src, size_t src_size, aceapex_streams_t* out);
+void aceapex_streams_free(aceapex_streams_t* s);
+
 #ifdef __cplusplus
 }
 #endif
