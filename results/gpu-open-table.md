@@ -1,6 +1,6 @@
 # Open profile across GPUs (scripts/colab_gpu_open.sh, profile BS 16K / LIT 64K)
 
-chr1 (253 935 557 B), ms, median of 7; every row bit-perfect (FNV of the GPU output == original),
+chr1 (253 935 557 B), ms, median of 7; every row bit-perfect; 4 GPUs (FNV of the GPU output == original),
 commit 907a470, Colab 2026-09-29, CUDA 12.8, driver 580.82.07, nvCOMP 5.3.0.16.
 Logs: results/colab-2026-09-29-<gpu>-gpu-open.log. open = 0 nvCOMP calls.
 
@@ -22,17 +22,21 @@ Archive bytes (identical on every machine; == pinned on all 3 Colab hosts):
 | RTX PRO 6000 Blackwell SE (120) | zstd | 0.485 | 2.960 | 0.464 | 1.308 | 5.216 | 6.421 | 48.68 |
 | RTX PRO 6000 Blackwell SE (120) | rans | 0.955 | 3.028 | 0.466 | 1.298 | 5.747 | 6.946 | 44.19 |
 | RTX PRO 6000 Blackwell SE (120) | open | 0.948 | 0.968 | 0.508 | 1.294 | 3.719 | 4.897 | 68.29 |
-| L4 (89) | — | chr1 download truncated; fixtures 5/5 bit-perfect; re-run pending | | | | | | |
+| L4 (89) | zstd | 0.976 | 4.965 | 2.561 | 4.802 | 13.304 | 18.845 | 19.09 |
+| L4 (89) | rans | 0.954 | 4.954 | 2.555 | 4.690 | 13.153 | 18.669 | 19.31 |
+| L4 (89) | open | 0.928 | 1.918 | 2.655 | 4.640 | 10.141 | 15.573 | 25.04 |
 
 Repeat on the Blackwell host (3f09fcf, same session, chr1 from the work dir): on-device zstd 5.199,
 rans 5.696, open 3.719 ms (68.3 GB/s) - open identical to the first run, zstd/rans within 0.9 %.
 
-open vs zstd on-device: T4 -30.5 %, A100 -37.5 %, Blackwell -28.7 %.
+open vs zstd on-device: T4 -30.5 %, L4 -23.8 %, A100 -37.5 %, Blackwell -28.7 %.
+L4 first run (907a470): chr1 download truncated (results/colab-2026-09-29-l4-gpu-open-fail.log); row from 6c25962.
 
 ## Parts of the open archive, ms
 | GPU | seq | cse | gap | val | plain | bases | case | exceptions |
 |---|---|---|---|---|---|---|---|---|
 | T4 | 2.095 | 0.695 | 0.624 | 0.596 | 0.665 | 2.776 | 0.245 | 1.715 |
+| L4 | 1.107 | 0.225 | 0.195 | 0.165 | 0.575 | 1.156 | 0.101 | 1.406 |
 | A100 | 0.483 | 0.153 | 0.136 | 0.113 | 0.693 | 0.566 | 0.070 | 0.229 |
 | Blackwell | 0.310 | 0.088 | 0.068 | 0.049 | 0.602 | 0.260 | 0.033 | 0.217 |
 
