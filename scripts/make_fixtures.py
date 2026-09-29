@@ -92,7 +92,12 @@ def main():
                 print(f'FAIL {name}: {r.stderr[-300:]}'); sys.exit(1)
             rows.append((name, n, sha, denv)); print(f'{name}: {n} B -> {os.path.getsize(dst)} B')
     if a.regen: print('inputs in /tmp/conf_inputs'); return
-    with open(os.path.join(a.out, 'manifest.tsv'), 'a' if only else 'w') as f:
+    mf = os.path.join(a.out, 'manifest.tsv')
+    keep = []
+    if only and os.path.exists(mf):              # --only: replace those rows, keep the rest (idempotent)
+        keep = [l for l in open(mf) if l.split('\t')[0] not in only]
+    with open(mf, 'w') as f:
+        f.writelines(keep)
         for name, n, sha, denv in rows: f.write(f'{name}\t{n}\t{sha}\t{denv}\n')
     print(f'{len(rows)} fixtures, manifest written')
 
