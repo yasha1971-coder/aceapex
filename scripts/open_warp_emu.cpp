@@ -1,7 +1,7 @@
-// open_warp_emu.cpp - the GPU decoder of the open DNA pack (ADR-019: k_open_seq, k_open_cse,
-// k_open_exc in aceapex_gpu.cu, host framing axo_parse) on the CPU. The per-lane steps of
-// src/ax_open_warp.h run for lanes 0..31 in turn, with ballot and the inclusive scan done by
-// loops at the same points as in the kernels; pieces are decoded with axo_piece_decode (the
+// open_warp_emu.cpp - the GPU decoder of the open DNA pack (ADR-019: k_open_cse, k_open_bases,
+// k_open_exc in aceapex_gpu.cu, host framing axo_parse) on the CPU. The per-thread steps of
+// src/ax_open_warp.h run for the AXO_NT threads of a block in turn, with the block scan done
+// by a loop at the same points as in the kernels; pieces are decoded with axo_piece_decode (the
 // rANS pieces go through k_rans on the device, judged by head_rans_warp_emu). The result is
 // compared with the reference axo_dna_decode (src/ax_lit_open.h):
 //   1. round-trips of axo_dna_encode on generated DNA (case runs, N runs, IUPAC codes);
@@ -19,38 +19,45 @@
 #include <random>
 #include <algorithm>
 
-static void emu_cse(const uint8_t* b, uint32_t n, uint32_t raw, uint8_t* dst, bool& badw) {
-    bool bad[32] = {false};
+// one parse round = AXO_NT threads; exclusive scan of (1 << 44 | v) over the round, as in the kernels
+static void emu_round(const uint8_t* b, uint32_t n, uint32_t base, bool* term, uint32_t* v, uint64_t* ex, uint64_t& total, bool* bad) {
+    uint64_t acc = 0;
+    for (uint32_t x = 0; x < AXO_NT; x++) {
+        term[x] = axl_term(base + x, b, n); v[x] = axl_value(base + x, b, term[x], bad[x]);
+        ex[x] = acc; acc += term[x] ? (AXO_KEY_J | v[x]) : 0;
+    }
+    total = acc;
+}
+static uint32_t emu_cse(const uint8_t* b, uint32_t n, uint32_t raw, uint32_t* ends, bool& badw) {
+    static bool bad[AXO_NT]; static bool term[AXO_NT]; static uint32_t v[AXO_NT]; static uint64_t ex[AXO_NT];
+    for (uint32_t x = 0; x < AXO_NT; x++) bad[x] = false;
     if (axl_tail_bad(b, n)) bad[0] = true;
     uint64_t carry = 0; uint32_t jb = 0;
-    for (uint32_t r = 0; 32 * r < n; r++) {
-        bool t[32]; uint32_t m = 0, v[32]; uint64_t end[32], acc = carry; bool paint[32]; uint32_t pm = 0;
-        for (uint32_t l = 0; l < 32; l++) { t[l] = axl_term(l, b, n, r); if (t[l]) m |= 1u << l; }
-        for (uint32_t l = 0; l < 32; l++) v[l] = axl_value(l, b, r, t[l], bad[l]);
-        for (uint32_t l = 0; l < 32; l++) { acc += v[l]; end[l] = acc; }                     // inclusive scan
-        for (uint32_t l = 0; l < 32; l++) { paint[l] = axl_cse_check(t[l], jb + axw_popc(m & ((1u << l) - 1u)), v[l], end[l], raw, bad[l]); if (paint[l]) pm |= 1u << l; }
-        while (pm) { uint32_t s = (uint32_t)__builtin_ctz(pm); pm &= pm - 1;
-            for (uint32_t l = 0; l < 32; l++) axl_paint(l, dst, end[s] - v[s], v[s]); }
-        carry = acc; jb += axw_popc(m);
+    for (uint32_t base = 0; base < n; base += AXO_NT) {
+        uint64_t total; emu_round(b, n, base, term, v, ex, total, bad);
+        for (uint32_t x = 0; x < AXO_NT; x++)
+            axl_cse_end(term[x], jb + (uint32_t)(ex[x] >> 44), v[x], carry + (ex[x] & (AXO_KEY_J - 1)) + v[x], raw, ends, bad[x]);
+        jb += (uint32_t)(total >> 44); carry += total & (AXO_KEY_J - 1);
     }
     if (carry != raw) bad[0] = true;
-    for (int l = 0; l < 32; l++) badw |= bad[l];
+    bool any = false; for (uint32_t x = 0; x < AXO_NT; x++) any |= bad[x];
+    badw |= any;
+    return any ? 0 : jb;                                             // the kernel stores 0 runs for a bad chunk
 }
 static void emu_exc(const uint8_t* b, uint32_t n, uint32_t nexc, uint32_t raw, const uint8_t* val, uint8_t* dst, bool& badw) {
     if (nexc == 0) return;
-    bool bad[32] = {false};
+    static bool bad[AXO_NT]; static bool term[AXO_NT]; static uint32_t v[AXO_NT]; static uint64_t ex[AXO_NT];
+    for (uint32_t x = 0; x < AXO_NT; x++) bad[x] = false;
     if (axl_tail_bad(b, n)) bad[0] = true;
     uint64_t carry = 0; uint32_t jb = 0;
-    for (uint32_t r = 0; 32 * r < n; r++) {
-        bool t[32]; uint32_t m = 0, v[32]; uint64_t end[32], acc = carry;
-        for (uint32_t l = 0; l < 32; l++) { t[l] = axl_term(l, b, n, r); if (t[l]) m |= 1u << l; }
-        for (uint32_t l = 0; l < 32; l++) v[l] = axl_value(l, b, r, t[l], bad[l]);
-        for (uint32_t l = 0; l < 32; l++) { acc += v[l]; end[l] = acc; }
-        for (uint32_t l = 0; l < 32; l++) axl_exc(t[l], jb + axw_popc(m & ((1u << l) - 1u)), v[l], end[l], nexc, raw, val, dst, bad[l]);
-        carry = acc; jb += axw_popc(m);
+    for (uint32_t base = 0; base < n; base += AXO_NT) {
+        uint64_t total; emu_round(b, n, base, term, v, ex, total, bad);
+        for (uint32_t x = 0; x < AXO_NT; x++)
+            axl_exc(term[x], jb + (uint32_t)(ex[x] >> 44), v[x], carry + (ex[x] & (AXO_KEY_J - 1)) + v[x], nexc, raw, val, dst, bad[x]);
+        jb += (uint32_t)(total >> 44); carry += total & (AXO_KEY_J - 1);
     }
     if (jb != nexc) bad[0] = true;
-    for (int l = 0; l < 32; l++) badw |= bad[l];
+    for (uint32_t x = 0; x < AXO_NT; x++) badw |= bad[x];
 }
 // the device path for one mode 2 payload: host framing, pieces, seq expand, cse, exceptions
 static int emu_decode(const uint8_t* s, size_t sz, uint8_t* dst, uint32_t raw) {
@@ -63,9 +70,10 @@ static int emu_decode(const uint8_t* s, size_t sz, uint8_t* dst, uint32_t raw) {
         if (P.mode[k] == 0) memcpy(part[k].data(), s + P.off[k], P.n[k]);
         else if (axr_decode(s + P.off[k], P.h[k], part[k].data(), P.n[k])) return -1;
     }
-    for (uint32_t i = 0; i < raw; i++) dst[i] = (uint8_t)"ACGT"[(part[0][i >> 2] >> (6 - 2 * (i & 3))) & 3];
     bool bad = false;
-    emu_cse(part[1].data(), P.ncse, raw, dst, bad);
+    std::vector<uint32_t> ends(P.ncse + 1);
+    const uint32_t R = emu_cse(part[1].data(), P.ncse, raw, ends.data(), bad);   // k_open_cse
+    for (uint32_t g = 0; 16 * g < raw; g++) axl_bases16(g, part[0].data(), ends.data(), R, raw, dst);   // k_open_bases
     if (bad) return -1;
     emu_exc(part[2].data(), P.ngap, P.nexc, raw, part[3].data(), dst, bad);
     return bad ? -1 : 0;
@@ -171,7 +179,7 @@ int main(int argc, char** argv) {
             }
         }
     }
-    printf("head_open_warp_emu\t%s\tGPU open-pack steps (ax_open_warp.h) == axo_dna_decode: %llu round-trips, %llu archive chunks, %llu crafted streams, %llu mutations (%llu accepted, %llu rejected by both), %llu bytes, %llu mismatches\n",
+    printf("head_open_warp_emu\t%s\tGPU open-pack steps (ax_open_warp.h, block rounds of 256) == axo_dna_decode: %llu round-trips, %llu archive chunks, %llu crafted streams, %llu mutations (%llu accepted, %llu rejected by both), %llu bytes, %llu mismatches\n",
            (bad == 0 && rt > 0 && fx > 0 && crafted > 0) ? "pass" : "fail",
            (unsigned long long)rt, (unsigned long long)fx, (unsigned long long)crafted, (unsigned long long)mut,
            (unsigned long long)g_ok, (unsigned long long)g_rej, (unsigned long long)g_bytes, (unsigned long long)bad);

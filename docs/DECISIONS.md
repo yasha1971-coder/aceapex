@@ -231,7 +231,11 @@ and the five open fixtures bit-perfect, no nvCOMP call on the open archive): on-
 (zstd) -> 28.24 (rANS tokens) -> 22.56 ms (open), 11.3 GB/s; with H2D 34.88 -> 27.98 ms.
 lit 11.68 -> 4.38 ms (pieces: seq 2.15, cse 0.71, gap 0.64, val 0.60, plain 0.67); unpack
 4.19 -> 6.56 ms (bases 1.90, case runs 2.80, exceptions 1.84); match 10.5 ms is now the
-largest stage.
+largest stage. Follow-up (gpu-case): the case runs and the exception gaps are parsed by one
+thread block per chunk in rounds of 256 bytes (a chunk with tens of thousands of runs or
+exceptions was one warp's serial chain), the case is applied while the bases are written
+(k_open_bases: 16 positions per thread, binary search over the run ends, one 16-byte store)
+instead of a second read-modify-write pass.
 
 ## Open
 - GPU figures in the README were taken in July on code that predates the literal
