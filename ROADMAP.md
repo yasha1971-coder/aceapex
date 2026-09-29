@@ -59,6 +59,7 @@ StreamLZ (конкурент) декодирует своей GPU-энтропи
 3. Новый поиск совпадений энкодера.
 4. Выход наружу: просьба о чужой реализации (ворота 3), пост X №2, письмо Бонфилду.
 5. (решено 29.09: делать, ADR-019)
+6. dense-open: order-1 литералы (rans1_v4) новым режимом чанка — chr1 -4.68 % к open; меняет формат, нужен GPU-декодер order-1.
 
 ## Не делать (закрыто замером; подробности DECISIONS/CONTEXT)
 order-0 на литералах не-ДНК; OpenMP в декоде; branch-light декодер токенов; два блока на нить;
@@ -67,6 +68,7 @@ order-0 на литералах не-ДНК; OpenMP в декоде; branch-ligh
 ## Где что лежит
 - Код и судья: github.com/yasha1971-coder/aceapex (make test на ace-core = 50/0).
 - История/передача: github.com/yasha1971-coder/yasha-context/ACEAPEX (CONTEXT.md, HANDOFF.md).
+- Измеренные механизмы (в сборке / лежит / закрыт, с числами): yasha-context/ACEAPEX/DIAMONDS.md.
 - Разборы конкурентов и стандарта: документы проекта Claude «Проэкт ACEAPEX»
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
@@ -84,6 +86,10 @@ results/gpu-open-table.md). on-device, мс, zstd -> open:
 gpu-case на T4: case 2.80 -> 0.25 мс (цель < 1 мс выполнена), unpack 6.56 -> 4.71, on-device
 22.56 -> 20.51. Главный этап T4 — match 10.36 мс; на A100/Blackwell match 2.8/1.3, lit и unpack
 вместе ~ match. L4: exceptions 1.41 мс — самый дорогой кусок unpack (как на T4).
+dense-open (замер 29.09, формат не менялся): open + rans1_v4 order-1 на сырых литералах = chr1
+63 775 602 B против open 66 904 489 (-4.68 %), T4-профиль 64 923 192 против 67 975 888 (-4.49 %);
+rans1_v4 564 MB/s на нить, 8 нитей ~ вся фаза энтропии open (0.07 с); регион 27.5 % работы;
+bit-perfect (results/dense-open-chr1-2026-09-29.log). GPU-декодер order-1 не написан.
 T2T на A100-80GB (5d9786a, NCBI GCA_009914755.4, все bit-perfect, медиана 3): on-device zstd 77.7 ->
 open 52.3 мс (60.4 GB/s), с H2D 149.6 -> 123.0; open-архив 887 641 942 B. H2D 70.7 мс = 57 % пути,
 match 30.3, bases 7.4, seq 5.1. Архивы zstd/rans T2T зависят от libzstd (1.5.5: 901 676 480 /
