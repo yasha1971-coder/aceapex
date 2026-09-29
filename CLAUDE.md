@@ -5,6 +5,12 @@ ACEAPEX — параллельный блочный LZ77-компрессор с
 (`python/`), GPU (`aceapex_gpu.cu`). Решения — `docs/DECISIONS.md` (ADR), релизы —
 `CHANGELOG.md`, схема тегов — ADR-013 (софт `vX.Y.Z`, `vN.0`/`paperN-v1` — статьи, заморожены).
 
+## Протокол сессии
+- Начало: прочитать `CLAUDE.md` -> `ROADMAP.md` -> последние 40 строк
+  `~/yasha-context/ACEAPEX/CONTEXT.md`.
+- Конец каждой задачи: обновить в `ROADMAP.md` разделы «Сейчас» / «Дальше» и статусы,
+  добавить строку в `CONTEXT.md`, закоммитить явными путями (оба репо).
+
 ## Судья
 - `make test` = `./verify.sh HEAD`. Ожидание на ace-core: HEAD 48 pass / 0 fail.
 - Результат пишется в `results/HEAD.json` — его не коммитить.
