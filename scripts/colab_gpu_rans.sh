@@ -49,5 +49,10 @@ echo; echo "chr1 on $(nvidia-smi --query-gpu=name --format=csv,noheader | head -
   grep '^ROW' $L | cut -f2- | sed "s#$W/##"; } | column -t -s $'\t' | tee -a $L.table
 cat $L.table >> $L; rm -f $L.table
 N=$(grep -c '^ROW.*bit-perfect$' $L); echo "bit-perfect rows: $N of 3" | tee -a $L
-[ "$N" = 3 ] && ! grep -q 'MISMATCH\|DIFFERS\|rejected' $L && echo "RESULT: all three archives bit-perfect on the GPU" | tee -a $L \
+# verdict from the lines each tool prints for a failure, not from free text (the emulator's
+# summary says "rejected by both" on a pass): 3 bit-perfect rows, 3 exits 0, emulator pass,
+# no FNV mismatch, no rANS chunk rejected on the device
+X=$(grep -c '^exit 0$' $L); E=$(grep -c $'^head_rans_warp_emu\tpass' $L)
+[ "$N" = 3 ] && [ "$X" = 3 ] && [ "$E" = 1 ] && ! grep -q 'DIFFERS X\|archive rejected\|^ROW.*MISMATCH' $L \
+  && echo "RESULT: all three archives bit-perfect on the GPU" | tee -a $L \
   || { echo "!!! NOT PASSED - no figure from this run is valid" | tee -a $L; exit 1; }
