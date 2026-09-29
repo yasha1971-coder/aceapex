@@ -72,7 +72,9 @@ get_corpus(){ # name md5 url -> $W/name or empty
   if [ ! -s $c ]; then
     if [ $HAVE_DRIVE = 1 ] && [ -s $DRV/$n ]; then cp $DRV/$n $c; echo "$n: from Drive" | tee -a $L
     elif [ $HAVE_DRIVE = 1 ] && [ -s $DRV/$n.gz ]; then gunzip -c $DRV/$n.gz > $c; echo "$n: from Drive ($n.gz)" | tee -a $L
-    elif [ -n "$u" ]; then curl -sL $u | gunzip -c > $c; echo "$n: downloaded" | tee -a $L
+    elif [ -n "$u" ]; then   # to a file first: a cut stream gave a truncated corpus (L4, 29.09)
+      for try in 1 2 3; do curl -fsSL --retry 3 -o $c.gz $u && gzip -t $c.gz 2>/dev/null && break; rm -f $c.gz; done
+      gunzip -c $c.gz > $c; rm -f $c.gz; echo "$n: downloaded" | tee -a $L
       echo "   keep it on Drive for the next GPU: !mkdir -p $DRV && cp $c $DRV/$n" | tee -a $L
     else echo "$n: not on Drive ($DRV/$n or $n.gz) - skipped" | tee -a $L; return 1; fi
   fi
