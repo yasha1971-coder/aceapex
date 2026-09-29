@@ -8,7 +8,8 @@ Archive bytes (identical on every machine; == pinned on all 3 Colab hosts):
 | corpus | zstd | rans | open |
 |---|---|---|---|
 | chr1 (253 935 557 B) | 69 410 925 | 69 106 957 | 67 975 888 |
-| t2t (3 156 259 565 B, ace-core) | 902 319 887 | 898 903 131 | 887 641 942 |
+| t2t (3 156 259 565 B), libzstd 1.4.8 (ace-core) | 902 319 887 | 898 903 131 | 887 641 942 |
+| t2t, libzstd 1.5.5 (Colab A100-80GB, 5d9786a) | 901 676 480 | 898 263 414 | 887 641 942 |
 
 ## Stages
 | GPU (sm) | archive | tok | lit | unpack | match | on-device | +H2D | GB/s on-device |

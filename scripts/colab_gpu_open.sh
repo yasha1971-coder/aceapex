@@ -83,8 +83,12 @@ get_corpus(){ # name md5 url -> $W/name or empty
   fi
   echo "$m  $c" | md5sum -c - >/dev/null 2>&1 && echo "$n: md5 $m OK" | tee -a $L || { echo "$n: MD5 MISMATCH" | tee -a $L; rm -f $c; return 1; }
 }
+# archive bytes; zstd frames depend on the libzstd version (t2t: 1.5.5 on Colab, 1.4.8 on ace-core),
+# the open archive has none; chr1 at 16 KiB blocks came out the same under both
+ZV=$(grep -h '#define ZSTD_VERSION_\(MAJOR\|MINOR\|RELEASE\)' /usr/include/zstd.h | awk '{print $3}' | paste -sd. -)
 pinned(){ case $1.$2 in chr1.zstd) echo 69410925;; chr1.rans) echo 69106957;; chr1.open) echo 67975888;;
-  t2t.zstd) echo 902319887;; t2t.rans) echo 898903131;; t2t.open) echo 887641942;; esac; }
+  t2t.zstd) [ "$ZV" = 1.4.8 ] && echo 902319887 || echo 901676480;;
+  t2t.rans) [ "$ZV" = 1.4.8 ] && echo 898903131 || echo 898263414;; t2t.open) echo 887641942;; esac; }
 T=$(nproc); CORP=""
 get_corpus chr1.fa 9465e0f0df6e2c6eb39729c39cee5465 https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr1.fa.gz && CORP="chr1"
 get_corpus t2t.fa cd1e52ce400c027ed0b7ab4b9d613f5a "" && CORP="$CORP t2t"
