@@ -154,6 +154,20 @@ determinism claim holds. Container, 2 threads: encode silesia 6.43 -> 5.70 s. Al
 removes a 32-bit truncation (`(int32_t)pos`) left from the 64-bit-position fix of
 2026-07-24 that only lost matches past 2 GiB.
 
+## ADR-017 (2026-09-29) The library encoder wrote a constant block size; the judge now round-trips the API
+`aceapex_compress` stamped `BLOCK_SIZE` (1 MiB) into the header while `encode_file` had
+cut the blocks with the adaptive size (256 KiB for a 300 KB input at one thread), so
+every archive from the library with two or more blocks smaller than 1 MiB - inputs
+between 256 KiB and 4 MiB x threads - decoded its first block and garbage after it.
+The CLI wrote the right value, every fixture is CLI-made, the Python package only
+decodes, and lzbench's 1.0.1 copy has fixed 1 MiB blocks, so nothing published saw it;
+lzbench's own tiny-input run on the 2.1.0 branch found it (`common=262144/300000`).
+Fix: the header carries `g_block_size`. New claim `head_api_roundtrip`
+(`scripts/api_roundtrip.cpp`): 13 sizes across the block-size boundaries x random and
+DNA-like bytes x both levels x 3 encode x 3 decode thread counts, 468 round-trips,
+bit-perfect; on the unfixed code it fails 204 of them. Rule: every public entry point
+gets a round-trip claim, not only the CLI.
+
 ## Open
 - GPU figures in the README were taken in July on code that predates the literal
   transform, literal chunking and the chunk field. The README front page is rewritten

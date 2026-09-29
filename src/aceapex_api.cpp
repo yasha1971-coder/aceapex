@@ -44,7 +44,10 @@ int64_t aceapex_compress(
     AetHeader hdr;
     memcpy(hdr.magic,"ACEPX2\0\0",8);
     hdr.version=2; hdr.orig_size=src_size;
-    hdr.block_size=BLOCK_SIZE; hdr.num_blocks=nb;
+    // The block size is adaptive (compute_block_size in encode_file) and MUST be the one
+    // the blocks were cut with; the constant here put every second block of an input
+    // between 256 KiB and 4 MiB x threads at the wrong offset (lzbench t300k, 2026-09-29).
+    hdr.block_size=(uint32_t)g_block_size; hdr.num_blocks=nb;
     uint64_t hv=OUR_CHECKSUM(src,src_size);
     memcpy(hdr.xxhash,&hv,8);
     hdr.zlit_sz=zls;hdr.zoff_sz=zos;
