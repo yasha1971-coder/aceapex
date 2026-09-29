@@ -62,7 +62,7 @@ order-0 на литералах не-ДНК; OpenMP в декоде; branch-ligh
 отпечатки в цепочке хеша; nice-length; обещать плотность на весах моделей; «быстрее zstd».
 
 ## Где что лежит
-- Код и судья: github.com/yasha1971-coder/aceapex (make test на ace-core = 48/0).
+- Код и судья: github.com/yasha1971-coder/aceapex (make test на ace-core = 49/0).
 - История/передача: github.com/yasha1971-coder/yasha-context/ACEAPEX (CONTEXT.md, HANDOFF.md).
 - Разборы конкурентов и стандарта: документы проекта Claude «Проэкт ACEAPEX»
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
