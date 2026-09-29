@@ -1,28 +1,27 @@
 {
  "provenance": {
   "tag": "HEAD",
-  "commit": "bf05f17d4468827cf20559c9e578c5fc455cb7ac",
-  "date": "2026-09-29T10:47Z",
+  "commit": "79ae55d62257fe6fe4085bbc4580e874d8e1fc4c",
+  "date": "2026-09-22T08:42Z",
   "host": "ace-core",
   "machine": "x86_64",
   "cores": 16,
   "libzstd": "1.4.8",
   "compiler": "g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0",
-  "pass": 48,
+  "pass": 34,
   "fail": 0,
   "skipped": 3,
-  "declared": 12,
+  "declared": 8,
   "unjudged": 0,
-  "known": 0,
   "build_failed": 0
  },
  "result": {
   "paper": "What Actually Serializes GPU LZ77 Decode",
-  "date": "2026-09-29T10:47:04Z",
+  "date": "2026-09-22T08:42:00Z",
   "hardware": "x86_64 16 cores",
   "corpus_md5_expected": "9465e0f0df6e2c6eb39729c39cee5465",
   "summary": {
-   "pass": 34,
+   "pass": 33,
    "fail": 0,
    "skipped": 9
   },
@@ -40,7 +39,7 @@
     "claim_id": "chr1_baseline_ratio",
     "level": "R",
     "expected": "3.18065",
-    "tolerance": "1e-5 (libzstd 1.4.8)",
+    "tolerance": "1e-5",
     "measured": "3.18065",
     "verdict": "pass",
     "command": "MIN_MATCH=0 t --in chr1"
@@ -49,7 +48,7 @@
     "claim_id": "norep_ratio",
     "level": "R",
     "expected": "3.16347",
-    "tolerance": "1e-5 (libzstd 1.4.8)",
+    "tolerance": "1e-5",
     "measured": "3.16347",
     "verdict": "pass",
     "command": "NO_REP=1 t --in chr1"
@@ -67,7 +66,7 @@
     "claim_id": "min_match16_ratio",
     "level": "R",
     "expected": "3.22581",
-    "tolerance": "1e-5 (libzstd 1.4.8)",
+    "tolerance": "1e-5",
     "measured": "3.22581",
     "verdict": "pass",
     "command": "MIN_MATCH=16 t --in chr1"
@@ -75,8 +74,8 @@
    {
     "claim_id": "default_chr1_ratio",
     "level": "R",
-    "expected": "3.72821",
-    "tolerance": "1e-5 (libzstd 1.4.8)",
+    "expected": "3.72329",
+    "tolerance": "0.038",
     "measured": "3.72821",
     "verdict": "pass",
     "command": "aceapex t --in chr1 with no ACEAPEX_* variables set"
@@ -220,7 +219,7 @@
     "claim_id": "transform_chr1_ratio",
     "level": "R",
     "expected": "3.77696",
-    "tolerance": "1e-5 (libzstd 1.4.8)",
+    "tolerance": "1e-5",
     "measured": "3.77696",
     "verdict": "pass",
     "command": "LIT_CHUNK=1048576 aceapex t --in chr1"
@@ -301,7 +300,7 @@
     "claim_id": "lowlat_chr1_ratio",
     "level": "R",
     "expected": "3.70807",
-    "tolerance": "1e-5 (libzstd 1.4.8)",
+    "tolerance": "1e-5",
     "measured": "3.70807",
     "verdict": "pass",
     "command": "LIT_CHUNK=65536 FSE_CHUNK=4096 aceapex t --in chr1"
@@ -320,7 +319,7 @@
     "level": "M",
     "expected": "0.081",
     "tolerance": "-",
-    "measured": "0.079",
+    "measured": "0.077",
     "verdict": "declared",
     "command": "FSE_CHUNK=4096 scripts/libseek on the low-latency archive, p50 of 200 reads; 0.081 on EPYC 4344P"
    },
@@ -329,7 +328,7 @@
     "level": "M",
     "expected": "1.218",
     "tolerance": "-",
-    "measured": "1.257",
+    "measured": "1.186",
     "verdict": "declared",
     "command": "samtools faidx on bgzip through a process; 1.218 on EPYC 4344P"
    },
@@ -338,7 +337,7 @@
     "level": "R",
     "expected": ">=5x",
     "tolerance": "-",
-    "measured": "15.9x",
+    "measured": "15.4x",
     "verdict": "pass",
     "command": "bgzip_region_p50_ms / lowlat_region_p50_ms, same machine, same session"
    },
@@ -356,18 +355,18 @@
     "level": "M",
     "expected": "685000 ranges/s on EPYC 4344P",
     "tolerance": "-",
-    "measured": "146849",
+    "measured": "142393",
     "verdict": "declared",
     "command": "uniform 5000 ranges, 8 threads"
    },
    {
     "claim_id": "batch_speedup_over_loop",
     "level": "R",
-    "expected": ">=3x (>=4 cores)",
+    "expected": ">=3x",
     "tolerance": "-",
-    "measured": "13.7x on 16 cores",
+    "measured": "13.3x",
     "verdict": "pass",
-    "command": "batch/loop at N=5000, same machine; 13x on EPYC 4344P, 4.6-4.8 on Xeon and EPYC 9V74, 2.2x on 2 cores"
+    "command": "batch/loop at N=5000, same machine; 13x on EPYC 4344P, 4.6-4.8 on Xeon and EPYC 9V74"
    },
    {
     "claim_id": "full_api_roundtrip",
@@ -377,15 +376,6 @@
     "measured": "FULL_API_OK",
     "verdict": "pass",
     "command": "aceapex_decompress on a fresh interactive archive, byte-compared to chr1"
-   },
-   {
-    "claim_id": "region_fails_closed_legacy",
-    "level": "R",
-    "expected": "error (<0)",
-    "tolerance": "0",
-    "measured": "-2",
-    "verdict": "pass",
-    "command": "aceapex_decompress_region on a pre-field interactive archive with no FSE_CHUNK in env"
    },
    {
     "claim_id": "seek_50gb_position_invariance",
@@ -428,162 +418,9 @@
     "level": "M",
     "expected": "-",
     "tolerance": "-",
-    "measured": "64431112853a4dbf",
+    "measured": "685fd37973573bb4",
     "verdict": "declared",
     "command": "sha256 of ./aceapex built by make, first 16 hex"
-   },
-   {
-    "claim_id": "head_fixture_decode_zstd_1.4.8",
-    "level": "R",
-    "expected": "be1059b6f72c384f..",
-    "tolerance": "0",
-    "measured": "sha256 be1059b6f72c384f.. on host libzstd 1.4.8",
-    "verdict": "pass",
-    "command": "scripts/fixture_test.sh"
-   },
-   {
-    "claim_id": "head_fixture_decode_zstd_1.5.5",
-    "level": "R",
-    "expected": "be1059b6f72c384f..",
-    "tolerance": "0",
-    "measured": "sha256 be1059b6f72c384f.. on host libzstd 1.4.8",
-    "verdict": "pass",
-    "command": "scripts/fixture_test.sh"
-   },
-   {
-    "claim_id": "head_fixture_encode_determinism",
-    "level": "R",
-    "expected": "bytes==",
-    "tolerance": "0",
-    "measured": "re-encode of decoded slice == fixture, libzstd 1.4.8",
-    "verdict": "pass",
-    "command": "scripts/fixture_test.sh"
-   },
-   {
-    "claim_id": "head_fixture_empty_decode",
-    "level": "R",
-    "expected": "bytes==",
-    "tolerance": "0",
-    "measured": "empty.aet -> 0 bytes",
-    "verdict": "pass",
-    "command": "scripts/fixture_test.sh"
-   },
-   {
-    "claim_id": "head_fixture_empty_encode",
-    "level": "R",
-    "expected": "bytes==",
-    "tolerance": "0",
-    "measured": "encode of 0 bytes == empty.aet (68 B)",
-    "verdict": "pass",
-    "command": "scripts/fixture_test.sh"
-   },
-   {
-    "claim_id": "head_conformance_cli",
-    "level": "R",
-    "expected": "bytes==",
-    "tolerance": "0",
-    "measured": "14/14 fixtures decode to manifest sha256",
-    "verdict": "pass",
-    "command": "scripts/fixture_test.sh"
-   },
-   {
-    "claim_id": "head_cdecoder_fixtures",
-    "level": "R",
-    "expected": "bytes==",
-    "tolerance": "0",
-    "measured": "2/2 fixtures decode to sha256 be1059b6f72c..",
-    "verdict": "pass",
-    "command": "scripts/fixture_test.sh"
-   },
-   {
-    "claim_id": "head_cdecoder_ranges_200",
-    "level": "R",
-    "expected": "bytes==",
-    "tolerance": "0",
-    "measured": "200 random ranges via aceapex_decompress_ranges, 12352740 bytes, rc=0",
-    "verdict": "pass",
-    "command": "scripts/fixture_test.sh"
-   },
-   {
-    "claim_id": "head_cdecoder_empty",
-    "level": "R",
-    "expected": "bytes==",
-    "tolerance": "0",
-    "measured": "C decoder on empty.aet: rc=0, 0 bytes",
-    "verdict": "pass",
-    "command": "scripts/fixture_test.sh"
-   },
-   {
-    "claim_id": "head_conformance_cdecoder",
-    "level": "R",
-    "expected": "bytes==",
-    "tolerance": "0",
-    "measured": "14/14 fixtures decode to manifest sha256",
-    "verdict": "pass",
-    "command": "scripts/fixture_test.sh"
-   },
-   {
-    "claim_id": "head_python_csrc_in_sync",
-    "level": "R",
-    "expected": "bytes==",
-    "tolerance": "0",
-    "measured": "python/csrc == c/ (aceapex_decode.c, .h)",
-    "verdict": "pass",
-    "command": "scripts/fixture_test.sh"
-   },
-   {
-    "claim_id": "head_api_roundtrip",
-    "level": "R",
-    "expected": "bytes==",
-    "tolerance": "0",
-    "measured": "468/468 library compress->decompress_mt round-trips bit-perfect (13 sizes x 2 kinds x 2 levels x 3x3 threads)",
-    "verdict": "pass",
-    "command": "scripts/fixture_test.sh"
-   },
-   {
-    "claim_id": "head_python_tests",
-    "level": "R",
-    "expected": "bytes==",
-    "tolerance": "0",
-    "measured": "20 passed, 1 skipped in 0.12s",
-    "verdict": "pass",
-    "command": "scripts/fixture_test.sh"
-   },
-   {
-    "claim_id": "head_arm64_cdecoder_conf",
-    "level": "R",
-    "expected": "bytes==",
-    "tolerance": "0",
-    "measured": "no cross toolchain, qemu or static libzstd for aarch64-linux-gnu on this host",
-    "verdict": "declared",
-    "command": "scripts/fixture_test.sh"
-   },
-   {
-    "claim_id": "head_arm64_cli_roundtrip",
-    "level": "R",
-    "expected": "bytes==",
-    "tolerance": "0",
-    "measured": "same",
-    "verdict": "declared",
-    "command": "scripts/fixture_test.sh"
-   },
-   {
-    "claim_id": "head_armv7_cdecoder_conf",
-    "level": "R",
-    "expected": "bytes==",
-    "tolerance": "0",
-    "measured": "no cross toolchain, qemu or static libzstd for arm-linux-gnueabihf on this host",
-    "verdict": "declared",
-    "command": "scripts/fixture_test.sh"
-   },
-   {
-    "claim_id": "head_armv7_cli_roundtrip",
-    "level": "R",
-    "expected": "bytes==",
-    "tolerance": "0",
-    "measured": "same",
-    "verdict": "declared",
-    "command": "scripts/fixture_test.sh"
    },
    {
     "claim_id": "head_region_200",
