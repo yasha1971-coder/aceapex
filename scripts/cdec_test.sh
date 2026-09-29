@@ -51,6 +51,11 @@ fi
 if cmp -s c/aceapex_decode.c python/csrc/aceapex_decode.c && cmp -s c/aceapex_decode.h python/csrc/aceapex_decode.h \
    && cmp -s src/ax_rans.h c/ax_rans.h && cmp -s src/ax_rans.h python/csrc/ax_rans.h; then r=pass; else r=fail; fi
 printf 'head_python_csrc_in_sync\t%s\tpython/csrc == c/ (aceapex_decode.c, .h) and ax_rans.h identical in src/, c/, python/csrc/\n' "$r"
+# the GPU rANS chunk decoder (k_rans, per-lane steps in src/ax_rans_warp.h) run on the CPU
+# lane by lane against axr_decode: round-trips, the conformance rANS chunks, mutations
+if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/rans_emu scripts/rans_warp_emu.cpp 2>$T/emu.err; then
+  $T/rans_emu $F/conf/*.aet 2>/dev/null || true
+else printf 'head_rans_warp_emu\tfail\tbuild failed: %s\n' "$(head -c 150 $T/emu.err | tr '\n\t' '  ')"; fi
 # library round-trip through the C++ API (the CLI never exercises aceapex_compress):
 # sizes across the adaptive block-size boundaries, both levels, several thread counts
 if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/api_rt scripts/api_roundtrip.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/api.err; then
