@@ -23,6 +23,7 @@
  */
 #include "aceapex_decode.h"
 #include "ax_rans.h"   /* rANS token chunks (entry bit 62); identical copy of src/ax_rans.h */
+#include "ax_lit_open.h" /* zstd-free literal chunks, modes 2/3; identical copy of src/ax_lit_open.h */
 #include <stdlib.h>
 #include <string.h>
 #include <zstd.h>
@@ -154,6 +155,8 @@ static int cur_chunk(Cur* c, size_t i, uint8_t* dst, size_t raw){
     if(!n) return raw==0;
     if(!c->tagged) return zdec(c->dctx,dst,raw,p,n);
     if(p[0]==1) return dna_unpack(c->dctx,p+1,n-1,dst,raw);
+    if(p[0]==2) return axo_dna_decode(p+1,n-1,dst,raw)==0;      /* open DNA pack (ADR-019) */
+    if(p[0]==3) return axo_piece_decode(p+1,n-1,dst,raw)==0;    /* open plain */
     return zdec(c->dctx,dst,raw,p+1,n-1);
 }
 /* decoded chunk i, from the 4-entry cache or freshly decoded into the least recently used slot */

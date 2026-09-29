@@ -45,14 +45,14 @@ for P in zstd rans rans4k; do
   $W/aceapex_gpu $W/chr1.$P.aet $C auto 7 4 2>&1 | tee -a $L; echo "exit ${PIPESTATUS[0]}" | tee -a $L
 done
 echo; echo "chr1 on $(nvidia-smi --query-gpu=name --format=csv,noheader | head -n 1), ms, median of 7 (tok = token entropy stage)" | tee -a $L
-{ printf 'archive\tbytes\ttokens\ttok\tlit\tunpack\tmatch\ton-device\t+H2D\tGB/s\tcheck\n'
-  grep '^ROW' $L | cut -f2- | sed "s#$W/##"; } | column -t -s $'\t' | tee -a $L.table
+{ printf 'archive\tbytes\ttokens\tliterals\ttok\tlit\tunpack\tmatch\ton-device\t+H2D\tGB/s\tcheck\n'
+  grep '^ROW' $L | cut -f2-13 | sed "s#$W/##"; } | column -t -s $'\t' | tee -a $L.table
 cat $L.table >> $L; rm -f $L.table
-N=$(grep -c '^ROW.*bit-perfect$' $L); echo "bit-perfect rows: $N of 3" | tee -a $L
+N=$(awk -F'\t' '$1=="ROW" && $13=="bit-perfect"' $L | wc -l); echo "bit-perfect rows: $N of 3" | tee -a $L
 # verdict from the lines each tool prints for a failure, not from free text (the emulator's
 # summary says "rejected by both" on a pass): 3 bit-perfect rows, 3 exits 0, emulator pass,
 # no FNV mismatch, no rANS chunk rejected on the device
 X=$(grep -c '^exit 0$' $L); E=$(grep -c $'^head_rans_warp_emu\tpass' $L)
-[ "$N" = 3 ] && [ "$X" = 3 ] && [ "$E" = 1 ] && ! grep -q 'DIFFERS X\|archive rejected\|^ROW.*MISMATCH' $L \
+[ "$N" = 3 ] && [ "$X" = 3 ] && [ "$E" = 1 ] && ! grep -q 'DIFFERS X\|archive rejected\|MISMATCH' $L \
   && echo "RESULT: all three archives bit-perfect on the GPU" | tee -a $L \
   || { echo "!!! NOT PASSED - no figure from this run is valid" | tee -a $L; exit 1; }
