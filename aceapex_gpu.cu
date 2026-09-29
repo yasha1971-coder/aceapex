@@ -149,6 +149,7 @@ struct OpenDesc { const uint8_t *seq,*cse,*gap,*val; uint8_t* dst; uint32_t* end
 // exclusive scan over the block of AXO_NT threads; total of all threads in `total`
 __device__ static inline uint64_t b_scan64(uint64_t v, uint64_t& total, uint64_t* sh){
     const uint32_t lane=threadIdx.x&31, w=threadIdx.x>>5, NW=AXO_NT/32; uint64_t inc=v;
+    __syncwarp();                     // reconverge after the data-dependent LEB128 steps (T4: illegal instruction without it)
     #pragma unroll
     for(int o=1;o<32;o<<=1){ uint64_t t=__shfl_up_sync(0xffffffffu,inc,o); if(lane>=(uint32_t)o) inc+=t; }
     if(lane==31) sh[w]=inc;
@@ -165,14 +166,15 @@ __device__ static inline uint64_t b_scan64(uint64_t v, uint64_t& total, uint64_t
 __global__ void __launch_bounds__(AXO_NT) k_open_cse(const OpenDesc* __restrict__ d, uint32_t* __restrict__ err){
     __shared__ uint64_t sh[AXO_NT/32];
     const uint32_t k=blockIdx.x, tid=threadIdx.x; const OpenDesc c=d[k]; const uint8_t* b=c.cse; const uint32_t n=c.ncse;
-    bool bad = tid==0 && axl_tail_bad(b,n); uint64_t carry=0; uint32_t jb=0;
+    bool bad=false; uint64_t carry=0; uint32_t jb=0;
     for(uint32_t base=0; base<n; base+=AXO_NT){
         const uint32_t t=base+tid; const bool term=axl_term(t,b,n); const uint32_t v=axl_value(t,b,term,bad);
         uint64_t total; const uint64_t ex=b_scan64(term?(AXO_KEY_J|v):0,total,sh);
         axl_cse_end(term,jb+(uint32_t)(ex>>44),v,carry+(ex&(AXO_KEY_J-1))+v,c.raw,c.ends,bad);
         jb+=(uint32_t)(total>>44); carry+=total&(AXO_KEY_J-1);
     }
-    if(tid==0 && carry!=c.raw) bad=true;
+    if(tid==0 && (axl_tail_bad(b,n) || carry!=c.raw)) bad=true;
+    __syncwarp();
     const int any=__syncthreads_or(bad);
     if(tid==0){ *c.nrun = any?0:jb; if(any){ atomicAdd(err,1u); atomicMin(err+1,k); } }
 }
@@ -184,14 +186,15 @@ __global__ void __launch_bounds__(AXO_NT) k_open_exc(const OpenDesc* __restrict_
     __shared__ uint64_t sh[AXO_NT/32];
     const uint32_t k=blockIdx.x, tid=threadIdx.x; const OpenDesc c=d[k]; if(!c.nexc) return;   // uniform per block
     const uint8_t* b=c.gap; const uint32_t n=c.ngap;
-    bool bad = tid==0 && axl_tail_bad(b,n); uint64_t carry=0; uint32_t jb=0;
+    bool bad=false; uint64_t carry=0; uint32_t jb=0;
     for(uint32_t base=0; base<n; base+=AXO_NT){
         const uint32_t t=base+tid; const bool term=axl_term(t,b,n); const uint32_t v=axl_value(t,b,term,bad);
         uint64_t total; const uint64_t ex=b_scan64(term?(AXO_KEY_J|v):0,total,sh);
         axl_exc(term,jb+(uint32_t)(ex>>44),v,carry+(ex&(AXO_KEY_J-1))+v,c.nexc,c.raw,c.val,c.dst,bad);
         jb+=(uint32_t)(total>>44); carry+=total&(AXO_KEY_J-1);
     }
-    if(tid==0 && jb!=c.nexc) bad=true;
+    if(tid==0 && (axl_tail_bad(b,n) || jb!=c.nexc)) bad=true;
+    __syncwarp();
     const int any=__syncthreads_or(bad);
     if(tid==0 && any){ atomicAdd(err,1u); atomicMin(err+1,k); }
 }
