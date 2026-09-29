@@ -243,6 +243,8 @@ vs zstd on-device: A100 9.87 -> 6.17 ms (41.2 GB/s), RTX PRO 6000 Blackwell (sm_
 3.72 ms (68.3 GB/s). First T4 run of gpu-case failed (illegal instruction): thread 0's tail
 check before the round loop left warp 0 diverged at the block scan's shuffles; the check
 moved after the loop, __syncwarp at the scan (76d71eb).
+T2T (CHM13 v2.0, 3.16 GB) on A100-80GB, all bit-perfect: on-device zstd 77.7 -> open 52.3 ms
+(60.4 GB/s); archive open 887 641 942 B on every machine, zstd/rans bytes depend on libzstd.
 
 ## Open
 - GPU figures in the README were taken in July on code that predates the literal
