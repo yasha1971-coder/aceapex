@@ -78,6 +78,7 @@ struct ThreadHashTable {
     uint32_t  hash_mask;
     uint32_t  chain_mask;
     int       max_attempts;
+    int       l1;          // AX_ENC=l1: 8K-slot head table (64 KB with epochs), no chain
 };
  
 struct BlockOffsets {
@@ -105,6 +106,18 @@ static inline uint32_t min_match_len(uint32_t dist) {
 }
  
 
+// Match length from l on, capped at min(maxl, 65535): 8 bytes per step (XOR + ctz)
+// instead of byte by byte. Same result as the byte loop it replaces.
+static inline uint32_t ax_ext(const uint8_t* a, const uint8_t* b, uint32_t l, uint32_t maxl) {
+    uint32_t cap = maxl < 65535 ? maxl : 65535;
+    while (l + 8 <= cap) {
+        uint64_t x = AX_read64(a + l) ^ AX_read64(b + l);
+        if (x) return l + (uint32_t)(__builtin_ctzll(x) >> 3);
+        l += 8;
+    }
+    while (l < cap && a[l] == b[l]) l++;
+    return l;
+}
 struct Match { uint32_t len, off; int rep; };
 static inline int find_matches(const uint8_t* src, size_t pos, size_t bstart, size_t bend,
                                 ThreadHashTable* ht, uint32_t* rep, Match* out, int maxout) {
@@ -114,14 +127,14 @@ static inline int find_matches(const uint8_t* src, size_t pos, size_t bstart, si
     for (int i = 0; i < 4 && n < maxout; i++) {
         uint32_t d = rep[i]; if (pos < bstart+d) continue;
         if (AX_read32(src+pos)!=AX_read32(src+pos-d)) continue;
-        uint32_t l=4; while(l<maxl&&src[pos+l]==src[pos-d+l]&&l<65535) l++;
+        uint32_t l=ax_ext(src+pos,src+pos-d,4,maxl);
         if (l>=6) out[n++]={l,d,i};
     }
     uint32_t h=((AX_read32(src+pos)*0x9E3779B1u)>>10)&ht->hash_mask;
     uint32_t rp=(uint32_t)(pos-bstart);
     uint32_t hr=(ht->epoch[h]==ht->cur_epoch)?ht->pos[h]:AX_NOPOS;
     ht->pos[h]=rp; ht->epoch[h]=ht->cur_epoch;
-    if (hr!=AX_NOPOS) ht->chain[rp & ht->chain_mask]=hr;
+    if (hr!=AX_NOPOS && !ht->l1) ht->chain[rp & ht->chain_mask]=hr;
     int64_t cur=(hr==AX_NOPOS)?-1:(int64_t)bstart+hr; int attempts=max_attempts;
     while(cur>=(int64_t)bstart && attempts-->0 && n<maxout) {
         uint32_t dist=(uint32_t)(pos-cur); if(dist>=MAX_DIST) break;
@@ -129,13 +142,14 @@ static inline int find_matches(const uint8_t* src, size_t pos, size_t bstart, si
         if(!is_rep){
             uint32_t mlen=min_match_len(dist);
             if(pos+8<=bend&&AX_read64(src+pos)==AX_read64(src+cur)){
-                uint32_t l=8; while(l<maxl&&src[pos+l]==src[cur+l]&&l<65535) l++;
+                uint32_t l=ax_ext(src+pos,src+cur,8,maxl);
                 if(l>=mlen) out[n++]={l,dist,-1};
             } else if(AX_read32(src+pos)==AX_read32(src+cur)){
-                uint32_t l=4; while(l<maxl&&src[pos+l]==src[cur+l]&&l<65535) l++;
+                uint32_t l=ax_ext(src+pos,src+cur,4,maxl);
                 if(l>=mlen) out[n++]={l,dist,-1};
             }
         }
+        if (ht->l1) break;
         uint32_t nr=ht->chain[(uint32_t)(cur-bstart) & ht->chain_mask];
         if(nr==AX_NOPOS) break; int64_t nxt=(int64_t)bstart+nr;
         if(nxt>=cur) break; cur=nxt;
@@ -161,7 +175,7 @@ static void compress_block(const uint8_t* src, size_t src_size,
     if (ht->cur_epoch == 0) {
         memset(ht->epoch, 0, (ht->hash_mask+1)*sizeof(uint32_t)); ht->cur_epoch = 1;
     }
-    { size_t n = bsz < (size_t)ht->chain_mask + 1 ? bsz : (size_t)ht->chain_mask + 1;
+    if (!ht->l1) { size_t n = bsz < (size_t)ht->chain_mask + 1 ? bsz : (size_t)ht->chain_mask + 1;
       memset(ht->chain, 0xFF, n * sizeof(uint32_t)); }        // no stale links from earlier blocks
  
     size_t lit_i=0, off_i=0, len_i=0, cmd_i=0, pos=bstart;
@@ -176,7 +190,14 @@ static void compress_block(const uint8_t* src, size_t src_size,
     auto init_origin = [&](size_t from, size_t to) {
         for (size_t i = from; i < to && i < 1048576; i++) origin[i] = (uint32_t)i;
     };
-    init_origin(0, bsz); // init all as self-referential (literal)
+    // AX_ENC=l1 (enc-l1, not default; changes archive bytes, format unchanged): no offset
+    // flattening, only matches >= 32 bytes (shorter repeats stay literals, zstd/rANS of the
+    // literal stream takes them), literal runs skipped 1 + miss>>4 bytes at a time.
+    // AX_NOFLAT / AX_MINL / AX_SKIP override each knob.
+    static const int noflat = getenv("AX_NOFLAT") ? atoi(getenv("AX_NOFLAT")) : ht->l1;
+    static const uint32_t l1_minl = !ht->l1 ? 0 : getenv("AX_MINL") ? (uint32_t)atoi(getenv("AX_MINL")) : 32;
+    static const uint32_t l1_skip = !ht->l1 ? 0 : getenv("AX_SKIP") ? (uint32_t)atoi(getenv("AX_SKIP")) : 4;
+    if (!noflat) init_origin(0, bsz); // init all as self-referential (literal)
  
     auto flush_lit = [&]() {
         while (lit_run > 0 && !ov) {
@@ -201,7 +222,7 @@ static void compress_block(const uint8_t* src, size_t src_size,
                     uint32_t maxl1=(uint32_t)(bend-pos-1);
                     if (pos+9<=bend && AX_read64(src+pos+1)==AX_read64(src+mp1)) {
                         uint32_t l1=8;
-                        while (l1<maxl1 && src[pos+1+l1]==src[mp1+l1] && l1<65535) l1++;
+                        l1=ax_ext(src+pos+1,src+mp1,l1,maxl1);
                         if (l1 >= mlen1 && l1 > c_len + 1) {
                             if (lit_i < lit_cap) {
                                 res->lit_buf[lit_i++]=src[pos]; lit_run++; miss++;
@@ -222,7 +243,7 @@ static void compress_block(const uint8_t* src, size_t src_size,
                         uint32_t maxl2=(uint32_t)(bend-pos-2);
                         if (pos+10<=bend && AX_read64(src+pos+2)==AX_read64(src+mp2)) {
                             uint32_t l2=8;
-                            while (l2<maxl2 && src[pos+2+l2]==src[mp2+l2] && l2<65535) l2++;
+                            l2=ax_ext(src+pos+2,src+mp2,l2,maxl2);
                             if (l2 >= 6 && l2 > c_len + 2 && lit_i+1 < lit_cap) {
                                 res->lit_buf[lit_i++]=src[pos]; lit_run++; miss++;
                                 res->lit_buf[lit_i++]=src[pos+1]; lit_run++;
@@ -234,6 +255,7 @@ static void compress_block(const uint8_t* src, size_t src_size,
                 }
             }
         }
+        if (c_len >= 6 && c_len < l1_minl) c_len = 0;       // l1: short matches stay literals for zstd
         if (c_len >= 6) {
             flush_lit(); if (ov) break; miss=0;
             uint32_t lv=c_len-6;
@@ -252,7 +274,7 @@ static void compress_block(const uint8_t* src, size_t src_size,
                 // ULTRA: Chain flattening with validation
                 size_t local_pos = pos - bstart;
                 uint32_t flat_off = c_off;
-                if (c_off <= local_pos && local_pos < 1048576) {
+                if (!noflat && c_off <= local_pos && local_pos < 1048576) {
                     size_t src_local = local_pos - c_off;
                     uint32_t orig_src = origin[src_local];
                     if (orig_src != src_local) {
@@ -278,7 +300,7 @@ static void compress_block(const uint8_t* src, size_t src_size,
               uint32_t step=1+(c_len>>3);
               for(size_t ii=1;ii<c_len&&pos+ii+4<bend;ii+=step){
                 uint32_t hh=((AX_read32(src+pos+ii)*0x9E3779B1u)>>10)&ht->hash_mask;
-                ht->chain[(uint32_t)(pos+ii-bstart)&ht->chain_mask]=(ht->epoch[hh]==ht->cur_epoch)?ht->pos[hh]:AX_NOPOS;
+                if (!ht->l1) ht->chain[(uint32_t)(pos+ii-bstart)&ht->chain_mask]=(ht->epoch[hh]==ht->cur_epoch)?ht->pos[hh]:AX_NOPOS;
                 ht->pos[hh]=(uint32_t)(pos+ii-bstart); ht->epoch[hh]=ht->cur_epoch;
               }
             }
@@ -291,6 +313,10 @@ static void compress_block(const uint8_t* src, size_t src_size,
             if(hh<=ht->hash_mask) { ht->pos[hh]=(uint32_t)(pos-bstart); ht->epoch[hh]=ht->cur_epoch; }
             if (lit_i>=lit_cap) { ov=1; break; }
             res->lit_buf[lit_i++]=src[pos++]; lit_run++;
+            // l1: skip faster through literal runs (LZ4-style): 1 + miss>>l1_skip extra bytes
+            if (l1_skip) { size_t k = miss >> l1_skip; if (k > 64) k = 64;
+                if (k && pos + k + 12 < bend && lit_i + k <= lit_cap) {
+                    memcpy(res->lit_buf + lit_i, src + pos, k); lit_i += k; lit_run += (uint32_t)k; pos += k; } }
         }
     }
     if (!ov) {
@@ -835,6 +861,9 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
     // Adaptive hash size
     uint32_t hash_log = (src_size < 16*1024*1024) ? 13 :
                         (src_size < 128*1024*1024) ? 15 : 17;
+    const char* ax_enc=getenv("AX_ENC"); int l1 = ax_enc && !strcmp(ax_enc,"l1");
+    if (l1) hash_log = 13;
+    { const char* e=getenv("AX_HLOG"); if(e&&atoi(e)>=8&&atoi(e)<=24) hash_log=(uint32_t)atoi(e); }
     uint32_t hash_mask = (1u << hash_log) - 1;
     size_t ht_sz = (hash_mask+1);
     uint32_t chain_mask = 1; while ((size_t)chain_mask + 1 < g_block_size) chain_mask = chain_mask * 2 + 1;   // one link per block position
@@ -852,6 +881,8 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
         htabs[i]->hash_mask=hash_mask;
         htabs[i]->chain_mask=chain_mask;
         htabs[i]->max_attempts=(level>=2)?32:4;
+        htabs[i]->l1=l1; if (l1) htabs[i]->max_attempts=1;
+        { const char* e=getenv("AX_ATT"); if(e) htabs[i]->max_attempts=atoi(e); }
     }
     BlockResult* results=(BlockResult*)calloc(num_blocks,sizeof(BlockResult));
     if(!results){return false;}
