@@ -62,10 +62,16 @@ struct WorkerArgs {
     PoolState* pool;
 };
  
+// Positions in the tables are relative to the block start (matches never leave the
+// block), stored as uint32: pos/epoch 4+4 bytes per slot, chain 4 bytes per block
+// position instead of 8, and the chain is reset per block so a stale link can never
+// look like a valid relative position. Halves the per-thread working set; the
+// candidate sequence and the archive bytes are unchanged.
+#define AX_NOPOS 0xFFFFFFFFu
 struct ThreadHashTable {
-    int64_t*  pos;
+    uint32_t* pos;
     uint32_t* epoch;
-    int64_t*  chain;
+    uint32_t* chain;
     uint32_t  cur_epoch;
     uint32_t  hash_mask;
     uint32_t  chain_mask;
@@ -110,10 +116,11 @@ static inline int find_matches(const uint8_t* src, size_t pos, size_t bstart, si
         if (l>=6) out[n++]={l,d,i};
     }
     uint32_t h=((AX_read32(src+pos)*0x9E3779B1u)>>10)&ht->hash_mask;
-    int64_t head=(ht->epoch[h]==ht->cur_epoch)?ht->pos[h]:-1;
-    ht->pos[h]=(int64_t)pos; ht->epoch[h]=ht->cur_epoch;
-    if (head>=0) ht->chain[pos & ht->chain_mask]=head;
-    int64_t cur=head; int attempts=max_attempts;
+    uint32_t rp=(uint32_t)(pos-bstart);
+    uint32_t hr=(ht->epoch[h]==ht->cur_epoch)?ht->pos[h]:AX_NOPOS;
+    ht->pos[h]=rp; ht->epoch[h]=ht->cur_epoch;
+    if (hr!=AX_NOPOS) ht->chain[rp & ht->chain_mask]=hr;
+    int64_t cur=(hr==AX_NOPOS)?-1:(int64_t)bstart+hr; int attempts=max_attempts;
     while(cur>=(int64_t)bstart && attempts-->0 && n<maxout) {
         uint32_t dist=(uint32_t)(pos-cur); if(dist>=MAX_DIST) break;
         bool is_rep=false; for(int r=0;r<4;r++) if(dist==rep[r]){is_rep=true;break;}
@@ -127,8 +134,9 @@ static inline int find_matches(const uint8_t* src, size_t pos, size_t bstart, si
                 if(l>=mlen) out[n++]={l,dist,-1};
             }
         }
-        int64_t nxt=ht->chain[cur & ht->chain_mask];
-        if(nxt<0||nxt>=cur) break; cur=nxt;
+        uint32_t nr=ht->chain[(uint32_t)(cur-bstart) & ht->chain_mask];
+        if(nr==AX_NOPOS) break; int64_t nxt=(int64_t)bstart+nr;
+        if(nxt>=cur) break; cur=nxt;
     }
     return n;
 }
@@ -151,6 +159,8 @@ static void compress_block(const uint8_t* src, size_t src_size,
     if (ht->cur_epoch == 0) {
         memset(ht->epoch, 0, (ht->hash_mask+1)*sizeof(uint32_t)); ht->cur_epoch = 1;
     }
+    { size_t n = bsz < (size_t)ht->chain_mask + 1 ? bsz : (size_t)ht->chain_mask + 1;
+      memset(ht->chain, 0xFF, n * sizeof(uint32_t)); }        // no stale links from earlier blocks
  
     size_t lit_i=0, off_i=0, len_i=0, cmd_i=0, pos=bstart;
     uint32_t rep[4]={1,2,4,8}, lit_run=0, miss=0;
@@ -181,7 +191,7 @@ static void compress_block(const uint8_t* src, size_t src_size,
         for(int mi=0;mi<nm;mi++) if(matches[mi].len>c_len){c_len=matches[mi].len;c_off=matches[mi].off;c_rep=matches[mi].rep;}
         if (c_len >= 6 && c_len < 64 && pos+13 < bend) {
             uint32_t h1=((AX_read32(src+pos+1)*0x9E3779B1u)>>10)&ht->hash_mask;
-            int64_t mp1=(ht->epoch[h1]==ht->cur_epoch)?ht->pos[h1]:-1;
+            int64_t mp1=(ht->epoch[h1]==ht->cur_epoch)?(int64_t)bstart+ht->pos[h1]:-1;
             if (mp1>=0 && (size_t)mp1>=bstart && (size_t)mp1<pos+1) {
                 uint32_t dist1=(uint32_t)(pos+1-mp1);
                 if (dist1<MAX_DIST && dist1!=rep[0]) {
@@ -203,7 +213,7 @@ static void compress_block(const uint8_t* src, size_t src_size,
             // Lazy check pos+2
             if (c_len >= 6 && c_len < 64 && pos+14 < bend) {
                 uint32_t h2=((AX_read32(src+pos+2)*0x9E3779B1u)>>10)&ht->hash_mask;
-                int64_t mp2=(ht->epoch[h2]==ht->cur_epoch)?ht->pos[h2]:-1;
+                int64_t mp2=(ht->epoch[h2]==ht->cur_epoch)?(int64_t)bstart+ht->pos[h2]:-1;
                 if (mp2>=0 && (size_t)mp2>=bstart && (size_t)mp2<pos+2) {
                     uint32_t dist2=(uint32_t)(pos+2-mp2);
                     if (dist2<MAX_DIST && dist2!=rep[0]) {
@@ -266,7 +276,8 @@ static void compress_block(const uint8_t* src, size_t src_size,
               uint32_t step=1+(c_len>>3);
               for(size_t ii=1;ii<c_len&&pos+ii+4<bend;ii+=step){
                 uint32_t hh=((AX_read32(src+pos+ii)*0x9E3779B1u)>>10)&ht->hash_mask;
-                ht->chain[(pos+ii)&ht->chain_mask]=ht->pos[hh]; ht->pos[hh]=(int64_t)(pos+ii); ht->epoch[hh]=ht->cur_epoch;
+                ht->chain[(uint32_t)(pos+ii-bstart)&ht->chain_mask]=(ht->epoch[hh]==ht->cur_epoch)?ht->pos[hh]:AX_NOPOS;
+                ht->pos[hh]=(uint32_t)(pos+ii-bstart); ht->epoch[hh]=ht->cur_epoch;
               }
             }
             pos+=c_len; continue;
@@ -275,7 +286,7 @@ static void compress_block(const uint8_t* src, size_t src_size,
         res->lit_buf[lit_i++]=src[pos++]; lit_run++; miss++;
         if (miss>=1 && pos+12<bend) {
             uint32_t hh=((AX_read32(src+pos)*0x9E3779B1u)>>10)&ht->hash_mask;
-            if(hh<=ht->hash_mask) { ht->pos[hh]=(int32_t)pos; ht->epoch[hh]=ht->cur_epoch; }
+            if(hh<=ht->hash_mask) { ht->pos[hh]=(uint32_t)(pos-bstart); ht->epoch[hh]=ht->cur_epoch; }
             if (lit_i>=lit_cap) { ov=1; break; }
             res->lit_buf[lit_i++]=src[pos++]; lit_run++;
         }
@@ -824,17 +835,17 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
                         (src_size < 128*1024*1024) ? 15 : 17;
     uint32_t hash_mask = (1u << hash_log) - 1;
     size_t ht_sz = (hash_mask+1);
-    uint32_t chain_mask = (1u<<20)-1;
+    uint32_t chain_mask = 1; while ((size_t)chain_mask + 1 < g_block_size) chain_mask = chain_mask * 2 + 1;   // one link per block position
     ThreadHashTable** htabs=(ThreadHashTable**)calloc(threads,sizeof(ThreadHashTable*));
     if(!htabs){return false;}
     for(int i=0;i<threads;i++) {
         htabs[i]=(ThreadHashTable*)calloc(1,sizeof(ThreadHashTable));
         if(!htabs[i]){return false;}
-        htabs[i]->pos  =(int64_t*) calloc(ht_sz,sizeof(int64_t));
+        htabs[i]->pos  =(uint32_t*)calloc(ht_sz,sizeof(uint32_t));
         htabs[i]->epoch=(uint32_t*)calloc(ht_sz,sizeof(uint32_t));
-        htabs[i]->chain=(int64_t*) malloc(((size_t)chain_mask+1)*sizeof(int64_t));
+        htabs[i]->chain=(uint32_t*)malloc(((size_t)chain_mask+1)*sizeof(uint32_t));
         if(!htabs[i]->pos||!htabs[i]->epoch||!htabs[i]->chain){return false;}
-        memset(htabs[i]->chain,-1,((size_t)chain_mask+1)*sizeof(int64_t));
+        memset(htabs[i]->chain,0xFF,((size_t)chain_mask+1)*sizeof(uint32_t));
         htabs[i]->cur_epoch=0;
         htabs[i]->hash_mask=hash_mask;
         htabs[i]->chain_mask=chain_mask;

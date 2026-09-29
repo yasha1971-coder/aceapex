@@ -140,6 +140,20 @@ for zero lengths): 241 ms; (b) two blocks per thread with one token each in turn
 241 ms. Neither branch prediction nor the dependency chain is the bottleneck on this
 host; the next step is hardware counters on ace-core, not more variants.
 
+## ADR-016 (2026-09-29) Match tables hold block-relative 32-bit positions; the chain is per block
+lzbench 2.4's page: compression at level 2 scaled x8.3 over 32 threads where level 1 and
+every other codec scaled ~x20 (ace-core -T8: x3.7 against x5.7 for zstd -2). Cause: each
+thread carried a chain table of 2^20 int64 (8 MB, memset per call) plus int64 position
+tables, and level 2 walks that chain 32 deep at random - 32 threads x 8 MB is a working
+set past L3. Matches never leave the block, so positions are now stored relative to the
+block start as uint32 (pos, chain), the chain has one link per block position (<= 4 MB
+at the 1 MiB maximum block) and is reset per block, and a link is written only from a
+position of the current epoch. Candidate order is unchanged: silesia and dickens
+archives are byte-identical before and after (2 and 3 threads), the chr1 fixture
+determinism claim holds. Container, 2 threads: encode silesia 6.43 -> 5.70 s. Also
+removes a 32-bit truncation (`(int32_t)pos`) left from the 64-bit-position fix of
+2026-07-24 that only lost matches past 2 GiB.
+
 ## Open
 - GPU figures in the README were taken in July on code that predates the literal
   transform, literal chunking and the chunk field. The README front page is rewritten
