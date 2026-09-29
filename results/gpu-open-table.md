@@ -55,3 +55,17 @@ open parts: seq 5.085, cse 1.549, gap 1.402, val 1.188, plain 0.694; bases 7.364
 exceptions 2.165. open vs zstd on-device -32.7 %; H2D 70.7 ms is 57 % of the open total (+H2D),
 pipeline overlap gives 0.7 % on open (nothing left to hide H2D behind).
 chr1 on the same A100-80GB: zstd 10.000, rans 10.026, open 6.090 ms (41.69 GB/s).
+
+## Stream pipeline (--pipeline=8, gpu-pipeline bfdfde5), A100-SXM4-80GB, median of 3, all bit-perfect
+H2D of batch k+1 (copy stream) under the decode of batch k (decode stream); bytes laid out per batch in pinned memory.
+H2D pageable 4.4 GB/s, pinned 12.3-12.4 GB/s. Log: results/colab-2026-09-29-a100-sxm4-80gb-gpu-pipeline.log.
+| corpus | archive | H2D | on-device | sequential | pipeline | gain |
+|---|---|---|---|---|---|---|
+| chr1 | zstd | 5.536 | 9.920 | 15.457 | 26.966 | -74.5 % |
+| chr1 | rans | 5.515 | 10.045 | 15.560 | 34.627 | -122.5 % |
+| chr1 | open | 5.422 | 6.072 | 11.494 | 17.492 | -52.2 % |
+| t2t | zstd | 71.865 | 77.543 | 149.408 | 109.785 | +26.5 % |
+| t2t | rans | 71.617 | 70.133 | 141.750 | 110.921 | +21.7 % |
+| t2t | open | 70.734 | 55.174 | 125.907 | 78.579 | +37.6 % |
+T2T open 125.9 -> 78.6 ms (40.2 GB/s delivered); floor = pinned H2D 70.7 ms, so ~60 ms is not reachable on
+this host's PCIe. chr1: 8 batches cost more than the 5.4 ms copy they hide.

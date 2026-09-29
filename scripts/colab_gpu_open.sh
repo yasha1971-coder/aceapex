@@ -53,11 +53,12 @@ else echo "BUILD FAILED aceapex_gpu" | tee -a $L; cat $W/nvcc.err; exit 1; fi
 for e in rans_warp_emu open_warp_emu; do
   g++ -std=c++17 -O2 -Isrc -o $W/$e scripts/$e.cpp && $W/$e verify/fixtures/conf/*.aet | tee -a $L; done
 
-# the open conformance fixtures on the GPU (inputs regenerated from their seeds)
+# the open conformance fixtures on the GPU (inputs regenerated from their seeds); 5 hashes each:
+# warm-up, sequential, old pipeline, stream pipeline on cleared buffers, stream pipeline timed
 python3 scripts/make_fixtures.py --regen >/dev/null
 FX="dna_open_2MiB dna_open_mixed_300K dna_open_4097B dna_openlit_300K text_open_200K"; FXBAD=""
 for f in $FX; do
-  r=$($W/aceapex_gpu verify/fixtures/conf/$f.aet /tmp/conf_inputs/$f auto 3 1 2>&1); rc=$?
+  r=$($W/aceapex_gpu verify/fixtures/conf/$f.aet /tmp/conf_inputs/$f auto 3 1 --pipeline=3 2>&1); rc=$?
   echo "fixture $f on the GPU: exit $rc, $(echo "$r" | grep -c 'MATCHES OK') MATCHES OK, $(echo "$r" | grep -c 'DIFFERS X') DIFFERS" | tee -a $L
   [ $rc = 0 ] || { FXBAD="$FXBAD $f"; echo "$r" | grep -v '^probe' | tail -3 | sed 's/^/  /' | tee -a $L; }
 done
@@ -78,7 +79,7 @@ get_corpus(){ # name md5 url -> $W/name or empty
     elif [ -n "$u" ]; then   # to a file first: a cut stream gave a truncated corpus (L4, 29.09)
       for try in 1 2 3; do curl -fsSL --retry 3 -o $c.gz $u && gzip -t $c.gz 2>/dev/null && break; rm -f $c.gz; done
       gunzip -c $c.gz > $c; rm -f $c.gz; echo "$n: downloaded" | tee -a $L
-      echo "   keep it on Drive for the next GPU: !mkdir -p $DRV && cp $c $DRV/$n" | tee -a $L
+      [ $HAVE_DRIVE = 1 ] && echo "$m  $c" | md5sum -c - >/dev/null 2>&1 && mkdir -p $DRV && cp $c $DRV/$n && echo "$n: saved to Drive" | tee -a $L
     else echo "$n: not on Drive ($DRV/$n or $n.gz) - skipped" | tee -a $L; return 1; fi
   fi
   echo "$m  $c" | md5sum -c - >/dev/null 2>&1 && echo "$n: md5 $m OK" | tee -a $L || { echo "$n: MD5 MISMATCH" | tee -a $L; rm -f $c; return 1; }
@@ -101,7 +102,7 @@ for X in $CORP; do
     if [ ! -s $A ]; then
       if [ $X = t2t ] && [ $RAM_GB -lt 20 ]; then echo "$X.$P: RAM $RAM_GB GB < 20 GB for the encoder (11.2 GB RSS) and no cached archive - skipped; run once on a host with more RAM (A100/G4) to fill $DRV/cache" | tee -a $L; continue; fi
       env -i PATH=$PATH ACEAPEX_BS=16384 LIT_CHUNK=65536 $E ./aceapex c --in $C --out $A --threads $T >/dev/null 2>&1
-      [ $X = t2t ] && [ $HAVE_DRIVE = 1 ] && [ "$(stat -c%s $A)" = "$PIN" ] && mkdir -p $DRV/cache && cp $A $DRV/cache/ && SRC="encoded, cached on Drive"
+      [ $HAVE_DRIVE = 1 ] && [ "$(stat -c%s $A)" = "$PIN" ] && mkdir -p $DRV/cache && cp $A $DRV/cache/ && SRC="encoded, cached on Drive"
     fi
     env -i PATH=$PATH ./aceapex d --in $A --out $W/rt.bin >/dev/null 2>&1
     S=$(stat -c%s $A); [ "$S" = "$PIN" ] && PS="== pinned" || PS="!= pinned $PIN"
@@ -110,18 +111,18 @@ for X in $CORP; do
     rm -f $W/rt.bin
   done
   for P in zstd rans open; do [ -s $W/$X.$P.aet ] || continue
-    R=7; [ $X = t2t ] && R=3
+    R=${REPS:-3}
     echo "== aceapex_gpu $X.$P" | tee -a $L
-    $W/aceapex_gpu $W/$X.$P.aet $C auto $R 4 2>&1 | tee -a $L; echo "exit ${PIPESTATUS[0]} $X.$P" | tee -a $L
+    $W/aceapex_gpu $W/$X.$P.aet $C auto $R 4 --pipeline=${PIPE:-8} 2>&1 | tee -a $L; echo "exit ${PIPESTATUS[0]} $X.$P" | tee -a $L
   done
 done
 
 # tables per corpus; TSV lines (gpu, corpus, row) for the table across GPUs
 for X in $CORP; do
   grep -q "^ROW	$W/$X\." $L || continue
-  echo; echo "$X on $GPU, ms, median of $([ $X = t2t ] && echo 3 || echo 7)" | tee -a $L.t1
-  { printf 'archive\tbytes\ttokens\tliterals\ttok\tlit\tunpack\tmatch\ton-device\t+H2D\tGB/s\tcheck\n'
-    grep "^ROW	$W/$X\." $L | cut -f2-13 | sed "s#$W/##"; } | column -t -s $'\t' | tee -a $L.t1
+  echo; echo "$X on $GPU, ms, median of ${REPS:-3}; pipeline = H2D of batch k+1 under the decode of batch k (${PIPE:-8} batches)" | tee -a $L.t1
+  { printf 'archive\tbytes\ttokens\tliterals\ttok\tlit\tunpack\tmatch\ton-device\t+H2D\tpipeline\tGB/s\tcheck\tH2D-pageable\tH2D-pinned\n'
+    grep "^ROW	$W/$X\." $L | awk -F'\t' -v OFS='\t' '{print $2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$24,$12,$13,$25" GB/s",$26" GB/s"}' | sed "s#$W/##"; } | column -t -s $'\t' | tee -a $L.t1
   echo "parts, ms: lit = zstd frames + pieces by class; unpack = zstd-pack kernels + open kernels" | tee -a $L.t1
   { printf 'archive\tlit.zstd\tseq\tcse\tgap\tval\tplain\tun.zstdpack\tbases\tcase\texceptions\n'
     grep "^ROW	$W/$X\." $L | awk -F'\t' -v OFS='\t' '{print $2,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23}' | sed "s#$W/##"; } | column -t -s $'\t' | tee -a $L.t1
@@ -131,7 +132,7 @@ grep '^ROW' $L | sed "s#$W/##" | awk -F'\t' -v OFS='\t' -v g="$TAG" '{$1="TSV\t"
 # verdict: each archive run is valid on its own (the GPU output is hashed against the original);
 # the run as a whole needs both emulators, the 5 fixtures, the chr1 open row, and no failure line
 RUN=$(grep -c '^exit [0-9]* ' $L); OK=$(grep -c '^exit 0 ' $L); N=$(awk -F'\t' '$1=="ROW" && $13=="bit-perfect"' $L | wc -l)
-E=$(grep -c $'^head_\(rans\|open\)_warp_emu\tpass' $L); F=$(grep -c '^fixture .*: exit 0, 3 MATCHES OK, 0 DIFFERS$' $L)
+E=$(grep -c $'^head_\(rans\|open\)_warp_emu\tpass' $L); F=$(grep -c '^fixture .*: exit 0, 5 MATCHES OK, 0 DIFFERS$' $L)
 echo "archives on the GPU: bit-perfect $N of $RUN (exit 0: $OK); emulators $E/2, fixtures $F/5" | tee -a $L
 grep '^exit [1-9]' $L | sed 's/^/  FAILED: /' | tee -a $L
 [ "$N" = "$RUN" ] && [ "$E" = 2 ] && [ "$F" = 5 ] && grep -q "^ROW	$W/chr1.open" $L \
