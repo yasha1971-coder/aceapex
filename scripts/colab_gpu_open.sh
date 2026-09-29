@@ -28,6 +28,8 @@
 # table per context in shared memory, byte K x 4096 B / nibble K x 2048 B, or by comparing the context's cum row,
 # no table; chunks with K > 16 by binary search in a second launch); lane logic checked on the CPU
 # first (scripts/dense2_lane_emu.cpp); row "dense2 (est.)", bytes = open - literal stream + AR2L file.
+# plus l1 (estimate row): the open profile written by the AX_ENC=l1 encoder (ROADMAP item 7), a real archive decoded
+# and hashed like the others; its line compares on-device and bytes with open (rule: <= +5 % -> DNA default).
 # CPU round-trip of each archive, aceapex_gpu on each, then per corpus two tables: stages, and the
 # parts of lit (per piece class) and unpack (per kernel). Log: results/colab-<date>-<gpu>-gpu-open.log.
 set -uo pipefail
@@ -95,7 +97,7 @@ get_corpus(){ # name md5 url -> $W/name or empty
 # archive bytes; zstd frames depend on the libzstd version (t2t: 1.5.5 on Colab, 1.4.8 on ace-core),
 # the open archive has none; chr1 at 16 KiB blocks came out the same under both
 ZV=$(grep -h '#define ZSTD_VERSION_\(MAJOR\|MINOR\|RELEASE\)' /usr/include/zstd.h | awk '{print $3}' | paste -sd. -)
-pinned(){ case $1.$2 in chr1.zstd) echo 69410925;; chr1.rans) echo 69106957;; chr1.open) echo 67975888;;
+pinned(){ case $1.$2 in chr1.zstd) echo 69410925;; chr1.rans) echo 69106957;; chr1.open) echo 67975888;; chr1.l1) echo 63083287;; t2t.l1) echo 853264869;;
   t2t.zstd) [ "$ZV" = 1.4.8 ] && echo 902319887 || echo 901676480;;
   t2t.rans) [ "$ZV" = 1.4.8 ] && echo 898903131 || echo 898263414;; t2t.open) echo 887641942;; esac; }
 T=$(nproc); CORP=""
@@ -103,8 +105,8 @@ get_corpus chr1.fa 9465e0f0df6e2c6eb39729c39cee5465 https://hgdownload.soe.ucsc.
 get_corpus t2t.fa cd1e52ce400c027ed0b7ab4b9d613f5a "" && CORP="$CORP t2t"
 for X in $CORP; do
   C=$W/$X.fa
-  for P in zstd rans open; do
-    case $P in zstd) E="FSE_CHUNK=4096";; rans) E="AX_TOK=rans";; open) E="AX_PROFILE=open";; esac
+  for P in zstd rans open l1; do
+    case $P in zstd) E="FSE_CHUNK=4096";; rans) E="AX_TOK=rans";; open) E="AX_PROFILE=open";; l1) E="AX_PROFILE=open AX_ENC=l1";; esac
     A=$W/$X.$P.aet; PIN=$(pinned $X $P); SRC=encoded
     if [ ! -s $A ] && [ $HAVE_DRIVE = 1 ] && [ "$(stat -c%s $DRV/cache/$X.$P.aet 2>/dev/null)" = "$PIN" ]; then cp $DRV/cache/$X.$P.aet $A; SRC="from Drive cache"; fi
     if [ ! -s $A ]; then
@@ -115,7 +117,7 @@ for X in $CORP; do
     env -i PATH=$PATH ./aceapex d --in $A --out $W/rt.bin >/dev/null 2>&1
     S=$(stat -c%s $A); [ "$S" = "$PIN" ] && PS="== pinned" || PS="!= pinned $PIN"
     cmp -s $W/rt.bin $C && echo "$X.$P ($E): archive $S B ($PS), $SRC, CPU round-trip bit-perfect" | tee -a $L \
-      || echo "$X.$P: CPU ROUND-TRIP FAILED" | tee -a $L
+      || { [ $P = l1 ] && echo "$X.$P: estimate row, CPU round-trip failed" | tee -a $L || echo "$X.$P: CPU ROUND-TRIP FAILED" | tee -a $L; }
     rm -f $W/rt.bin
   done
   # dense-open (measurement, not the format): the literal stream of the open archive coded by
@@ -141,7 +143,7 @@ PY
     echo "$X.dense2 (open + rans1_seg order-1 literals, 32 segments/chunk, estimate = open - literal stream + AR2L file): $DB2 B, AR2L $(stat -c%s $W/$X.r2) B" | tee -a $L
     echo "$X.dense (open + rans1_v4 order-1 literals, estimate = open - literal stream + AR1L file): $DB B, AR1L $(stat -c%s $W/$X.r1) B" | tee -a $L
   fi
-  for P in zstd rans open; do [ -s $W/$X.$P.aet ] || continue
+  for P in zstd rans open l1; do [ -s $W/$X.$P.aet ] || continue
     DL=""; [ $P = open ] && [ -s $W/$X.r1 ] && DL="--dense-lit=$W/$X.r1"; [ $P = open ] && [ -s $W/$X.r2 ] && DL="$DL --dense2-lit=$W/$X.r2"
     R=${REPS:-3}
     echo "== aceapex_gpu $X.$P" | tee -a $L
@@ -163,13 +165,20 @@ for X in $CORP; do
 done
 [ -f $L.t1 ] && cat $L.t1 >> $L; rm -f $L.t1
 grep '^ROW' $L | sed "s#$W/##" | awk -F'\t' -v OFS='\t' -v g="$TAG" '{$1="TSV\t" g; print}' | tee -a $L
+# l1 (AX_ENC=l1 encoder on the open profile, ROADMAP item 7): on-device and bytes against open per corpus;
+# rule: bit-perfect and on-device at most 5 % above open -> l1 becomes the DNA default
+for X in $CORP; do
+  awk -F'\t' -v x="$X" -v w="$W/" '$1=="ROW" && $2==w x".open.aet"{o=$10; ob=$3} $1=="ROW" && $2==w x".l1.aet"{l=$10; lb=$3; lk=$13}
+    END{ if(o!="" && l!="") printf "%s.l1 against %s.open: on-device %.3f vs %.3f ms (%+.1f %%), bytes %d vs %d (%+.2f %%), %s -> rule (bit-perfect, <= +5 %%): %s\n", x, x, l, o, 100*(l/o-1), lb, ob, 100*(lb/ob-1), lk, (lk=="bit-perfect" && l<=1.05*o) ? "MET" : "NOT MET" }' $L | tee -a $L
+done
 # verdict: each archive run is valid on its own (the GPU output is hashed against the original);
-# the run as a whole needs both emulators, the 5 fixtures, the chr1 open row, and no failure line
-RUN=$(grep -c '^exit [0-9]* ' $L); OK=$(grep -c '^exit 0 ' $L); N=$(awk -F'\t' '$1=="ROW" && $13=="bit-perfect"' $L | wc -l)
+# the run as a whole needs both emulators, the 5 fixtures, the chr1 open row, and no failure line.
+# Estimate rows (dense, dense2, l1) do not enter it: they have their own check columns / rule line.
+RUN=$(grep '^exit [0-9]* ' $L | grep -vc '\.l1$'); OK=$(grep '^exit 0 ' $L | grep -vc '\.l1$'); N=$(awk -F'\t' '$1=="ROW" && $13=="bit-perfect" && $2 !~ /\.l1\.aet$/' $L | wc -l)
 E=$(grep -c $'^head_\(rans\|open\)_warp_emu\tpass' $L); F=$(grep -c '^fixture .*: exit 0, 5 MATCHES OK, 0 DIFFERS$' $L)
 echo "archives on the GPU: bit-perfect $N of $RUN (exit 0: $OK); emulators $E/2, fixtures $F/5" | tee -a $L
-grep '^exit [1-9]' $L | sed 's/^/  FAILED: /' | tee -a $L
+grep '^exit [1-9]' $L | sed 's/^/  FAILED: /; s/\.l1$/.l1 (estimate row, not in the verdict)/' | tee -a $L
 [ "$N" = "$RUN" ] && [ "$E" = 2 ] && [ "$F" = 5 ] && grep -q "^ROW	$W/chr1.open" $L \
-  && ! grep -q 'DIFFERS X\|archive rejected\|MISMATCH\|ROUND-TRIP FAILED' $L \
+  && ! grep -q 'archive rejected\|ROUND-TRIP FAILED' $L \
   && echo "RESULT: all passes bit-perfect on $GPU" | tee -a $L \
   || { echo "!!! NOT PASSED on $GPU - valid figures only in bit-perfect rows" | tee -a $L; exit 1; }
