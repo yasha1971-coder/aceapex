@@ -87,7 +87,7 @@ gpu-case на T4: case 2.80 -> 0.25 мс (цель < 1 мс выполнена),
 T2T: нет файла на Drive — не мерили.
 
 ## Дальше
-1. T2T: положить t2t.fa(.gz) в MyDrive/aceapex_corpus,
+1. T2T: t2t.fa.gz = NCBI GCA_009914755.4 genomic.fna.gz (не UCSC hs1) в MyDrive/aceapex_corpus,
    первый прогон на A100/G4 (RAM >= 20 GB) кэширует архивы.
 2. match 10.4 мс на T4 (v7-RA) — главный этап; затем H100 (шаг 4): полный путь chr1/T2T.
 3. seq-куски 2.1 мс T4 (rANS 2-битного пака) и bases 2.78 — самое дорогое в open.
