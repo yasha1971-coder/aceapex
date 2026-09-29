@@ -24,6 +24,9 @@ Archive bytes (identical on every machine; == pinned on all 3 Colab hosts):
 | RTX PRO 6000 Blackwell SE (120) | open | 0.948 | 0.968 | 0.508 | 1.294 | 3.719 | 4.897 | 68.29 |
 | L4 (89) | — | chr1 download truncated; fixtures 5/5 bit-perfect; re-run pending | | | | | | |
 
+Repeat on the Blackwell host (3f09fcf, same session, chr1 from the work dir): on-device zstd 5.199,
+rans 5.696, open 3.719 ms (68.3 GB/s) - open identical to the first run, zstd/rans within 0.9 %.
+
 open vs zstd on-device: T4 -30.5 %, A100 -37.5 %, Blackwell -28.7 %.
 
 ## Parts of the open archive, ms
