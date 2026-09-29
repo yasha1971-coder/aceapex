@@ -19,10 +19,19 @@ int64_t aceapex_compress(
     int         threads   /* 0=auto */
 );
 
-/* One-shot decompression */
+/* One-shot decompression; uses every hardware thread. */
 int64_t aceapex_decompress(
     const void* src, size_t src_size,
     void*       dst, size_t dst_capacity
+);
+
+/* Same with an explicit thread budget for the whole decode (entropy phase and match
+   phase). threads = 1 decodes on the calling thread only and creates none, which is
+   what a benchmark harness with its own thread pool (lzbench -T) needs; 0 = auto. */
+int64_t aceapex_decompress_mt(
+    const void* src, size_t src_size,
+    void*       dst, size_t dst_capacity,
+    int         threads
 );
 
 /* Decompress only the bytes [offset, offset+length) of the original input,

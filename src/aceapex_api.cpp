@@ -73,6 +73,13 @@ int64_t aceapex_decompress(
     const void* src, size_t src_size,
     void*       dst, size_t dst_capacity)
 {
+    return aceapex_decompress_mt(src, src_size, dst, dst_capacity, 0);
+}
+
+int64_t aceapex_decompress_mt(
+    const void* src, size_t src_size,
+    void*       dst, size_t dst_capacity, int threads)
+{
     if (!src || src_size < sizeof(AetHeader)) return ACEAPEX_ERR_DATA;
     const uint8_t* p=(const uint8_t*)src;
     AetHeader hdr; memcpy(&hdr,p,sizeof(hdr));
@@ -110,13 +117,22 @@ int64_t aceapex_decompress(
     memcpy(zc,p,hdr.zcmd_sz);
     g_dec_err=0;
     size_t os=fse_stream_size(zo),ns=fse_stream_size(zn),cs=fse_stream_size(zc);
-    size_t ls=0; uint8_t* l=lit_decompress(zl,hdr.zlit_sz,ls);
-    if(!l){free(zl);free(zo);free(zn);free(zc);return ACEAPEX_ERR_MEMORY;}
-    uint8_t* o=(uint8_t*)malloc(os);
-    uint8_t* n=(uint8_t*)malloc(ns);
-    uint8_t* c=(uint8_t*)malloc(cs);
+    uint8_t* o=(uint8_t*)malloc(os?os:1);
+    uint8_t* n=(uint8_t*)malloc(ns?ns:1);
+    uint8_t* c=(uint8_t*)malloc(cs?cs:1);
     if(!o||!n||!c){free(o);free(n);free(c);free(zl);free(zo);free(zn);free(zc);return ACEAPEX_ERR_MEMORY;}
-    fse_chunked_decomp(zo,os,o); fse_chunked_decomp(zn,ns,n); fse_chunked_decomp(zc,cs,c);
+    // Entropy phase on one budget of hardware threads: literal lanes and one pool for
+    // the token streams run concurrently (was: literals, then three streams serially).
+    int budget=threads>0?threads:(int)std::thread::hardware_concurrency(); if(budget<1) budget=8;
+    int lit_t, tok_t; ax_entropy_split(ax_lit_decoded_size(zl,hdr.zlit_sz), os+ns+cs, budget, lit_t, tok_t);
+    struct LitArg{const uint8_t*s;size_t sz;uint8_t**out;size_t*osz;int lanes;};
+    size_t ls=0; uint8_t* l=nullptr; LitArg larg={zl,(size_t)hdr.zlit_sz,&l,&ls,lit_t};
+    auto litfn=[](void*a)->void*{LitArg*x=(LitArg*)a; *x->out=lit_decompress(x->s,x->sz,*x->osz,x->lanes); return nullptr;};
+    FseStream fst[3]={{zo,os,o},{zn,ns,n},{zc,cs,c}};
+    if (budget == 1) { litfn(&larg); fse_multi_decomp(fst,3,1); }
+    else { pthread_t lt; pthread_create(&lt,nullptr,litfn,&larg);
+           fse_multi_decomp(fst,3,tok_t); pthread_join(lt,nullptr); }
+    if(!l){free(o);free(n);free(c);free(zl);free(zo);free(zn);free(zc);return ACEAPEX_ERR_MEMORY;}
     if(g_dec_err){free(l);free(o);free(n);free(c);free(zl);free(zo);free(zn);free(zc);return ACEAPEX_ERR_DATA;}
     free(zl);free(zo);free(zn);free(zc);
 
@@ -132,7 +148,7 @@ int64_t aceapex_decompress(
         }
     }
     parallel_decode(l,o,n,c,boffs.data(),hdr.num_blocks,
-                    (uint8_t*)dst,hdr.orig_size,hdr.block_size);
+                    (uint8_t*)dst,hdr.orig_size,hdr.block_size,budget);
     free(l);free(o);free(n);free(c);
     return (int64_t)hdr.orig_size;
 }

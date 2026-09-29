@@ -879,7 +879,7 @@ static void parallel_decode(
     uint8_t* dst, size_t dst_size, size_t block_size,
     int nthreads = 0)
 {
-    if (nthreads <= 0) nthreads = 8;
+    if (nthreads <= 0) { nthreads = (int)std::thread::hardware_concurrency(); if (nthreads < 1) nthreads = 8; }
     size_t nt = std::min<size_t>((size_t)nthreads, num_blocks);
     std::vector<DecArgs> dargs(nt);
     size_t blocks_per_thread = (num_blocks + nt - 1) / nt;
@@ -888,6 +888,7 @@ static void parallel_decode(
         size_t bend   = std::min<size_t>(bstart + blocks_per_thread, num_blocks);
         dargs[t]={lit,off,len,cmd,boffs,dst,dst_size,bstart,bend,block_size};
     }
+    if (nt == 1) { dec_worker(&dargs[0]); return; }   // threads=1: nothing is spawned
     std::vector<pthread_t> dpts(nt);
     for(size_t t=0;t<nt;t++) pthread_create(&dpts[t],nullptr,dec_worker,&dargs[t]);
     for(size_t t=0;t<nt;t++) pthread_join(dpts[t],nullptr);
@@ -920,24 +921,69 @@ static void fse_chunked_decomp(const uint8_t* src, size_t orig_sz, uint8_t* dst)
     const size_t CHUNK=fse_stream_chunk(src);
     const uint64_t* cs = (const uint64_t*)(src + 8);
     size_t nc = (orig_sz + CHUNK - 1) / CHUNK;
-    // Build chunk offsets for parallel decompress
-    std::vector<size_t> src_off(nc), dst_off(nc), raw_sz(nc);
-    size_t p_off = (size_t)(src + 8 + nc * 8 - src);
+    size_t p_off = 8 + nc * 8;
     for (size_t i = 0; i < nc; i++) {
-        dst_off[i] = i * CHUNK;
-        raw_sz[i] = std::min<size_t>(CHUNK, orig_sz - dst_off[i]);
-        src_off[i] = p_off;
-        p_off += (cs[i] >> 63) ? raw_sz[i] : (size_t)(cs[i] & ~(uint64_t(1)<<63));
-    }
-    // Parallel decompress chunks
-    #pragma omp parallel for schedule(dynamic,1)
-    for (size_t i = 0; i < nc; i++) {
-        const uint8_t* p = src + src_off[i];
-        if (cs[i] >> 63) memcpy(dst + dst_off[i], p, raw_sz[i]);
-        else if(!zdec_ok(dst + dst_off[i], raw_sz[i], p, cs[i] & ~(uint64_t(1)<<63))) g_dec_err=1;
+        size_t raw = std::min<size_t>(CHUNK, orig_sz - i * CHUNK);
+        const uint8_t* p = src + p_off;
+        if (cs[i] >> 63) { memcpy(dst + i * CHUNK, p, raw); p_off += raw; }
+        else { size_t z = (size_t)(cs[i] & ~(uint64_t(1)<<63));
+               if(!zdec_ok(dst + i * CHUNK, raw, p, z)) g_dec_err=1; p_off += z; }
     }
 }
- 
+
+// Several FSE streams through one pool of `threads` workers: every chunk of every
+// stream is one job, taken dynamically, so the largest stream no longer sets the
+// floor of the entropy phase. `#pragma omp` here was dead code (no -fopenmp) and
+// with -fopenmp it oversubscribed the cores (one pool per stream): measured 42 ms
+// against 32 ms sequential on 8 threads, silesia. Each job is a whole chunk
+// (4 KiB..512 KiB decoded), so the atomic counter costs nothing next to zstd.
+struct AxTokJob { const uint8_t* p; uint8_t* d; size_t raw; size_t z; bool is_raw; };
+struct FseStream { const uint8_t* s; size_t orig; uint8_t* d; };
+static void fse_multi_decomp(const FseStream* st, int n, int threads) {
+    std::vector<AxTokJob> jobs;
+    for (int k = 0; k < n; k++) {
+        if (st[k].orig == 0) continue;
+        const size_t CHUNK=fse_stream_chunk(st[k].s);
+        const uint64_t* cs = (const uint64_t*)(st[k].s + 8);
+        size_t nc = (st[k].orig + CHUNK - 1) / CHUNK, p_off = 8 + nc * 8;
+        for (size_t i = 0; i < nc; i++) {
+            AxTokJob j; j.raw = std::min<size_t>(CHUNK, st[k].orig - i * CHUNK);
+            j.p = st[k].s + p_off; j.d = st[k].d + i * CHUNK; j.is_raw = (cs[i] >> 63) != 0;
+            j.z = j.is_raw ? j.raw : (size_t)(cs[i] & ~(uint64_t(1)<<63));
+            p_off += j.z; jobs.push_back(j);
+        }
+    }
+    if (jobs.empty()) return;
+    if (threads < 1) threads = 1;
+    if ((size_t)threads > jobs.size()) threads = (int)jobs.size();
+    struct Pool { std::vector<AxTokJob>* jobs; std::atomic<size_t> next; };
+    Pool pool{&jobs, {0}};
+    auto fn=[](void* a)->void* { Pool* q=(Pool*)a; size_t n=q->jobs->size();
+        for (size_t i; (i = q->next.fetch_add(1)) < n; ) { const AxTokJob& j=(*q->jobs)[i];
+            if (j.is_raw) memcpy(j.d, j.p, j.raw);
+            else if(!zdec_ok(j.d, j.raw, j.p, j.z)) g_dec_err=1; }
+        return nullptr; };
+    std::vector<pthread_t> pts(threads - 1);
+    for (int t = 0; t < threads - 1; t++) pthread_create(&pts[t], nullptr, fn, &pool);
+    fn(&pool);
+    for (int t = 0; t < threads - 1; t++) pthread_join(pts[t], nullptr);
+}
+
+// Split an entropy thread budget between the literal stream and the token streams
+// by DECODED bytes (zstd decode time follows output, not input); each side gets at
+// least one thread.
+static size_t ax_lit_decoded_size(const uint8_t* zlit, size_t zlit_sz) {
+    if (!zlit || zlit_sz < 8) return 0;
+    uint64_t h; memcpy(&h, zlit, 8);
+    return (size_t)(h & ~((uint64_t(1)<<62)|(uint64_t(1)<<61)|(uint64_t(1)<<60)));
+}
+static void ax_entropy_split(size_t zlit, size_t ztok, int budget, int& lit_t, int& tok_t) {
+    if (budget < 2) { lit_t = tok_t = 1; return; }
+    double f = (zlit + ztok) ? (double)ztok / (double)(zlit + ztok) : 0.5;
+    tok_t = (int)(budget * f + 0.5); if (tok_t < 1) tok_t = 1; if (tok_t > budget - 1) tok_t = budget - 1;
+    lit_t = budget - tok_t;
+}
+
 // Parallel entropy encode — 4 streams simultaneously
 static int lit_lanes(){
     const char* e=getenv("LIT_LANES");
@@ -1147,7 +1193,7 @@ static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
     for(int t=0;t<NW;t++){zsz[t]=zws[t].osz;memcpy(p,zws[t].out,zws[t].osz);p+=zws[t].osz;free(zws[t].out);}
     out_sz=totalsz; return res;
 }
-static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_sz) {
+static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_sz, int lanes_req = 0) {
     // An empty or truncated literal stream must not be read as an 8-byte header.
     // Tiny inputs give zlit_sz==0; the out-of-bounds read corrupted heap metadata
     // and surfaced as a double-free thousands of calls later. (lzbench issue #2.)
@@ -1187,11 +1233,15 @@ static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_s
     // LANES был жёстко 8; на машинах с бо́льшим числом ядер половина простаивала.
     // Чанки независимы как кадры zstd, пул динамический — берём по числу ядер.
     int hw=(int)std::thread::hardware_concurrency(); if(hw<1) hw=8;
+    if(lanes_req>0) hw=lanes_req;
     const char* le=getenv("LIT_LANES_DEC"); if(le) hw=atoi(le);
+    if(hw<1) hw=1;
     const int LANES=std::min(hw,NW);
-    std::vector<pthread_t> pts(LANES);
-    for(int t=0;t<LANES;t++) pthread_create(&pts[t],nullptr,dfn,&pool);
-    for(int t=0;t<LANES;t++) pthread_join(pts[t],nullptr);
+    if(LANES<=1){ dfn(&pool); return out; }          // lanes=1: decode inline, spawn nothing
+    std::vector<pthread_t> pts(LANES-1);
+    for(int t=0;t<LANES-1;t++) pthread_create(&pts[t],nullptr,dfn,&pool);
+    dfn(&pool);
+    for(int t=0;t<LANES-1;t++) pthread_join(pts[t],nullptr);
     return out;
 }
 // Partial stream unpacking for region reads: touch only the compressed chunks
@@ -1483,19 +1533,17 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
     uint8_t* len=(uint8_t*)malloc(len_sz);
     uint8_t* cmd=(uint8_t*)malloc(cmd_sz);
     if(!off||!len||!cmd){free(off);free(len);free(cmd);free(zlit);free(zoff);free(zlen);free(zcmd);return 1;}
-    struct LitArg{const uint8_t*s;size_t sz;uint8_t**out;size_t*osz;};
-    LitArg larg={zlit,(size_t)hdr.zlit_sz,&lit,&lit_sz};
+    // One thread budget for the whole entropy phase: the literal stream gets lit_t
+    // lanes, the three token streams share one pool of tok_t workers (ADR-014).
+    int lit_t, tok_t; ax_entropy_split(ax_lit_decoded_size(zlit,hdr.zlit_sz), off_sz+len_sz+cmd_sz, threads>0?threads:8, lit_t, tok_t);
+    struct LitArg{const uint8_t*s;size_t sz;uint8_t**out;size_t*osz;int lanes;};
+    LitArg larg={zlit,(size_t)hdr.zlit_sz,&lit,&lit_sz,lit_t};
     auto litfn=[](void*a)->void*{LitArg*l=(LitArg*)a;
-        *l->out=lit_decompress(l->s,l->sz,*l->osz); return nullptr;};
-    struct FD{const uint8_t*s;size_t sz;uint8_t*d;};
-    FD fds[3]={{zoff,off_sz,off},{zlen,len_sz,len},{zcmd,cmd_sz,cmd}};
-    auto fdfn=[](void*a)->void*{FD*f=(FD*)a;
-        size_t orig=fse_stream_size(f->s);
-        fse_chunked_decomp(f->s,orig,f->d); return nullptr;};
-    pthread_t fpts[4];
-    pthread_create(&fpts[0],nullptr,litfn,&larg);
-    for(int i=0;i<3;i++) pthread_create(&fpts[i+1],nullptr,fdfn,&fds[i]);
-    for(int i=0;i<4;i++) pthread_join(fpts[i],nullptr);
+        *l->out=lit_decompress(l->s,l->sz,*l->osz,l->lanes); return nullptr;};
+    FseStream fst[3]={{zoff,off_sz,off},{zlen,len_sz,len},{zcmd,cmd_sz,cmd}};
+    if (threads == 1) { litfn(&larg); fse_multi_decomp(fst,3,1); }
+    else { pthread_t lt; pthread_create(&lt,nullptr,litfn,&larg);
+           fse_multi_decomp(fst,3,tok_t); pthread_join(lt,nullptr); }
     if(!lit){free(off);free(len);free(cmd);free(zlit);free(zoff);free(zlen);free(zcmd);return 1;}
     // Четыре потока формата (lit, off, len, cmd) распаковываются одновременно
     // в pthread выше; раздельного времени у них нет, и печатать две одинаковые

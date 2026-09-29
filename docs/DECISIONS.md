@@ -105,6 +105,25 @@ a CHANGELOG entry and `make test && ./verify.sh` green on the tagged commit. Pap
 stay frozen (ADR-005) and are never reused for software. The python package and the C
 decoder header carry the same string. lzbench integrations name the software version.
 
+## ADR-014 (2026-09-29) The decode thread budget covers the entropy phase; threads=1 spawns nothing
+lzbench 2.4's published page (EPYC 9555P) showed aceapex 1.0.1 decode scaling x17.7 at
+32 external threads against x22.3 for zstd -2, and internal scaling (`-I8`) of only
+x2.5. On ace-core the 2.1.0 CLI reached a 31 ms floor in the entropy phase from four
+threads on. Causes, measured on silesia: (1) the three token streams were decoded by
+one thread each in the CLI and strictly serially in the library, while `#pragma omp`
+in `fse_chunked_decomp` was dead (no `-fopenmp`; with it, one pool per stream
+oversubscribed the cores: 42 ms against 32); (2) the library always used every
+hardware thread for literals and eight for the match phase, so an external harness
+running N copies got N x (lanes + 8) threads; (3) non-DNA archives use the legacy
+4-lane literal layout, which caps literal parallelism at four (81.7 MB of silesia
+literals / 4 = the 31 ms floor). Decision: every FSE chunk of every token stream is one
+job in one pool; the entropy budget is split between literal lanes and that pool by
+decoded bytes; `aceapex_decompress_mt(..., threads)` passes one budget through both
+phases and `threads = 1` decodes on the caller's thread with no pthread_create; auto
+means the hardware thread count. Not decided here: the default literal chunk for
+non-DNA input (legacy 4 lanes vs 4 MiB chunks at +0.10 % on silesia) - the ratio axis
+is the user's call.
+
 ## Open
 - GPU figures in the README were taken in July on code that predates the literal
   transform, literal chunking and the chunk field. The README front page is rewritten
