@@ -42,3 +42,16 @@ L4 first run (907a470): chr1 download truncated (results/colab-2026-09-29-l4-gpu
 | Blackwell | 0.310 | 0.088 | 0.068 | 0.049 | 0.602 | 0.260 | 0.033 | 0.217 |
 
 T4 before gpu-case (19ffed7): on-device 22.56, unpack 6.56 (bases 1.90, case 2.80, exceptions 1.84).
+
+## T2T (CHM13 v2.0, NCBI GCA_009914755.4, 3 156 259 565 B), ms, median of 3
+A100-SXM4-80GB (sm_80), 5d9786a, libzstd 1.5.5; all rows bit-perfect (FNV b4380f15fd9480a3).
+| GPU | archive | bytes | tok | lit | unpack | match | on-device | +H2D | GB/s on-device |
+|---|---|---|---|---|---|---|---|---|---|
+| A100-80GB | zstd | 901 676 480 | 7.907 | 30.789 | 8.708 | 30.311 | 77.715 | 149.584 | 40.61 |
+| A100-80GB | rans | 898 263 414 | 2.351 | 28.922 | 8.692 | 30.313 | 70.278 | 141.893 | 44.91 |
+| A100-80GB | open | 887 641 942 | 2.360 | 9.378 | 10.263 | 30.283 | 52.283 | 123.011 | 60.37 |
+
+open parts: seq 5.085, cse 1.549, gap 1.402, val 1.188, plain 0.694; bases 7.364, case 0.715,
+exceptions 2.165. open vs zstd on-device -32.7 %; H2D 70.7 ms is 57 % of the open total (+H2D),
+pipeline overlap gives 0.7 % on open (nothing left to hide H2D behind).
+chr1 on the same A100-80GB: zstd 10.000, rans 10.026, open 6.090 ms (41.69 GB/s).
