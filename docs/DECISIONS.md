@@ -124,6 +124,22 @@ means the hardware thread count. Not decided here: the default literal chunk for
 non-DNA input (legacy 4 lanes vs 4 MiB chunks at +0.10 % on silesia) - the ratio axis
 is the user's call.
 
+## ADR-015 (2026-09-29) Block decoder copies in 16-byte steps; branch-free and interleaved variants closed
+Single-thread decode of silesia on ace-core: entropy 98 ms, match phase 102 ms - the
+match phase alone costs what zstd -2 spends on its whole decode (108 ms). With the
+copies compiled out the phase still took 72 % of its time (container: 122 of 170 ms),
+so the token loop, not the copying, is the cost. Kept: 16-byte wild copies for literal
+runs and matches (a match closer than 16 bytes is first expanded byte-wise to a period
+>= 16 - the ZSTD_overlapCopy8 / LZ4 technique, not ours), guarded by 16 bytes of slack
+inside the block and the literal slice, the plain path for the tail: 199 -> 170 ms
+single-thread on the container, bit-perfect, ASan/UBSan clean on 17 fixtures and
+silesia, 40 bit-flip runs without a crash. Closed, measured worse on the same host:
+(a) branch-light execution (256-entry token table, selects for the rep window,
+branch-free 1..2-byte offset varint, unconditional copies redirected to a scratch line
+for zero lengths): 241 ms; (b) two blocks per thread with one token each in turn:
+241 ms. Neither branch prediction nor the dependency chain is the bottleneck on this
+host; the next step is hardware counters on ace-core, not more variants.
+
 ## Open
 - GPU figures in the README were taken in July on code that predates the literal
   transform, literal chunking and the chunk field. The README front page is rewritten

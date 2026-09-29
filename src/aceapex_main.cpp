@@ -403,6 +403,26 @@ static void analyze_depth(
         (d1_safe+d2_dep)?100.0*d2_dep/(d1_safe+d2_dep):0);
 }
 
+// 16-byte wild copies (the zstd/LZ4 way): a run or match is written in 16-byte steps
+// that may run past its end, so the caller guarantees 16 bytes of slack inside the
+// block and, for literals, inside the block's literal slice. A match closer than 16
+// bytes is first expanded byte-wise to a period P = dist*ceil(16/dist) >= 16, after
+// which 16-byte steps from d-P read only bytes already written (self-overlap as
+// period; a known technique, see ZSTD_overlapCopy8 / LZ4).
+static inline void ax_copy16(uint8_t* d, const uint8_t* s) { memcpy(d, s, 16); }
+static inline void ax_wild_copy(uint8_t* d, const uint8_t* s, uint32_t len) {
+    uint8_t* e = d + len;
+    do { ax_copy16(d, s); d += 16; s += 16; } while (d < e);
+}
+static inline void ax_match_fast(uint8_t* d, uint32_t dist, uint32_t len) {
+    if (dist >= 16) { ax_wild_copy(d, d - dist, len); return; }
+    uint32_t P = dist * ((16 + dist - 1) / dist);          // smallest multiple of dist >= 16
+    uint32_t head = P < len ? P : len;
+    const uint8_t* s = d - dist;
+    for (uint32_t i = 0; i < head; i++) d[i] = s[i];
+    if (len > head) ax_wild_copy(d + head, d + head - P, len - head);
+}
+
 static void decompress_streams(
     uint8_t* dst, size_t dst_size,
     const uint8_t* lit, size_t lit_sz,
@@ -412,13 +432,16 @@ static void decompress_streams(
 {
     size_t lp=0, op=0, np=0, cp=0, out=0;
     uint32_t rep[4]={1,2,4,8};
+    const size_t SL = 16;                                    // slack for wild copies
     while (out<dst_size && cp<cmd_sz) {
         uint8_t c=cmd[cp++];
         if (c==0xFF) { rep[0]=1;rep[1]=2;rep[2]=4;rep[3]=8; continue; }
         if (c<0x80) {
             uint32_t l=c+1;
             if (lp+l>lit_sz||out+l>dst_size) break;
-            memcpy(dst+out,lit+lp,l); out+=l; lp+=l;
+            if (out+l+SL<=dst_size && lp+l+SL<=lit_sz) ax_wild_copy(dst+out,lit+lp,l);
+            else memcpy(dst+out,lit+lp,l);
+            out+=l; lp+=l;
         } else if ((c&0xC0)==0x80) {
             uint32_t ri=(c>>4)&3, lv=c&0x0F;
             if (lv==0x0F) lv+=read_varint(len,np,len_sz);
@@ -427,7 +450,8 @@ static void decompress_streams(
             // dist>out would read before the start of the block buffer.
             // A corrupted offset made this read arbitrary memory -> SIGSEGV.
             if (!dist||dist>out||out+l>dst_size) break;
-            copy_match(dst,out,dist,l); out+=l;
+            if (out+l+SL<=dst_size) ax_match_fast(dst+out,dist,l); else copy_match(dst,out,dist,l);
+            out+=l;
         } else {
             uint32_t lv=(c==0xFE)?read_varint(len,np,len_sz):(uint32_t)(c&0x3F);
             uint32_t l=lv+6, dist=read_varint(off,op,off_sz);
@@ -435,7 +459,8 @@ static void decompress_streams(
             // Same guard: a corrupted offset varint yields a huge dist, and
             // copy_match would then read from dst+out-dist, far before the buffer.
             if (!dist||dist>out||out+l>dst_size) break;
-            copy_match(dst,out,dist,l); out+=l;
+            if (out+l+SL<=dst_size) ax_match_fast(dst+out,dist,l); else copy_match(dst,out,dist,l);
+            out+=l;
         }
     }
 }
