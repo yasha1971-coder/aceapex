@@ -71,8 +71,16 @@ order-0 на литералах не-ДНК; OpenMP в декоде; branch-ligh
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
-Открытый профиль (ADR-019) в main. Таблица T4 chr1 (профиль BS 16K / LIT 64K, медиана 7,
-results/colab-t4-2026-09-29-gpu-open.log):
+T4 gpu-case (5fef973): open-архив упал «illegal instruction» (warm-up; фикстуры 2/5), zstd/rans
+bit-perfect: on-device 29.70 / 28.66 мс (results/colab-t4-2026-09-29-gpu-case-fail.log). Причина:
+проверка хвоста потока нитью 0 до цикла раундов оставляла варп 0 разошедшимся к shuffle блок-скана
+(видно в SASS sm_75). Исправлено в 76d71eb (проверка после цикла, __syncwarp в скане); судья 50/0.
+scripts/colab_gpu_open.sh — любой GPU (sm из compute_cap, лог с моделью GPU, корпуса с Drive,
+T2T с Drive, архивы T2T кэшируются на Drive: энкодер 11.2 GB RSS, нужен хост >= 20 GB RAM).
+Сводная таблица по GPU: results/gpu-open-table.md. Ждёт прогонов: A100 (первым: наполняет кэш T2T),
+затем T4, L4, G4.
+
+Таблица T4 chr1 до gpu-case (results/colab-t4-2026-09-29-gpu-open.log):
 
 | архив | байт | tok | lit | unpack | match | on-device | +H2D | вызовов nvCOMP |
 |---|---|---|---|---|---|---|---|---|
@@ -80,13 +88,9 @@ results/colab-t4-2026-09-29-gpu-open.log):
 | rANS-токены | 69 106 957 | 1.21 | 12.16 | 4.16 | 10.71 | 28.24 | 33.76 | 1 |
 | open | 67 975 888 | 1.09 | 4.38 | 6.56 | 10.53 | 22.56 | 27.98 | 0 |
 
-Ядро серий регистра переписано (ветка gpu-case, в main 7436843): разбор серий и промежутков
-исключений — блок на чанк раундами по 256 байт; регистр ставится при развёртке оснований
-(k_open_bases, бинарный поиск по концам серий). Эмулятор и судья 50/0; на T4 ещё не мерили.
-Ждёт прогона: scripts/colab_gpu_open.sh (цель unpack cse < 1 мс).
-
 ## Дальше
-1. T4-прогон gpu-case: цифры case/exceptions/bases в ADR-019 и эту таблицу.
+1. Прогон colab_gpu_open.sh на A100 -> T4 -> L4 -> G4: open bit-perfect, unpack case < 1 мс;
+   строки в results/gpu-open-table.md, цифры case/exceptions/bases в ADR-019.
 2. match 10.5 мс (v7-RA) — главный этап; затем H100 (шаг 4): полный путь chr1/T2T.
 3. seq-куски 2.15 мс (rANS 2-битного пака) — самый дорогой кусок lit.
 4. CPU-декод открытого профиля: C99 chr1 0.58 -> 0.88 s (побайтная развёртка оснований).
