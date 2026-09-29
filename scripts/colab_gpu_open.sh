@@ -24,8 +24,9 @@
 # decoded on the GPU (k_r1), compared byte for byte with the stream the archive decodes to; its row in
 # the table is an estimate (tok + dense lit + match; bytes = open - literal stream + AR1L file).
 # dense-open v2 (measurement): the same literal stream coded by components/rans1_seg.c (32 segments per 64 KiB
-# chunk, own state each, context reset per segment) and decoded by k_r2 (lane = segment, slot->symbol table per
-# context in shared memory: byte table K x 4096 B and nibble table K x 2048 B); lane logic checked on the CPU
+# chunk, own state each, context reset per segment) and decoded by k_r2 (lane = segment; symbol by slot->symbol
+# table per context in shared memory, byte K x 4096 B / nibble K x 2048 B, or by comparing the context's cum row,
+# no table; chunks with K > 16 by binary search in a second launch); lane logic checked on the CPU
 # first (scripts/dense2_lane_emu.cpp); row "dense2 (est.)", bytes = open - literal stream + AR2L file.
 # CPU round-trip of each archive, aceapex_gpu on each, then per corpus two tables: stages, and the
 # parts of lit (per piece class) and unpack (per kernel). Log: results/colab-<date>-<gpu>-gpu-open.log.
@@ -155,7 +156,7 @@ for X in $CORP; do
   { printf 'archive\tbytes\ttokens\tliterals\ttok\tlit\tunpack\tmatch\ton-device\t+H2D\tpipeline\tbatches\tGB/s\tcheck\tH2D-pageable\tH2D-pinned\n'
     grep "^ROW	$W/$X\." $L | awk -F'\t' -v OFS='\t' '{print $2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$24,$27,$12,$13,$25" GB/s",$26" GB/s"}' | sed "s#$W/##"
     DBY=$(cat $W/$X.dense.bytes 2>/dev/null); grep "^ROW	$W/$X\.open" $L | awk -F'\t' -v OFS='\t' -v db="$DBY" -v x="$X" '$30!="-1"{print x".dense (est.)",db,"rANS","order-1",$6,$28,"0",$9,$29,"-","-","-","-",($30=="0"?"bit-perfect":"DIFFERS"),"-","-"}'
-    DB2=$(cat $W/$X.dense2.bytes 2>/dev/null); grep "^ROW	$W/$X\.open" $L | awk -F'\t' -v OFS='\t' -v db="$DB2" -v x="$X" '$34!="" && $34!="-1"{l=($31<$32?$31:$32); print x".dense2 (est.)",db,"rANS","o1 32seg",$6,sprintf("%.3f",l)" (byte "$31" / nib "$32")","0",$9,$33,"-","-","-","-",($34=="0"?"bit-perfect":"DIFFERS"),"-","-"}'; } | column -t -s $'\t' | tee -a $L.t1
+    DB2=$(cat $W/$X.dense2.bytes 2>/dev/null); grep "^ROW	$W/$X\.open" $L | awk -F'\t' -v OFS='\t' -v db="$DB2" -v x="$X" '$35!="" && $35!="-1"{l=1e9; for(k=31;k<=33;k++) if($k>=0 && $k<l) l=$k; print x".dense2 (est.)",db,"rANS","o1 32seg",$6,sprintf("%.3f",l)" (byte "$31" / nib "$32" / cmp "$33")","0",$9,$34,"-","-","-","-",($35=="0"?"bit-perfect":"DIFFERS"),"-","-"}'; } | column -t -s $'\t' | tee -a $L.t1
   echo "parts, ms: lit = zstd frames + pieces by class; unpack = zstd-pack kernels + open kernels" | tee -a $L.t1
   { printf 'archive\tlit.zstd\tseq\tcse\tgap\tval\tplain\tun.zstdpack\tbases\tcase\texceptions\n'
     grep "^ROW	$W/$X\." $L | awk -F'\t' -v OFS='\t' '{print $2,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23}' | sed "s#$W/##"; } | column -t -s $'\t' | tee -a $L.t1
