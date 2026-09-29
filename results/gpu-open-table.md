@@ -69,3 +69,15 @@ H2D pageable 4.4 GB/s, pinned 12.3-12.4 GB/s. Log: results/colab-2026-09-29-a100
 | t2t | open | 70.734 | 55.174 | 125.907 | 78.579 | +37.6 % |
 T2T open 125.9 -> 78.6 ms (40.2 GB/s delivered); floor = pinned H2D 70.7 ms, so ~60 ms is not reachable on
 this host's PCIe. chr1: 8 batches cost more than the 5.4 ms copy they hide.
+
+## RTX PRO 6000 Blackwell, 51c9655: --pipeline=auto and dense-open on the GPU (median of 3, all bit-perfect)
+Log: results/colab-2026-09-29-rtx-pro-6000-blackwell-dense-open.log. H2D pageable 27.3 GB/s, pinned 56.9 GB/s.
+| corpus | archive | bytes | lit | unpack | on-device | +H2D | auto path |
+|---|---|---|---|---|---|---|---|
+| chr1 | open | 67 975 888 | 0.958 | 0.505 | 3.666 | 4.844 | sequential 4.844 |
+| chr1 | dense (est.) | 64 923 192 | 3.894 | 0 | 6.098 | - | - |
+| t2t | zstd | 901 676 480 | 13.015 | 6.280 | 34.382 | 49.987 | sequential 49.987 |
+| t2t | rans | 898 263 414 | 13.161 | 6.236 | 32.849 | 48.402 | sequential 48.402 |
+| t2t | open | 887 641 942 | 5.335 | 7.884 | 26.713 | 42.071 | pipeline 8: 33.353 (94.6 GB/s) |
+| t2t | dense (est.) | 848 307 559 | 43.922 | 0 | 57.416 | - | - |
+dense-open: -4.4 % bytes for a literal stage 2.7x (chr1) / 3.3x (t2t) slower than the open DNA pack on the GPU.
