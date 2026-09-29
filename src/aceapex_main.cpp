@@ -479,6 +479,71 @@ static void decompress_streams(
 }
  
 
+// Two-pass block decode (SALVAGE stash@{3}, "parse 20 % / copy 80 %"): pass 1 parses
+// cmd/off/len into a batch of ops (length, distance; literal runs have dist 0), pass 2
+// executes the copies. Batches of AX_OPS ops keep the op list in L1; the copies stay
+// serial and in order, so overlapping and chained matches read exactly what the one-pass
+// loop reads. Same bounds checks, same output, archive bytes untouched.
+static int g_two_pass = getenv("AX_DEC1") ? 0 : 1;   // AX_DEC1=1: one-pass loop (A/B)
+struct AxOp { uint32_t len, dist; };
+#ifndef AX_OPS_N
+#define AX_OPS_N 1024
+#endif
+static const size_t AX_OPS = AX_OPS_N;
+static void decompress_two_pass(
+    uint8_t* dst, size_t dst_size,
+    const uint8_t* lit, size_t lit_sz,
+    const uint8_t* off, size_t off_sz,
+    const uint8_t* len, size_t len_sz,
+    const uint8_t* cmd, size_t cmd_sz)
+{
+    AxOp ops[AX_OPS];
+    size_t lp=0, op=0, np=0, cp=0, out=0, pout=0;
+    uint32_t rep[4]={1,2,4,8};
+    const size_t SL = 16;
+    bool stop=false;
+    while (!stop) {
+        size_t n=0;
+        // pass 1: parse; pout runs ahead of out and carries the bounds checks
+        while (n<AX_OPS && pout<dst_size && cp<cmd_sz) {
+            uint8_t c=cmd[cp++];
+            if (c==0xFF) { rep[0]=1;rep[1]=2;rep[2]=4;rep[3]=8; continue; }
+            if (c<0x80) {
+                uint32_t l=c+1;
+                if (lp+l>lit_sz||pout+l>dst_size) { stop=true; break; }
+                ops[n++]={l,0}; pout+=l; lp+=l;
+            } else if ((c&0xC0)==0x80) {
+                uint32_t ri=(c>>4)&3, lv=c&0x0F;
+                if (lv==0x0F) lv+=read_varint(len,np,len_sz);
+                uint32_t l=lv+6, dist=rep[ri];
+                if (ri>0) { for(int i=ri;i>0;i--) rep[i]=rep[i-1]; rep[0]=dist; }
+                if (!dist||dist>pout||pout+l>dst_size) { stop=true; break; }
+                ops[n++]={l,dist}; pout+=l;
+            } else {
+                uint32_t lv=(c==0xFE)?read_varint(len,np,len_sz):(uint32_t)(c&0x3F);
+                uint32_t l=lv+6, dist=read_varint(off,op,off_sz);
+                rep[3]=rep[2];rep[2]=rep[1];rep[1]=rep[0];rep[0]=dist;
+                if (!dist||dist>pout||pout+l>dst_size) { stop=true; break; }
+                ops[n++]={l,dist}; pout+=l;
+            }
+        }
+        if (n<AX_OPS) stop=true;
+        // pass 2: copies in order
+        size_t lq = lp; for (size_t i=0;i<n;i++) if (!ops[i].dist) lq-=ops[i].len;
+        for (size_t i=0;i<n;i++) {
+            uint32_t l=ops[i].len, dist=ops[i].dist;
+            if (!dist) {
+                if (out+l+SL<=dst_size && lq+l+SL<=lit_sz) ax_wild_copy(dst+out,lit+lq,l);
+                else memcpy(dst+out,lit+lq,l);
+                lq+=l;
+            } else {
+                if (out+l+SL<=dst_size) ax_match_fast(dst+out,dist,l); else copy_match(dst,out,dist,l);
+            }
+            out+=l;
+        }
+    }
+}
+
 // ULTRA: Adaptive parallel decoder
 // Checks true source-readiness (not just self-overlap)
 static void decompress_adaptive(
@@ -788,7 +853,7 @@ static void* dec_worker(void* arg) {
                 a->len + bo.len_off, bo.len_sz,
                 a->cmd + bo.cmd_off, bo.cmd_sz, b);
 #endif
-            decompress_streams(
+            (g_two_pass ? decompress_two_pass : decompress_streams)(
                 a->dst + bstart, bsize,
                 a->lit + bo.lit_off, bo.lit_sz,
                 a->off + bo.off_off, bo.off_sz,
