@@ -69,6 +69,7 @@ order-0 на литералах не-ДНК; OpenMP в декоде; branch-ligh
 - Код и судья: github.com/yasha1971-coder/aceapex (make test на ace-core = 50/0).
 - История/передача: github.com/yasha1971-coder/yasha-context/ACEAPEX (CONTEXT.md, HANDOFF.md).
 - Измеренные механизмы (в сборке / лежит / закрыт, с числами): yasha-context/ACEAPEX/DIAMONDS.md.
+- Всё по ACEAPEX на сервере вне pubrepo (ревизия 29.09): yasha-context/ACEAPEX/SERVER_INVENTORY.md.
 - Разборы конкурентов и стандарта: документы проекта Claude «Проэкт ACEAPEX»
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
@@ -100,7 +101,9 @@ match 30.3, bases 7.4, seq 5.1. Архивы zstd/rans T2T зависят от l
 898 263 414; 1.4.8: 902 319 887 / 898 903 131), open одинаков.
 
 ## Дальше
-0. --pipeline: число батчей по размеру архива (chr1 не батчить; T2T свип 4/8/16); G4 (PCIe 5).
+0. Colab (A100/G4): --pipeline=auto (сделано: конвейер только при H2D >= on-device/2 и >= 2 батчах
+   по 64 MB — chr1 последовательно) и dense-open на GPU (k_r1, --dense-lit; CPU-зеркало chr1 0 расхождений):
+   мс lit против open, bit-perfect, chr1 и T2T.
 1. T2T на Blackwell (G4) и T4/L4 (архивы в Drive-кэше; open уже там, zstd/rans — со следующего
    прогона на A100/G4). На T2T H2D = 57 % пути: следующий выигрыш — окна по координате, не весь геном.
 2. match 10.4 мс на T4 (v7-RA) — главный этап; затем H100 (шаг 4): полный путь chr1/T2T.
