@@ -247,6 +247,68 @@ __global__ void __launch_bounds__(32) k_r1(const uint8_t* __restrict__ C, const 
         }
     }
 }
+
+// ---------------------------------------------------------------- dense-open v2 (measurement, not in the format)
+// The literal stream coded by components/rans1_seg.c (container "AR2L": per 64 KiB chunk [n u32][cs u32] then
+// [flag][K][sym K][bit-packed order-1 table][NS=32 x u16 substream lengths][32 substreams]). One warp per chunk,
+// lane = segment: segment s holds symbols [s*q, s*q+q) (q = (n/32)&~3, the last one runs to n) with its own state
+// and substream; the context restarts at alphabet symbol 0 at the segment start. The symbol comes from a
+// slot->symbol table per context in shared memory (K x 4096 B; NIB: two slots per byte, K x 2048 B): no search.
+// K <= 16 (host checks). Output in 32-bit words (segment starts are multiples of 4).
+struct R2Desc { uint64_t src, dst; uint32_t cs, n; };
+template<int NIB> __global__ void __launch_bounds__(32) k_r2(const uint8_t* __restrict__ C, const R2Desc* __restrict__ d, uint8_t* __restrict__ out, uint32_t* __restrict__ err){
+    extern __shared__ uint8_t slot[];                 // [K][4096 >> NIB]
+    __shared__ uint16_t cum[16][17]; __shared__ uint8_t sym[16]; __shared__ const uint8_t* lens; __shared__ int K_s, raw_s;
+    const R2Desc c=d[blockIdx.x]; const uint8_t* p=C+c.src; uint8_t* o=out+c.dst; const uint32_t n=c.n; const int ln=threadIdx.x;
+    if(ln==0){
+        raw_s = n==0 || p[0]==1;
+        if(!raw_s){ const int K=p[1]; K_s=K; const uint8_t* q=p+2;
+            if(K>16){ atomicAdd(err,1u); raw_s=2; }
+            else {
+            for(int i=0;i<K;i++) sym[i]=q[i]; q+=K;
+            uint64_t acc=0; int nb=0;
+            auto get=[&](int bits)->uint32_t{ while(nb<bits){ acc|=(uint64_t)(*q++)<<nb; nb+=8; } uint32_t v=(uint32_t)(acc&((1u<<bits)-1)); acc>>=bits; nb-=bits; return v; };
+            uint32_t ru=0; for(int i=0;i<K;i++) ru|=get(1)<<i;
+            for(int i=0;i<K;i++){ cum[i][0]=0;
+                if(!((ru>>i)&1)){ for(int j=0;j<K;j++) cum[i][j+1]=0; continue; }
+                uint32_t cu=0; for(int j=0;j<K;j++) cu|=get(1)<<j;
+                uint32_t cc=0; for(int j=0;j<K;j++){ if((cu>>j)&1) cc+=get(12)+1; cum[i][j+1]=(uint16_t)cc; } }
+            if(*q++!=32) { atomicAdd(err,1u); raw_s=2; }
+            lens=q; }
+        }
+    }
+    __syncthreads();
+    if(raw_s==2) return;
+    if(raw_s){ if(n) for(uint32_t i=ln;i<n;i+=32) o[i]=p[1+i]; return; }
+    const int K=K_s;
+    // slot table: lane ln fills slots [128 ln, 128 ln + 128) of every used row
+    for(int i=0;i<K;i++){ if(cum[i][K]==0) continue;
+        uint32_t m0=ln*128; int j=0; while(cum[i][j+1]<=m0) j++;
+        if(NIB){ uint32_t* w=(uint32_t*)(slot+i*2048+ln*64);
+            for(int k=0;k<16;k++){ uint32_t v=0; for(int b=0;b<8;b++){ uint32_t m=m0+k*8+b; while(cum[i][j+1]<=m) j++; v|=(uint32_t)j<<(4*b); } w[k]=v; } }
+        else { uint32_t* w=(uint32_t*)(slot+i*4096+ln*128);
+            for(int k=0;k<32;k++){ uint32_t v=0; for(int b=0;b<4;b++){ uint32_t m=m0+k*4+b; while(cum[i][j+1]<=m) j++; v|=(uint32_t)j<<(8*b); } w[k]=v; } }
+    }
+    // own substream: offset = exclusive prefix of the lengths
+    const uint32_t L=lens[2*ln]|(uint32_t)lens[2*ln+1]<<8; uint32_t incl=L;
+    for(int k=1;k<32;k<<=1){ uint32_t y=__shfl_up_sync(0xffffffffu,incl,k); if(ln>=k) incl+=y; }
+    const uint8_t* b=lens+64+(incl-L);
+    __syncthreads();
+    const uint32_t q=(n/32)&~3u, lo=ln*q, len= ln==31 ? n-31*q : q;
+    uint32_t x=b[0]|b[1]<<8|b[2]<<16|(uint32_t)b[3]<<24; const uint8_t* pk=b+4; uint32_t ctx=0, w=0;
+    uint32_t* ow=(uint32_t*)(o+lo);
+    for(uint32_t t=0;t<len;t++){
+        const uint32_t m=x&4095u;
+        const uint32_t j = NIB ? (slot[ctx*2048+(m>>1)]>>((m&1)*4))&15u : slot[ctx*4096+m];
+        const uint32_t st=cum[ctx][j], f=cum[ctx][j+1]-st;
+        x=f*(x>>12)+m-st; ctx=j;
+        w|=(uint32_t)sym[j]<<(8*(t&3));
+        if((t&3)==3){ ow[t>>2]=w; w=0; }
+        if(x<(1u<<15)){ x=(x<<16)|pk[0]|((uint32_t)pk[1]<<8); pk+=2; }
+    }
+    for(uint32_t t=len&~3u;t<len;t++) o[lo+t]=(uint8_t)(w>>(8*(t&3)));
+    if(pk!=b+L) atomicAdd(err,1u);
+}
 __global__ void k_cmp(const uint8_t* a, const uint8_t* b, size_t n, unsigned long long* bad){
     unsigned long long c=0; for(size_t i=blockIdx.x*(size_t)blockDim.x+threadIdx.x;i<n;i+=(size_t)gridDim.x*blockDim.x) c+= a[i]!=b[i];
     if(c) atomicAdd(bad,c);
@@ -276,8 +338,9 @@ static float median_ms(std::vector<float> v){ std::sort(v.begin(),v.end()); retu
 
 int main(int argc, char** argv){
     const char* R1=nullptr;                          // --dense-lit=<file>: literal stream coded by rans1_v4 (measurement)
+    const char* R2=nullptr;                          // --dense2-lit=<file>: literal stream coded by rans1_seg (dense-open v2, measurement)
     int PK=0;                                        // --pipeline[=K]: K block batches, H2D of batch k+1 under the decode of batch k
-    { int j=1; for(int i=1;i<argc;i++){ if(!strncmp(argv[i],"--dense-lit=",12)) R1=argv[i]+12; else if(!strncmp(argv[i],"--pipeline",10)){ PK = argv[i][10]!='=' ? 8 : !strcmp(argv[i]+11,"auto") ? -1 : atoi(argv[i]+11); if(PK==0) PK=1; } else argv[j++]=argv[i]; } argc=j; }
+    { int j=1; for(int i=1;i<argc;i++){ if(!strncmp(argv[i],"--dense-lit=",12)) R1=argv[i]+12; else if(!strncmp(argv[i],"--dense2-lit=",13)) R2=argv[i]+13; else if(!strncmp(argv[i],"--pipeline",10)){ PK = argv[i][10]!='=' ? 8 : !strcmp(argv[i]+11,"auto") ? -1 : atoi(argv[i]+11); if(PK==0) PK=1; } else argv[j++]=argv[i]; } argc=j; }
     if(argc<3){ fprintf(stderr,"usage: %s <archive.aet> <original> [G=auto|8|16|32] [repeats=7] [batches=4] [--pipeline[=K|auto]]\n",argv[0]); return 1; }
     int Gwant = (argc>3 && strcmp(argv[3],"auto")!=0) ? atoi(argv[3]) : 0;
     int reps = argc>4 ? atoi(argv[4]) : 7; int NB = argc>5 ? atoi(argv[5]) : 4; if(NB<1) NB=1;
@@ -591,15 +654,48 @@ int main(int argc, char** argv){
             R1,r.size(),hd1.size(),nraw,mR1,mL,mU,r1bad==0?"MATCHES":"DIFFERS",hb,(unsigned long long)ssz[0],he,mT,mR1,mM,mR1D,orig/mR1D/1e6);
         if(r1bad) ok=false;
     }
+    // ---- dense-open v2 (--dense2-lit): 32 segments per chunk, slot tables; byte table (k_r2<0>) and nibble table (k_r2<1>)
+    float mR2[2]={0,0}, mR2D=0; long long r2bad=-1;
+    if(R2){
+        std::vector<uint8_t> r=slurp(R2); if(r.size()<8 || memcmp(r.data(),"AR2L",4) || r[5]!=32 || r[6]!=12){ fprintf(stderr,"%s: not an AR2L NS=32 TF=12 stream\n",R2); return 1; }
+        std::vector<R2Desc> hd2; size_t pos=8; uint64_t dst=0; size_t nraw=0; int Kmax=1;
+        while(pos+8<=r.size()){ uint32_t cn=rd32(&r[pos]), cs=rd32(&r[pos+4]); pos+=8; if(pos+cs>r.size()){ fprintf(stderr,"AR2L chunk past the end\n"); return 1; }
+            if(cs&&r[pos]==1) nraw++; else if(cs>1) Kmax=std::max(Kmax,(int)r[pos+1]); hd2.push_back({pos,dst,cs,cn}); pos+=cs; dst+=cn; }
+        if(dst!=ssz[0]){ fprintf(stderr,"AR2L holds %llu bytes, literal stream %llu\n",(unsigned long long)dst,(unsigned long long)ssz[0]); return 1; }
+        if(Kmax>16){ fprintf(stderr,"AR2L: alphabet %d > 16, k_r2 takes K <= 16\n",Kmax); return 1; }
+        uint8_t *dR2,*dL2; R2Desc* dRD2; unsigned long long* dBad; uint32_t* dE2;
+        CK(cudaMalloc(&dR2,r.size()+256)); CK(cudaMalloc(&dL2,ssz[0]+256)); CK(cudaMalloc(&dRD2,hd2.size()*sizeof(R2Desc)+8)); CK(cudaMalloc(&dBad,8)); CK(cudaMalloc(&dE2,4));
+        CK(cudaMemcpy(dR2,r.data(),r.size(),cudaMemcpyHostToDevice)); CK(cudaMemcpy(dRD2,hd2.data(),hd2.size()*sizeof(R2Desc),cudaMemcpyHostToDevice));
+        const size_t sh[2]={(size_t)Kmax*4096,(size_t)Kmax*2048};
+        CK(cudaFuncSetAttribute(k_r2<0>,cudaFuncAttributeMaxDynamicSharedMemorySize,(int)sh[0]));
+        CK(cudaFuncSetAttribute(k_r2<1>,cudaFuncAttributeMaxDynamicSharedMemorySize,(int)sh[1]));
+        unsigned long long hbs[2]={0,0}; uint32_t hes[2]={0,0};
+        for(int v=0;v<2;v++){
+            auto r2=[&](cudaStream_t s){ if(hd2.empty()) return; if(v) k_r2<1><<<(unsigned)hd2.size(),32,sh[1],s>>>(dR2,dRD2,dL2,dE2); else k_r2<0><<<(unsigned)hd2.size(),32,sh[0],s>>>(dR2,dRD2,dL2,dE2); };
+            CK(cudaMemset(dL2,0,ssz[0]+256)); CK(cudaMemset(dBad,0,8)); CK(cudaMemset(dE2,0,4));
+            r2(s0); CK(cudaStreamSynchronize(s0)); CK(cudaGetLastError());
+            k_cmp<<<1024,256,0,s0>>>(dL2,dS[0],ssz[0],dBad);
+            CK(cudaMemcpy(&hbs[v],dBad,8,cudaMemcpyDeviceToHost)); CK(cudaMemcpy(&hes[v],dE2,4,cudaMemcpyDeviceToHost));
+            std::vector<float> t; for(int q=0;q<reps;q++) t.push_back(elapsed(s0,[&]{ r2(s0); })); mR2[v]=median_ms(t);
+        }
+        r2bad=(long long)(hbs[0]+hbs[1]+hes[0]+hes[1]);
+        const float best=std::min(mR2[0],mR2[1]); mR2D=mT+best+mM;
+        printf("[dense2-lit] %s: %zu B, %zu chunks (%zu raw), K max %d, order-1 rANS 32 segments/chunk, slot tables: lit %.3f ms (byte table %zu B) / %.3f ms (nibble table %zu B) "
+               "against this archive's lit %.3f + unpack %.3f = %.3f ms; literal stream %s (byte %llu / nibble %llu bytes differ, framing errors %u / %u); "
+               "on-device estimate tok %.3f + lit %.3f + match %.3f = %.3f ms -> %.1f GB/s\n",
+            R2,r.size(),hd2.size(),nraw,Kmax,mR2[0],sh[0],mR2[1],sh[1],mL,mU,mL+mU,r2bad==0?"MATCHES":"DIFFERS",hbs[0],hbs[1],hes[0],hes[1],mT,best,mM,mR2D,orig/mR2D/1e6);
+        if(r2bad) ok=false;
+    }
     const float mAuto = KR ? mSP : seq;               // the path this run would take
     printf("%s: %s, %d SMs, G=%d, %s\n", ok?"RESULT OK":"RESULT FAIL", prop.name, nsm, G, ok?"bit-perfect on all passes":"hash mismatch");
     // one tab-separated row for tables: archive, bytes, token coder, literal coder, tok, lit, unpack, match, on-device,
     // H2D+on-device (ms), GB/s, verdict, then the parts: lit zstd, seq, cse, gap, val, plain; unpack zstd-pack, bases, case, exceptions
     // then: chosen path ms (stream pipeline, or sequential when --pipeline=auto declines), H2D pageable GB/s,
     // H2D pinned GB/s, batches of the stream pipeline (0 = sequential); dense-lit ms, dense on-device estimate ms,
-    // dense-lit differing bytes (-1 = not run)
-    printf("ROW\t%s\t%zu\t%s\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.2f\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.1f\t%.1f\t%d\t%.3f\t%.3f\t%lld\n",
+    // dense-lit differing bytes (-1 = not run); dense2-lit ms byte table, ms nibble table, v2 on-device estimate ms,
+    // dense2-lit differing bytes + framing errors (-1 = not run)
+    printf("ROW\t%s\t%zu\t%s\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.2f\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.1f\t%.1f\t%d\t%.3f\t%.3f\t%lld\t%.3f\t%.3f\t%.3f\t%lld\n",
         argv[1],a.size(),tmode,lmode,mT,mL,mU,mM,mD,seq,orig/mD/1e6,ok?"bit-perfect":"MISMATCH",
-        mLz,mLp[P_SEQ],mLp[P_CSE],mLp[P_GAP],mLp[P_VAL],mLp[P_PLAIN],mUd,mUs,mUc,mUe,mAuto,gbPg,gbPn,KR,mR1,mR1D,r1bad);
+        mLz,mLp[P_SEQ],mLp[P_CSE],mLp[P_GAP],mLp[P_VAL],mLp[P_PLAIN],mUd,mUs,mUc,mUe,mAuto,gbPg,gbPn,KR,mR1,mR1D,r1bad,mR2[0],mR2[1],mR2D,r2bad);
     return ok?0:5;
 }
