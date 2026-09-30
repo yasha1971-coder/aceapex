@@ -6,6 +6,8 @@ Every number below is reproduced by `make test && ./verify.sh` on the tagged com
 
 ## v2.2.1 — 2026-09-30
 
+DOI: [10.5281/zenodo.23070077](https://doi.org/10.5281/zenodo.23070077)
+
 Archive bytes identical to 2.2.0 (compared on silesia, enwik8 and chr1, levels 1-3, 1 and 8 threads,
 default / open / interactive profiles: 54 of 54 byte-identical; fixtures unchanged).
 
