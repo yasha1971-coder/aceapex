@@ -73,6 +73,12 @@ StreamLZ (конкурент) декодирует своей GPU-энтропи
   4-й коммит bd98777 (форк). Тег v2.2.1 и правка описания PR #336 — пользователь (drafts/lzbench_pr.md,
   drafts/lzbench_int_mt.md).
 
+## TurboBench (30.09)
+- Ветка yasha1971-coder/TurboBench:aceapex (8024694): подмодуль на v2.2.1, блок makefile (только их zstd), plugin.cc;
+  их CI-команды локально (x86-64, gcc 13, Rust в .wk): -l2, набор по умолчанию на бинаре и на silesia — 0 ошибок.
+  PR не создан (drafts/turbobench_pr.md). Их submodule_update.yml ежедневно переводит подмодули на голову main —
+  закрепление на релизе требует ветки релизов в aceapex (решение пользователя).
+
 ## 2.3 (план)
 - Сплющивание смещений (origin[]) в chain-энкодере стоит silesia +0.68 % (-1) / +0.62 % (-2) и не ускоряет CPU-декод
   (results/silesia-ratio-flattening-2026-09-30.log); это вся разница ratio с lzbench 1.0.1. Предложение: выключить

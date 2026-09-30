@@ -26,7 +26,7 @@ Levels: 1 and 2 use aceapex's chain matcher on general data, 3 its fast "l1" enc
 - Round-trip: `./turbobench -eaceapex,1,2,3/zstd,1,3 silesia.tar` and the same with `-C3` (exit on the
   first differing byte) on silesia.tar and on the turbobench binary: no error. The default codec set on
   the turbobench binary (`./turbobench turbobench -V0 -U`, as in build.yml) includes aceapex 1,2,3 and
-  completes without error.
+  completes without error; so does the default set on silesia.tar (`./turbobench silesia.tar -V0 -U`).
 - aceapex itself is tested on x86-64, x86-32, ARM32, ARM64 and PPC64LE (the last three under qemu) and
   builds with MinGW; not built here on macOS or RISC-V.
 
