@@ -6,7 +6,9 @@ Three commits on top of master (ad5b458, the lz+entropy/ + mk/ layout):
 
 1. **aceapex: update to 2.2.0** - `lz+entropy/aceapex` sources from aceapex v2.2.0
    (https://github.com/yasha1971-coder/aceapex/releases/tag/v2.2.0), two new headers (`ax_rans.h`,
-   `ax_lit_open.h`); `mk/aceapex.mk` needs no change (the one object #includes them). The wrapper decodes
+   `ax_lit_open.h`), #included by the one object. `mk/aceapex.mk` gains `-I$(SRC)lz+entropy/zstd/lib`:
+   the codec includes `<zstd.h>`, and without the bundled path a native build silently picked up the
+   system header (a different zstd version from the one linked) while a cross build failed. The wrapper decodes
    with `aceapex_decompress_mt` (with `-T` each pool thread runs its codec copy with threads=1, which
    spawns nothing) and returns the decoded size.
 2. **levels 1-3, README, CHANGELOG** - level 3 is the new l1 encoder on any input (levels 1 and 2 use it
