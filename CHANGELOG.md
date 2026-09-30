@@ -4,35 +4,55 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
-## v2.2.0 — draft (not tagged; prepared 2026-09-30)
+## v2.2.0 — 2026-09-30
 
-Release notes when tagged = the "Unreleased" entries below, headed by:
-- l1 encoder, default for DNA (ADR-020): chr1 -12.77 % bytes, encode x6.8 per thread; T2T open
-  -3.87 %, on-device on Blackwell chr1 -23 %, T2T +1.8 %. API/CLI level 3 = l1 on any input
-  (lzbench: `-eaceapex,3`). Format ACEPX2 unchanged: 2.1.0 decoders read 2.2.0 archives.
-- open profile (ADR-019) and rANS tokens (ADR-018): a genome archive without zstd; GPU path
-  without nvCOMP; dense-open measured and kept a storage (CPU) option only.
-Before tagging: bump ACEAPEX_VERSION_* to 2.2.0, pins for libzstd 1.5.5, judge on ace-core,
-the lzbench branch aceapex-2.2.0 (local, level 3) against their tests.
+Format ACEPX2 unchanged (`version 2`). Archives of the default profile written by 2.2.0 (the l1
+encoder included) decode with 2.1.0; archives of the rANS-token and open profiles (ADR-018/019)
+need 2.2.0 (2.1.0 does not know chunk entry bit 62 or literal modes 2/3).
 
-## Unreleased (main)
+Encoder
+- l1 is the default encoder for DNA input (ADR-020): an 8K-slot head table without a chain, window =
+  the block, matches >= 32 bytes, literal-run skipping, no offset flattening; the short repeats are
+  left to the literal coder. chr1 default 68 127 499 -> 59 429 097 B (-12.77 %), encode 65 -> 444 MB/s
+  per thread (ace-core, EPYC 4344P). Text and other input keep the chain matcher; `AX_ENC=l1` /
+  `AX_ENC=chain` or API/CLI level 3 choose explicitly. Judge claim `head_l1_dna_default` (5 profiles).
+- Match length by 8-byte XOR/ctz: same bytes, chain encode ~10 % faster.
 
-- Encoder: l1 is the default for DNA input (ADR-020): 8K-slot head table without a chain,
-  matches >= 32 bytes, literal-run skipping, no offset flattening. chr1 68 127 499 -> 59 429 097 B
-  (-12.77 %), encode 65 -> 444 MB/s per thread; T2T open profile -3.87 %. Format unchanged, every
-  decoder reads it. Text keeps the chain matcher unless `AX_ENC=l1`; `AX_ENC=chain` restores the
-  old bytes for DNA. Match length by 8-byte XOR/ctz (same bytes, encode ~10 % faster).
-- Open profile CPU decode: bases unpacked by table, 16 KiB region on chr1 189 -> 157 us (C99).
-- API/CLI level 3: the l1 encoder on any input (text included); levels 1/2 keep the chain matcher
-  for non-DNA input.
-- GPU tool: k_open_seqb fuses the seq piece decode with the base expansion (measurement row).
-- rANS token profile (ADR-018, `AX_TOK=rans`, chunk entry bit 62) and the open profile
-  (ADR-019, `AX_PROFILE=open`: tokens rANS, literal chunks mode 2 open DNA pack / mode 3 open
-  plain, spec §3.4): a genome archive without a single zstd frame, chr1 66 904 489 B against
-  68 127 499 B default (-1.80 %). Opt-in; default bytes unchanged. Read by the C++, C99,
-  Python and GPU decoders; GPU: k_rans, k_open_seq/cse/exc (no nvCOMP call on such an archive).
-- C++ reader: literal chunk table validated against the stream, DNA pack (mode 1) framing
-  checked, reserved literal flags rejected, varint shift bounded (found by fuzzing, 3000 runs).
+Zstd-free genome path (ADR-018, ADR-019)
+- rANS token profile (`AX_TOK=rans`, chunk entry bit 62) and the open profile (`AX_PROFILE=open`:
+  tokens rANS, literal chunks mode 2 open DNA pack / mode 3 open plain, spec §3.4): an archive without
+  a single zstd frame. Read by the C++, C99, Python and GPU decoders; the GPU tool decodes it without
+  any nvCOMP call (k_rans, k_open_seq/cse/exc). The open profile is +4.4 % (chr1) / +3.8 % (T2T)
+  larger than the zstd profile with the same encoder: the price of no zstd.
+- Open profile CPU decode: bases unpacked by table; 16 KiB region on chr1 (C99, 64 KiB literal
+  chunks) 189 -> 157 us; the persistent region handle of 2.1.0 reads every profile.
+- C++ reader hardening: literal chunk table validated against the stream, DNA pack (mode 1) framing
+  checked, reserved literal flags rejected, varint shift bounded (fuzzing, 3000 runs, 0 crashes).
+
+GPU tool (`aceapex_gpu.cu`, measurement harness, not a library yet)
+- `--pipeline=auto`: the copy of batch k+1 under the decode of batch k when the estimated H2D is at
+  least half the on-device time and there are >= 2 batches of >= 64 MB; else sequential.
+- RTX PRO 6000 Blackwell Server Edition, Colab, 27b61b1, 16 KiB blocks / 64 KiB literal chunks,
+  median of 3, every row bit-perfect (FNV of the GPU output == original), libzstd 1.5.5:
+
+  | corpus | profile | bytes | on-device ms | GB/s | with H2D ms |
+  |---|---|---|---|---|---|
+  | chr1 | zstd | 60 442 704 | 3.501 | 72.5 | 4.547 |
+  | chr1 | open | 63 083 287 | 2.826 | 89.9 | 3.919 |
+  | T2T | zstd | 822 393 156 | 35.542 | 88.8 | 49.759 |
+  | T2T | open | 853 264 869 | 27.135 | 116.3 | 31.063 (pipeline, 101.6 GB/s) |
+
+  Before l1 (same GPU): chr1 zstd 69 410 925 B / 5.18 ms, open 67 975 888 B / 3.68 ms; T2T open
+  887 641 942 B / 26.66 ms.
+- Open profile on five GPUs (chr1, before l1): T4 20.51, L4 10.14, A100-40GB 6.17, A100-80GB 6.09,
+  Blackwell 3.69 ms on-device (README, results/gpu-open-table.md).
+
+Closed by measurement (kept out of the default path; numbers in ROADMAP "Не делать")
+- Two-pass CPU block decode (ops list, then copies): 20-28 % slower on one thread.
+- Match-source prefetch ring in the CPU decoder: 9-26 % slower at every depth 2-16.
+- One GPU kernel for the seq piece and the base expansion: +49 % (chr1), +46 % (T2T).
+- dense-open (order-1 literals) as a format mode: after l1 -0.36 % (chr1) / -2.18 % (T2T) bytes; the
+  measurement code (components/rans1_seg.c, k_r2) stays.
 
 ## v2.1.0 — 2026-09-29
 
