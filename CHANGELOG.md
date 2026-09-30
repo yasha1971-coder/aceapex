@@ -4,6 +4,17 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
+## v2.2.0 — draft (not tagged; prepared 2026-09-30)
+
+Release notes when tagged = the "Unreleased" entries below, headed by:
+- l1 encoder, default for DNA (ADR-020): chr1 -12.77 % bytes, encode x6.8 per thread; T2T open
+  -3.87 %, on-device on Blackwell chr1 -23 %, T2T +1.8 %. API/CLI level 3 = l1 on any input
+  (lzbench: `-eaceapex,3`). Format ACEPX2 unchanged: 2.1.0 decoders read 2.2.0 archives.
+- open profile (ADR-019) and rANS tokens (ADR-018): a genome archive without zstd; GPU path
+  without nvCOMP; dense-open measured and kept a storage (CPU) option only.
+Before tagging: bump ACEAPEX_VERSION_* to 2.2.0, pins for libzstd 1.5.5, judge on ace-core,
+the lzbench branch aceapex-2.2.0 (local, level 3) against their tests.
+
 ## Unreleased (main)
 
 - Encoder: l1 is the default for DNA input (ADR-020): 8K-slot head table without a chain,
@@ -12,6 +23,9 @@ Every number below is reproduced by `make test && ./verify.sh` on the tagged com
   decoder reads it. Text keeps the chain matcher unless `AX_ENC=l1`; `AX_ENC=chain` restores the
   old bytes for DNA. Match length by 8-byte XOR/ctz (same bytes, encode ~10 % faster).
 - Open profile CPU decode: bases unpacked by table, 16 KiB region on chr1 189 -> 157 us (C99).
+- API/CLI level 3: the l1 encoder on any input (text included); levels 1/2 keep the chain matcher
+  for non-DNA input.
+- GPU tool: k_open_seqb fuses the seq piece decode with the base expansion (measurement row).
 - rANS token profile (ADR-018, `AX_TOK=rans`, chunk entry bit 62) and the open profile
   (ADR-019, `AX_PROFILE=open`: tokens rANS, literal chunks mode 2 open DNA pack / mode 3 open
   plain, spec §3.4): a genome archive without a single zstd frame, chr1 66 904 489 B against

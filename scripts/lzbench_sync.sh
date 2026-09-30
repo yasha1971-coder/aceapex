@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Bring lz/aceapex in an lzbench checkout up to this tree (PR "aceapex 2.1.0").
+# Bring lz/aceapex in an lzbench checkout up to this tree (PR "aceapex 2.1.0"; since ADR-018/019 also ax_rans.h, ax_lit_open.h).
 # usage: scripts/lzbench_sync.sh <path-to-lzbench>   (run from the aceapex repo root)
 # Copies the codec sources verbatim, drops the unused acepx3.cpp, points the wrapper at
 # aceapex_decompress_mt (threads=1 spawns nothing under lzbench -T), makes the CUDA
 # header take aceapex_streams_t from aceapex.h, and bumps the codec name. Idempotent.
 set -euo pipefail
 LZ=${1:?lzbench dir}; V=$(sed -n 's/#define ACEAPEX_VERSION_STRING "\(.*\)"/\1/p' src/aceapex.h)
-for f in aceapex.h aceapex_api.cpp aceapex_main.cpp lit_fse.cpp ax_align.h xxhash.h; do cp src/$f "$LZ/lz/aceapex/$f"; done
+for f in aceapex.h aceapex_api.cpp aceapex_main.cpp lit_fse.cpp ax_align.h ax_rans.h ax_lit_open.h xxhash.h; do cp src/$f "$LZ/lz/aceapex/$f"; done
 rm -f "$LZ/lz/aceapex/acepx3.cpp"
 python3 - "$LZ" "$V" <<'PY'
 import sys, re

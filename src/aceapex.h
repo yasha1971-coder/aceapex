@@ -15,7 +15,7 @@ extern "C" {
 int64_t aceapex_compress(
     const void* src, size_t src_size,
     void*       dst, size_t dst_capacity,
-    int         level,    /* 1=fast, 2=default */
+    int         level,    /* 1=fast, 2=default, 3=l1 encoder on any input (DNA uses l1 at every level, ADR-020) */
     int         threads   /* 0=auto */
 );
 

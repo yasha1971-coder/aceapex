@@ -866,8 +866,9 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
     // Encoder (ADR-020): l1 for DNA by default, the chain matcher for everything else.
     // AX_ENC=l1 / AX_ENC=chain force one; the probe is the same 4 MiB dna_worth sample.
     const char* ax_enc=getenv("AX_ENC");
+    // level 3 asks for l1 on any input (the lzbench level of the l1 encoder).
     int l1 = ax_enc ? !strcmp(ax_enc,"l1")
-                    : dna_worth(src, src_size < (1u<<22) ? src_size : (1u<<22));
+                    : level == 3 || dna_worth(src, src_size < (1u<<22) ? src_size : (1u<<22));
     if (l1) hash_log = 13;
     { const char* e=getenv("AX_HLOG"); if(e&&atoi(e)>=8&&atoi(e)<=24) hash_log=(uint32_t)atoi(e); }
     uint32_t hash_mask = (1u << hash_log) - 1;
