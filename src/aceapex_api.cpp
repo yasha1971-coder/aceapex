@@ -438,7 +438,7 @@ int64_t aceapex_decompress_ranges(
                 w.data(),groups.data(),groups.size(),{0},{0}};
     // Порог: поднимать восемь потоков ради сотни запросов дороже, чем выполнить их
     // последовательно. Замер: при N=100 батч был вдвое медленнее цикла.
-    int lanes = threads>0 ? threads : (int)sysconf(_SC_NPROCESSORS_ONLN);
+    int lanes = threads>0 ? threads : (int)std::thread::hardware_concurrency();
     if(lanes<1) lanes=1;
     if(w.size()<512) lanes=1;
     if((size_t)lanes>groups.size()) lanes=(int)groups.size();

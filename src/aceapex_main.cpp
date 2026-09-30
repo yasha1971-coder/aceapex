@@ -933,10 +933,11 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
         total_len+=results[b].len_size; total_cmd+=results[b].cmd_size;
     }
 
-    raw_lit=(uint8_t*)malloc(total_lit);
-    raw_off=(uint8_t*)malloc(total_off);
-    raw_len=(uint8_t*)malloc(total_len);
-    raw_cmd=(uint8_t*)malloc(total_cmd);
+    // at least 1 byte: an empty stream (zeros, tiny input) must not look like a failed malloc(0)
+    raw_lit=(uint8_t*)malloc(total_lit?total_lit:1);
+    raw_off=(uint8_t*)malloc(total_off?total_off:1);
+    raw_len=(uint8_t*)malloc(total_len?total_len:1);
+    raw_cmd=(uint8_t*)malloc(total_cmd?total_cmd:1);
     if(!raw_lit||!raw_off||!raw_len||!raw_cmd){free(results);return false;}
 
     size_t li=0,oi=0,ni=0,ci=0;
@@ -1120,7 +1121,7 @@ static void ax_entropy_split(size_t zlit, size_t ztok, int budget, int& lit_t, i
 static int lit_lanes(){
     const char* e=getenv("LIT_LANES");
     if(e){ int v=atoi(e); if(v>0) return v; }
-    long n=sysconf(_SC_NPROCESSORS_ONLN);
+    unsigned n=std::thread::hardware_concurrency();     // online CPUs (sysconf is not on Windows)
     return n>0 ? (int)n : 8;
 }
 
@@ -1732,7 +1733,9 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
     uint8_t* dst=nullptr;
     {
         size_t align = 2u<<20, sz = (hdr.orig_size + align - 1) & ~(align - 1);
+#ifndef _WIN32
         if (posix_memalign((void**)&dst, align, sz) != 0) dst = nullptr;
+#endif
 #ifdef MADV_HUGEPAGE
         if (dst) madvise(dst, sz, MADV_HUGEPAGE);
 #endif
