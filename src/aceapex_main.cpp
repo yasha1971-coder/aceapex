@@ -507,6 +507,64 @@ static void decompress_streams(
 }
  
 
+// Match-source prefetch (the ZSTD_decompressSequencesLong idea): the parser runs AX_PFD sequences
+// ahead of the copies and prefetches each match source dst+pos-dist when it is parsed, so the copy
+// finds it in cache. Same checks, same order of copies, same bytes as decompress_streams.
+#ifndef AX_PFD
+#define AX_PFD 8
+#endif
+static int g_dec_pf = getenv("AX_PF") ? atoi(getenv("AX_PF")) : 0;   // AX_PF=1: this path (measurement)
+static void decompress_prefetch(
+    uint8_t* dst, size_t dst_size,
+    const uint8_t* lit, size_t lit_sz,
+    const uint8_t* off, size_t off_sz,
+    const uint8_t* len, size_t len_sz,
+    const uint8_t* cmd, size_t cmd_sz)
+{
+    uint32_t ql[AX_PFD], qd[AX_PFD]; unsigned qh=0, qn=0;     // ring: length, dist (0 = literal run)
+    size_t lp=0, op=0, np=0, cp=0, out=0, pout=0, lq=0;
+    uint32_t rep[4]={1,2,4,8};
+    const size_t SL = 16;
+    bool stop=false;
+    auto exec1=[&](){
+        const uint32_t l=ql[qh], dist=qd[qh]; qh=(qh+1)%AX_PFD; qn--;
+        if (!dist) {
+            if (out+l+SL<=dst_size && lq+l+SL<=lit_sz) ax_wild_copy(dst+out,lit+lq,l); else memcpy(dst+out,lit+lq,l);
+            lq+=l;
+        } else if (out+l+SL<=dst_size) ax_match_fast(dst+out,dist,l); else copy_match(dst,out,dist,l);
+        out+=l;
+    };
+    auto push=[&](uint32_t l, uint32_t dist){
+        if (qn==AX_PFD) exec1();
+        ql[(qh+qn)%AX_PFD]=l; qd[(qh+qn)%AX_PFD]=dist; qn++;
+    };
+    while (!stop && pout<dst_size && cp<cmd_sz) {
+        uint8_t c=cmd[cp++];
+        if (c==0xFF) { rep[0]=1;rep[1]=2;rep[2]=4;rep[3]=8; continue; }
+        if (c<0x80) {
+            uint32_t l=c+1;
+            if (lp+l>lit_sz||pout+l>dst_size) break;
+            push(l,0); pout+=l; lp+=l;
+        } else {
+            uint32_t l, dist;
+            if ((c&0xC0)==0x80) {
+                uint32_t ri=(c>>4)&3, lv=c&0x0F;
+                if (lv==0x0F) lv+=read_varint(len,np,len_sz);
+                l=lv+6; dist=rep[ri];
+                if (ri>0) { for(int i=ri;i>0;i--) rep[i]=rep[i-1]; rep[0]=dist; }
+            } else {
+                uint32_t lv=(c==0xFE)?read_varint(len,np,len_sz):(uint32_t)(c&0x3F);
+                l=lv+6; dist=read_varint(off,op,off_sz);
+                rep[3]=rep[2];rep[2]=rep[1];rep[1]=rep[0];rep[0]=dist;
+            }
+            if (!dist||dist>pout||pout+l>dst_size) break;
+            __builtin_prefetch(dst+pout-dist); if (l>64) __builtin_prefetch(dst+pout-dist+64);
+            push(l,dist); pout+=l;
+        }
+    }
+    while (qn) exec1();
+}
+
 // ULTRA: Adaptive parallel decoder
 // Checks true source-readiness (not just self-overlap)
 static void decompress_adaptive(
@@ -816,7 +874,7 @@ static void* dec_worker(void* arg) {
                 a->len + bo.len_off, bo.len_sz,
                 a->cmd + bo.cmd_off, bo.cmd_sz, b);
 #endif
-            decompress_streams(
+            (g_dec_pf ? decompress_prefetch : decompress_streams)(
                 a->dst + bstart, bsize,
                 a->lit + bo.lit_off, bo.lit_sz,
                 a->off + bo.off_off, bo.off_sz,
