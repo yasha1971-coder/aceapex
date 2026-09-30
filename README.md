@@ -8,6 +8,7 @@ Full device-resident GPU decode pipeline. Position-invariant random access on ge
 [![lzbench](https://img.shields.io/badge/lzbench-2.4-blue.svg)](https://github.com/inikep/lzbench/releases/tag/v2.4)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![papers](https://img.shields.io/badge/papers-arXiv%20%C2%B7%20Zenodo-b31b1b.svg)](#papers)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23061934.svg)](https://doi.org/10.5281/zenodo.23061934)
 
 ![ACEAPEX passport: 197 GB/s range-decode on T2T, +18.5% denser than nvCOMP zstd, 4/4 streams NVIDIA-decodable, 0.3-0.4 ms per 16 KiB block](docs/aceapex_passport.png)
 
@@ -280,6 +281,13 @@ Archived code, one deposit per paper:
 [Paper 6](https://doi.org/10.5281/zenodo.22758786)
 
 Measurement tool and its 435 records: [hw-apex-bench, 10.5281/zenodo.22713364](https://doi.org/10.5281/zenodo.22713364)
+
+## Citation
+
+Software release v2.2.0 (2026-09-30): [10.5281/zenodo.23061934](https://doi.org/10.5281/zenodo.23061934).
+All versions: concept DOI [10.5281/zenodo.20440964](https://doi.org/10.5281/zenodo.20440964).
+Machine-readable metadata: [CITATION.cff](CITATION.cff) (GitHub "Cite this repository"). When a result
+comes from a paper, cite the paper (table above).
 
 ---
 

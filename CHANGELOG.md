@@ -6,6 +6,8 @@ Every number below is reproduced by `make test && ./verify.sh` on the tagged com
 
 ## v2.2.0 — 2026-09-30
 
+DOI: [10.5281/zenodo.23061934](https://doi.org/10.5281/zenodo.23061934)
+
 Format ACEPX2 unchanged (`version 2`). Archives of the default profile written by 2.2.0 (the l1
 encoder included) decode with 2.1.0; archives of the rANS-token and open profiles (ADR-018/019)
 need 2.2.0 (2.1.0 does not know chunk entry bit 62 or literal modes 2/3).
