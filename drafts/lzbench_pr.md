@@ -36,10 +36,15 @@ FASTEST lists `aceapex,1`. With 2.2.0 the fastest level is `aceapex,3` (l1): on 
 `aceapex,3` could replace `aceapex,1` there; the aliases are left as they are.
 
 ## Tested
-- lzbench CI set on this branch, x86-64 Linux (gcc 11.4): `-eLZ -v5 ./lzbench`, `-eLZ+ENTROPY -v5 ./lzbench`,
-  `-eSYMMETRIC -v5 ./lzbench`, `-eFASTEST -t0,0 -T2 -jr .` - all pass. `-eaceapex,1,2,3` round-trips.
+- This branch, lzbench CI set, x86-64 Linux (gcc 11.4): `-eLZ -v5 ./lzbench`, `-eLZ+ENTROPY -v5 ./lzbench`,
+  `-eSYMMETRIC -v5 ./lzbench`, `-eFASTEST -t0,0 -T2 -jr .` - all pass.
+- This branch cross-built out of tree (`make -f .../Makefile CC=... CXX=...`) and run under qemu-user:
+  ARM64 and PPC64LE (Bootlin glibc 2024.05 toolchains): `-eaceapex,1,2,3`, `-eLZ+ENTROPY -v5 ./lzbench`,
+  `-eFASTEST -t0,0 -T2 -jr <tree>` - all pass. ARM32 (arm-linux-gnueabihf 11.4): `-eaceapex,1,2,3` and
+  `-eLZ+ENTROPY` pass; `-eFASTEST -T2 -jr` passed aceapex and was killed later in lbzip2 (not aceapex;
+  not investigated here).
 - aceapex sources on its own release gate (`scripts/cross_matrix.sh` in aceapex, libzstd 1.5.5 per target):
-  x86-64, x86-32 (i686), ARM32 (armhf), ARM64 and PPC64LE under qemu-user - conformance set 44/44,
+  x86-64, x86-32 (i686), ARM32, ARM64 and PPC64LE under qemu-user - conformance set 44/44,
   byte-identical encoder output across all five, library round-trips 468/468, 4-thread concurrent test 0
   failures; MinGW x86-64: library builds (no Windows runner here).
-- Not tested here: macOS, the Windows run itself, CUDA.
+- Not tested here: macOS, a Windows run, CUDA.

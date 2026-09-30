@@ -87,6 +87,12 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+30.09 (5): ворота v2.2.0 зелёные на a3b0bdb — матрица scripts/cross_matrix.sh: x86-64, x86-32, ARM32, ARM64, PPC64LE
+(qemu) по 7 проверкам pass, MinGW собирается (библиотека; CLI только POSIX); найдено и исправлено до тега: сборка
+MinGW (sysconf, posix_memalign), malloc(0). Гонка: lzbench-копия 1.0.1 не затронута, 2.1.0 затронута (черновик
+примечания drafts/release_v2.1.0_note.md). Ветка lzbench aceapex-2.2.0 от upstream master ad5b458 (lz+entropy/,
+mk/aceapex.mk + путь к их zstd), 3 коммита; их CI-набор x86-64 4/4, qemu ARM64/PPC64LE полный, ARM32 — lbzip2 убит
+(не aceapex). PR не создан (drafts/lzbench_pr.md). Тег ставит пользователь.
 30.09 (4): выпуск 2.2.0 подготовлен (версия, CHANGELOG, release/v2.2.0.md, черновики). Тест lzbench -eFASTEST -T2 -jr
 нашёл гонку при одновременных вызовах API (глобальные размер блока / флаг ошибки / признак ДНК): исправлено
 (thread-local, ax_thread), претензия head_api_concurrent, судья 52/0; 2.1.0 под той же нагрузкой давал неверные байты.
