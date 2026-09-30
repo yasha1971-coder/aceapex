@@ -25,6 +25,22 @@ if [ -f $F/chr1_4MiB.zstd-$ZV.aet ] && [ -s $T/o_$ZV ]; then
 else
   printf 'head_fixture_encode_determinism\tdeclared\tno fixture for host libzstd %s yet\n' "$ZV"
 fi
+# ADR-020: DNA is written by the l1 encoder by default in every profile - default, interactive (16 KiB blocks,
+# 64 KiB literal chunks, FSE 4096), rANS tokens, open: each default archive == the AX_ENC=l1 one and
+# != the AX_ENC=chain one (the 4 MiB chr1 slice decoded above).
+O=""; for o in $T/o_*; do [ -s "$o" ] && { O=$o; break; }; done
+if [ -n "$O" ]; then
+  bad=0; n=0
+  for E in "" "ACEAPEX_BS=16384 LIT_CHUNK=65536 FSE_CHUNK=4096" "AX_TOK=rans" "AX_PROFILE=open" "ACEAPEX_BS=16384 LIT_CHUNK=65536 AX_PROFILE=open"; do
+    n=$((n+1))
+    env -i PATH="$PATH" $E $B c --in $O --out $T/d.aet --threads 2 >/dev/null 2>&1
+    env -i PATH="$PATH" $E AX_ENC=l1 $B c --in $O --out $T/l.aet --threads 2 >/dev/null 2>&1
+    env -i PATH="$PATH" $E AX_ENC=chain $B c --in $O --out $T/c.aet --threads 2 >/dev/null 2>&1
+    { cmp -s $T/d.aet $T/l.aet && ! cmp -s $T/d.aet $T/c.aet; } || bad=$((bad+1))
+  done
+  [ $bad = 0 ] && r=pass || r=fail
+  printf 'head_l1_dna_default\t%s\t%d of %d profiles: default archive == AX_ENC=l1 and != AX_ENC=chain (4 MiB chr1 slice)\n' "$r" $((n-bad)) "$n"
+fi
 # empty archive: one header, num_blocks 0 (28.09). Decode gives 0 bytes; encode of an empty
 # input reproduces the fixture byte for byte on every libzstd (no zstd frames inside).
 if [ -f $F/empty.aet ]; then
