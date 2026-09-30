@@ -59,6 +59,24 @@ static inline int axo_leb(const uint8_t* b, size_t n, size_t* i, uint32_t* v) {
     *v = (uint32_t)x; return 0;
 }
 
+/* 2-bit bases -> ASCII by table: one packed byte gives four bases (first base in the top bits),
+ * stored as one 4-byte word; the tail byte by byte. Same bytes as the per-base loop. */
+#define AXO_B(c) ((uint32_t)((c) == 0 ? 'A' : (c) == 1 ? 'C' : (c) == 2 ? 'G' : 'T'))
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#define AXO_W(b) (AXO_B((b) >> 6) << 24 | AXO_B(((b) >> 4) & 3) << 16 | AXO_B(((b) >> 2) & 3) << 8 | AXO_B((b) & 3))
+#else
+#define AXO_W(b) (AXO_B((b) >> 6) | AXO_B(((b) >> 4) & 3) << 8 | AXO_B(((b) >> 2) & 3) << 16 | AXO_B((b) & 3) << 24)
+#endif
+#define AXO_W4(b) AXO_W(b), AXO_W((b) + 1), AXO_W((b) + 2), AXO_W((b) + 3)
+#define AXO_W16(b) AXO_W4(b), AXO_W4((b) + 4), AXO_W4((b) + 8), AXO_W4((b) + 12)
+#define AXO_W64(b) AXO_W16(b), AXO_W16((b) + 16), AXO_W16((b) + 32), AXO_W16((b) + 48)
+static const uint32_t axo_b4[256] = { AXO_W64(0), AXO_W64(64), AXO_W64(128), AXO_W64(192) };
+static inline void axo_unpack_bases(const uint8_t* seq, uint8_t* dst, size_t raw) {
+    size_t full = raw >> 2, i;
+    for (i = 0; i < full; i++) memcpy(dst + 4 * i, &axo_b4[seq[i]], 4);
+    for (i = 4 * full; i < raw; i++) dst[i] = (uint8_t)"ACGT"[(seq[i >> 2] >> (6 - 2 * (i & 3))) & 3];
+}
+
 /* mode 2 payload (without the chunk mode byte) -> raw bytes in dst; 0 ok, -1 malformed */
 static inline int axo_dna_decode(const uint8_t* s, size_t sz, uint8_t* dst, size_t raw) {
     if (sz < AXO_HDR || raw == 0) return -1;
@@ -77,7 +95,7 @@ static inline int axo_dna_decode(const uint8_t* s, size_t sz, uint8_t* dst, size
     ok = ok && axo_piece_decode(p, h[2], gap, ngap) == 0; p += h[2];
     ok = ok && axo_piece_decode(p, h[3], val, nexc) == 0;
     if (ok) {
-        for (size_t i = 0; i < raw; i++) dst[i] = (uint8_t)"ACGT"[(seq[i >> 2] >> (6 - 2 * (i & 3))) & 3];
+        axo_unpack_bases(seq, dst, raw);
         size_t i = 0; uint64_t pos = 0; uint32_t r; int lower = 0, first = 1;
         while (ok && i < ncse) {
             if (axo_leb(cse, ncse, &i, &r) || (r == 0 && !first) || pos + r > raw) { ok = 0; break; }

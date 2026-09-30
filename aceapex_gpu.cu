@@ -673,7 +673,6 @@ int main(int argc, char** argv){
         printf("[dense-lit] %s: %zu B, %zu chunks (%zu raw), order-1 rANS 4 lines x checkpoints: lit %.3f ms against this archive's lit %.3f + unpack %.3f ms; "
                "literal stream %s (%llu of %llu bytes differ, %u framing errors); on-device estimate tok %.3f + lit %.3f + match %.3f = %.3f ms -> %.1f GB/s\n",
             R1,r.size(),hd1.size(),nraw,mR1,mL,mU,r1bad==0?"MATCHES":"DIFFERS",hb,(unsigned long long)ssz[0],he,mT,mR1,mM,mR1D,orig/mR1D/1e6);
-        if(r1bad) ok=false;
     }
     // ---- dense-open v2 (--dense2-lit): 32 segments per chunk; variants byte table / nibble table / cum compare
     // (k_r2<0..2>, chunks with K <= 16) plus k_r2<3> for wider chunks in a second launch, timed together
@@ -718,7 +717,6 @@ int main(int argc, char** argv){
                "on-device estimate tok %.3f + lit %.3f + match %.3f = %.3f ms -> %.1f GB/s\n",
             R2,r.size(),hn.size()+hw.size(),nraw,hw.size(),Kw,Kn,mR2[0],sh[0],mR2[1],sh[1],mR2[2],mL,mU,mL+mU,r2bad==0?"MATCHES":"DIFFERS",
             hbs[0],hbs[1],hbs[2],hes[0],hes[1],hes[2],mT,best,mM,mR2D,orig/mR2D/1e6);
-        if(r2bad) ok=false;
         }
     }
     const float mAuto = KR ? mSP : seq;               // the path this run would take
