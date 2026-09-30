@@ -8,15 +8,15 @@ on a GPU. Release: [v2.2.1](https://github.com/yasha1971-coder/aceapex/releases/
 DOI (all versions): [10.5281/zenodo.20440964](https://doi.org/10.5281/zenodo.20440964).
 
 ## What is added (4 places, following the misa77 / zxc entries)
-1. **`.gitmodules` / submodule `aceapex`**, pinned to tag v2.2.1.
-2. **`makefile`**: one block under `#--- A`, `ifneq ($(wildcard aceapex/.),)` with `-D_ACEAPEX`; the
+1. **`.gitmodules`**: the `aceapex` entry.
+2. **submodule `aceapex`**, pinned to tag v2.2.1 (commit 07e2ecc).
+3. **`makefile`**: one block under `#--- A`, `ifneq ($(wildcard aceapex/.),)` with `-D_ACEAPEX`; the
    library is one translation unit (`aceapex/src/aceapex_api.cpp` includes the codec sources) built with
    `-Izstd/lib`. The only dependency is TurboBench's own zstd submodule; nothing external. xxHash is
    compiled inline (`-DXXH_INLINE_ALL`) so it does not clash with other codecs' copies.
-3. **`plugin.cc`**: `P_ACEAPEX` in the enum, `#include "aceapex/src/aceapex.h"`, table row `"aceapex"`
+4. **`plugin.cc`**: `P_ACEAPEX` in the enum, `#include "aceapex/src/aceapex.h"`, table row `"aceapex"`
    with levels `"1,2,3"`, and the C API in `codcomp` / `coddecomp` (`aceapex_compress`,
    `aceapex_decompress_mt`, threads=1), version via `ACEAPEX_VERSION_STRING`.
-4. Nothing else changed.
 
 Levels: 1 and 2 use aceapex's chain matcher on general data, 3 its fast "l1" encoder on any input
 (1 and 2 switch to l1 by themselves on DNA).
