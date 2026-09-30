@@ -67,6 +67,10 @@ else printf 'head_open_warp_emu\tfail\tbuild failed: %s\n' "$(head -c 150 $T/oem
 if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/api_rt scripts/api_roundtrip.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/api.err; then
   $T/api_rt 2>/dev/null || true
 else printf 'head_api_roundtrip\tfail\tbuild failed: %s\n' "$(head -c 150 $T/api.err | tr '\n\t' '  ')"; fi
+# library calls from several threads at once (per-call state is thread-local since 2.2.0)
+if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/api_cc scripts/api_concurrent.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/apic.err; then
+  $T/api_cc 2>/dev/null || true
+else printf 'head_api_concurrent\tfail\tbuild failed: %s\n' "$(head -c 150 $T/apic.err | tr '\n\t' '  ')"; fi
 # python layer over the same fixtures, without installing: ctypes loads a fresh .so
 if python3 -c "import pytest" 2>/dev/null; then
   if ${CC:-gcc} -std=c99 -O2 -fPIC -shared -Ic -o $T/libaceapex_decode.so c/aceapex_decode.c -lzstd 2>/dev/null \

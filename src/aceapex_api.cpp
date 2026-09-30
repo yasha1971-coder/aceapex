@@ -139,7 +139,7 @@ static int64_t ax_entropy_decode(const void* src, size_t src_size, int threads, 
     auto litfn=[](void*a)->void*{LitArg*x=(LitArg*)a; *x->out=lit_decompress(x->s,x->sz,*x->osz,x->lanes); return nullptr;};
     FseStream fst[3]={{zo,os,o},{zn,ns,n},{zc,cs,c}};
     if (budget == 1) { litfn(&larg); fse_multi_decomp(fst,3,1); }
-    else { pthread_t lt; pthread_create(&lt,nullptr,litfn,&larg);
+    else { pthread_t lt; ax_thread(&lt,litfn,&larg);
            fse_multi_decomp(fst,3,tok_t); pthread_join(lt,nullptr); }
     free(zl);free(zo);free(zn);free(zc);
     if(!l){free(o);free(n);free(c);return ACEAPEX_ERR_MEMORY;}
@@ -448,7 +448,7 @@ int64_t aceapex_decompress_ranges(
         batch_worker(&t);
     } else {
         std::vector<pthread_t> th(lanes);
-        for(int k=0;k<lanes;k++) pthread_create(&th[k],nullptr,batch_worker,&t);
+        for(int k=0;k<lanes;k++) ax_thread(&th[k],batch_worker,&t);
         for(int k=0;k<lanes;k++) pthread_join(th[k],nullptr);
     }
 

@@ -40,7 +40,20 @@
 #define HASH_SIZE    0xFFFF
 #define MAX_DIST     (128 * 1024 * 1024)
 #define BLOCK_SIZE   (1 * 1024 * 1024)
-static size_t g_block_size = BLOCK_SIZE; // runtime adaptive, set in encode_file
+// Per-call state is thread-local (30.09: two library calls at once - lzbench -T2 - shared the block
+// size, the decode error flag and the DNA hint, and 2 of 4569 files came back as errors; 2.1.0 gave
+// wrong bytes on 22). A thread started inside a call inherits its caller's state through ax_thread.
+static thread_local size_t g_block_size = BLOCK_SIZE; // runtime adaptive, set in encode_file
+extern thread_local int g_input_is_dna;
+static thread_local std::atomic<int> t_dec_err_own{0};
+static thread_local std::atomic<int>* t_dec_err = nullptr;
+static inline std::atomic<int>& ax_dec_err(){ return t_dec_err ? *t_dec_err : t_dec_err_own; }
+#define g_dec_err (ax_dec_err())
+struct AxSpawn { void* (*fn)(void*); void* arg; std::atomic<int>* err; size_t bs; int dna; };
+static void* ax_tramp(void* p){ AxSpawn s=*(AxSpawn*)p; delete (AxSpawn*)p;
+    t_dec_err=s.err; g_block_size=s.bs; g_input_is_dna=s.dna; return s.fn(s.arg); }
+static int ax_thread(pthread_t* t, void* (*fn)(void*), void* arg){
+    return pthread_create(t,nullptr,ax_tramp,new AxSpawn{fn,arg,&ax_dec_err(),g_block_size,g_input_is_dna}); }
 #define MAX_THREADS  16
 #define BLOCK_MARKER 0xFF
 #define ZSTD_LEVEL   22
@@ -843,7 +856,6 @@ static size_t compute_block_size(size_t src_size, int threads) {
 
 // Объявлены до encode_file: определения ниже (dna_worth ~910, флаг ~1040).
 static bool dna_worth(const uint8_t* s, size_t n);
-extern int g_input_is_dna;
 
 static bool encode_file(const uint8_t* src, size_t src_size, int threads, int level,
     std::vector<BlockOffsets>& boffs,
@@ -906,7 +918,7 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
     if(!wargs||!pts){free(results);return false;}
     for(int i=0;i<threads;i++) {
         wargs[i].thread_id=i; wargs[i].htab=htabs[i]; wargs[i].pool=&pool;
-        pthread_create(&pts[i],nullptr,worker_func,&wargs[i]);
+        ax_thread(&pts[i],worker_func,&wargs[i]);
     }
     for(int i=0;i<threads;i++) pthread_join(pts[i],nullptr);
 
@@ -948,7 +960,6 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
 // expected size. Parallel paths raise g_dec_err, which entry points reset and check;
 // the serial range paths return nullptr. Before this an error left malloc garbage in
 // the output and the call reported success (region on a legacy archive, 21.09).
-static std::atomic<int> g_dec_err{0};
 static inline bool zdec_ok(void* dst,size_t raw,const void* src,size_t csz){
     size_t r=ZSTD_decompress(dst,raw,src,csz); return !ZSTD_isError(r)&&r==raw; }
 
@@ -970,7 +981,7 @@ static void parallel_decode(
     }
     if (nt == 1) { dec_worker(&dargs[0]); return; }   // threads=1: nothing is spawned
     std::vector<pthread_t> dpts(nt);
-    for(size_t t=0;t<nt;t++) pthread_create(&dpts[t],nullptr,dec_worker,&dargs[t]);
+    for(size_t t=0;t<nt;t++) ax_thread(&dpts[t],dec_worker,&dargs[t]);
     for(size_t t=0;t<nt;t++) pthread_join(dpts[t],nullptr);
 }
  
@@ -1085,7 +1096,7 @@ static void fse_multi_decomp(const FseStream* st, int n, int threads) {
             if (!ax_tok_chunk(j.e, j.d, j.raw, j.p, j.z)) g_dec_err=1; }
         return nullptr; };
     std::vector<pthread_t> pts(threads - 1);
-    for (int t = 0; t < threads - 1; t++) pthread_create(&pts[t], nullptr, fn, &pool);
+    for (int t = 0; t < threads - 1; t++) ax_thread(&pts[t],fn, &pool);
     fn(&pool);
     for (int t = 0; t < threads - 1; t++) pthread_join(pts[t], nullptr);
 }
@@ -1231,7 +1242,7 @@ static uint8_t* lit_compress_legacy(const uint8_t* src, size_t sz, size_t& out_s
         z->osz=ZSTD_compress2(ctx,z->out,z->cap,z->in,z->isz);
         ZSTD_freeCCtx(ctx); return nullptr;};
     pthread_t pts[NW];
-    for(int t=0;t<NW;t++) pthread_create(&pts[t],nullptr,zfn,&zws[t]);
+    for(int t=0;t<NW;t++) ax_thread(&pts[t],zfn,&zws[t]);
     for(int t=0;t<NW;t++) pthread_join(pts[t],nullptr);
     size_t hdrsz=8+NW*8,totalsz=hdrsz;
     for(int t=0;t<NW;t++) totalsz+=zws[t].osz;
@@ -1249,7 +1260,7 @@ static uint8_t* lit_compress_legacy(const uint8_t* src, size_t sz, size_t& out_s
 // Bit 61 of the stream header marks the new scheme, the chunk count follows it.
 // Выставляется один раз в encode_file по выборке из входа.
 // 0 = не проверяли, 1 = входные данные проходят dna_worth, -1 = нет.
-int g_input_is_dna = 0;
+thread_local int g_input_is_dna = 0;
 
 static size_t lit_chunk_size(){
     const char* e=getenv("LIT_CHUNK");
@@ -1316,7 +1327,7 @@ static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
         ZSTD_freeCCtx(ctx); return nullptr;};
     const int LANES=std::min(lit_lanes(),NW);
     std::vector<pthread_t> pts(LANES);
-    for(int t=0;t<LANES;t++) pthread_create(&pts[t],nullptr,zfn,&cpool);
+    for(int t=0;t<LANES;t++) ax_thread(&pts[t],zfn,&cpool);
     for(int t=0;t<LANES;t++) pthread_join(pts[t],nullptr);
     size_t hdrsz=8+8+(size_t)NW*8,totalsz=hdrsz;
     for(int t=0;t<NW;t++) totalsz+=zws[t].osz;
@@ -1394,7 +1405,7 @@ static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_s
     const int LANES=std::min(hw,NW);
     if(LANES<=1){ dfn(&pool); return out; }          // lanes=1: decode inline, spawn nothing
     std::vector<pthread_t> pts(LANES-1);
-    for(int t=0;t<LANES-1;t++) pthread_create(&pts[t],nullptr,dfn,&pool);
+    for(int t=0;t<LANES-1;t++) ax_thread(&pts[t],dfn,&pool);
     dfn(&pool);
     for(int t=0;t<LANES-1;t++) pthread_join(pts[t],nullptr);
     return out;
@@ -1528,7 +1539,7 @@ static void entropy_encode(
         {raw_cmd,total_cmd,&zcmd,&zcmd_sz}
     };
     pthread_t epts[3];
-    for(int i=0;i<3;i++) pthread_create(&epts[i],nullptr,ew,&ea[i]);
+    for(int i=0;i<3;i++) ax_thread(&epts[i],ew,&ea[i]);
     for(int i=0;i<3;i++) pthread_join(epts[i],nullptr);
 }
  
@@ -1706,7 +1717,7 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
         *l->out=lit_decompress(l->s,l->sz,*l->osz,l->lanes); return nullptr;};
     FseStream fst[3]={{zoff,off_sz,off},{zlen,len_sz,len},{zcmd,cmd_sz,cmd}};
     if (threads == 1) { litfn(&larg); fse_multi_decomp(fst,3,1); }
-    else { pthread_t lt; pthread_create(&lt,nullptr,litfn,&larg);
+    else { pthread_t lt; ax_thread(&lt,litfn,&larg);
            fse_multi_decomp(fst,3,tok_t); pthread_join(lt,nullptr); }
     if(!lit){free(off);free(len);free(cmd);free(zlit);free(zoff);free(zlen);free(zcmd);return 1;}
     // Четыре потока формата (lit, off, len, cmd) распаковываются одновременно
