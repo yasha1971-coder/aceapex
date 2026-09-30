@@ -1,4 +1,4 @@
-Mounted at /content/drive
+Drive already mounted at /content/drive; to attempt to forcibly remount, call drive.mount("/content/drive", force_remount=True).
 == provenance 2026-09-30
 gpu NVIDIA RTX PRO 6000 Blackwell Server Edition | cc 12.0 | driver 580.82.07
 clocks max sm/mem 2430 MHz, 12481 MHz | memory 97887 MiB | power limit 600.00 W
