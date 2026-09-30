@@ -6,6 +6,12 @@ Every number below is reproduced by `make test && ./verify.sh` on the tagged com
 
 ## Unreleased (main)
 
+- Encoder: l1 is the default for DNA input (ADR-020): 8K-slot head table without a chain,
+  matches >= 32 bytes, literal-run skipping, no offset flattening. chr1 68 127 499 -> 59 429 097 B
+  (-12.77 %), encode 65 -> 444 MB/s per thread; T2T open profile -3.87 %. Format unchanged, every
+  decoder reads it. Text keeps the chain matcher unless `AX_ENC=l1`; `AX_ENC=chain` restores the
+  old bytes for DNA. Match length by 8-byte XOR/ctz (same bytes, encode ~10 % faster).
+- Open profile CPU decode: bases unpacked by table, 16 KiB region on chr1 189 -> 157 us (C99).
 - rANS token profile (ADR-018, `AX_TOK=rans`, chunk entry bit 62) and the open profile
   (ADR-019, `AX_PROFILE=open`: tokens rANS, literal chunks mode 2 open DNA pack / mode 3 open
   plain, spec §3.4): a genome archive without a single zstd frame, chr1 66 904 489 B against
