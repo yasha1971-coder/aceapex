@@ -68,6 +68,9 @@ StreamLZ (конкурент) декодирует своей GPU-энтропи
    drafts/encodesu_v2.2.0.md (ветка 4487), drafts/hwbench_v2.2.0.md (задание агенту), PR в lzbench (ветка aceapex-2.2.0 локально).
 
 ## 2.3 (план)
+- Сплющивание смещений (origin[]) в chain-энкодере стоит silesia +0.68 % (-1) / +0.62 % (-2) и не ускоряет CPU-декод
+  (results/silesia-ratio-flattening-2026-09-30.log); это вся разница ratio с lzbench 1.0.1. Предложение: выключить
+  для не-ДНК после замера GPU match на silesia с/без (Colab), меняет байты по умолчанию для текста — по слову.
 - Явный контекст вызова вместо thread_local: struct aceapex_ctx (размер блока, флаг ошибки, признак ДНК,
   бюджет потоков) передаётся в encode_file / decode и рабочие потоки аргументом; thread_local + ax_thread
   (2.2.0) — временная мера. Претензия head_api_concurrent остаётся судьёй.
