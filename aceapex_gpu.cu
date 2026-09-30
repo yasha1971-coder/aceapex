@@ -510,7 +510,9 @@ int main(int argc, char** argv){
     auto un_exc=[&](cudaStream_t s){ if(NO) k_open_exc<<<(unsigned)NO,AXO_NT,0,s>>>(dOD,dErr+2); };
     // fused (literal chunks <= 64 KiB, every open chunk has its seq piece at cls_off[P_SEQ]+k): pieces without seq,
     // case runs, seq+bases in one kernel, exceptions - the same bytes as lit + unpack
-    const bool canF = NO && chunk[0]<=65536 && cls_off[P_SEQ+1]-cls_off[P_SEQ]==NO && dna.empty();
+    // closed 30.09 (Blackwell: fused chr1 2.18 vs 1.47 ms, T2T 19.36 vs 13.23 - one warp decodes the seq piece while
+    // the block waits); kept for AX_GPU_FUSED=1 only
+    const bool canF = getenv("AX_GPU_FUSED") && NO && chunk[0]<=65536 && cls_off[P_SEQ+1]-cls_off[P_SEQ]==NO && dna.empty();
     auto fused=[&](cudaStream_t s){ zstd_rng(s,NT,N); pieces(s,P_CSE,P_NCLS); un_cse(s);
         if(NO) k_open_seqb<<<(unsigned)NO,256,0,s>>>(dC,dRD+cls_off[P_SEQ],dOD,dErr); un_exc(s); };
     auto unpack=[&](cudaStream_t s){ if(!dna.empty()){ k_unpack<<<g1,256,0,s>>>(dDD); k_exc<<<(unsigned)dna.size(),256,0,s>>>(dDD); }
@@ -579,7 +581,7 @@ int main(int argc, char** argv){
         { const uint32_t z0[4]={0u,0xffffffffu,0u,0xffffffffu}; CK(cudaMemcpy(dErr,z0,16,cudaMemcpyHostToDevice)); lit(s0); unpack(s0); CK(cudaStreamSynchronize(s0)); }
         printf("[fused] lit + unpack %.3f ms (lit %.3f + unpack %.3f; seq piece %.3f + bases %.3f) -> fused %.3f ms (seq+bases kernel %.3f); on-device %.3f -> %.3f ms\n",
             mL+mU,mL,mU,mLp[P_SEQ],mUs,mF,mFS,mD,mT+mF+mM);
-    } else printf("[fused] not applicable (literal chunks > 64 KiB, zstd DNA chunks, or no open chunks)\n");
+    }
 
     // ---- pipeline: NB batches of frames in order; H2D of batch k+1 on s1 overlaps zstd of batch k on s0
     // (the pieces follow the frames in dC and arrive with the last batch)

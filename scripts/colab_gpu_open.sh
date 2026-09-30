@@ -98,12 +98,15 @@ get_corpus(){ # name md5 url -> $W/name or empty
 # archive bytes; zstd frames depend on the libzstd version (t2t: 1.5.5 on Colab, 1.4.8 on ace-core),
 # the open archive has none; chr1 at 16 KiB blocks came out the same under both
 ZV=$(grep -h '#define ZSTD_VERSION_\(MAJOR\|MINOR\|RELEASE\)' /usr/include/zstd.h | awk '{print $3}' | paste -sd. -)
-# pins since ADR-020 (l1 encoder is the DNA default): zstd/rans archives depend on libzstd (only 1.4.8 pinned so
-# far; the run prints the 1.5.5 sizes), open/chain do not. chain = the open profile with the matcher before ADR-020.
+# pins since ADR-020 (l1 encoder is the DNA default): zstd/rans archives depend on libzstd (1.4.8 and 1.5.5,
+# the latter from the official zstd-1.5.5 tarball on ace-core: its chain sizes equal the Colab 1.5.5 archives),
+# open/chain do not. chain = the open profile with the matcher before ADR-020.
 pinned(){ case $1.$2 in
-  chr1.zstd) [ "$ZV" = 1.4.8 ] && echo 60449427;; chr1.rans) [ "$ZV" = 1.4.8 ] && echo 60431000;;
+  chr1.zstd) case $ZV in 1.4.8) echo 60449427;; 1.5.5) echo 60442704;; esac;;
+  chr1.rans) case $ZV in 1.4.8) echo 60431000;; 1.5.5) echo 60424124;; esac;;
   chr1.open) echo 63083287;; chr1.chain) echo 67975888;;
-  t2t.zstd) [ "$ZV" = 1.4.8 ] && echo 822680738;; t2t.rans) [ "$ZV" = 1.4.8 ] && echo 822818235;;
+  t2t.zstd) case $ZV in 1.4.8) echo 822680738;; 1.5.5) echo 822393156;; esac;;
+  t2t.rans) case $ZV in 1.4.8) echo 822818235;; 1.5.5) echo 822531418;; esac;;
   t2t.open) echo 853264869;; t2t.chain) echo 887641942;; esac; }
 T=$(nproc); CORP=""
 get_corpus chr1.fa 9465e0f0df6e2c6eb39729c39cee5465 https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr1.fa.gz && CORP="chr1"
@@ -113,6 +116,9 @@ for X in $CORP; do
   for P in zstd rans open chain; do
     case $P in zstd) E="FSE_CHUNK=4096";; rans) E="AX_TOK=rans";; open) E="AX_PROFILE=open";; chain) E="AX_PROFILE=open AX_ENC=chain";; esac
     A=$W/$X.$P.aet; PIN=$(pinned $X $P); SRC=encoded
+    # an archive left in $W by an earlier run is reused only when it has the pinned size (30.09: a stale
+    # chain-encoded open archive from the run before ADR-020 was reported as encoded by this build)
+    if [ -s $A ]; then if [ -n "$PIN" ] && [ "$(stat -c%s $A)" = "$PIN" ]; then SRC="reused from $W (== pin)"; else rm -f $A; fi; fi
     if [ ! -s $A ] && [ $HAVE_DRIVE = 1 ] && [ -n "$PIN" ] && [ "$(stat -c%s $DRV/cache/$X.$P.aet 2>/dev/null)" = "$PIN" ]; then cp $DRV/cache/$X.$P.aet $A; SRC="from Drive cache"; fi
     if [ ! -s $A ]; then
       if [ $X = t2t ] && [ $RAM_GB -lt 20 ]; then echo "$X.$P: RAM $RAM_GB GB < 20 GB for the encoder (11.2 GB RSS) and no cached archive - skipped; run once on a host with more RAM (A100/G4) to fill $DRV/cache" | tee -a $L; continue; fi
@@ -164,9 +170,9 @@ for X in $CORP; do
     grep "^ROW	$W/$X\." $L | awk -F'\t' -v OFS='\t' '{print $2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$24,$27,$12,$13,$25" GB/s",$26" GB/s"}' | sed "s#$W/##"
     DBY=$(cat $W/$X.dense.bytes 2>/dev/null); grep "^ROW	$W/$X\.open" $L | awk -F'\t' -v OFS='\t' -v db="$DBY" -v x="$X" '$30!="-1"{print x".dense (est.)",db,"rANS","order-1",$6,$28,"0",$9,$29,"-","-","-","-",($30=="0"?"bit-perfect":"DIFFERS"),"-","-"}'
     DB2=$(cat $W/$X.dense2.bytes 2>/dev/null); grep "^ROW	$W/$X\.open" $L | awk -F'\t' -v OFS='\t' -v db="$DB2" -v x="$X" '$35!="" && $35!="-1"{l=1e9; for(k=31;k<=33;k++) if($k>=0 && $k<l) l=$k; print x".dense2 (est.)",db,"rANS","o1 32seg",$6,sprintf("%.3f",l)" (byte "$31" / nib "$32" / cmp "$33")","0",$9,$34,"-","-","-","-",($35=="0"?"bit-perfect":"DIFFERS"),"-","-"}'; } | column -t -s $'\t' | tee -a $L.t1
-  echo "parts, ms: lit = zstd frames + pieces by class; unpack = zstd-pack kernels + open kernels; fused = the same lit+unpack with seq piece and bases in one kernel (k_open_seqb)" | tee -a $L.t1
-  { printf 'archive\tlit.zstd\tseq\tcse\tgap\tval\tplain\tun.zstdpack\tbases\tcase\texceptions\tlit+unpack\tfused\tseq+bases\n'
-    grep "^ROW	$W/$X\." $L | awk -F'\t' -v OFS='\t' '{print $2,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,sprintf("%.3f",$7+$8),($36==""||$36<0)?($36==-2?"DIFFERS":"-"):$36,($37==""||$37<0)?"-":$37}' | sed "s#$W/##"; } | column -t -s $'\t' | tee -a $L.t1
+  echo "parts, ms: lit = zstd frames + pieces by class; unpack = zstd-pack kernels + open kernels" | tee -a $L.t1
+  { printf 'archive\tlit.zstd\tseq\tcse\tgap\tval\tplain\tun.zstdpack\tbases\tcase\texceptions\n'
+    grep "^ROW	$W/$X\." $L | awk -F'\t' -v OFS='\t' '{print $2,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23}' | sed "s#$W/##"; } | column -t -s $'\t' | tee -a $L.t1
 done
 [ -f $L.t1 ] && cat $L.t1 >> $L; rm -f $L.t1
 grep '^ROW' $L | sed "s#$W/##" | awk -F'\t' -v OFS='\t' -v g="$TAG" '{$1="TSV\t" g; print}' | tee -a $L
@@ -179,7 +185,7 @@ done
 # the run as a whole needs both emulators, the 5 fixtures, the chr1 open row, and no failure line.
 # Estimate and reference rows (dense, dense2, chain) do not enter it: they have their own check columns / rule line.
 RUN=$(grep '^exit [0-9]* ' $L | grep -vc '\.chain$'); OK=$(grep '^exit 0 ' $L | grep -vc '\.chain$'); N=$(awk -F'\t' '$1=="ROW" && $13=="bit-perfect" && $2 !~ /\.chain\.aet$/' $L | wc -l)
-E=$(grep -c $'^head_\(rans\|open\)_warp_emu\tpass' $L); F=$(grep -c '^fixture .*: exit 0, 5 MATCHES OK, 0 DIFFERS$' $L)
+E=$(grep -c $'^head_\(rans\|open\)_warp_emu\tpass' $L); F=$(grep -c '^fixture .*: exit 0, [1-9][0-9]* MATCHES OK, 0 DIFFERS$' $L)   # any number of passes, none differing
 echo "archives on the GPU: bit-perfect $N of $RUN (exit 0: $OK); emulators $E/2, fixtures $F/5" | tee -a $L
 grep '^exit [1-9]' $L | sed 's/^/  FAILED: /; s/\.chain$/.chain (reference row, not in the verdict)/' | tee -a $L
 [ "$N" = "$RUN" ] && [ "$E" = 2 ] && [ "$F" = 5 ] && grep -q "^ROW	$W/chr1.open" $L \

@@ -96,6 +96,41 @@ quality strings. At ratio 3.98 versus zstd -3 at 3.96 on the same file, ACEAPEX 
 7,401 MB/s against zstd -3 at 2,026 MB/s: 3.65x faster at genuinely comparable ratio.
 (*aceapex_cuda row not yet re-measured on the corrected file.)
 
+### GPU — open profile on five GPUs (chr1, no zstd, no nvCOMP call)
+
+chr1 (253 935 557 B), open profile with 16 KiB blocks and 64 KiB literal chunks, archive 67 975 888 B
+(the matcher before ADR-020); `aceapex_gpu`, one process, median of 3-7, every row bit-perfect (FNV of the
+GPU output == the original). Logs: `results/colab-2026-09-2*-<gpu>-gpu-open.log`, `results/gpu-open-table.md`.
+
+| GPU | on-device, ms | on-device GB/s | + H2D, ms | H2D GB/s (pinned) |
+|---|---|---|---|---|
+| Tesla T4 (sm_75) | 20.51 | 12.4 | 25.94 | 12.3 |
+| L4 (sm_89) | 10.14 | 25.0 | 15.57 | 12.3 |
+| A100-SXM4-40GB (sm_80) | 6.17 | 41.2 | 11.59 | 12.3 |
+| A100-SXM4-80GB (sm_80) | 6.09 | 41.7 | — | 12.4 |
+| RTX PRO 6000 Blackwell SE (sm_120) | 3.69 | 68.8 | 4.87 | 56.6 |
+
+With the l1 encoder (ADR-020, the DNA default since 2026-09-30) the same profile is 63 083 287 B and decodes
+on the Blackwell in 2.82 ms on-device (90.1 GB/s, -23 %); T2T (3.16 GB) 27.13 ms against 26.67 (+1.8 %),
+31.1 ms with H2D through the stream pipeline.
+
+**How far from the limit** (the same runs; chr1 unless noted):
+
+| GPU | H2D: measured / link peak | output rate / memory bandwidth | ratio / zstd -19 --long=27 |
+|---|---|---|---|
+| Tesla T4 | 12.3 / 15.8 GB/s (PCIe 3 x16) = 78 % | 12.4 / 320 GB/s = 3.9 % | |
+| L4 | 12.3 / 31.5 (PCIe 4 x16) = 39 % | 25.0 / 300 = 8.3 % | |
+| A100-SXM4-40GB | 12.3 / 31.5 = 39 % | 41.2 / 1555 = 2.6 % | |
+| A100-SXM4-80GB | 12.4 / 31.5 = 39 % | 41.7 / 2039 = 2.0 % (T2T 60.4 = 3.0 %) | |
+| RTX PRO 6000 Blackwell | 56.6 / 63.0 (PCIe 5 x16) = 90 % | 68.8 / 1792 = 3.8 % (l1: 90.1 = 5.0 %) | |
+| any (archive bytes) | | | default (l1) 4.273x = 103.6 %; open (l1) 4.025x = 97.6 %; open (before l1) 3.736x = 90.6 % |
+
+H2D on the Colab T4/L4/A100 VMs is the host link of the VM (12.3 GB/s on all three), not the GPU. The
+memory column counts only the bytes written (the decoded output), a lower bound of the traffic: decode is
+bound by the dependent steps of the match and entropy stages, not by memory bandwidth. Ratio reference:
+`zstd -19 --long=27 -T16` on chr1 = 61 597 199 B (4.122x, zstd 1.4.8, ace-core, 54 s); ACEAPEX default
+59 429 097 B, open profile 63 083 287 B.
+
 ### GPU — Full Device-Resident Pipeline (H100 SXM, 16 KB blocks, nvcomp-accelerated, bit-perfect)
 
 | Dataset | Size | GB/s | Ratio |
