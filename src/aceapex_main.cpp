@@ -78,7 +78,10 @@ struct ThreadHashTable {
     uint32_t  hash_mask;
     uint32_t  chain_mask;
     int       max_attempts;
-    int       l1;          // AX_ENC=l1: 8K-slot head table (64 KB with epochs), no chain
+    int       l1;          // l1 encoder (ADR-020): 8K-slot head table (64 KB with epochs), no chain
+    int       noflat;      // no offset flattening (l1)
+    uint32_t  minl;        // shortest match taken (l1: 32; 0 = any)
+    uint32_t  skip;        // literal-run skip shift (l1: 4; 0 = off)
 };
  
 struct BlockOffsets {
@@ -194,9 +197,8 @@ static void compress_block(const uint8_t* src, size_t src_size,
     // flattening, only matches >= 32 bytes (shorter repeats stay literals, zstd/rANS of the
     // literal stream takes them), literal runs skipped 1 + miss>>4 bytes at a time.
     // AX_NOFLAT / AX_MINL / AX_SKIP override each knob.
-    static const int noflat = getenv("AX_NOFLAT") ? atoi(getenv("AX_NOFLAT")) : ht->l1;
-    static const uint32_t l1_minl = !ht->l1 ? 0 : getenv("AX_MINL") ? (uint32_t)atoi(getenv("AX_MINL")) : 32;
-    static const uint32_t l1_skip = !ht->l1 ? 0 : getenv("AX_SKIP") ? (uint32_t)atoi(getenv("AX_SKIP")) : 4;
+    const int noflat = ht->noflat;
+    const uint32_t l1_minl = ht->minl, l1_skip = ht->skip;
     if (!noflat) init_origin(0, bsz); // init all as self-referential (literal)
  
     auto flush_lit = [&]() {
@@ -861,7 +863,11 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
     // Adaptive hash size
     uint32_t hash_log = (src_size < 16*1024*1024) ? 13 :
                         (src_size < 128*1024*1024) ? 15 : 17;
-    const char* ax_enc=getenv("AX_ENC"); int l1 = ax_enc && !strcmp(ax_enc,"l1");
+    // Encoder (ADR-020): l1 for DNA by default, the chain matcher for everything else.
+    // AX_ENC=l1 / AX_ENC=chain force one; the probe is the same 4 MiB dna_worth sample.
+    const char* ax_enc=getenv("AX_ENC");
+    int l1 = ax_enc ? !strcmp(ax_enc,"l1")
+                    : dna_worth(src, src_size < (1u<<22) ? src_size : (1u<<22));
     if (l1) hash_log = 13;
     { const char* e=getenv("AX_HLOG"); if(e&&atoi(e)>=8&&atoi(e)<=24) hash_log=(uint32_t)atoi(e); }
     uint32_t hash_mask = (1u << hash_log) - 1;
@@ -882,6 +888,10 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
         htabs[i]->chain_mask=chain_mask;
         htabs[i]->max_attempts=(level>=2)?32:4;
         htabs[i]->l1=l1; if (l1) htabs[i]->max_attempts=1;
+        // l1 knobs; AX_NOFLAT / AX_MINL / AX_SKIP override (measurement only)
+        htabs[i]->noflat = getenv("AX_NOFLAT") ? atoi(getenv("AX_NOFLAT")) : l1;
+        htabs[i]->minl = !l1 ? 0 : getenv("AX_MINL") ? (uint32_t)atoi(getenv("AX_MINL")) : 32;
+        htabs[i]->skip = !l1 ? 0 : getenv("AX_SKIP") ? (uint32_t)atoi(getenv("AX_SKIP")) : 4;
         { const char* e=getenv("AX_ATT"); if(e) htabs[i]->max_attempts=atoi(e); }
     }
     BlockResult* results=(BlockResult*)calloc(num_blocks,sizeof(BlockResult));
