@@ -5,7 +5,8 @@
 [aceapex](https://github.com/yasha1971-coder/aceapex) is a parallel LZ77 codec with independent blocks
 and match offsets resolved at encode time, so any block (or region) decodes on its own, on the CPU or
 on a GPU. Release: [v2.2.1](https://github.com/yasha1971-coder/aceapex/releases/tag/v2.2.1);
-DOI (all versions): [10.5281/zenodo.20440964](https://doi.org/10.5281/zenodo.20440964).
+DOI: [10.5281/zenodo.23070077](https://doi.org/10.5281/zenodo.23070077)
+(all versions: 10.5281/zenodo.20440964).
 
 ## What is added (4 places, following the misa77 / zxc entries)
 1. **`.gitmodules`**: the `aceapex` entry.
@@ -31,7 +32,5 @@ Levels: 1 and 2 use aceapex's chain matcher on general data, 3 its fast "l1" enc
   builds with MinGW; not built here on macOS or RISC-V.
 
 ## Note on the submodule pin
-`submodule_update.yml` runs `git submodule update --remote` daily, which moves every submodule to the
-head of its default branch; aceapex's `main` then replaces the v2.2.1 pin. If you prefer TurboBench to
-follow releases only, a `branch =` line in `.gitmodules` pointing at a release branch would do it; tell me
-and I will add one.
+The submodule follows aceapex's `release` branch, which moves only on tagged releases, so the daily
+`submodule_update.yml` picks up releases, not work in progress.
