@@ -30,9 +30,30 @@ sync failed `-eFASTEST -t0,0 -T2 -jr .` the same way (2 decode errors), which is
 2.2.0 makes the state per call and adds a regression test (4 threads at once, full and region decode).
 The copy currently in lzbench ("1.0.1") is **not** affected: 0 failures in the same test, 3 runs.
 
+## Numbers
+silesia.tar (211 938 580 B), this branch (lzbench 2.4.1, commit c5d959a), default iterations, AMD EPYC 4344P
+8-core, gcc 11.4, bundled zstd 1.5.7. `lzbench -eaceapex,1,2,3/zstd,1,3 silesia.tar`, then with `-T8`
+(with -T8 aceapex gets 8 threads per call, FULL_THREADING):
+
+| codec | threads | compress MB/s | decompress MB/s | ratio % |
+|---|---|---|---|---|
+| aceapex 2.2.0 -1 | 1 | 96.1 | 1105 | 32.56 |
+| aceapex 2.2.0 -2 | 1 | 71.6 | 1116 | 32.38 |
+| aceapex 2.2.0 -3 | 1 | 305 | 1022 | 31.44 |
+| zstd 1.5.7 -1 | 1 | 690 | 2138 | 34.53 |
+| zstd 1.5.7 -3 | 1 | 413 | 1891 | 31.20 |
+| aceapex 2.2.0 -1 | 8 | 488 | 7188 | 32.73 |
+| aceapex 2.2.0 -2 | 8 | 259 | 7251 | 32.58 |
+| aceapex 2.2.0 -3 | 8 | 1217 | 6586 | 31.52 |
+| zstd 1.5.7 -1 | 8 | 4036 | 11466 | 34.54 |
+| zstd 1.5.7 -3 | 8 | 2408 | 10389 | 31.21 |
+
+On one thread aceapex decodes at about half of zstd and encodes slower than zstd -3 at every level; its
+point is independent blocks (region reads, GPU decode), not beating zstd here.
+
 ## Suggestion, not part of this PR
-FASTEST lists `aceapex,1`. With 2.2.0 the fastest level is `aceapex,3` (l1): on a 3 MB text sample
-329 MB/s against 66 MB/s for level 1, with a smaller output (36.10 % against 38.40 %). If you agree,
+FASTEST lists `aceapex,1`. With 2.2.0 the fastest level is `aceapex,3` (l1): on silesia.tar 305 MB/s
+against 96 MB/s for level 1 on one thread, with a smaller output (31.44 % against 32.56 %). If you agree,
 `aceapex,3` could replace `aceapex,1` there; the aliases are left as they are.
 
 ## Tested
