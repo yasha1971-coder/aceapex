@@ -254,3 +254,30 @@ T2T (CHM13 v2.0, 3.16 GB) on A100-80GB, all bit-perfect: on-device zstd 77.7 -> 
   format document is still missing; that is what a standard needs.
 - `rans1_v4` (order-1 literals) replaces the DNA transform rather than adding to it;
   the default ratio would be recomputed as a whole. Undecided.
+
+## ADR-020 (2026-09-30) The l1 encoder is the default for DNA input
+The chain matcher (hash chain, 4/32 attempts, offset flattening) was the weakest axis: silesia -2
+57 MB/s per thread, chr1 65 MB/s. The SALVAGE "v3 batched" idea, carried into our independent
+blocks (results/enc-l1-2026-09-29.log), showed more: the short matches of our LZ are worth less
+than what the entropy coder of the literal stream (zstd-3, or the open DNA pack) makes of the same
+bytes. l1 = an 8K-slot head table (64 KB with epochs, no chain), window = the block (1 MiB max),
+the lazy pos+1/pos+2 probes and in-match insertion of the chain encoder, no offset flattening,
+only matches >= 32 bytes, literal runs skipped 1 + miss>>4 bytes at a time. Format unchanged:
+every existing decoder reads l1 archives (the CPU decoder of main decoded them before this ADR).
+Decision: `encode_file` picks l1 when the 4 MiB `dna_worth` sample says DNA, the chain matcher
+otherwise; `AX_ENC=l1` / `AX_ENC=chain` force either (text gets l1 only on request: decode on 8
+threads is +16-20 % on silesia/enwik8 there). The rule fixed before the measurement: bit-perfect
+on the GPU and on-device at most 5 % above open, on chr1 and T2T.
+Numbers. ace-core, 1 thread, encode MB/s chain -1 / -2 -> l1: chr1 68 / 65 -> 444; silesia 81 / 57
+-> 259; enwik8 65 / 60 -> 299. chr1 default 68 127 499 -> 59 429 097 B (-12.77 %). T4 profile
+(16 KiB blocks, 64 KiB literal chunks), libzstd 1.4.8: chr1 zstd 69 473 882 -> 60 449 427, rans
+69 169 770 -> 60 431 000, open 67 975 888 -> 63 083 287 (-7.20 %); T2T zstd 902 319 887 ->
+822 680 738, rans 898 903 131 -> 822 818 235, open 887 641 942 -> 853 264 869 (-3.87 %).
+RTX PRO 6000 Blackwell (Colab 30.09, 9c4847d, open profile, all bit-perfect): chr1 on-device
+3.669 -> 2.817 ms (-23.2 %: match 1.263 -> 0.831, tok 0.942 -> 0.355, lit 0.958 -> 1.008,
+unpack 0.506 -> 0.623); T2T 26.646 -> 27.131 ms (+1.8 %; match 11.78 -> 9.90, lit 5.33 -> 6.61,
+unpack 7.87 -> 9.70), stream pipeline 33.32 -> 31.09 ms. Rule met on both.
+Not changed: text and every non-DNA input (chain matcher, bytes as before), the streaming encoder
+(src/encode_streaming.cpp, chain), the fixtures (verify/fixtures stay as written; the determinism
+check re-encodes with AX_ENC=chain). Pins in scripts/colab_gpu_open.sh follow the new default;
+zstd/rans pins exist for libzstd 1.4.8 only until a 1.5.5 run prints them.
