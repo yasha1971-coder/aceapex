@@ -10,12 +10,21 @@ Format ACEPX2 unchanged (`version 2`). Archives of the default profile written b
 encoder included) decode with 2.1.0; archives of the rANS-token and open profiles (ADR-018/019)
 need 2.2.0 (2.1.0 does not know chunk entry bit 62 or literal modes 2/3).
 
-Fix
-- Library calls from several threads at once (lzbench `-T`, servers): the block size, the decode error
-  flag and the DNA hint were process globals. Found by the lzbench `-eFASTEST -T2 -jr` test on its own
-  tree (4615 files): 2 decode errors; 2.1.0 returned wrong bytes for 22 of 4569 files under the same
-  load. Now thread-local and inherited by each call's worker threads; claim `head_api_concurrent`
-  (4 threads, 96 jobs, full and region decode: 0 failures, 29-32 before the fix).
+Fixed
+- fixed: concurrent API calls could return wrong output; affected 2.1.0 (the aceapex copy in
+  lzbench 2.4, "1.0.1", is not affected). The block size, the decode error flag and the DNA hint
+  were process globals shared by calls running at once (lzbench `-T`, servers). Two threads over
+  lzbench's source tree (4569 files): 2.1.0 returned wrong bytes for 22; 1.0.1 (lzbench copy) 0 in
+  3 runs; 2.2.0 0. Now per call (thread-local, inherited by the call's worker threads); claim
+  `head_api_concurrent` (4 threads, 96 jobs, full and region decode: 0 failures, 29-32 before).
+- fixed: the library did not build with MinGW (sysconf, posix_memalign); the CLI stays POSIX (mmap).
+- fixed: an empty stream (zeros, tiny inputs) no longer depends on malloc(0) returning non-NULL.
+
+Platforms (release gate, `scripts/cross_matrix.sh`, libzstd 1.5.5 built per target): x86-64, x86-32
+(i686), ARM32 (armhf), ARM64 and PPC64LE under qemu-user: 44/44 conformance decodes (C99 + CLI),
+chr1 slice fixtures 4/4, chain re-encode == fixture, l1 encode == x86-64 bytes (3 profiles),
+api_roundtrip 468/468, api_concurrent 0 failed on each; MinGW x86-64: library, C99 decoder and API
+programs build (no Windows runner).
 
 Encoder
 - l1 is the default encoder for DNA input (ADR-020): an 8K-slot head table without a chain, window =
