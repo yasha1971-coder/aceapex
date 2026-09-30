@@ -67,8 +67,11 @@ thread). With the CPUs fixed (`taskset`), same runs:
 | aceapex 1.0.1 -1 / -2, -T8 (before) | 8 logical CPUs (taskset -c 0-7) | 6821-7150 / 7058-7124 |
 | aceapex 2.2.0 -1 / -2, -T8 | 8 logical CPUs (taskset -c 0-7) | 7410-7528 / 6622-7809 |
 
-Ratio: 2.2.0 writes 0.6-0.7 % more bytes than 1.0.1 at levels 1 and 2 on silesia (32.56 against 32.34 %);
-level 3 is 2.9 % smaller than 1.0.1 -1. On one thread aceapex decodes at about half of zstd and encodes
+Levels 1-2 are 0.6-0.7 % larger than 1.0.1 on silesia (32.56 against 32.34 % at level 1): 2.2.0 flattens
+match offsets to the first occurrence (shorter dependency chains for parallel/GPU match copy); with
+AX_NOFLAT=1 the output is byte-identical to 1.0.1 in every stream (only the chunk-size field that 2.2.0
+records in each token-stream header differs).
+Level 3 is 2.9 % smaller than 1.0.1 -1. On one thread aceapex decodes at about half of zstd and encodes
 slower than zstd -3 at every level; its point is independent blocks (region reads, GPU decode), not
 beating zstd here.
 
