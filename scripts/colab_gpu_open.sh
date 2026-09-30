@@ -164,9 +164,9 @@ for X in $CORP; do
     grep "^ROW	$W/$X\." $L | awk -F'\t' -v OFS='\t' '{print $2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$24,$27,$12,$13,$25" GB/s",$26" GB/s"}' | sed "s#$W/##"
     DBY=$(cat $W/$X.dense.bytes 2>/dev/null); grep "^ROW	$W/$X\.open" $L | awk -F'\t' -v OFS='\t' -v db="$DBY" -v x="$X" '$30!="-1"{print x".dense (est.)",db,"rANS","order-1",$6,$28,"0",$9,$29,"-","-","-","-",($30=="0"?"bit-perfect":"DIFFERS"),"-","-"}'
     DB2=$(cat $W/$X.dense2.bytes 2>/dev/null); grep "^ROW	$W/$X\.open" $L | awk -F'\t' -v OFS='\t' -v db="$DB2" -v x="$X" '$35!="" && $35!="-1"{l=1e9; for(k=31;k<=33;k++) if($k>=0 && $k<l) l=$k; print x".dense2 (est.)",db,"rANS","o1 32seg",$6,sprintf("%.3f",l)" (byte "$31" / nib "$32" / cmp "$33")","0",$9,$34,"-","-","-","-",($35=="0"?"bit-perfect":"DIFFERS"),"-","-"}'; } | column -t -s $'\t' | tee -a $L.t1
-  echo "parts, ms: lit = zstd frames + pieces by class; unpack = zstd-pack kernels + open kernels" | tee -a $L.t1
-  { printf 'archive\tlit.zstd\tseq\tcse\tgap\tval\tplain\tun.zstdpack\tbases\tcase\texceptions\n'
-    grep "^ROW	$W/$X\." $L | awk -F'\t' -v OFS='\t' '{print $2,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23}' | sed "s#$W/##"; } | column -t -s $'\t' | tee -a $L.t1
+  echo "parts, ms: lit = zstd frames + pieces by class; unpack = zstd-pack kernels + open kernels; fused = the same lit+unpack with seq piece and bases in one kernel (k_open_seqb)" | tee -a $L.t1
+  { printf 'archive\tlit.zstd\tseq\tcse\tgap\tval\tplain\tun.zstdpack\tbases\tcase\texceptions\tlit+unpack\tfused\tseq+bases\n'
+    grep "^ROW	$W/$X\." $L | awk -F'\t' -v OFS='\t' '{print $2,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,sprintf("%.3f",$7+$8),($36==""||$36<0)?($36==-2?"DIFFERS":"-"):$36,($37==""||$37<0)?"-":$37}' | sed "s#$W/##"; } | column -t -s $'\t' | tee -a $L.t1
 done
 [ -f $L.t1 ] && cat $L.t1 >> $L; rm -f $L.t1
 grep '^ROW' $L | sed "s#$W/##" | awk -F'\t' -v OFS='\t' -v g="$TAG" '{$1="TSV\t" g; print}' | tee -a $L

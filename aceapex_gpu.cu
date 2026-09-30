@@ -105,18 +105,16 @@ __device__ static inline uint32_t w_scan(uint32_t v, uint32_t lane, uint32_t& to
     for(int o=1;o<32;o<<=1){ uint32_t t=__shfl_up_sync(0xffffffffu,inc,o); if(lane>=(uint32_t)o) inc+=t; }
     total=__shfl_sync(0xffffffffu,inc,31); return inc-v;
 }
-__global__ void __launch_bounds__(32*AXW_WARPS) k_rans(const uint8_t* __restrict__ C, const RansDesc* __restrict__ d, uint32_t nd, uint32_t* __restrict__ err){
-    __shared__ AxwShared sh_all[AXW_WARPS];
-    const uint32_t FULL=0xffffffffu, lane=threadIdx.x&31, lt=(1u<<lane)-1u, k=blockIdx.x*AXW_WARPS+(threadIdx.x>>5);
-    if(k>=nd) return;                                   // whole warp: nd is uniform
-    const RansDesc c=d[k]; const uint8_t* src=C+c.src; AxwShared& sh=sh_all[threadIdx.x>>5];
-    if(c.mode==0){ for(uint32_t i=lane;i<c.n;i+=32) c.dst[i]=src[i]; return; }   // raw piece (sizes checked on the host)
-    bool b=false, bad=c.csz<AXW_MIN; uint32_t cb=0;
+// one warp decodes one piece/chunk into dst (global or shared); returns true (warp-uniform) on a bad chunk
+__device__ static bool rans_warp(const uint8_t* __restrict__ src, uint32_t csz, uint32_t n, uint32_t mode, uint8_t* dst, AxwShared& sh, uint32_t lane){
+    const uint32_t FULL=0xffffffffu, lt=(1u<<lane)-1u;
+    if(mode==0){ for(uint32_t i=lane;i<n;i+=32) dst[i]=src[i]; return false; }   // raw piece (sizes checked on the host)
+    bool b=false, bad=csz<AXW_MIN; uint32_t cb=0;
     if(!bad){
-        axw_stage(lane,src,c.csz,sh); __syncwarp();
+        axw_stage(lane,src,csz,sh); __syncwarp();
         uint32_t K; const uint32_t r0=w_scan(axw_rank_count(lane,sh),lane,K);
         axw_rank_write(lane,sh,r0); __syncwarp();
-        const uint32_t lim=axw_lim(c.csz); uint32_t jb=0;
+        const uint32_t lim=axw_lim(csz); uint32_t jb=0;
         for(uint32_t r=0; jb<K && 32+32*r<lim; r++){
             const bool t=axw_term(lane,sh,r,lim); const uint32_t m=__ballot_sync(FULL,t);
             axw_leb(lane,sh,r,t,jb+__popc(m&lt),K,b); jb+=__popc(m); }
@@ -126,15 +124,23 @@ __global__ void __launch_bounds__(32*AXW_WARPS) k_rans(const uint8_t* __restrict
     }
     if(!bad){
         axw_cum(lane,sh,cb); __syncwarp(); axw_fill(lane,sh); __syncwarp();
-        uint32_t x,W; const uint8_t* words; b|=axw_init(lane,src,c.csz,sh.end,x,W,words); bad=__any_sync(FULL,b);
+        uint32_t x,W; const uint8_t* words; b|=axw_init(lane,src,csz,sh.end,x,W,words); bad=__any_sync(FULL,b);
         if(!bad){
-            uint32_t base=0; const uint32_t groups=(c.n+31)/32;
+            uint32_t base=0; const uint32_t groups=(n+31)/32;
             for(uint32_t g=0; g<groups; g++){
-                const bool need=axw_step(lane,sh,g,c.n,x,c.dst); const uint32_t m=__ballot_sync(FULL,need);
+                const bool need=axw_step(lane,sh,g,n,x,dst); const uint32_t m=__ballot_sync(FULL,need);
                 axw_refill(lane,need,m,base,W,words,x,b); base+=__popc(m); }
             b|= base!=W || x!=AXR_L; bad=__any_sync(FULL,b);
         }
     }
+    return bad;
+}
+__global__ void __launch_bounds__(32*AXW_WARPS) k_rans(const uint8_t* __restrict__ C, const RansDesc* __restrict__ d, uint32_t nd, uint32_t* __restrict__ err){
+    __shared__ AxwShared sh_all[AXW_WARPS];
+    const uint32_t lane=threadIdx.x&31, k=blockIdx.x*AXW_WARPS+(threadIdx.x>>5);
+    if(k>=nd) return;                                   // whole warp: nd is uniform
+    const RansDesc c=d[k];
+    const bool bad=rans_warp(C+c.src,c.csz,c.n,c.mode,c.dst,sh_all[threadIdx.x>>5],lane);
     if(bad && lane==0){ atomicAdd(err,1u); atomicMin(err+1,k); }
 }
 
@@ -181,6 +187,21 @@ __global__ void __launch_bounds__(AXO_NT) k_open_cse(const OpenDesc* __restrict_
 __global__ void __launch_bounds__(256) k_open_bases(const OpenDesc* __restrict__ d){
     const OpenDesc c=d[blockIdx.x]; const uint32_t g=blockIdx.y*blockDim.x+threadIdx.x;
     if(16*g<c.raw) axl_bases16(g,c.seq,c.ends,*c.nrun,c.raw,c.dst);
+}
+// Fused seq piece + bases (literal chunks <= 64 KiB): warp 0 decodes the chunk's seq piece (2-bit pack,
+// <= 16 KiB) into shared memory instead of the global scratch, then the block writes bases with their
+// case straight into the literal stream: the packed bases never leave the SM and k_open_bases is not
+// launched. Needs the run ends of k_open_cse (as k_open_bases). err as k_rans (piece index k).
+#define AXO_FSEQ 16384
+__global__ void __launch_bounds__(256) k_open_seqb(const uint8_t* __restrict__ C, const RansDesc* __restrict__ sd, const OpenDesc* __restrict__ d, uint32_t* __restrict__ err){
+    __shared__ AxwShared sh; __shared__ __align__(16) uint8_t sq[AXO_FSEQ]; __shared__ int bad_s;
+    const uint32_t k=blockIdx.x, tid=threadIdx.x; const OpenDesc c=d[k];
+    if(tid<32){ const RansDesc r=sd[k]; const bool bad = r.n>AXO_FSEQ || rans_warp(C+r.src,r.csz,r.n,r.mode,sq,sh,tid);
+        if(tid==0){ bad_s=bad; if(bad){ atomicAdd(err,1u); atomicMin(err+1,k); } } }
+    __syncthreads();
+    if(bad_s) return;
+    const uint32_t R=*c.nrun;
+    for(uint32_t g=tid; 16*g<c.raw; g+=256) axl_bases16(g,sq,c.ends,R,c.raw,c.dst);
 }
 __global__ void __launch_bounds__(AXO_NT) k_open_exc(const OpenDesc* __restrict__ d, uint32_t* __restrict__ err){
     __shared__ uint64_t sh[AXO_NT/32];
@@ -487,6 +508,11 @@ int main(int argc, char** argv){
     auto un_seq=[&](cudaStream_t s){ if(NO) k_open_bases<<<go,256,0,s>>>(dOD); };                     // bases + case
     auto un_cse=[&](cudaStream_t s){ if(NO) k_open_cse<<<(unsigned)NO,AXO_NT,0,s>>>(dOD,dErr+2); };   // case runs -> run ends
     auto un_exc=[&](cudaStream_t s){ if(NO) k_open_exc<<<(unsigned)NO,AXO_NT,0,s>>>(dOD,dErr+2); };
+    // fused (literal chunks <= 64 KiB, every open chunk has its seq piece at cls_off[P_SEQ]+k): pieces without seq,
+    // case runs, seq+bases in one kernel, exceptions - the same bytes as lit + unpack
+    const bool canF = NO && chunk[0]<=65536 && cls_off[P_SEQ+1]-cls_off[P_SEQ]==NO && dna.empty();
+    auto fused=[&](cudaStream_t s){ zstd_rng(s,NT,N); pieces(s,P_CSE,P_NCLS); un_cse(s);
+        if(NO) k_open_seqb<<<(unsigned)NO,256,0,s>>>(dC,dRD+cls_off[P_SEQ],dOD,dErr); un_exc(s); };
     auto unpack=[&](cudaStream_t s){ if(!dna.empty()){ k_unpack<<<g1,256,0,s>>>(dDD); k_exc<<<(unsigned)dna.size(),256,0,s>>>(dDD); }
         un_cse(s); un_seq(s); un_exc(s); };
     const int TPB=128; int dev=0,nsm=0; CK(cudaGetDevice(&dev)); CK(cudaDeviceGetAttribute(&nsm,cudaDevAttrMultiProcessorCount,dev));
@@ -536,6 +562,24 @@ int main(int argc, char** argv){
     printf("[lit parts] zstd frames %.3f | open pieces: seq %.3f, cse %.3f, gap %.3f, val %.3f, plain %.3f ms\n",mLz,mLp[P_SEQ],mLp[P_CSE],mLp[P_GAP],mLp[P_VAL],mLp[P_PLAIN]);
     printf("[unpack parts] zstd DNA pack %.3f | open: bases %.3f, case runs %.3f, exceptions %.3f ms\n",mUd,mUs,mUc,mUe);
     ok = fnv_check("sequential") && ok;
+    // ---- fused seq piece + bases against lit + unpack; the literal stream is cleared first, then one full
+    // pass through the fused path must reproduce the original
+    float mF=-1, mFS=-1;
+    if(canF){
+        // a measurement row: a failure here is reported and does not fail the archive (nor stop the run)
+        CK(cudaMemsetAsync(dS[0],0,ssz[0],s0)); tok(s0); fused(s0); match(G,s0,0,nb); CK(cudaStreamSynchronize(s0)); CK(cudaGetLastError());
+        uint32_t fe[4]; CK(cudaMemcpy(fe,dErr,16,cudaMemcpyDeviceToHost));
+        const bool fok = fnv_check("fused") && !fe[0] && !fe[2];
+        if(!fok) printf("[fused] DIFFERS (pieces/chunks failed %u/%u) - fused row invalid\n",fe[0],fe[2]);
+        { const uint32_t z0[4]={0u,0xffffffffu,0u,0xffffffffu}; CK(cudaMemcpy(dErr,z0,16,cudaMemcpyHostToDevice)); }
+        lit(s0); unpack(s0); CK(cudaStreamSynchronize(s0));      // the literal stream as the regular path leaves it
+        std::vector<float> tF,tFS; for(int r=0;r<reps;r++){ tF.push_back(elapsed(s0,[&]{fused(s0);}));
+            tFS.push_back(elapsed(s0,[&]{ k_open_seqb<<<(unsigned)NO,256,0,s0>>>(dC,dRD+cls_off[P_SEQ],dOD,dErr); })); }
+        mF=median_ms(tF); mFS=median_ms(tFS); if(!fok){ mF=-2; mFS=-2; }
+        { const uint32_t z0[4]={0u,0xffffffffu,0u,0xffffffffu}; CK(cudaMemcpy(dErr,z0,16,cudaMemcpyHostToDevice)); lit(s0); unpack(s0); CK(cudaStreamSynchronize(s0)); }
+        printf("[fused] lit + unpack %.3f ms (lit %.3f + unpack %.3f; seq piece %.3f + bases %.3f) -> fused %.3f ms (seq+bases kernel %.3f); on-device %.3f -> %.3f ms\n",
+            mL+mU,mL,mU,mLp[P_SEQ],mUs,mF,mFS,mD,mT+mF+mM);
+    } else printf("[fused] not applicable (literal chunks > 64 KiB, zstd DNA chunks, or no open chunks)\n");
 
     // ---- pipeline: NB batches of frames in order; H2D of batch k+1 on s1 overlaps zstd of batch k on s0
     // (the pieces follow the frames in dC and arrive with the last batch)
@@ -726,9 +770,10 @@ int main(int argc, char** argv){
     // then: chosen path ms (stream pipeline, or sequential when --pipeline=auto declines), H2D pageable GB/s,
     // H2D pinned GB/s, batches of the stream pipeline (0 = sequential); dense-lit ms, dense on-device estimate ms,
     // dense-lit differing bytes (-1 = not run); dense2-lit ms byte table, ms nibble table, ms cum compare, v2 on-device estimate ms,
+    // dense2 differing bytes; fused lit+unpack ms, fused seq+bases kernel ms (-1 = not applicable, -2 = fused output differs)
     // dense2-lit differing bytes + framing errors (-1 = not run)
-    printf("ROW\t%s\t%zu\t%s\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.2f\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.1f\t%.1f\t%d\t%.3f\t%.3f\t%lld\t%.3f\t%.3f\t%.3f\t%.3f\t%lld\n",
+    printf("ROW\t%s\t%zu\t%s\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.2f\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.1f\t%.1f\t%d\t%.3f\t%.3f\t%lld\t%.3f\t%.3f\t%.3f\t%.3f\t%lld\t%.3f\t%.3f\n",
         argv[1],a.size(),tmode,lmode,mT,mL,mU,mM,mD,seq,orig/mD/1e6,ok?"bit-perfect":"MISMATCH",
-        mLz,mLp[P_SEQ],mLp[P_CSE],mLp[P_GAP],mLp[P_VAL],mLp[P_PLAIN],mUd,mUs,mUc,mUe,mAuto,gbPg,gbPn,KR,mR1,mR1D,r1bad,mR2[0],mR2[1],mR2[2],mR2D,r2bad);
+        mLz,mLp[P_SEQ],mLp[P_CSE],mLp[P_GAP],mLp[P_VAL],mLp[P_PLAIN],mUd,mUs,mUc,mUe,mAuto,gbPg,gbPn,KR,mR1,mR1D,r1bad,mR2[0],mR2[1],mR2[2],mR2D,r2bad,mF,mFS);
     return ok?0:5;
 }
