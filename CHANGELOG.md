@@ -4,6 +4,22 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
+## v2.2.1 — 2026-09-30
+
+Archive bytes identical to 2.2.0 (compared on silesia, enwik8 and chr1, levels 1-3, 1 and 8 threads,
+default / open / interactive profiles: 54 of 54 byte-identical; fixtures unchanged).
+
+- fixed: the encoder did not keep to its thread budget. With threads=1 its entropy stage still ran the
+  three token streams on three threads and the literal lanes on up to the CPU count (lzbench `-I1`:
+  146 % CPU; level 3 on silesia 304 MB/s unpinned against 195 MB/s on one core). Now the literal lanes,
+  the token streams and the LZ workers share the call's budget, the caller being one of the workers:
+  threads=1 starts no thread at all. Claim `head_enc_threads` (24 round-trips at threads=1 over four
+  profiles, DNA and text, levels 1-3, compress + decompress + region: 0 threads started). Multi-threaded
+  encoding unchanged (silesia -2, 8 threads, 0.77 s against 0.78 s).
+- The single-thread compression figures published with 2.2.0 for lzbench (level 1 96.1, level 2 71.6,
+  level 3 305 MB/s on silesia) overstated one core for the same reason; on one core they are 86.1 / 66.2 /
+  195 MB/s. Decompression was not affected (one thread at threads=1 since 2.1.0).
+
 ## v2.2.0 — 2026-09-30
 
 DOI: [10.5281/zenodo.23061934](https://doi.org/10.5281/zenodo.23061934)

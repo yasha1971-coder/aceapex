@@ -71,6 +71,10 @@ else printf 'head_api_roundtrip\tfail\tbuild failed: %s\n' "$(head -c 150 $T/api
 if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/api_cc scripts/api_concurrent.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/apic.err; then
   $T/api_cc 2>/dev/null || true
 else printf 'head_api_concurrent\tfail\tbuild failed: %s\n' "$(head -c 150 $T/apic.err | tr '\n\t' '  ')"; fi
+# thread budget: with threads=1 compress, decompress and region start no thread (2.2.1)
+if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/api_th scripts/api_threads.cpp -lzstd -lpthread 2>$T/apit.err; then
+  $T/api_th 2>/dev/null || true
+else printf 'head_enc_threads\tfail\tbuild failed: %s\n' "$(head -c 150 $T/apit.err | tr '\n\t' '  ')"; fi
 # python layer over the same fixtures, without installing: ctypes loads a fresh .so
 if python3 -c "import pytest" 2>/dev/null; then
   if ${CC:-gcc} -std=c99 -O2 -fPIC -shared -Ic -o $T/libaceapex_decode.so c/aceapex_decode.c -lzstd 2>/dev/null \
