@@ -35,7 +35,7 @@ namespace agp {
 /* layouts identical to RansDesc / OpenDesc / DnaDesc in aceapex_gpu_kernels.cuh (pointer fields hold
    offsets into d_temp; UINT64_MAX = null) */
 struct Rans { uint64_t src, dst, n; uint32_t csz, mode, pad, res; };          /* pad: piece class */
-struct Open { uint64_t seq, cse, gap, val, dst, ends, nrun, raw; uint32_t ncse, ngap, nexc, res; };
+struct Open { uint64_t seq, cse, gap, val, dst, ends, nrun, epos, raw; uint32_t ncse, ngap, nexc, res; };   /* epos: exception positions */
 struct Dna  { uint64_t seq, cse, gap, val, dst, raw; uint32_t nexc, res; };
 /* sizes are 64-bit in every descriptor; the per-chunk step helpers (ax_rans_warp.h, ax_open_warp.h) count in
    32 bits, so a chunk, piece or compressed piece above MAXC is refused here (E_STREAM) */
@@ -61,7 +61,7 @@ struct Plan {
     bool contiguous = true;                                    /* block slices back to back in every stream (range decode needs it) */
     uint64_t max_osz = 0, nv_out_total = 0, nv_temp = 0;
     /* temp layout */
-    uint64_t o_s[4], o_scr, o_os, o_ends, o_nrun, o_err, o_ctr, o_nvcp, o_nvop, o_nvcs, o_nvos, o_nvact, o_nvst, o_nvtmp,
+    uint64_t o_s[4], o_scr, o_os, o_ends, o_nrun, o_epos, o_err, o_ctr, o_nvcp, o_nvop, o_nvcs, o_nvos, o_nvact, o_nvst, o_nvtmp,
              o_rans, o_open, o_dna, o_hash, temp_bytes;
 };
 static inline uint64_t key(uint32_t st, uint64_t chunk) { return ((uint64_t)st << 48) | chunk; }
@@ -144,7 +144,7 @@ static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt
     P.NT = P.nv.size();
     /* literal stream: FSE layout bit 62 required (as the GPU tool) */
     std::vector<uint64_t> scr_off;                      /* zstd DNA scratch sub-buffers: (offset, size) */
-    uint64_t scr = 0, oscr = 0, nends = 0;
+    uint64_t scr = 0, oscr = 0, nends = 0, nepos = 0;
     {
         const uint8_t* z = a + zoff[0];
         if (zsz[0] < 8) { if (P.orig) return E_STREAM; }
@@ -172,8 +172,8 @@ static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt
                     uint64_t off[4];
                     for (int q = 0; q < 4; q++) { off[q] = oscr; oscr += al((uint64_t)Q.n[q] + 64);
                         if (Q.n[q]) { P.rans.push_back({cpos + 1 + Q.off[q], (6ull << 56) | off[q], Q.n[q], Q.h[q], Q.mode[q], (uint32_t)(C_SEQ + q), 0}); P.rans_key.push_back(key(0, t)); } }
-                    Open d; d.seq = off[0]; d.cse = off[1]; d.gap = off[2]; d.val = off[3]; d.dst = dst0; d.ends = nends; d.nrun = P.open.size();
-                    d.raw = raw; d.res = 0; d.ncse = Q.ncse; d.ngap = Q.ngap; d.nexc = Q.nexc; nends += Q.ncse;
+                    Open d; d.seq = off[0]; d.cse = off[1]; d.gap = off[2]; d.val = off[3]; d.dst = dst0; d.ends = nends; d.nrun = P.open.size(); d.epos = nepos;
+                    d.raw = raw; d.res = 0; d.ncse = Q.ncse; d.ngap = Q.ngap; d.nexc = Q.nexc; nends += Q.ncse; nepos += Q.nexc;
                     P.open.push_back(d); P.open_key.push_back(t); continue;
                 }
                 if (tagged && csz && c[0] == 3) {
@@ -218,7 +218,7 @@ static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt
     uint64_t t = 0;
     for (int s = 0; s < 4; s++) { P.o_s[s] = t; t += al(P.ssz[s] + 256); }
     P.o_scr = t; t += al(scr + 256); P.o_os = t; t += al(oscr + 256);
-    P.o_ends = t; t += al(4 * (nends + 1)); P.o_nrun = t; t += al(4 * (P.open.size() + 1));
+    P.o_ends = t; t += al(4 * (nends + 1)); P.o_nrun = t; t += al(4 * (P.open.size() + 1)); P.o_epos = t; t += al(4 * (nepos + 1));
     P.o_err = t; t += 256; P.o_ctr = t; t += 256;
     const uint64_t N = P.nv.size();
     P.o_nvcp = t; t += al(8 * N + 8); P.o_nvop = t; t += al(8 * N + 8); P.o_nvcs = t; t += al(8 * N + 8);
@@ -235,7 +235,7 @@ static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt
     for (auto& r : P.raw) r.dst = res(r.dst);
     for (auto& j : P.nv) j.out_off = (j.out_off >> 56) ? res(j.out_off) : P.o_s[0] + j.out_off;
     for (auto& d : P.open) { d.seq += P.o_os; d.cse += P.o_os; d.gap += P.o_os; d.val += P.o_os; d.dst += P.o_s[0];
-        d.ends = P.o_ends + 4 * d.ends; d.nrun = P.o_nrun + 4 * d.nrun; }
+        d.ends = P.o_ends + 4 * d.ends; d.nrun = P.o_nrun + 4 * d.nrun; d.epos = P.o_epos + 4 * d.epos; }
     for (auto& d : P.dna) { d.seq += P.o_scr; d.cse += P.o_scr; if (d.gap != NUL) d.gap += P.o_scr; if (d.val != NUL) d.val += P.o_scr; d.dst += P.o_s[0]; }
     return E_OK;
 }

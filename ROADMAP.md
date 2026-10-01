@@ -118,6 +118,11 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+01.10 (9): AX_OPEN_EXC=1 по умолчанию — в инструменте и в библиотеке (k_open_cg: прогоны + позиции исключений в
+temp-области o_epos плана; k_open_bases_x: основания, регистр и исключения одной uint4-записью; k_open_exc больше не
+запускается); AX_OPEN_BASES удалён. gpu_plan_emu исполняет новую схему (позиции в temp), open_warp_emu сверяет её с
+эталоном. Colab: блок «== SUMMARY ==» в конце лога (commit, MODE, GPU; по архиву библиотека мс/GB/s, инструмент,
+seq/unpack/match, [open variants]; вердикт), дописывается в MyDrive/aceapex_logs/summary.txt. Судья 58/0. Ждёт Colab.
 01.10 (8): Colab af2c70c chr1: AX_OPEN_SEQ=1 seq 0.309 -> 0.238 мс (-23 %) — по умолчанию в инструменте и в
 библиотеке (k_rans<1>); AX_OPEN_BASES 0.507 -> 0.536, AX_OPEN_EXC 0.507 -> 0.516 (хуже на chr1). ncu убран (на Colab
 нет доступа к счётчикам). Скрипт Colab: QUICK по умолчанию (сборки параллельно, эмуляторы, фикстуры, chr1.open +
@@ -217,8 +222,7 @@ match 30.3, bases 7.4, seq 5.1. Архивы zstd/rans T2T зависят от l
 898 263 414; 1.4.8: 902 319 887 / 898 903 131), open одинаков.
 
 ## Дальше
-0000. t2t [open variants] (QUICK): BASES/EXC хуже и на t2t -> удалить k_open_bases_v / k_open_cg / axl_*_v из кода и эмуляторов;
-   лучше -> в библиотеку (temp-раскладка под позиции исключений).
+0000. Colab QUICK: SUMMARY, open-путь библиотеки с EXC (t2t), строки [open variants] SEQ/EXC.
 000. Colab (Blackwell): t2t.zstd флипы с VALIDATE_ZSTD — пойманы планом, без TIMEOUT; время плана с флагом на Colab.
    Сообщить NVIDIA о зависании nvCOMP (repro готов) — внешнее действие, по слову пользователя.
 00. После тега v2.2.0: публикация release/v2.2.0.md как GitHub Release, пост 4487, задание hw-apex-bench, PR lzbench — по слову.

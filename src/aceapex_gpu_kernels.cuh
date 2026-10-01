@@ -169,7 +169,7 @@ __global__ void __launch_bounds__(32*AXW_WARPS) k_rans(const uint8_t* __restrict
 // one block per chunk). Steps in src/ax_open_warp.h, judged on the CPU by
 // scripts/open_warp_emu.cpp. err[0] counts bad chunks, err[1] the lowest index; a bad chunk
 // stores 0 runs.
-struct OpenDesc { const uint8_t *seq,*cse,*gap,*val; uint8_t* dst; uint32_t* ends; uint32_t* nrun; uint64_t raw; uint32_t ncse, ngap, nexc, res; };
+struct OpenDesc { const uint8_t *seq,*cse,*gap,*val; uint8_t* dst; uint32_t* ends; uint32_t* nrun; uint32_t* epos; uint64_t raw; uint32_t ncse, ngap, nexc, res; };   // epos: exception positions (k_open_cg)
 // exclusive scan over the block of AXO_NT threads; total of all threads in `total`
 __device__ static inline uint64_t b_scan64(uint64_t v, uint64_t& total, uint64_t* sh){
     const uint32_t lane=threadIdx.x&31, w=threadIdx.x>>5, NW=AXO_NT/32; uint64_t inc=v;
@@ -207,29 +207,25 @@ __global__ void __launch_bounds__(256) k_open_bases(const OpenDesc* __restrict__
     const OpenDesc c=d[blockIdx.x]; const uint32_t g=blockIdx.y*blockDim.x+threadIdx.x; const uint32_t R=*c.nrun;
     if(R && 16ull*g<c.raw) axl_bases16(g,c.seq,c.ends,R,(uint32_t)c.raw,c.dst);   // R = 0: a bad chunk (k_open_cse), nothing written
 }
-// AX_OPEN_BASES / AX_OPEN_EXC (ax_open_warp.h, variants): lanes 0 and 1 find the runs at the first and last
-// position of the warp's 512, lanes 2 and 3 the exceptions there (X 1), every lane searches between them; X 1 puts
-// the exceptions (positions from k_open_cg) into the 16-byte store. epos/eoff: exception positions of all chunks,
-// chunk k's from eoff[k].
-template<int X>
-__global__ void __launch_bounds__(256) k_open_bases_v(const OpenDesc* __restrict__ d, const uint32_t* __restrict__ epos_all, const uint64_t* __restrict__ eoff){
+// Bases with case and exceptions in one 16-byte store per thread (AX_OPEN_EXC, default since 01.10; ax_open_warp.h): lanes
+// 0 and 1 find the runs at the first and last position of the warp's 512, lanes 2 and 3 the exceptions there (positions
+// from k_open_cg), every lane searches only between them; the 4 packed bytes of 16 positions are one 32-bit load.
+__global__ void __launch_bounds__(256) k_open_bases_x(const OpenDesc* __restrict__ d){
     const OpenDesc c=d[blockIdx.x]; const uint32_t lane=threadIdx.x&31, g=blockIdx.y*blockDim.x+threadIdx.x; const uint32_t R=*c.nrun;
-    if(!R || c.raw>AXW_MAXN) return;                                   // block-uniform: a chunk k_open_cse rejected
+    if(!R || c.raw>AXW_MAXN) return;                                   // block-uniform: a chunk k_open_cg rejected
     const uint32_t raw=(uint32_t)c.raw, first=16*(g-lane);
     if(first>=raw) return;                                             // warp-uniform
-    const uint32_t last=min(first+511u,raw-1);
-    const uint32_t* ep = X ? epos_all+eoff[blockIdx.x] : nullptr; const uint32_t ne = X ? c.nexc : 0;
+    const uint32_t last=min(first+511u,raw-1), ne=c.nexc; const uint32_t* ep=c.epos;
     uint32_t t=0;
     if(lane==0) t=axl_run_of(c.ends,R,first); else if(lane==1) t=axl_run_of(c.ends,R,last);
-    else if(X && lane==2) t=axl_exc_in(ep,0,ne,first); else if(X && lane==3) t=axl_exc_in(ep,0,ne,last+1);
+    else if(lane==2) t=axl_exc_in(ep,0,ne,first); else if(lane==3) t=axl_exc_in(ep,0,ne,last+1);
     const uint32_t jlo=__shfl_sync(0xffffffffu,t,0), jhi=__shfl_sync(0xffffffffu,t,1), elo=__shfl_sync(0xffffffffu,t,2), ehi=__shfl_sync(0xffffffffu,t,3);
     const uint32_t i0=16*g; if(i0>=raw) return;
-    const uint32_t j=axl_run_in(c.ends,jlo,jhi,i0);
-    axl_bases16_v(g,c.seq,c.ends,R,raw,c.dst,j, ep, X?ehi:0, c.val, X?axl_exc_in(ep,elo,ehi,i0):0);
+    axl_bases16_v(g,c.seq,c.ends,R,raw,c.dst,axl_run_in(c.ends,jlo,jhi,i0), ep, ehi, c.val, axl_exc_in(ep,elo,ehi,i0));
 }
 // AX_OPEN_EXC: case runs (as k_open_cse) and then, in the same block, the exception positions (the parse of
-// k_open_exc writing epos instead of the bytes); k_open_bases_v<1> writes the bytes
-__global__ void __launch_bounds__(AXO_NT) k_open_cg(const OpenDesc* __restrict__ d, uint32_t* __restrict__ epos_all, const uint64_t* __restrict__ eoff, uint32_t* __restrict__ err){
+// k_open_exc writing c.epos instead of the bytes); k_open_bases_x writes the bytes
+__global__ void __launch_bounds__(AXO_NT) k_open_cg(const OpenDesc* __restrict__ d, uint32_t* __restrict__ err){
     __shared__ uint64_t sh[AXO_NT/32];
     const uint32_t k=blockIdx.x, tid=threadIdx.x; const OpenDesc c=d[k];
     bool bad= c.raw>AXW_MAXN; const uint32_t raw=(uint32_t)(bad?0:c.raw);
@@ -245,7 +241,7 @@ __global__ void __launch_bounds__(AXO_NT) k_open_cg(const OpenDesc* __restrict__
       if(tid==0){ *c.nrun = any?0:jb; if(any){ atomicAdd(err,1u); atomicMin(err+1,k); } }
       if(any) return; }                                                // block-uniform
     if(!c.nexc) return;
-    { const uint8_t* b=c.gap; const uint32_t n=c.ngap; uint32_t* ep=epos_all+eoff[k]; uint64_t carry=0; uint32_t jb=0;
+    { const uint8_t* b=c.gap; const uint32_t n=c.ngap; uint32_t* ep=c.epos; uint64_t carry=0; uint32_t jb=0;
       for(uint32_t base=0; base<n; base+=AXO_NT){
           const uint32_t t=base+tid; const bool term=axl_term(t,b,n); const uint32_t v=axl_value(t,b,term,bad);
           uint64_t total; const uint64_t ex=b_scan64(term?(AXO_KEY_J|v):0,total,sh);

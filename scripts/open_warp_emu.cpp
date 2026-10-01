@@ -79,9 +79,9 @@ static int emu_decode(const uint8_t* s, size_t sz, uint8_t* dst, uint32_t raw) {
     return bad ? -1 : 0;
 }
 
-// the variants of k_open_bases_v (AX_OPEN_BASES: X 0, then k_open_exc; AX_OPEN_EXC: X 1, positions from k_open_cg):
-// warps of 32 threads x 16 positions, lanes 0-3 bracket the runs / exceptions of the warp's 512 positions
-static int emu_decode_v(const uint8_t* s, size_t sz, uint8_t* dst, uint32_t raw, int X) {
+// the default device path since 01.10 (AX_OPEN_EXC): k_open_cg (case runs, then exception positions), k_open_bases_x
+// (warps of 32 threads x 16 positions, lanes 0-3 bracket the runs / exceptions of the warp's 512 positions)
+static int emu_decode_v(const uint8_t* s, size_t sz, uint8_t* dst, uint32_t raw, int X = 1) {
     AxoParts P;
     if (axo_parse(s, sz, raw, &P)) return -1;
     std::vector<uint8_t> part[4];
@@ -127,11 +127,11 @@ static int emu_decode_v(const uint8_t* s, size_t sz, uint8_t* dst, uint32_t raw,
 
 static uint64_t g_ok = 0, g_rej = 0, g_bytes = 0, g_var = 0;
 static int cmp_chunk(const uint8_t* c, size_t sz, uint32_t raw) {
-    std::vector<uint8_t> a(raw + 1, 0xAA), e(raw + 1, 0x55), v0(raw + 1, 0x11), v1(raw + 1, 0x22);
+    std::vector<uint8_t> a(raw + 1, 0xAA), e(raw + 1, 0x55), v1(raw + 1, 0x22);
     int ra = axo_dna_decode(c, sz, a.data(), raw), re = emu_decode(c, sz, e.data(), raw);
-    int r0 = emu_decode_v(c, sz, v0.data(), raw, 0), r1 = emu_decode_v(c, sz, v1.data(), raw, 1); g_var += 2;
-    if (ra != re || ra != r0 || ra != r1) return 1;
-    if (ra == 0) { if (memcmp(a.data(), e.data(), raw) || memcmp(a.data(), v0.data(), raw) || memcmp(a.data(), v1.data(), raw)) return 1; g_ok++; g_bytes += raw; } else g_rej++;
+    int r1 = emu_decode_v(c, sz, v1.data(), raw); g_var++;
+    if (ra != re || ra != r1) return 1;
+    if (ra == 0) { if (memcmp(a.data(), e.data(), raw) || memcmp(a.data(), v1.data(), raw)) return 1; g_ok++; g_bytes += raw; } else g_rej++;
     return 0;
 }
 static uint64_t rd64(const uint8_t* p) { uint64_t v; memcpy(&v, p, 8); return v; }
@@ -226,7 +226,7 @@ int main(int argc, char** argv) {
             }
         }
     }
-    printf("head_open_warp_emu\t%s\tGPU open-pack steps (ax_open_warp.h, block rounds of 256) == axo_dna_decode, also the AX_OPEN_BASES / AX_OPEN_EXC variants (%llu variant decodes): %llu round-trips, %llu archive chunks, %llu crafted streams, %llu mutations (%llu accepted, %llu rejected by both), %llu bytes, %llu mismatches\n",
+    printf("head_open_warp_emu\t%s\tGPU open-pack steps (ax_open_warp.h, block rounds of 256) == axo_dna_decode, old path (cse, bases, exc) and the default k_open_cg + k_open_bases_x (%llu decodes of the latter): %llu round-trips, %llu archive chunks, %llu crafted streams, %llu mutations (%llu accepted, %llu rejected by both), %llu bytes, %llu mismatches\n",
            (bad == 0 && rt > 0 && fx > 0 && crafted > 0) ? "pass" : "fail", (unsigned long long)g_var,
            (unsigned long long)rt, (unsigned long long)fx, (unsigned long long)crafted, (unsigned long long)mut,
            (unsigned long long)g_ok, (unsigned long long)g_rej, (unsigned long long)g_bytes, (unsigned long long)bad);

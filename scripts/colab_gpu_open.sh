@@ -258,7 +258,25 @@ AR=$(grep -c '^exitapi ' $L); AOK=$(grep -c '^exitapi 0 ' $L); PE=$(grep -c $'^h
 echo "C ABI: $AOK of $AR archives bit-perfect with every range; plan emulator $PE/1" | tee -a $L
 grep '^exitapi [1-9]' $L | sed 's/^/  FAILED: /' | tee -a $L
 NTO=$(grep -c '^TIMEOUT ' $L); echo "steps over the time limit: $NTO" | tee -a $L
+VERDICT=FAILED
 [ "$N" = "$RUN" ] && [ "$E" = 2 ] && [ "$F" = 5 ] && [ "$AOK" = "$AR" ] && [ "$PE" = 1 ] && grep -q "^ROW	$W/chr1.open" $L \
-  && ! grep -q 'archive rejected\|ROUND-TRIP FAILED\|^example .*FAILED\|shared library build FAILED' $L && [ "$NTO" = 0 ] \
-  && echo "RESULT: all passes bit-perfect on $GPU" | tee -a $L \
-  || { echo "!!! NOT PASSED on $GPU - valid figures only in bit-perfect rows" | tee -a $L; exit 1; }
+  && ! grep -q 'archive rejected\|ROUND-TRIP FAILED\|^example .*FAILED\|shared library build FAILED' $L && [ "$NTO" = 0 ] && VERDICT=PASSED
+[ $VERDICT = PASSED ] && echo "RESULT: all passes bit-perfect on $GPU" | tee -a $L \
+  || echo "!!! NOT PASSED on $GPU - valid figures only in bit-perfect rows" | tee -a $L
+# == SUMMARY == (<= 15 lines): commit, mode, GPU; per archive library / tool on-device ms, stages, [open variants]; verdict.
+# Also appended to MyDrive/aceapex_logs/summary.txt when Drive is mounted.
+SIZES=""; for X in $CORP; do [ -s $W/$X.fa ] && SIZES="$SIZES $X=$(stat -c%s $W/$X.fa)"; done
+{ echo "== SUMMARY == $(date -u +%FT%TZ)"
+  echo "commit $(git rev-parse --short HEAD) | MODE $MODE | $GPU"
+  awk -F'\t' -v w="$W/" -v sizes="$SIZES" '
+    BEGIN{ n=split(sizes,a," "); for(i=1;i<=n;i++){ split(a[i],kv,"="); sz[kv[1]]=kv[2] } }
+    $1=="ROW"{ k=$2; sub(w,"",k); sub(/\.aet$/,"",k); if(!(k in seen)){ seen[k]=1; ord[++m]=k } t[k]=$10; sq[k]=$15; un[k]=$8; ma[k]=$9; ck[k]=$13 }
+    $1=="APIROW"{ k=$2; sub(w,"",k); sub(/\.aet$/,"",k); api[k]=$4 }
+    $1=="OPENVAR"{ k=$2; sub(w,"",k); sub(/\.aet$/,"",k); var[k]=sprintf("; variants seq %.3f->%.3f, unpack %.3f->%.3f (EXC)%s", $3, $4, $5, $6, ($7=="1"?"":" DIFFERS")) }
+    END{ for(i=1;i<=m && i<=11;i++){ k=ord[i]; x=k; sub(/\..*/,"",x)
+           lib = (k in api) ? sprintf("library %.3f ms (%.1f GB/s), ", api[k], (api[k]>0 && (x in sz)) ? sz[x]/api[k]/1e6 : 0) : ""
+           printf "%s: %stool %.3f ms; seq %s, unpack %.3f, match %.3f ms; %s%s\n", k, lib, t[k], sq[k], un[k], ma[k], ck[k], var[k] } }' $L
+  echo "verdict $VERDICT"; } > $W/summary.txt
+cat $W/summary.txt | tee -a $L
+[ $HAVE_DRIVE = 1 ] && mkdir -p /content/drive/MyDrive/aceapex_logs && cat $W/summary.txt >> /content/drive/MyDrive/aceapex_logs/summary.txt
+[ $VERDICT = PASSED ] || exit 1
