@@ -7,9 +7,10 @@
 // selection misses leaves zeros and shows up as a difference. Then byte mutations of each archive: the plan
 // builder and the executor must refuse or finish, never read or write outside their buffers.
 // Inputs: the conformance fixtures, the chr1 4 MiB fixture slice, and that slice / a text buffer encoded here
-// in the default, interactive, rANS-token and open profiles. Prints two claim lines (head_gpu_plan_emu, head_gpu_flip_emu).
+// in the default, interactive, rANS-token and open profiles. Prints three claim lines (head_gpu_plan_emu, head_gpu_flip_emu, head_gpu_zstd_validate).
 // Build: g++ -std=c++17 -O2 -Isrc scripts/gpu_plan_emu.cpp src/aceapex_api.cpp -lzstd -lpthread
 #include "aceapex.h"
+#define AGP_WITH_ZSTD   // agp::validate_zstd (ACEAPEX_GPU_VALIDATE_ZSTD)
 #include "aceapex_gpu_plan.h"
 #include "ax_vec.h"
 #include <zstd.h>
@@ -186,6 +187,29 @@ int main(int argc, char** argv) {
     { uint8_t lit[128] = {0}, off[8] = {1}, len[8] = {0xF0, 0xFF, 0xFF, 0xFF, 0x0F}, cmd[2] = {99, 0xFE}, dst[256];
       wout = Exec::match(lit, off, len, cmd, 100, 1, 5, 2, dst, 256, wsteps, wlim, woob); }
     const bool wrap_ok = wout == 100 && woob == 0 && wlim == 0;
+    // ACEAPEX_GPU_VALIDATE_ZSTD: every intact archive passes; the saved T2T frame nvCOMP 5.3 hangs on passes the header
+    // check and is refused; byte flips inside zstd frames: refused, or every frame of the accepted archive decodes to its size
+    int vz_arch = 0, vz_bad_intact = 0, vz_flips = 0, vz_ref = 0, vz_leak = 0; uint64_t vz_frames = 0; bool vz_repro = false;
+    { std::vector<size_t> zx;
+      for (size_t i = 0; i < arch.size(); i++) { agp::Plan Q; if (agp::build(arch[i].second.data(), arch[i].second.size(), Q, nvt_cpu) || Q.nv.empty()) continue;
+          zx.push_back(i); vz_arch++; vz_frames += Q.nv.size(); if (agp::validate_zstd(arch[i].second.data(), Q, 4)) vz_bad_intact++; }
+      auto rd = [](const char* p) { std::vector<uint8_t> v; FILE* f = fopen(p, "rb");
+          if (!f) return v;
+          fseek(f, 0, SEEK_END); v.resize(ftell(f)); fseek(f, 0, SEEK_SET);
+          if (fread(v.data(), 1, v.size(), f) != v.size()) v.clear();
+          fclose(f); return v; };
+      auto fo = rd("verify/repro/t2t_frame150180.orig.zst"), ff = rd("verify/repro/t2t_frame150180.flip.zst");
+      if (!fo.empty() && fo.size() == ff.size()) { agp::Plan R1; R1.nv.push_back({0, fo.size(), 0, 8192}); R1.max_osz = 8192;
+          vz_repro = !agp::zstd_frame_check(fo.data(), fo.size(), 8192) && !agp::zstd_frame_check(ff.data(), ff.size(), 8192)
+                     && agp::validate_zstd(fo.data(), R1, 1) == 0 && agp::validate_zstd(ff.data(), R1, 1) == 1; }
+      for (int f = 0; f < 400 && !zx.empty(); f++) {
+          const auto& A = arch[zx[f % zx.size()]].second; agp::Plan Q; agp::build(A.data(), A.size(), Q, nvt_cpu);
+          const agp::Nv& J = Q.nv[rng() % Q.nv.size()]; std::vector<uint8_t> z = A; z[J.in_off + rng() % J.csz] ^= (uint8_t)(1 + rng() % 255); vz_flips++;
+          agp::Plan Q2; if (agp::build(z.data(), z.size(), Q2, nvt_cpu) || agp::validate_zstd(z.data(), Q2, 4)) { vz_ref++; continue; }
+          std::vector<uint8_t> T3(Q2.temp_bytes), o3(Q2.orig + 64); Exec Z(Q2, z.data(), T3); Z.run(nullptr, o3.data()); if (Z.err & 4) vz_leak++; } }
+    const bool vok = vz_arch >= 4 && vz_bad_intact == 0 && vz_repro && vz_flips == 400 && vz_leak == 0;
+    printf("head_gpu_zstd_validate\t%s\t%d archives with zstd frames (%llu frames) pass the validation (%d refused); the saved T2T frame (verify/repro, nvCOMP 5.3 does not finish on it) passes the header check and is %s; %d byte flips inside zstd frames: %d archives refused, %d accepted, %d of them with a frame that does not decode to its size\n",
+           vok ? "pass" : "fail", vz_arch, (unsigned long long)vz_frames, vz_bad_intact, vz_repro ? "refused" : "NOT REFUSED", vz_flips, vz_ref, vz_flips - vz_ref, vz_leak);
     const bool ok = archives >= 12 && bad == 0 && rbad == 0;
     const bool fok = flips == 1000 && flimit == 0 && foob == 0 && fsilent == 0 && wrap_ok;
     printf("head_gpu_plan_emu\t%s\t%d archives decoded through the plan bit-perfect (%d bad; AX_VEC 16-byte paths: %llu unpack stores, %llu match copies), %d ranges on a zeroed temp (%d bad), %d refused by the planner, %d mutations (%d refused, the rest ran inside their buffers)%s\n",
@@ -193,5 +217,5 @@ int main(int argc, char** argv) {
     printf("head_gpu_flip_emu\t%s\t%d byte flips of the streams under the plan of the intact archive (as on the device), a failed zstd frame leaving random bytes: %llu match steps of %llu allowed, %llu over the step limit, %llu copies outside a block; %llu flagged by status, %llu more by XXH3, %llu decoded to the original, %llu silent; length 2^32-16 after 100 bytes %s\n",
            fok ? "pass" : "fail", flips, (unsigned long long)fsteps, (unsigned long long)fbound, (unsigned long long)flimit, (unsigned long long)foob,
            (unsigned long long)fcaught, (unsigned long long)fhash, (unsigned long long)fsame, (unsigned long long)fsilent, wrap_ok ? "refused" : "NOT REFUSED");
-    return ok && fok ? 0 : 1;
+    return ok && fok && vok ? 0 : 1;
 }

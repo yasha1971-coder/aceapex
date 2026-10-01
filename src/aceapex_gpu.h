@@ -23,6 +23,11 @@
  * A plan is read-only after creation: several streams may use it at once, each with its own temp.
  * Archives of every profile; zstd frames (the default and rANS-token profiles) need the library built
  * with nvCOMP (-DACEAPEX_GPU_NVCOMP), the open profile (AX_PROFILE=open) needs nothing but CUDA.
+ *
+ * Untrusted archives: the open profile, or plan_create with ACEAPEX_GPU_VALIDATE_ZSTD. nvCOMP 5.3 does not
+ * finish on some corrupt zstd frames (verify/repro/README.md: a kernel that never returns cannot be stopped,
+ * so no status can report it); the flag decodes every zstd frame with libzstd on the host first and refuses
+ * the archive if one fails, so nvCOMP only ever sees frames libzstd decoded to their exact size.
  */
 #ifndef ACEAPEX_GPU_H
 #define ACEAPEX_GPU_H
@@ -51,10 +56,14 @@ typedef struct aceapex_gpu_plan aceapex_gpu_plan;
 #define ACEAPEX_GPU_STATUS_HASH   16   /* ACEAPEX_GPU_VERIFY_XXH3: XXH3_64bits of the output != the archive header */
 #define ACEAPEX_GPU_STATUS_LIMIT  32   /* a kernel loop hit its step limit (a broken invariant: stopped, output invalid) */
 
+/* flags of aceapex_gpu_plan_create */
+#define ACEAPEX_GPU_VALIDATE_ZSTD  1   /* decode every zstd frame with libzstd on the host (all hardware threads);
+                                          one that fails or has another size: NULL, ACEAPEX_GPU_E_ARCHIVE */
+
 /* flags of aceapex_gpu_decompress_async */
 #define ACEAPEX_GPU_VERIFY_XXH3    1   /* hash the whole output on the device and compare with the header (full decode only) */
 
-aceapex_gpu_plan* aceapex_gpu_plan_create(const void* h_archive, size_t in_bytes);
+aceapex_gpu_plan* aceapex_gpu_plan_create(const void* h_archive, size_t in_bytes, unsigned flags);
 int     aceapex_gpu_last_error(void);                        /* of the last plan_create on this thread */
 size_t  aceapex_gpu_temp_bytes(const aceapex_gpu_plan* plan);
 size_t  aceapex_gpu_range_temp_bytes(const aceapex_gpu_plan* plan, uint64_t max_length);

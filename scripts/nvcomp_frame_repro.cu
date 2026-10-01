@@ -1,6 +1,6 @@
 // nvcomp_frame_repro.cu - one zstd frame through nvCOMP's batched decoder alone (batch of 1), against libzstd on
 // the CPU: does nvCOMP finish, which status, which size, the same bytes as libzstd. A watchdog polls the stream
-// (AX_WATCHDOG seconds, default 60): past it the line TIMEOUT and exit 4 (a hung kernel cannot be stopped).
+// (AX_WATCHDOG seconds, default 60): past it the line NVCOMP HANG and exit 4 (a hung kernel cannot be stopped).
 // Inputs: verify/repro/*.zst (verify/repro/README.md). Colab: scripts/colab_gpu_open.sh, before gpu_api_test.
 // Build: nvcc -O3 -arch=sm_XX -I<nvcomp>/include scripts/nvcomp_frame_repro.cu -l:libnvcomp.so.5 -lzstd
 // Usage: nvcomp_frame_repro <frame.zst> <decoded size> [<frame.zst> <decoded size> ...]
@@ -43,7 +43,7 @@ int main(int argc, char** argv){
         const auto t0=std::chrono::steady_clock::now();
         const nvcompStatus_t q=nvcompBatchedZstdDecompressAsync(dcp,dcs,dos,dact,1,dtmp,tmp,dop,nvcompBatchedZstdDecompressDefaultOpts,dst,s);
         if(q!=nvcompSuccess){ printf("  nvCOMP launch: status %d\n",(int)q); continue; }
-        if(!wait(s,lim)){ printf("TIMEOUT nvCOMP on %s: not finished in %.0f s (nvCOMP hangs on this frame alone)\n",argv[a],lim); fflush(stdout); _exit(4); }
+        if(!wait(s,lim)){ printf("NVCOMP HANG on %s: not finished in %.0f s (nvCOMP alone on this frame; known for nvCOMP 5.3.0.16, verify/repro/README.md)\n",argv[a],lim); fflush(stdout); _exit(4); }
         nvcompStatus_t hs; size_t act=0; std::vector<uint8_t> g(osz);
         CK(cudaMemcpy(&hs,dst,sizeof hs,cudaMemcpyDeviceToHost)); CK(cudaMemcpy(&act,dact,8,cudaMemcpyDeviceToHost)); CK(cudaMemcpy(g.data(),dout,osz,cudaMemcpyDeviceToHost));
         printf("  nvCOMP: finished in %.1f ms, status %d, decoded %zu B%s\n",std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count(),(int)hs,act,

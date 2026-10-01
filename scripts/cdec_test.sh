@@ -82,7 +82,7 @@ else printf 'head_gpu_xxh3_emu\tfail\tbuild failed: %s\n' "$(head -c 150 $T/xse.
 # the GPU library's plan (src/aceapex_gpu_plan.h) executed job by job on the CPU: full, ranges, mutations
 if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/gpu_plan_emu scripts/gpu_plan_emu.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/gpe.err; then
   $T/gpu_plan_emu 2>/dev/null || true
-else printf 'head_gpu_plan_emu\tfail\tbuild failed: %s\n' "$(head -c 150 $T/gpe.err | tr '\n\t' '  ')"; printf 'head_gpu_flip_emu\tfail\tbuild failed\n'; fi
+else printf 'head_gpu_plan_emu\tfail\tbuild failed: %s\n' "$(head -c 150 $T/gpe.err | tr '\n\t' '  ')"; printf 'head_gpu_flip_emu\tfail\tbuild failed\n'; printf 'head_gpu_zstd_validate\tfail\tbuild failed\n'; fi
 # python layer over the same fixtures, without installing: ctypes loads a fresh .so
 if python3 -c "import pytest" 2>/dev/null; then
   if ${CC:-gcc} -std=c99 -O2 -fPIC -shared -Ic -o $T/libaceapex_decode.so c/aceapex_decode.c -lzstd 2>/dev/null \
