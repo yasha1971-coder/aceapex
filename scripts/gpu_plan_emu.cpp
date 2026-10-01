@@ -12,6 +12,8 @@
 #include "aceapex.h"
 #include "aceapex_gpu_plan.h"
 #include <zstd.h>
+#define XXH_INLINE_ALL
+#include "xxhash.h"
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -47,8 +49,9 @@ struct Exec {
         for (uint32_t t = 0; t < d.ngap; t++) { bool term = axl_term(t, gp, d.ngap); uint32_t v = axl_value(t, gp, term, bad);
             if (term) { sum += v; axl_exc(term, j, v, sum, d.nexc, d.raw, at(d.val), at(d.dst), bad); j++; } }
         if (axl_tail_bad(gp, d.ngap) || j != d.nexc || bad) err |= 2; }
-    static uint32_t varint(const uint8_t* b, uint32_t& p, uint32_t n) { uint32_t v = 0, s = 0;
-        while (p < n) { uint8_t c = b[p++]; if (s < 32) v |= (uint32_t)(c & 0x7F) << s; if (!(c & 0x80)) return v; s += 7; } return v; }
+    static uint32_t varint(const uint8_t* b, uint32_t& p, uint32_t n, bool& bad) {   // rd_varint: <= 5 bytes, else bad
+        uint32_t v = 0; for (uint32_t k = 0; k < 5 && p < n; k++) { uint8_t c = b[p++]; v |= (uint32_t)(c & 0x7F) << (7 * k); if (!(c & 0x80)) return v; }
+        bad = true; return 0; }
     // k_decode_g with one lane: lengths against the room left, at most cs+1 steps (else the LIMIT bit, 32);
     // steps and copies outside the block are counted for the judge
     uint64_t steps = 0, limit = 0, oob = 0;
@@ -57,17 +60,18 @@ struct Exec {
         uint32_t lp = 0, op = 0, np = 0, cp = 0, o = 0, rep[4] = {1, 2, 4, 8}, st = 0;
         while (o < n) { int type = 2; uint32_t l = 0, aux = 0; const uint32_t rem = n - o;
             if (++st > cs + 1) { limit++; break; }
+            bool vb = false;
             while (cp < cs) { uint8_t c = cmd[cp++];
                 if (c == 0xFF) { rep[0] = 1; rep[1] = 2; rep[2] = 4; rep[3] = 8; continue; }
                 if (c < 0x80) { l = c + 1u; if (l > ls - lp || l > rem) break; type = 0; aux = lp; lp += l; }
-                else if ((c & 0xC0) == 0x80) { uint32_t ri = (c >> 4) & 3, lv = c & 0x0F; if (lv == 0x0F) lv += varint(len, np, ns);
+                else if ((c & 0xC0) == 0x80) { uint32_t ri = (c >> 4) & 3, lv = c & 0x0F; if (lv == 0x0F) lv += varint(len, np, ns, vb);
                     uint32_t d = rep[ri]; if (ri) { for (int i = ri; i > 0; i--) rep[i] = rep[i - 1]; rep[0] = d; }
-                    if (lv < 0x0F && (c & 0x0F) == 0x0F) break;
+                    if (vb || (lv < 0x0F && (c & 0x0F) == 0x0F)) break;
                     if (lv > rem || lv + 6 > rem || !d || d > o) break;
                     l = lv + 6; type = 1; aux = d; }
-                else { uint32_t lv = c == 0xFE ? varint(len, np, ns) : (uint32_t)(c & 0x3F); uint32_t d = varint(off, op, os);
+                else { uint32_t lv = c == 0xFE ? varint(len, np, ns, vb) : (uint32_t)(c & 0x3F); uint32_t d = varint(off, op, os, vb);
                     rep[3] = rep[2]; rep[2] = rep[1]; rep[1] = rep[0]; rep[0] = d;
-                    if (lv > rem || lv + 6 > rem || !d || d > o) break;
+                    if (vb || lv > rem || lv + 6 > rem || !d || d > o) break;
                     l = lv + 6; type = 1; aux = d; }
                 break; }
             if (type == 2) break;
@@ -157,7 +161,7 @@ int main(int argc, char** argv) {
     // 1000 byte flips of the archive's streams under the plan of the intact archive (what the device sees: the
     // plan is built once on the host, the flips are in d_in), a failed zstd frame leaving random bytes (nvCOMP's
     // output is undefined then): no match loop over its step limit, no copy outside its block
-    int flips = 0; uint64_t fsteps = 0, fbound = 0, flimit = 0, foob = 0, fcaught = 0;
+    int flips = 0; uint64_t fsteps = 0, fbound = 0, flimit = 0, foob = 0, fcaught = 0, fhash = 0, fsame = 0, fsilent = 0;
     { std::vector<size_t> ok_ix; for (size_t i = 0; i < arch.size(); i++) { agp::Plan Q; if (!agp::build(arch[i].second.data(), arch[i].second.size(), Q, nvt_cpu) && Q.orig) ok_ix.push_back(i); }
       for (int f = 0; f < 1000 && !ok_ix.empty(); f++) {
           const auto& A = arch[ok_ix[f % ok_ix.size()]].second; agp::Plan Q; agp::build(A.data(), A.size(), Q, nvt_cpu);
@@ -166,15 +170,20 @@ int main(int argc, char** argv) {
           std::vector<uint8_t> T3(Q.temp_bytes), o3(Q.orig + 64);
           Exec Z(Q, z.data(), T3); std::mt19937_64 jr(rng()); Z.jr = &jr; Z.run(nullptr, o3.data());
           for (uint32_t b = 0; b < Q.nb; b++) fbound += agp::rd64(&Q.bo[64ull * b] + 56) + 1;
-          fsteps += Z.steps; flimit += Z.limit; foob += Z.oob; if (Z.err) fcaught++; } }
+          fsteps += Z.steps; flimit += Z.limit; foob += Z.oob;
+          // ACEAPEX_GPU_VERIFY_XXH3: the status flags or the hash of the output against the header; else the output must be the original
+          const bool hash_bad = XXH3_64bits(o3.data(), Q.orig) != Q.xxh;
+          if (Z.err) fcaught++; else if (hash_bad) fhash++;
+          else { std::vector<uint8_t> ref(Q.orig); aceapex_decompress(A.data(), A.size(), ref.data(), Q.orig);
+                 if (memcmp(ref.data(), o3.data(), Q.orig)) fsilent++; else fsame++; } } }
     // the wrap that the length check guards against: a varint length near 2^32 after 100 literal bytes
     uint64_t wsteps = 0, wlim = 0, woob = 0; uint32_t wout;
     { uint8_t lit[128] = {0}, off[8] = {1}, len[8] = {0xF0, 0xFF, 0xFF, 0xFF, 0x0F}, cmd[2] = {99, 0xFE}, dst[256];
       wout = Exec::match(lit, off, len, cmd, 100, 1, 5, 2, dst, 256, wsteps, wlim, woob); }
     const bool wrap_ok = wout == 100 && woob == 0 && wlim == 0;
-    const bool ok = archives >= 12 && bad == 0 && rbad == 0 && flips == 1000 && flimit == 0 && foob == 0 && wrap_ok;
-    printf("head_gpu_plan_emu\t%s\t%d archives decoded through the plan bit-perfect (%d bad), %d ranges on a zeroed temp (%d bad), %d refused by the planner, %d mutations (%d refused, the rest ran inside their buffers); %d stream flips under the intact plan: %llu match steps of %llu allowed, %llu over the step limit, %llu copies outside a block, %llu flagged; length 2^32-16 after 100 bytes %s%s\n",
+    const bool ok = archives >= 12 && bad == 0 && rbad == 0 && flips == 1000 && flimit == 0 && foob == 0 && fsilent == 0 && wrap_ok;
+    printf("head_gpu_plan_emu\t%s\t%d archives decoded through the plan bit-perfect (%d bad), %d ranges on a zeroed temp (%d bad), %d refused by the planner, %d mutations (%d refused, the rest ran inside their buffers); %d stream flips under the intact plan: %llu match steps of %llu allowed, %llu over the step limit, %llu copies outside a block; %llu flagged by status, %llu more by XXH3, %llu decoded to the original, %llu silent; length 2^32-16 after 100 bytes %s%s\n",
            ok ? "pass" : "fail", archives, bad, ranges, rbad, refused, mut, mref, flips, (unsigned long long)fsteps, (unsigned long long)fbound,
-           (unsigned long long)flimit, (unsigned long long)foob, (unsigned long long)fcaught, wrap_ok ? "refused" : "NOT REFUSED", fails.empty() ? "" : (";" + fails).c_str());
+           (unsigned long long)flimit, (unsigned long long)foob, (unsigned long long)fcaught, (unsigned long long)fhash, (unsigned long long)fsame, (unsigned long long)fsilent, wrap_ok ? "refused" : "NOT REFUSED", fails.empty() ? "" : (";" + fails).c_str());
     return ok ? 0 : 1;
 }

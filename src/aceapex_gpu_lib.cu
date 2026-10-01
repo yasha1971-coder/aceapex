@@ -33,15 +33,15 @@ static const unsigned TPB = 128, G = 32;
 __global__ void kg_init(uint32_t* e){ if(threadIdx.x==0){ e[0]=0; e[1]=~0u; e[2]=0; e[3]=~0u; e[4]=0; e[5]=0; e[6]=0; e[7]=0; } }
 __global__ void kg_fix_rans(const agp::Rans* t, RansDesc* d, uint32_t n, uint8_t* base){
     for(uint32_t i=blockIdx.x*blockDim.x+threadIdx.x;i<n;i+=gridDim.x*blockDim.x){ agp::Rans r=t[i];
-        RansDesc o; o.src=r.src; o.dst=base+r.dst; o.csz=r.csz; o.n=r.n; o.mode=r.mode; d[i]=o; } }
+        RansDesc o; o.src=r.src; o.dst=base+r.dst; o.n=r.n; o.csz=r.csz; o.mode=r.mode; o.cls=r.pad; o.res=0; d[i]=o; } }
 __global__ void kg_fix_open(const agp::Open* t, OpenDesc* d, uint32_t n, uint8_t* base){
     for(uint32_t i=blockIdx.x*blockDim.x+threadIdx.x;i<n;i+=gridDim.x*blockDim.x){ agp::Open r=t[i]; OpenDesc o;
         o.seq=base+r.seq; o.cse=base+r.cse; o.gap=base+r.gap; o.val=base+r.val; o.dst=base+r.dst;
-        o.ends=(uint32_t*)(base+r.ends); o.nrun=(uint32_t*)(base+r.nrun); o.raw=r.raw; o.ncse=r.ncse; o.ngap=r.ngap; o.nexc=r.nexc; d[i]=o; } }
+        o.ends=(uint32_t*)(base+r.ends); o.nrun=(uint32_t*)(base+r.nrun); o.raw=r.raw; o.ncse=r.ncse; o.ngap=r.ngap; o.nexc=r.nexc; o.res=0; d[i]=o; } }
 __global__ void kg_fix_dna(const agp::Dna* t, DnaDesc* d, uint32_t n, uint8_t* base){
     for(uint32_t i=blockIdx.x*blockDim.x+threadIdx.x;i<n;i+=gridDim.x*blockDim.x){ agp::Dna r=t[i]; DnaDesc o;
         o.seq=base+r.seq; o.cse=base+r.cse; o.gap= r.gap==agp::NUL?nullptr:base+r.gap; o.val= r.val==agp::NUL?nullptr:base+r.val;
-        o.dst=base+r.dst; o.raw=r.raw; o.nexc=r.nexc; d[i]=o; } }
+        o.dst=base+r.dst; o.raw=r.raw; o.nexc=r.nexc; o.res=0; d[i]=o; } }
 __global__ void kg_fix_nv(const agp::Nv* t, uint32_t n, const uint8_t* in, uint8_t* base, const void** cp, void** op, size_t* cs, size_t* os){
     for(uint32_t i=blockIdx.x*blockDim.x+threadIdx.x;i<n;i+=gridDim.x*blockDim.x){ agp::Nv j=t[i];
         cp[i]=in+j.in_off; op[i]=base+j.out_off; cs[i]=(size_t)j.csz; os[i]=(size_t)j.osz; } }
