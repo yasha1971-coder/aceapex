@@ -85,7 +85,8 @@ if to $TO "nvcc gpu_api_test" nvcc -std=c++17 -O3 $ARCH -Isrc -DACEAPEX_GPU_NVCO
   echo "built gpu_api_test (nvCOMP) and examples/gpu_decode (no nvCOMP), $ARCH" | tee -a $L
 else echo "BUILD FAILED gpu library" | tee -a $L; cat $W/nvcc_api.err; exit 1; fi
 # saved corrupt zstd frames (verify/repro/README.md): nvCOMP alone on each (batch of 1) against libzstd, before anything
-# else uses nvCOMP - a frame nvCOMP hangs on stops only this step (watchdog 60 s, then the step timeout)
+# else uses nvCOMP - a frame nvCOMP hangs on stops only this step (watchdog 60 s: line NVCOMP HANG, informational -
+# nvCOMP 5.3.0.16 hangs on the flipped frame; the library's guard is ACEAPEX_GPU_VALIDATE_ZSTD)
 if to $TO "nvcc nvcomp_frame_repro" nvcc -std=c++17 -O3 $ARCH $NVL -o $W/nvcomp_frame_repro scripts/nvcomp_frame_repro.cu -lzstd 2>>$W/nvcc_api.err; then
   echo "== nvcomp_frame_repro" | tee -a $L
   AX_WATCHDOG=60 to $TO "nvcomp_frame_repro" $W/nvcomp_frame_repro verify/repro/t2t_frame150180.orig.zst 8192 verify/repro/t2t_frame150180.flip.zst 8192 2>&1 | tee -a $L
