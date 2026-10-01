@@ -18,7 +18,7 @@
 // Build: nvcc -O3 -arch=sm_XX -Isrc -DACEAPEX_GPU_NVCOMP -I<nvcomp>/include scripts/gpu_api_test.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp -l:libnvcomp.so.5 -lzstd
 // Usage: gpu_api_test <archive.aet> <original> [repeats=7] [ranges=200] [flips=20]
 // Last line: APIROW <tab> archive bytes api_ms full ranges_ok ranges range16k_ms caught silent harmless plan_ms
-//            verify_ms verify_full caught_v silent_v harmless_v validate_plan_ms refused_by_plan
+//            verify_ms verify_full caught_v silent_v harmless_v validate_plan_ms refused_by_plan tile_ms tile_check
 #include "aceapex_gpu.h"
 #include "aceapex_gpu_plan.h"   // host side only: where a flip lands (zstd frame, piece) and the frame header check
 #include <cuda_runtime.h>
@@ -104,6 +104,19 @@ int main(int argc, char** argv){
     const float ver_ms=med(tv);
     printf("[api] full decode + XXH3 check on-device %.3f ms (median of %d; check adds %.3f ms, %+.1f %%): return %d, status %d, output %s\n",
         ver_ms,reps,ver_ms-api_ms,100.0*(ver_ms/api_ms-1),r,st,vfull_ok?"MATCHES OK":"DIFFERS X");
+    // AX_GPU_TILE (library reads it at plan_create): a second plan, the full decode with literals in shared memory
+    float tile_ms=-1; bool tile_ok=false;
+    { setenv("AX_GPU_TILE","1",1); aceapex_gpu_plan* tp=aceapex_gpu_plan_create(a.data(),a.size(),0); unsetenv("AX_GPU_TILE");
+      if(tp && aceapex_gpu_temp_bytes(tp)<=tb){ phase("full decode AX_GPU_TILE=1"); CK(cudaMemset(d_out,0,n));
+          r=aceapex_gpu_decompress_async(tp,d_in,d_out,d_temp,d_st,0,s); wait(s,"full decode AX_GPU_TILE"); CK(cudaGetLastError());
+          CK(cudaMemcpy(&st,d_st,4,cudaMemcpyDeviceToHost)); CK(cudaMemcpy(out.data(),d_out,n,cudaMemcpyDeviceToHost));
+          tile_ok = r==0 && st==0 && !memcmp(out.data(),orig.data(),n);
+          std::vector<float> tt; for(int i=0;i<reps;i++){ CK(cudaEventRecord(e0,s)); aceapex_gpu_decompress_async(tp,d_in,d_out,d_temp,d_st,0,s); CK(cudaEventRecord(e1,s)); wait(s,"full decode AX_GPU_TILE timed");
+              float ms; CK(cudaEventElapsedTime(&ms,e0,e1)); tt.push_back(ms); }
+          tile_ms=med(tt);
+          printf("[api] AX_GPU_TILE=1 full decode on-device %.3f ms (default %.3f ms, %+.1f %%): return %d, status %d, output %s\n",tile_ms,api_ms,100.0*(tile_ms/api_ms-1),r,st,tile_ok?"MATCHES OK":"DIFFERS X"); }
+      else printf("[api] AX_GPU_TILE=1: not applicable to this archive (open DNA packs / open plain pieces, 16 KiB blocks)\n");
+      if(tp) aceapex_gpu_plan_destroy(tp); }
     // ranges
     phase("ranges"); std::mt19937_64 rng(20261001); int rok=0; std::vector<float> t16;
     const uint64_t lens[6]={1,17,4096,16384,65536,1u<<20};
@@ -178,8 +191,8 @@ int main(int argc, char** argv){
     printf("[api] flips refused by the plan of the flipped archive%s: %d of %d\n",HP.nv.empty()?"":" (ACEAPEX_GPU_VALIDATE_ZSTD)",refused,NF);
     printf("[api] %d byte flips in the stream half of the archive: without the hash check %d caught by status, %d decoded wrong with status 0, %d harmless; with ACEAPEX_GPU_VERIFY_XXH3 %d caught, %d silent, %d harmless; no CUDA error\n",
         NF,caught[0],silent[0],same[0],caught[1],silent[1],same[1]);
-    printf("APIROW\t%s\t%zu\t%.3f\t%s\t%d\t%d\t%.3f\t%d\t%d\t%d\t%.1f\t%.3f\t%s\t%d\t%d\t%d\t%.1f\t%d\n",argv[1],a.size(),api_ms,full_ok?"bit-perfect":"MISMATCH",rok,NR,r16,caught[0],silent[0],same[0],plan_ms,
-        ver_ms,vfull_ok?"bit-perfect":"MISMATCH",caught[1],silent[1],same[1],val_ms,refused);
+    printf("APIROW\t%s\t%zu\t%.3f\t%s\t%d\t%d\t%.3f\t%d\t%d\t%d\t%.1f\t%.3f\t%s\t%d\t%d\t%d\t%.1f\t%d\t%.3f\t%s\n",argv[1],a.size(),api_ms,full_ok?"bit-perfect":"MISMATCH",rok,NR,r16,caught[0],silent[0],same[0],plan_ms,
+        ver_ms,vfull_ok?"bit-perfect":"MISMATCH",caught[1],silent[1],same[1],val_ms,refused,tile_ms,tile_ms<0?"-":(tile_ok?"bit-perfect":"MISMATCH"));
     aceapex_gpu_plan_destroy(plan);
-    return (full_ok && vfull_ok && rok==NR && silent[1]==0) ? 0 : 5;
+    return (full_ok && vfull_ok && rok==NR && silent[1]==0 && (tile_ms<0 || tile_ok)) ? 0 : 5;
 }

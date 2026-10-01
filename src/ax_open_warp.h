@@ -101,11 +101,11 @@ AXW_HD uint32_t axl_exc_in(const uint32_t* epos, uint32_t lo, uint32_t hi, uint3
 }
 /* positions 16g .. 16g+15 as axl_bases16 from run j = axl_run_of(i0), packed bytes read as one word; with epos: the
    exceptions e .. ehi-1 (positions ascending, e = first >= i0) inside the 16 positions take val[e] */
-AXW_HD void axl_bases16_v(uint32_t g, const uint8_t* seq, const uint32_t* ends, uint32_t R, uint32_t raw, uint8_t* dst, uint32_t j,
-                          const uint32_t* epos, uint32_t ehi, const uint8_t* val, uint32_t e) {
-    const uint32_t i0 = 16 * g;
-    if (i0 >= raw) return;
-    uint32_t sw = 0, w[4] = {0, 0, 0, 0};
+/* the 16 bytes of positions i0 .. i0+15 (i0 = 16 g < raw) in w[0..3]: the steps of axl_bases16_v without the store; the
+   GPU tile kernel (AX_GPU_TILE) puts them into shared memory */
+AXW_HD void axl_bases16_w(uint32_t i0, const uint8_t* seq, const uint32_t* ends, uint32_t R, uint32_t raw, uint32_t j,
+                          const uint32_t* epos, uint32_t ehi, const uint8_t* val, uint32_t e, uint32_t w[4]) {
+    uint32_t sw = 0; w[0] = w[1] = w[2] = w[3] = 0;
     if (i0 + 16 <= raw) {
 #ifdef __CUDA_ARCH__
         sw = *(const uint32_t*)(seq + (i0 >> 2));
@@ -131,6 +131,12 @@ AXW_HD void axl_bases16_v(uint32_t g, const uint8_t* seq, const uint32_t* ends, 
         if (p >= i0 + 16 || p >= raw) break;
         if (p >= i0) { const uint32_t k = p - i0; w[k >> 2] = (w[k >> 2] & ~(0xFFu << (8 * (k & 3)))) | ((uint32_t)val[e] << (8 * (k & 3))); }
     }
+}
+AXW_HD void axl_bases16_v(uint32_t g, const uint8_t* seq, const uint32_t* ends, uint32_t R, uint32_t raw, uint8_t* dst, uint32_t j,
+                          const uint32_t* epos, uint32_t ehi, const uint8_t* val, uint32_t e) {
+    const uint32_t i0 = 16 * g;
+    if (i0 >= raw) return;
+    uint32_t w[4]; axl_bases16_w(i0, seq, ends, R, raw, j, epos, ehi, val, e, w);
     if (i0 + 16 <= raw) {
 #ifdef __CUDA_ARCH__
         *(uint4*)(dst + i0) = make_uint4(w[0], w[1], w[2], w[3]);

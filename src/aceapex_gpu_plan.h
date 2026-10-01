@@ -44,6 +44,7 @@ struct Nv   { uint64_t in_off, csz, out_off, osz; };          /* one zstd frame 
 struct Raw  { uint64_t src, dst, n; };                         /* a stored token chunk: d_in -> d_temp */
 struct Seg  { uint32_t lo, hi; };
 static const uint64_t NUL = ~0ull;
+static const uint32_t NUL32 = ~0u;
 
 enum { E_OK = 0, E_HEADER = 1, E_TABLE = 2, E_STREAM = 3, E_LAYOUT = 4, E_NVCOMP = 5 };
 enum { C_TOK = 0, C_SEQ = 1, C_CSE = 2, C_GAP = 3, C_VAL = 4, C_PLAIN = 5, C_N = 6 };   /* rANS piece classes */
@@ -59,6 +60,8 @@ struct Plan {
     std::vector<Raw>  raw;  std::vector<uint64_t> raw_key;
     uint64_t xxh = 0;                                          /* XXH3_64bits of the original, from the header */
     bool contiguous = true;                                    /* block slices back to back in every stream (range decode needs it) */
+    bool tile_ok = false;                                      /* AX_GPU_TILE: literal chunks are open DNA packs or open plain pieces */
+    std::vector<uint32_t> cmap;                                /* literal chunk k -> open index, or NUL32 for an open plain chunk */
     uint64_t max_osz = 0, nv_out_total = 0, nv_temp = 0;
     /* temp layout */
     uint64_t o_s[4], o_scr, o_os, o_ends, o_nrun, o_epos, o_err, o_ctr, o_nvcp, o_nvop, o_nvcs, o_nvos, o_nvact, o_nvst, o_nvtmp,
@@ -211,6 +214,17 @@ static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt
       for (int q = 0; q < C_N; q++) P.cls_off[q + 1] += P.cls_off[q];
       P.rans.swap(r); P.rans_key.swap(k); }
     for (const auto& j : P.nv) if (zstd_frame_check(a + j.in_off, j.csz, j.osz)) return E_STREAM;
+    {   /* AX_GPU_TILE: every literal chunk is an open DNA pack (built in shared memory from its parts) or an open plain piece
+           (k_rans writes it into the literal stream as before; the tile kernel copies it from there); no zstd frame, no zstd
+           DNA pack; a block's literal slice fits the kernel's shared buffer (AXT_SH: 16 KiB blocks) */
+        const uint64_t NW = P.chunk[0] ? (P.ssz[0] + P.chunk[0] - 1) / P.chunk[0] : 0;
+        bool ok = NW > 0 && NW <= 0xFFFFFFFFull && P.nv.size() == P.NT && P.dna.empty() && P.chunk[0] % 16 == 0 && P.bs <= 16384;
+        if (ok) { P.cmap.assign(NW, NUL32); std::vector<uint8_t> have(NW, 0);
+            for (size_t i = 0; i < P.open.size(); i++) { if (P.open_key[i] >= NW) { ok = false; break; } P.cmap[P.open_key[i]] = (uint32_t)i; have[P.open_key[i]] = 1; }
+            for (size_t i = P.cls_off[C_PLAIN]; ok && i < P.cls_off[C_PLAIN + 1]; i++) { const uint64_t t = P.rans_key[i] & ((1ull << 48) - 1); if (t >= NW) ok = false; else have[t] = 1; }
+            for (uint64_t t = 0; ok && t < NW; t++) if (!have[t]) ok = false; }
+        if (!ok) P.cmap.clear();
+        P.tile_ok = ok; }
     if (!P.nv.empty() && !nvt) return E_NVCOMP;
     for (auto& j : P.nv) { P.max_osz = std::max(P.max_osz, j.osz); P.nv_out_total += j.osz; }
     P.nv_temp = P.nv.empty() ? 0 : nvt(P.nv.size(), P.max_osz, P.nv_out_total);
