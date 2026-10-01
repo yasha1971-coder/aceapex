@@ -12,9 +12,10 @@
  * found on the device - a rANS piece, an open DNA pack, a zstd frame or a block whose tokens do not decode
  * to its size - are reported in *d_status (device memory, one int, written at the end of the call; 0 =
  * success, else a bitmask of ACEAPEX_GPU_STATUS_*). A decode never reads or writes outside the buffers it
- * was given. Bytes stored raw inside the archive (literal runs, raw pieces) carry no check of their own:
- * such a corruption decodes to wrong bytes with status 0 - the archive's XXH3 of the whole original is
- * checked by the CPU decoders, not here.
+ * was given. Bytes stored raw inside the archive (literal runs, raw pieces, zstd raw blocks) carry no check
+ * of their own: only the archive's XXH3 of the whole original catches them - flag ACEAPEX_GPU_VERIFY_XXH3
+ * computes it on the device (ACEAPEX_GPU_STATUS_HASH). A range decode cannot check it (the hash covers the
+ * whole original).
  *
  * Buffers: d_in = the archive bytes (in_bytes, any alignment); d_temp = aceapex_gpu_temp_bytes() bytes
  * (range: aceapex_gpu_range_temp_bytes()), 256-byte aligned (cudaMalloc is); d_out = the original
@@ -47,6 +48,10 @@ typedef struct aceapex_gpu_plan aceapex_gpu_plan;
 #define ACEAPEX_GPU_STATUS_OPEN    2   /* an open DNA pack failed its checks (spec 3.4) */
 #define ACEAPEX_GPU_STATUS_ZSTD    4   /* a zstd frame failed or decoded to another size */
 #define ACEAPEX_GPU_STATUS_MATCH   8   /* a block's tokens did not decode to exactly its size */
+#define ACEAPEX_GPU_STATUS_HASH   16   /* ACEAPEX_GPU_VERIFY_XXH3: XXH3_64bits of the output != the archive header */
+
+/* flags of aceapex_gpu_decompress_async */
+#define ACEAPEX_GPU_VERIFY_XXH3    1   /* hash the whole output on the device and compare with the header (full decode only) */
 
 aceapex_gpu_plan* aceapex_gpu_plan_create(const void* h_archive, size_t in_bytes);
 int     aceapex_gpu_last_error(void);                        /* of the last plan_create on this thread */
@@ -55,7 +60,7 @@ size_t  aceapex_gpu_range_temp_bytes(const aceapex_gpu_plan* plan, uint64_t max_
 size_t  aceapex_gpu_output_bytes(const aceapex_gpu_plan* plan);
 
 int aceapex_gpu_decompress_async(const aceapex_gpu_plan* plan, const void* d_in,
-                                 void* d_out, void* d_temp, int* d_status, cudaStream_t stream);
+                                 void* d_out, void* d_temp, int* d_status, unsigned flags, cudaStream_t stream);
 
 /* bytes [offset, offset+length) of the original into d_out (length bytes): only the blocks covering the
    range and, in each stream, only the chunks those blocks use are decoded */

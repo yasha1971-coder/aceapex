@@ -17,7 +17,7 @@ int main(int argc, char** argv) {
     void *d_in, *d_out, *d_temp; int* d_status; cudaStream_t s; cudaStreamCreate(&s);
     cudaMalloc(&d_in, a.size()); cudaMalloc(&d_out, n + 1); cudaMalloc(&d_temp, aceapex_gpu_temp_bytes(plan)); cudaMalloc(&d_status, sizeof(int));
     cudaMemcpyAsync(d_in, a.data(), a.size(), cudaMemcpyHostToDevice, s);
-    int r = aceapex_gpu_decompress_async(plan, d_in, d_out, d_temp, d_status, s);   // phase 2: async
+    int r = aceapex_gpu_decompress_async(plan, d_in, d_out, d_temp, d_status, ACEAPEX_GPU_VERIFY_XXH3, s);   // phase 2: async, output hash checked
     std::vector<char> out(n); int status = -1;
     cudaMemcpyAsync(&status, d_status, sizeof(int), cudaMemcpyDeviceToHost, s);
     cudaMemcpyAsync(out.data(), d_out, n, cudaMemcpyDeviceToHost, s);

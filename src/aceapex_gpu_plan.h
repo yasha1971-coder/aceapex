@@ -49,11 +49,12 @@ struct Plan {
     std::vector<Open> open; std::vector<uint64_t> open_key;
     std::vector<Dna>  dna;  std::vector<uint64_t> dna_key;
     std::vector<Raw>  raw;  std::vector<uint64_t> raw_key;
+    uint64_t xxh = 0;                                          /* XXH3_64bits of the original, from the header */
     bool contiguous = true;                                    /* block slices back to back in every stream (range decode needs it) */
     uint64_t max_osz = 0, nv_out_total = 0, nv_temp = 0;
     /* temp layout */
     uint64_t o_s[4], o_scr, o_os, o_ends, o_nrun, o_err, o_ctr, o_nvcp, o_nvop, o_nvcs, o_nvos, o_nvact, o_nvst, o_nvtmp,
-             o_rans, o_open, o_dna, temp_bytes;
+             o_rans, o_open, o_dna, o_hash, temp_bytes;
 };
 static inline uint64_t key(uint32_t st, uint64_t chunk) { return ((uint64_t)st << 48) | chunk; }
 static inline uint64_t rd64(const uint8_t* p) { uint64_t v; memcpy(&v, p, 8); return v; }
@@ -66,7 +67,7 @@ typedef uint64_t (*NvTempFn)(size_t n, size_t max_out, size_t total_out);
 static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt) {
     P = Plan();
     if (!a || in_bytes < 68 || memcmp(a, "ACEPX2\0\0", 8) || rd32(a + 8) != 2) return E_HEADER;
-    P.in_bytes = in_bytes; P.orig = rd64(a + 12); P.bs = rd32(a + 20); P.nb = rd32(a + 24);
+    P.in_bytes = in_bytes; P.orig = rd64(a + 12); P.xxh = rd64(a + 28); P.bs = rd32(a + 20); P.nb = rd32(a + 24);
     const uint64_t zsz[4] = {rd64(a + 36), rd64(a + 44), rd64(a + 52), rd64(a + 60)};
     if (P.nb == 0 || P.bs == 0 || (uint64_t)P.nb * P.bs < P.orig || (uint64_t)(P.nb - 1) * P.bs >= P.orig) return E_HEADER;
     uint64_t p = 68 + 64ull * P.nb, zoff[4];
@@ -175,6 +176,7 @@ static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt
     P.o_nvtmp = t; t += al(P.nv_temp + 256);
     P.o_rans = t; t += al(sizeof(Rans) * (P.rans.size() + 1)); P.o_open = t; t += al(sizeof(Open) * (P.open.size() + 1));
     P.o_dna = t; t += al(sizeof(Dna) * (P.dna.size() + 1));
+    P.o_hash = t; t += al(64 * (P.orig > 240 ? (P.orig - 1) / 1024 : 0) + 64);   /* XXH3 block terms (verify flag) */
     P.temp_bytes = t;
     /* resolve region tags into temp offsets (still relative to d_temp) */
     auto res = [&](uint64_t v) -> uint64_t { if (v == NUL) return NUL; uint64_t tag = v >> 56, o = v & ((1ull << 56) - 1);
