@@ -169,9 +169,15 @@ __global__ void k_cmp(const uint8_t* a, const uint8_t* b, size_t n, unsigned lon
     if(c) atomicAdd(bad,c);
 }
 __global__ void k_set(uint32_t* p, uint32_t v){ *p=v; }
+// output check: FNV-1a of every 1 MiB chunk, one thread per chunk (one thread over the whole output took about a
+// minute per check on T2T), then FNV-1a of the chunk hashes on the host; the original is hashed the same way
+#define FNV_CH (1u<<20)
 __global__ void k_fnv(const uint8_t* buf, size_t n, uint64_t* out){
-    if(blockIdx.x==0&&threadIdx.x==0){ uint64_t h=0xcbf29ce484222325ULL; for(size_t i=0;i<n;i++) h=(h^buf[i])*0x100000001b3ULL; *out=h; }
+    const size_t c=blockIdx.x*(size_t)blockDim.x+threadIdx.x, b=c*FNV_CH; if(b>=n) return;
+    const size_t e=b+FNV_CH<n?b+FNV_CH:n; uint64_t h=0xcbf29ce484222325ULL; for(size_t i=b;i<e;i++) h=(h^buf[i])*0x100000001b3ULL; out[c]=h;
 }
+static uint64_t fnv_of_chunks(const std::vector<uint64_t>& v){ uint64_t h=0xcbf29ce484222325ULL;
+    for(uint64_t x:v) for(int k=0;k<8;k++) h=(h^((x>>(8*k))&0xFF))*0x100000001b3ULL; return h; }
 
 // ---------------------------------------------------------------- archive parsing
 static std::vector<uint8_t> slurp(const char* p){ FILE* f=fopen(p,"rb"); if(!f){perror(p); exit(1);} fseek(f,0,SEEK_END); long n=ftell(f); fseek(f,0,SEEK_SET); std::vector<uint8_t> v(n); if(fread(v.data(),1,n,f)!=(size_t)n){fprintf(stderr,"short read %s\n",p); exit(1);} fclose(f); return v; }
@@ -314,8 +320,9 @@ int main(int argc, char** argv){
     // AX_OPEN_SEQ windowed refill in k_rans (default 1: Blackwell af2c70c chr1 seq 0.309 -> 0.238 ms; 0 = refill from
     // global); AX_OPEN_EXC exception positions in the case-run kernel and the bytes in the bases store (default 1; 0 =
     // k_open_cse, k_open_bases, k_open_exc)
-    // AX_OPEN_SHB=1 (with EXC): the bases kernel with the block's run ends / exception positions in shared memory (k_open_bases_s)
-    int VS=getenv("AX_OPEN_SEQ")?atoi(getenv("AX_OPEN_SEQ")):1, VE=getenv("AX_OPEN_EXC")?atoi(getenv("AX_OPEN_EXC")):1, VH=getenv("AX_OPEN_SHB")?atoi(getenv("AX_OPEN_SHB")):0;
+    // AX_OPEN_SHB (with EXC): the bases kernel with the block's run ends / exception positions in shared memory
+    // (k_open_bases_s; default 1 since a7d161d: Blackwell T2T unpack 8.948 -> 7.458 ms, chr1 0.605 -> 0.583)
+    int VS=getenv("AX_OPEN_SEQ")?atoi(getenv("AX_OPEN_SEQ")):1, VE=getenv("AX_OPEN_EXC")?atoi(getenv("AX_OPEN_EXC")):1, VH=getenv("AX_OPEN_SHB")?atoi(getenv("AX_OPEN_SHB")):1;
     const int VS0=VS, VE0=VE, VH0=VH;
     // AX_MATCH_MERGE=1: the match kernel extends a literal run by the literal tokens that follow (k_decode_g<G,1>)
     int VM=getenv("AX_MATCH_MERGE")?atoi(getenv("AX_MATCH_MERGE")):0; const int VM0=VM;
@@ -358,11 +365,14 @@ int main(int argc, char** argv){
     rans_check("warm-up");
     { std::vector<nvcompStatus_t> hst(N); CK(cudaMemcpy(hst.data(),dst,N*sizeof(nvcompStatus_t),cudaMemcpyDeviceToHost)); size_t bad=0; for(auto x:hst) if(x!=nvcompSuccess) bad++;
       printf("frames: %zu bad of %zu\n",bad,N); }
-    auto fnv_check=[&](const char* tag){ uint64_t h=0; k_fnv<<<1,1,0,s0>>>(dOUT,(size_t)orig,dH); CK(cudaMemcpyAsync(&h,dH,8,cudaMemcpyDeviceToHost,s0)); CK(cudaStreamSynchronize(s0));
+    const size_t nfc=((size_t)orig+FNV_CH-1)/FNV_CH; uint64_t* dFC; CK(cudaMalloc(&dFC,(nfc+1)*8));
+    auto fnv_check=[&](const char* tag){ std::vector<uint64_t> hc(nfc);
+        if(nfc){ k_fnv<<<(unsigned)((nfc+127)/128),128,0,s0>>>(dOUT,(size_t)orig,dFC); CK(cudaMemcpyAsync(hc.data(),dFC,nfc*8,cudaMemcpyDeviceToHost,s0)); }
+        CK(cudaStreamSynchronize(s0)); const uint64_t h=fnv_of_chunks(hc);
         static uint64_t ho=0; static bool have=false;
-        if(!have){ FILE* f=fopen(argv[2],"rb"); if(!f){perror(argv[2]); exit(1);} std::vector<uint8_t> buf(1<<20); size_t n; ho=0xcbf29ce484222325ULL;
-            while((n=fread(buf.data(),1,buf.size(),f))>0){ for(size_t i=0;i<n;i++) ho=(ho^buf[i])*0x100000001b3ULL; }
-            fclose(f); have=true; }
+        if(!have){ FILE* f=fopen(argv[2],"rb"); if(!f){perror(argv[2]); exit(1);} std::vector<uint8_t> buf(FNV_CH); std::vector<uint64_t> oc; size_t n;
+            while((n=fread(buf.data(),1,buf.size(),f))>0){ uint64_t x=0xcbf29ce484222325ULL; for(size_t i=0;i<n;i++) x=(x^buf[i])*0x100000001b3ULL; oc.push_back(x); }
+            fclose(f); ho=fnv_of_chunks(oc); have=true; }
         printf("[%s] FNV out=%016llx orig=%016llx %s\n",tag,(unsigned long long)h,(unsigned long long)ho,h==ho?"MATCHES OK":"DIFFERS X"); return h==ho; };
     bool ok=fnv_check("warm-up");
 
