@@ -10,6 +10,21 @@ ifeq ($(strip $(ZSTD_LIBS)),)
 ZSTD_LIBS := -lzstd
 endif
 
+# ZSTD_SRC=<zstd source tree, e.g. zstd-1.5.6>: zstd built from that tree and linked statically into the CLI instead of
+# the system libzstd (Ubuntu 22.04 ships 1.4.8; 1.5.x decodes the default profile faster: asm Huffman, BMI2 -
+# ace-core chr1 1 thread 0.184 -> 0.154 s). The bytes of zstd-profile archives follow the zstd version (pins per version).
+.DEFAULT_GOAL := all
+ifneq ($(strip $(ZSTD_SRC)),)
+ZSTD_CFLAGS := -I$(ZSTD_SRC)/lib
+ZSTD_LIBS := build/zstd/libzstd.a
+ZSTD_DEP := build/zstd/libzstd.a
+endif
+build/zstd/libzstd.a:
+	mkdir -p build/zstd
+	for f in $(ZSTD_SRC)/lib/common/*.c $(ZSTD_SRC)/lib/compress/*.c $(ZSTD_SRC)/lib/decompress/*.c $(ZSTD_SRC)/lib/decompress/*.S; do \
+	  [ -f "$$f" ] && $(CC) -O3 -march=native -I$(ZSTD_SRC)/lib -I$(ZSTD_SRC)/lib/common -c -o build/zstd/$$(basename $$f).o $$f || exit 1; done
+	ar rcs $@ build/zstd/*.o
+
 PROG = aceapex
 # The CLI is the library plus main(): one translation unit, one copy of the codec.
 SRCS = src/aceapex_api.cpp
@@ -20,11 +35,11 @@ OBJS := $(SRCS:.cpp=.o)
 
 all: $(PROG)
 
-$(PROG): $(OBJS)
-	$(LD) -o $@ $^ -lpthread $(ZSTD_LIBS)
+$(PROG): $(OBJS) $(ZSTD_DEP)
+	$(LD) -o $@ $(OBJS) -lpthread $(ZSTD_LIBS)
 
 clean:
-	rm -rf $(OBJS) $(PROG) axdec libaceapex_decode.so libaceapex_gpu.so.1 libaceapex_gpu.so
+	rm -rf $(OBJS) $(PROG) axdec libaceapex_decode.so libaceapex_gpu.so.1 libaceapex_gpu.so build/zstd
 
 # aceapex_api.cpp #includes aceapex_main.cpp; make must see that edge.
 src/aceapex_api.o: src/aceapex_main.cpp src/aceapex.h src/ax_align.h
