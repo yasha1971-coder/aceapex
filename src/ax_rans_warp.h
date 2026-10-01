@@ -93,7 +93,7 @@ AXW_HD void axw_fill(uint32_t lane, AxwShared& sh) {
     uint32_t s = lo;
     for (uint32_t k = 0; k < AXR_M / 32; k++) {
         const uint32_t slot = s0 + k;
-        while (slot >= (uint32_t)sh.c[s] + sh.f[s]) s++;
+        while (s < 255 && slot >= (uint32_t)sh.c[s] + sh.f[s]) s++;   /* bounded even if the sum check were bypassed */
         sh.sym[slot] = (uint8_t)s;
     }
 }

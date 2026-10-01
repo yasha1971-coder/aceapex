@@ -49,6 +49,7 @@ typedef struct aceapex_gpu_plan aceapex_gpu_plan;
 #define ACEAPEX_GPU_STATUS_ZSTD    4   /* a zstd frame failed or decoded to another size */
 #define ACEAPEX_GPU_STATUS_MATCH   8   /* a block's tokens did not decode to exactly its size */
 #define ACEAPEX_GPU_STATUS_HASH   16   /* ACEAPEX_GPU_VERIFY_XXH3: XXH3_64bits of the output != the archive header */
+#define ACEAPEX_GPU_STATUS_LIMIT  32   /* a kernel loop hit its step limit (a broken invariant: stopped, output invalid) */
 
 /* flags of aceapex_gpu_decompress_async */
 #define ACEAPEX_GPU_VERIFY_XXH3    1   /* hash the whole output on the device and compare with the header (full decode only) */
