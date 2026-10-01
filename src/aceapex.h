@@ -34,6 +34,20 @@ int64_t aceapex_decompress_mt(
     int         threads
 );
 
+/* Streaming decode (2.3): the archive is read through rd (pread semantics: bytes at `offset`, return the count
+   read or < 0), the original is handed to wr in order, group by group (a few blocks, <= about 1 MiB), the
+   call returns the original size or a negative error. Memory is bounded by threads x (a literal tile of ~0.5 MiB,
+   a group's output, the group's token chunks) + the chunk tables: it does not grow with the archive, so a 3 GB
+   genome streams through ~40 MB (claim head_stream). threads 0 = the default budget. Flags:
+   ACEAPEX_STREAM_VERIFY: XXH3 of the handed-out bytes against the header, ACEAPEX_ERR_DATA on a mismatch (after
+   everything was handed out: the sink sees the bytes before the verdict). Archives whose literal stream is not
+   chunked (written before 2.1 without LIT_CHUNK) are refused with ACEAPEX_ERR_DATA: use aceapex_decompress. */
+typedef int64_t (*aceapex_read_fn)(void* ctx, uint64_t offset, void* buf, size_t len);
+typedef int     (*aceapex_write_fn)(void* ctx, const void* buf, size_t len);   /* 0 = ok, else the stream stops */
+#define ACEAPEX_STREAM_VERIFY 1u
+int64_t aceapex_decompress_stream(aceapex_read_fn rd, void* rctx, aceapex_write_fn wr, void* wctx,
+                                  int threads, unsigned flags);
+
 /* Decompress only the bytes [offset, offset+length) of the original input,
    without decoding the rest of the archive. dst must hold at least length bytes.
    Returns length on success, or a negative error code.

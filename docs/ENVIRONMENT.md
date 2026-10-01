@@ -31,7 +31,7 @@ nothing: the defaults below apply, the archive bytes and the threads depend only
 ## Decoder knobs (2.3) — only in builds with ACEAPEX_ENV_TUNING
 
 `AX_LIT_TILE`, `AX_TILE_CHUNKS`, `AX_NT`, `AX_NT_LIT`, `AX_NT_MIN`, `AX_NT_THREADS`, `AX_HUGE`, `AX_PREFAULT`,
-`AX_RANS_SIMD`, `AX_PHASE_TIMES` (CPU decoder, `src/aceapex_main.cpp`, `src/aceapex_api.cpp`, `src/ax_rans.h`) and
+`AX_RANS_SIMD`, `AX_PHASE_TIMES`, `AX_STREAM_BLOCKS` (CPU decoder, `src/aceapex_main.cpp`, `src/aceapex_api.cpp`, `src/ax_rans.h`) and
 `AX_GPU_TILE` (GPU library, read at `plan_create`). Their defaults are the measured best paths; the variables exist to
 measure the alternatives side by side (CHANGELOG 2.3.0, `results/`). The GPU measurement tool `aceapex_gpu.cu` reads its
 own variants (`AX_OPEN_*`, `AX_VEC` at build time) and is a tool, not the library.
