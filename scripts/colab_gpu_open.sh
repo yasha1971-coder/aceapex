@@ -278,5 +278,7 @@ SIZES=""; for X in $CORP; do [ -s $W/$X.fa ] && SIZES="$SIZES $X=$(stat -c%s $W/
            printf "%s: %stool %.3f ms; seq %s, unpack %.3f, match %.3f ms; %s%s\n", k, lib, t[k], sq[k], un[k], ma[k], ck[k], var[k] } }' $L
   echo "verdict $VERDICT"; } > $W/summary.txt
 cat $W/summary.txt | tee -a $L
-[ $HAVE_DRIVE = 1 ] && mkdir -p /content/drive/MyDrive/aceapex_logs && cat $W/summary.txt >> /content/drive/MyDrive/aceapex_logs/summary.txt
+# the summary appended and the whole log copied to Drive: the runtime may be released right after (runtime.unassign)
+[ $HAVE_DRIVE = 1 ] && mkdir -p /content/drive/MyDrive/aceapex_logs && cat $W/summary.txt >> /content/drive/MyDrive/aceapex_logs/summary.txt \
+  && cp $L /content/drive/MyDrive/aceapex_logs/$(basename $L .log)-$(git rev-parse --short HEAD).log
 [ $VERDICT = PASSED ] || exit 1
