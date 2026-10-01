@@ -26,6 +26,7 @@ nothing: the defaults below apply, the archive bytes and the threads depend only
 | `LIT_LEVEL` | per level | zstd level of the literal frames |
 | `LIT_LANES_DEC` | the call's budget | decoder: literal lanes |
 | `ACEAPEX_DUMP` | unset | decoder: write the decoded streams to `streams.bin` (diagnostics) |
+| `AX_MAXDIST` | unset (128 MiB) | experiment: matches farther back than this many bytes are not taken (results/dep-range-2026-10-01.log) |
 
 ## Decoder knobs (2.3) — only in builds with ACEAPEX_ENV_TUNING
 
