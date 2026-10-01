@@ -1,5 +1,6 @@
 // gpu_decode.cu - decode an .aet archive on the GPU through the C ABI of src/aceapex_gpu.h.
-// Build: nvcc -O3 -arch=sm_XX -Isrc examples/gpu_decode.cu src/aceapex_gpu_lib.cu -o gpu_decode
+// Build: nvcc -O3 -arch=sm_XX -Isrc examples/gpu_decode.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp -o gpu_decode
+//        or against the shared library: make gpu-lib; nvcc -Isrc examples/gpu_decode.cu -L. -laceapex_gpu -o gpu_decode
 //        (+ -DACEAPEX_GPU_NVCOMP -I<nvcomp>/include -l:libnvcomp.so.5 for zstd-profile archives)
 // Usage: gpu_decode <archive.aet> <output>
 #include "aceapex_gpu.h"

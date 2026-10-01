@@ -80,10 +80,15 @@ for e in rans_warp_emu open_warp_emu; do
 # the GPU library (C ABI, src/aceapex_gpu.h): its plan judged on the CPU, the test program and the 30-line example
 g++ -std=c++17 -O2 -Isrc -o $W/gpu_plan_emu scripts/gpu_plan_emu.cpp src/aceapex_api.cpp -lzstd -lpthread && to $TO "gpu_plan_emu" $W/gpu_plan_emu | tee -a $L
 ARCH="-arch=sm_$SM"; nvcc -arch=sm_$SM -E -x cu /dev/null >/dev/null 2>&1 || ARCH="-gencode arch=compute_90,code=compute_90"
-if to $TO "nvcc gpu_api_test" nvcc -std=c++17 -O3 $ARCH -Isrc -DACEAPEX_GPU_NVCOMP $NVL -o $W/gpu_api_test scripts/gpu_api_test.cu src/aceapex_gpu_lib.cu -lzstd 2>$W/nvcc_api.err \
-   && to $TO "nvcc gpu_decode" nvcc -std=c++17 -O3 $ARCH -Isrc -o $W/gpu_decode examples/gpu_decode.cu src/aceapex_gpu_lib.cu 2>>$W/nvcc_api.err; then
+if to $TO "nvcc gpu_api_test" nvcc -std=c++17 -O3 $ARCH -Isrc -DACEAPEX_GPU_NVCOMP $NVL -o $W/gpu_api_test scripts/gpu_api_test.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp -lzstd 2>$W/nvcc_api.err \
+   && to $TO "nvcc gpu_decode" nvcc -std=c++17 -O3 $ARCH -Isrc -o $W/gpu_decode examples/gpu_decode.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp 2>>$W/nvcc_api.err; then
   echo "built gpu_api_test (nvCOMP) and examples/gpu_decode (no nvCOMP), $ARCH" | tee -a $L
 else echo "BUILD FAILED gpu library" | tee -a $L; cat $W/nvcc_api.err; exit 1; fi
+# the shared library (make gpu-lib: libaceapex_gpu.so.1, SONAME) with nvCOMP, and the example linked against it
+if to $TO "make gpu-lib" make -s gpu-lib NVCOMP=$NV GPU_ARCH="$ARCH" 2>>$W/nvcc_api.err \
+   && to $TO "nvcc gpu_decode (shared)" nvcc -std=c++17 -O3 $ARCH -Isrc -o $W/gpu_decode_so examples/gpu_decode.cu -L. -laceapex_gpu -Xlinker -rpath=$(pwd) -Xlinker -rpath-link=$NV/lib64 2>>$W/nvcc_api.err; then
+  echo "shared library libaceapex_gpu.so.1: $(readelf -d libaceapex_gpu.so.1 | grep -o 'soname: \[[^]]*\]'), API version $(grep -m1 -o 'VERSION_MAJOR [0-9]*' src/aceapex_gpu.h | cut -d' ' -f2).$(grep -m1 -o 'VERSION_MINOR [0-9]*' src/aceapex_gpu.h | cut -d' ' -f2); examples/gpu_decode linked against it" | tee -a $L
+else echo "shared library build FAILED" | tee -a $L; tail -5 $W/nvcc_api.err; fi
 # saved corrupt zstd frames (verify/repro/README.md): nvCOMP alone on each (batch of 1) against libzstd, before anything
 # else uses nvCOMP - a frame nvCOMP hangs on stops only this step (watchdog 60 s: line NVCOMP HANG, informational -
 # nvCOMP 5.3.0.16 hangs on the flipped frame; the library's guard is ACEAPEX_GPU_VALIDATE_ZSTD)
@@ -193,7 +198,9 @@ PY
       # the flipped frames (original and flipped) kept on Drive for a repro
       [ $HAVE_DRIVE = 1 ] && ls verify/repro/run/*.zst >/dev/null 2>&1 && mkdir -p $DRV/repro && cp verify/repro/run/*.zst $DRV/repro/ && echo "flipped frames copied to $DRV/repro ($(ls verify/repro/run/*.zst | wc -l) files)" | tee -a $L
       if [ $P = open ]; then to $TO "gpu_decode $X.$P" $W/gpu_decode $W/$X.$P.aet $W/ex.out >/dev/null 2>&1 && cmp -s $W/ex.out $C && echo "example gpu_decode $X.$P (no nvCOMP): bit-perfect" | tee -a $L \
-        || echo "example gpu_decode $X.$P: FAILED" | tee -a $L; rm -f $W/ex.out; fi
+        || echo "example gpu_decode $X.$P: FAILED" | tee -a $L; rm -f $W/ex.out
+        if [ -x $W/gpu_decode_so ]; then to $TO "gpu_decode (shared) $X.$P" $W/gpu_decode_so $W/$X.$P.aet $W/ex.out >/dev/null 2>&1 && cmp -s $W/ex.out $C \
+          && echo "example gpu_decode $X.$P via libaceapex_gpu.so.1 (nvCOMP inside): bit-perfect" | tee -a $L || echo "example gpu_decode $X.$P via libaceapex_gpu.so.1: FAILED" | tee -a $L; rm -f $W/ex.out; fi; fi
     fi
     echo "== aceapex_gpu $X.$P" | tee -a $L
     to $TO "aceapex_gpu $X.$P" $W/aceapex_gpu $W/$X.$P.aet $C auto $R 4 --pipeline=${PIPE:-auto} $DL 2>&1 | tee -a $L; echo "exit ${PIPESTATUS[0]} $X.$P" | tee -a $L
@@ -243,6 +250,6 @@ echo "C ABI: $AOK of $AR archives bit-perfect with every range; plan emulator $P
 grep '^exitapi [1-9]' $L | sed 's/^/  FAILED: /' | tee -a $L
 NTO=$(grep -c '^TIMEOUT ' $L); echo "steps over the time limit: $NTO" | tee -a $L
 [ "$N" = "$RUN" ] && [ "$E" = 2 ] && [ "$F" = 5 ] && [ "$AOK" = "$AR" ] && [ "$PE" = 1 ] && grep -q "^ROW	$W/chr1.open" $L \
-  && ! grep -q 'archive rejected\|ROUND-TRIP FAILED' $L && [ "$NTO" = 0 ] \
+  && ! grep -q 'archive rejected\|ROUND-TRIP FAILED\|^example .*FAILED\|shared library build FAILED' $L && [ "$NTO" = 0 ] \
   && echo "RESULT: all passes bit-perfect on $GPU" | tee -a $L \
   || { echo "!!! NOT PASSED on $GPU - valid figures only in bit-perfect rows" | tee -a $L; exit 1; }

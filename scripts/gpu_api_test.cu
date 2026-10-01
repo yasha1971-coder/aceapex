@@ -15,7 +15,7 @@
 // nvCOMP alone (batch of 1) when libzstd decodes it, then the plan of the flipped archive - with ACEAPEX_GPU_VALIDATE_ZSTD
 // when it has zstd frames: refused = caught before any launch - and the decode with that plan, a line and a stream wait
 // per phase (aceapex_gpu_debug_phase_hook): a hang names the frame and the phase.
-// Build: nvcc -O3 -arch=sm_XX -Isrc -DACEAPEX_GPU_NVCOMP -I<nvcomp>/include scripts/gpu_api_test.cu src/aceapex_gpu_lib.cu -l:libnvcomp.so.5 -lzstd
+// Build: nvcc -O3 -arch=sm_XX -Isrc -DACEAPEX_GPU_NVCOMP -I<nvcomp>/include scripts/gpu_api_test.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp -l:libnvcomp.so.5 -lzstd
 // Usage: gpu_api_test <archive.aet> <original> [repeats=7] [ranges=200] [flips=20]
 // Last line: APIROW <tab> archive bytes api_ms full ranges_ok ranges range16k_ms caught silent harmless plan_ms
 //            verify_ms verify_full caught_v silent_v harmless_v validate_plan_ms refused_by_plan

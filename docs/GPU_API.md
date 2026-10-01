@@ -1,7 +1,8 @@
 # GPU decoder: C ABI (`src/aceapex_gpu.h`)
 
 Gate 5 of ROADMAP: a library other programs link, not only the measurement tool. Header `src/aceapex_gpu.h`
-(C, `extern "C"`, the only CUDA type is `cudaStream_t`), implementation `src/aceapex_gpu_lib.cu`, host plan
+(C, `extern "C"`, the only CUDA type is `cudaStream_t`), implementation `src/aceapex_gpu_lib.cu` (device and plan)
+and `src/aceapex_gpu_abi.cpp` (argument checks, last error, version: host C++), shared library `libaceapex_gpu.so.1`, host plan
 `src/aceapex_gpu_plan.h` (plain C++), device kernels `src/aceapex_gpu_kernels.cuh` (shared with the tool
 `aceapex_gpu.cu`). Example: `examples/gpu_decode.cu` (29 lines).
 
@@ -9,7 +10,8 @@ Gate 5 of ROADMAP: a library other programs link, not only the measurement tool.
 
 ```c
 /* 1. host, once per archive */
-aceapex_gpu_plan* aceapex_gpu_plan_create(const void* h_archive, size_t in_bytes, unsigned flags);   /* 0 or ACEAPEX_GPU_VALIDATE_ZSTD */
+unsigned aceapex_gpu_version(void);                          /* ACEAPEX_GPU_API_VERSION the library was built with */
+aceapex_gpu_plan* aceapex_gpu_plan_create(const void* h_archive, size_t in_bytes, uint64_t flags);   /* bits of ACEAPEX_GPU_PLAN_FLAGS */
 int     aceapex_gpu_last_error(void);
 size_t  aceapex_gpu_temp_bytes(const aceapex_gpu_plan*);
 size_t  aceapex_gpu_range_temp_bytes(const aceapex_gpu_plan*, uint64_t max_length);
@@ -101,12 +103,28 @@ nvCOMP 5 (`-l:libnvcomp.so.5`), otherwise `plan_create` returns NULL with `ACEAP
 Match kernel: v7-RA with 32 lanes per block (the value the tool's probe picked on T4, L4, A100 and the
 Blackwell); grid from the occupancy of the current device at `plan_create`.
 
+## Stability
+
+From 2.3 (`ACEAPEX_GPU_API_VERSION` 20300) the C ABI is frozen: the signatures, structures' absence (the plan is
+opaque), return codes, status bits and flag values in `src/aceapex_gpu.h` do not change; later versions only add
+(new functions, new flag bits, new status bits, new return codes). Flags are checked against the masks
+`ACEAPEX_GPU_PLAN_FLAGS` / `ACEAPEX_GPU_DECODE_FLAGS`: an unknown bit is `ACEAPEX_GPU_E_ARGS`, so a caller built
+against a newer header learns at once that this library lacks the feature instead of getting a silent default.
+`aceapex_gpu_version()` returns the version the library was built with (compare with the header's at run time).
+The shared library is `libaceapex_gpu.so.1` (SONAME): the `.so.1` stays as long as the ABI only grows; a break
+would be `.so.2` and a new major version. Symbols not declared in the header (`aceapex_gpu_debug_phase_hook`, the
+test hook of `scripts/gpu_api_test.cu`) are not part of the ABI. Judge: claim `head_gpu_abi` (the host part,
+`src/aceapex_gpu_abi.cpp`, without CUDA: 63 unknown flag bits refused before the plan builder runs, version
+macros and `aceapex_gpu_version()` agree).
+
 ## Build
 
 ```sh
-nvcc -std=c++17 -O3 -arch=sm_XX -Isrc -c src/aceapex_gpu_lib.cu                          # open profile only
-nvcc -std=c++17 -O3 -arch=sm_XX -Isrc -DACEAPEX_GPU_NVCOMP -I<nvcomp>/include -c src/aceapex_gpu_lib.cu
-nvcc -std=c++17 -O3 -arch=sm_XX -Isrc examples/gpu_decode.cu src/aceapex_gpu_lib.cu -o gpu_decode
+make gpu-lib NVCOMP=<nvcomp dir>      # libaceapex_gpu.so.1 (SONAME) + libaceapex_gpu.so; without NVCOMP: open profile only
+nvcc -std=c++17 -O3 -arch=sm_XX -Isrc examples/gpu_decode.cu -L. -laceapex_gpu -o gpu_decode   # + -Xlinker -rpath-link=<nvcomp>/lib64
+# or the sources into a program:
+nvcc -std=c++17 -O3 -arch=sm_XX -Isrc [-DACEAPEX_GPU_NVCOMP -I<nvcomp>/include] -c src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp
+nvcc -std=c++17 -O3 -arch=sm_XX -Isrc examples/gpu_decode.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp -o gpu_decode
 ```
 
 ## Checks
