@@ -158,6 +158,13 @@ static inline uint32_t ax_ext(const uint8_t* a, const uint8_t* b, uint32_t l, ui
     return l;
 }
 struct Match { uint32_t len, off; int rep; };
+// AX_MAXDIST (experiment, builds with ACEAPEX_ENV_TUNING only): matches farther back than this many bytes are not taken
+// (density against match reach; default MAX_DIST - every match lies inside its block anyway, see find_matches)
+static inline uint32_t ax_max_dist() {
+    static const uint32_t v = [] { const char* e = ax_getenv("AX_MAXDIST"); const unsigned long long x = e ? strtoull(e, 0, 10) : 0;
+        return (x > 0 && x < MAX_DIST) ? (uint32_t)x : (uint32_t)MAX_DIST; }();
+    return v;
+}
 static inline int find_matches(const uint8_t* src, size_t pos, size_t bstart, size_t bend,
                                 ThreadHashTable* ht, uint32_t* rep, Match* out, int maxout) {
     int max_attempts = ht->max_attempts;
@@ -176,7 +183,7 @@ static inline int find_matches(const uint8_t* src, size_t pos, size_t bstart, si
     if (hr!=AX_NOPOS && !ht->l1) ht->chain[rp & ht->chain_mask]=hr;
     int64_t cur=(hr==AX_NOPOS)?-1:(int64_t)bstart+hr; int attempts=max_attempts;
     while(cur>=(int64_t)bstart && attempts-->0 && n<maxout) {
-        uint32_t dist=(uint32_t)(pos-cur); if(dist>=MAX_DIST) break;
+        uint32_t dist=(uint32_t)(pos-cur); if(dist>=ax_max_dist()) break;
         bool is_rep=false; for(int r=0;r<4;r++) if(dist==rep[r]){is_rep=true;break;}
         if(!is_rep){
             uint32_t mlen=min_match_len(dist);
@@ -255,7 +262,7 @@ static void compress_block(const uint8_t* src, size_t src_size,
             int64_t mp1=(ht->epoch[h1]==ht->cur_epoch)?(int64_t)bstart+ht->pos[h1]:-1;
             if (mp1>=0 && (size_t)mp1>=bstart && (size_t)mp1<pos+1) {
                 uint32_t dist1=(uint32_t)(pos+1-mp1);
-                if (dist1<MAX_DIST && dist1!=rep[0]) {
+                if (dist1<ax_max_dist() && dist1!=rep[0]) {
                     uint32_t mlen1=min_match_len(dist1);
                     uint32_t maxl1=(uint32_t)(bend-pos-1);
                     if (pos+9<=bend && AX_read64(src+pos+1)==AX_read64(src+mp1)) {
@@ -277,7 +284,7 @@ static void compress_block(const uint8_t* src, size_t src_size,
                 int64_t mp2=(ht->epoch[h2]==ht->cur_epoch)?(int64_t)bstart+ht->pos[h2]:-1;
                 if (mp2>=0 && (size_t)mp2>=bstart && (size_t)mp2<pos+2) {
                     uint32_t dist2=(uint32_t)(pos+2-mp2);
-                    if (dist2<MAX_DIST && dist2!=rep[0]) {
+                    if (dist2<ax_max_dist() && dist2!=rep[0]) {
                         uint32_t maxl2=(uint32_t)(bend-pos-2);
                         if (pos+10<=bend && AX_read64(src+pos+2)==AX_read64(src+mp2)) {
                             uint32_t l2=8;
