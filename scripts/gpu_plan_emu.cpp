@@ -7,7 +7,7 @@
 // selection misses leaves zeros and shows up as a difference. Then byte mutations of each archive: the plan
 // builder and the executor must refuse or finish, never read or write outside their buffers.
 // Inputs: the conformance fixtures, the chr1 4 MiB fixture slice, and that slice / a text buffer encoded here
-// in the default, interactive, rANS-token and open profiles. Prints one claim line (head_gpu_plan_emu).
+// in the default, interactive, rANS-token and open profiles. Prints two claim lines (head_gpu_plan_emu, head_gpu_flip_emu).
 // Build: g++ -std=c++17 -O2 -Isrc scripts/gpu_plan_emu.cpp src/aceapex_api.cpp -lzstd -lpthread
 #include "aceapex.h"
 #include "aceapex_gpu_plan.h"
@@ -186,9 +186,12 @@ int main(int argc, char** argv) {
     { uint8_t lit[128] = {0}, off[8] = {1}, len[8] = {0xF0, 0xFF, 0xFF, 0xFF, 0x0F}, cmd[2] = {99, 0xFE}, dst[256];
       wout = Exec::match(lit, off, len, cmd, 100, 1, 5, 2, dst, 256, wsteps, wlim, woob); }
     const bool wrap_ok = wout == 100 && woob == 0 && wlim == 0;
-    const bool ok = archives >= 12 && bad == 0 && rbad == 0 && flips == 1000 && flimit == 0 && foob == 0 && fsilent == 0 && wrap_ok;
-    printf("head_gpu_plan_emu\t%s\t%d archives decoded through the plan bit-perfect (%d bad; AX_VEC 16-byte paths: %llu unpack stores, %llu match copies), %d ranges on a zeroed temp (%d bad), %d refused by the planner, %d mutations (%d refused, the rest ran inside their buffers); %d stream flips under the intact plan: %llu match steps of %llu allowed, %llu over the step limit, %llu copies outside a block; %llu flagged by status, %llu more by XXH3, %llu decoded to the original, %llu silent; length 2^32-16 after 100 bytes %s%s\n",
-           ok ? "pass" : "fail", archives, bad, (unsigned long long)nvec16, (unsigned long long)nvcopy, ranges, rbad, refused, mut, mref, flips, (unsigned long long)fsteps, (unsigned long long)fbound,
-           (unsigned long long)flimit, (unsigned long long)foob, (unsigned long long)fcaught, (unsigned long long)fhash, (unsigned long long)fsame, (unsigned long long)fsilent, wrap_ok ? "refused" : "NOT REFUSED", fails.empty() ? "" : (";" + fails).c_str());
-    return ok ? 0 : 1;
+    const bool ok = archives >= 12 && bad == 0 && rbad == 0;
+    const bool fok = flips == 1000 && flimit == 0 && foob == 0 && fsilent == 0 && wrap_ok;
+    printf("head_gpu_plan_emu\t%s\t%d archives decoded through the plan bit-perfect (%d bad; AX_VEC 16-byte paths: %llu unpack stores, %llu match copies), %d ranges on a zeroed temp (%d bad), %d refused by the planner, %d mutations (%d refused, the rest ran inside their buffers)%s\n",
+           ok ? "pass" : "fail", archives, bad, (unsigned long long)nvec16, (unsigned long long)nvcopy, ranges, rbad, refused, mut, mref, fails.empty() ? "" : (";" + fails).c_str());
+    printf("head_gpu_flip_emu\t%s\t%d byte flips of the streams under the plan of the intact archive (as on the device), a failed zstd frame leaving random bytes: %llu match steps of %llu allowed, %llu over the step limit, %llu copies outside a block; %llu flagged by status, %llu more by XXH3, %llu decoded to the original, %llu silent; length 2^32-16 after 100 bytes %s\n",
+           fok ? "pass" : "fail", flips, (unsigned long long)fsteps, (unsigned long long)fbound, (unsigned long long)flimit, (unsigned long long)foob,
+           (unsigned long long)fcaught, (unsigned long long)fhash, (unsigned long long)fsame, (unsigned long long)fsilent, wrap_ok ? "refused" : "NOT REFUSED");
+    return ok && fok ? 0 : 1;
 }
