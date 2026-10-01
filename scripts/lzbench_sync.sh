@@ -6,7 +6,7 @@
 # header take aceapex_streams_t from aceapex.h, and bumps the codec name. Idempotent.
 set -euo pipefail
 LZ=${1:?lzbench dir}; V=$(sed -n 's/#define ACEAPEX_VERSION_STRING "\(.*\)"/\1/p' src/aceapex.h)
-for f in aceapex.h aceapex_api.cpp aceapex_main.cpp lit_fse.cpp ax_align.h ax_rans.h ax_lit_open.h xxhash.h; do cp src/$f "$LZ/lz/aceapex/$f"; done
+for f in aceapex.h aceapex_api.cpp aceapex_main.cpp lit_fse.cpp ax_align.h ax_env.h ax_rans.h ax_lit_open.h xxhash.h; do cp src/$f "$LZ/lz/aceapex/$f"; done
 rm -f "$LZ/lz/aceapex/acepx3.cpp"
 python3 - "$LZ" "$V" <<'PY'
 import sys, re

@@ -72,12 +72,23 @@ if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/api_cc scripts/api_concurrent.cpp src/
   $T/api_cc 2>/dev/null || true
 else printf 'head_api_concurrent\tfail\tbuild failed: %s\n' "$(head -c 150 $T/apic.err | tr '\n\t' '  ')"; fi
 # thread budget: with threads=1 compress, decompress and region start no thread (2.2.1)
-if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/api_th scripts/api_threads.cpp -lzstd -lpthread 2>$T/apit.err; then
+if ${CXX:-g++} -std=c++17 -O2 -DACEAPEX_ENV_TUNING -Isrc -o $T/api_th scripts/api_threads.cpp -lzstd -lpthread 2>$T/apit.err; then
   $T/api_th 2>/dev/null || true
 else printf 'head_enc_threads\tfail\tbuild failed: %s\n' "$(head -c 150 $T/apit.err | tr '\n\t' '  ')"; fi
+# lzbench #336: the library built without ACEAPEX_ENV_TUNING ignores the environment - five rows of tuning variables
+# give the same bytes at level 1 / one thread (text + silesia/xml when ~/CORPORA/silesia.tar is there), and no thread
+# is started at threads=1 (strace: no clone)
+if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/env_test scripts/env_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/env.err; then
+  X=""; [ -f "$HOME/CORPORA/silesia.tar" ] && tar -xOf "$HOME/CORPORA/silesia.tar" xml > $T/xml 2>/dev/null && X=$T/xml
+  if command -v strace >/dev/null; then
+    out=$(strace -f -qq -e trace=clone,clone3 -o $T/st.txt $T/env_test $X 2>/dev/null); rc=$?; nc=$(grep -c 'clone' $T/st.txt 2>/dev/null || echo 0)
+    [ $rc = 0 ] && [ "$nc" = 0 ] && r=pass || r=fail
+    printf 'head_env_ignored\t%s\tlibrary without ACEAPEX_ENV_TUNING: 5 rows of tuning variables -> the same bytes at level 1 / 1 thread (%s differing or failed; sizes:%s), threads started at threads=1: %s (strace)\n' "$r" "${out%% *}" "${out#* }" "$nc"
+  else printf 'head_env_ignored\tdeclared\tstrace not installed\n'; fi
+else printf 'head_env_ignored\tfail\tbuild failed: %s\n' "$(head -c 150 $T/env.err | tr '\n\t' '  ')"; fi
 # python layer over the same fixtures, without installing: ctypes loads a fresh .so
 if python3 -c "import pytest" 2>/dev/null; then
-  if ${CC:-gcc} -std=c99 -O2 -fPIC -shared -Ic -o $T/libaceapex_decode.so c/aceapex_decode.c -lzstd 2>/dev/null \
+  if ${CC:-gcc} -std=c99 -O2 -fPIC -shared -DACEAPEX_ENV_TUNING -Ic -o $T/libaceapex_decode.so c/aceapex_decode.c -lzstd 2>/dev/null \
      && ACEAPEX_DECODE_SO=$T/libaceapex_decode.so PYTHONPATH=python python3 -m pytest -q python/tests >$T/py.log 2>&1; then r=pass; else r=fail; fi
   printf 'head_python_tests\t%s\t%s\n' "$r" "$(tail -n 1 $T/py.log | tr '\t' ' ' | head -c 120)"
 else

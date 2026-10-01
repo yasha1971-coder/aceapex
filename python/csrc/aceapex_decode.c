@@ -22,6 +22,7 @@
  *   off, reps shift. Distances never leave the block (that is the whole point).
  */
 #include "aceapex_decode.h"
+#include "ax_env.h"      /* ax_getenv: FSE_CHUNK of legacy archives only with ACEAPEX_ENV_TUNING */
 #include "ax_rans.h"   /* rANS token chunks (entry bit 62); identical copy of src/ax_rans.h */
 #include "ax_lit_open.h" /* zstd-free literal chunks, modes 2/3; identical copy of src/ax_lit_open.h */
 #include <stdlib.h>
@@ -69,7 +70,7 @@ typedef struct {
     ZSTD_DCtx* dctx;                   /* reused across chunks: one workspace per cursor */
 } Cur;
 static uint64_t fse_default_chunk(void){
-    const char* e=getenv("FSE_CHUNK"); uint64_t v=e?strtoull(e,0,10):0;
+    const char* e=ax_getenv("FSE_CHUNK"); uint64_t v=e?strtoull(e,0,10):0;
     if(v>=4096){ v&=~(uint64_t)4095; if(v>((uint64_t)16<<20)) v=(uint64_t)16<<20; return v; }
     return 512*1024;
 }
