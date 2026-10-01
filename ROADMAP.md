@@ -118,6 +118,11 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+01.10 (10): Blackwell ddd97f9 QUICK PASSED (results/colab-2026-10-01-rtx-pro-6000-blackwell-ddd97f9-quick.log): ABI/.so.1
+проверены (пример через .so bit-perfect); библиотека chr1.open 1.931 мс (131.5 GB/s), t2t.open 19.577 мс (161.2 GB/s);
+t2t seq 4.508 -> 3.487 (SEQ), unpack 9.988 -> 8.873 (EXC), on-device 19.8 мс (было 22.5). Узкие места t2t: bases
+8.28, match 5.08, seq 3.49. XXH3-проверка: chr1 +4.3 мс (цель <= 3 не достигнута), t2t +66 мс (x4.4).
+Мелочь: строка «plan with VALIDATE_ZSTD (+-160 ms)» — первый plan_create включает инициализацию CUDA (~160 мс).
 01.10 (9): AX_OPEN_EXC=1 по умолчанию — в инструменте и в библиотеке (k_open_cg: прогоны + позиции исключений в
 temp-области o_epos плана; k_open_bases_x: основания, регистр и исключения одной uint4-записью; k_open_exc больше не
 запускается); AX_OPEN_BASES удалён. gpu_plan_emu исполняет новую схему (позиции в temp), open_warp_emu сверяет её с
@@ -222,7 +227,9 @@ match 30.3, bases 7.4, seq 5.1. Архивы zstd/rans T2T зависят от l
 898 263 414; 1.4.8: 902 319 887 / 898 903 131), open одинаков.
 
 ## Дальше
-0000. Colab QUICK: SUMMARY, open-путь библиотеки с EXC (t2t), строки [open variants] SEQ/EXC.
+0000. t2t: bases 8.28 мс (k_open_bases_x) — главный этап; XXH3-цепочка на t2t 66 мс — последовательная по 3M блоков,
+   нужен другой разрез (контрольная сумма на блок — «Ждут решения» п.9) или параллельные дорожки; прогоны Colab —
+   QUICK, сразу отключать среду (runtime.unassign).
 000. Colab (Blackwell): t2t.zstd флипы с VALIDATE_ZSTD — пойманы планом, без TIMEOUT; время плана с флагом на Colab.
    Сообщить NVIDIA о зависании nvCOMP (repro готов) — внешнее действие, по слову пользователя.
 00. После тега v2.2.0: публикация release/v2.2.0.md как GitHub Release, пост 4487, задание hw-apex-bench, PR lzbench — по слову.
