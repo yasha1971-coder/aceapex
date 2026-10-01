@@ -64,6 +64,45 @@ static inline uint64_t rd64(const uint8_t* p) { uint64_t v; memcpy(&v, p, 8); re
 static inline uint32_t rd32(const uint8_t* p) { uint32_t v; memcpy(&v, p, 4); return v; }
 static inline uint64_t al(uint64_t x) { return (x + 255) & ~255ull; }
 
+/* A zstd frame as nvCOMP gets it, checked on the host before any launch (RFC 8878): magic, frame header
+ * (reserved bit 0, no dictionary), Frame_Content_Size when present == the size the plan expects, then every block
+ * header: type not reserved, Block_Size <= Block_Maximum_Size = min(Window_Size, 128 KiB), raw/RLE bytes inside
+ * the frame, regenerated raw/RLE bytes <= the expected size, the last block and the optional checksum ending
+ * exactly at the frame's end. Returns 0 when the frame passes. A frame that passes can still be corrupt inside
+ * a compressed block: nvCOMP reports that per frame (ACEAPEX_GPU_STATUS_ZSTD). */
+static inline int zstd_frame_check(const uint8_t* f, uint64_t csz, uint64_t osz) {
+    if (csz < 6 || rd32(f) != 0xFD2FB528u) return 1;
+    const uint8_t fhd = f[4]; const uint32_t fcs_flag = fhd >> 6, single = (fhd >> 5) & 1, cks = (fhd >> 2) & 1, did = fhd & 3;
+    if (fhd & 0x08) return 2;                                   /* reserved bit */
+    if (did) return 3;                                          /* the encoder never uses a dictionary */
+    uint64_t p = 5, win = 0;
+    if (!single) { const uint8_t wd = f[p++]; const uint32_t wl = 10 + (wd >> 3); if (wl > 41) return 4;
+        const uint64_t base = 1ull << wl; win = base + (base / 8) * (wd & 7); }
+    static const uint32_t fsz[4] = {0, 2, 4, 8}; const uint32_t fl = (fcs_flag == 0 && single) ? 1 : fsz[fcs_flag];
+    if (p + fl + 3 > csz) return 5;
+    uint64_t fcs = 0; bool has_fcs = fl > 0;
+    for (uint32_t i = 0; i < fl; i++) fcs |= (uint64_t)f[p + i] << (8 * i);
+    if (fl == 2) fcs += 256;
+    p += fl;
+    if (has_fcs && fcs != osz) return 6;
+    if (single) win = fcs;
+    const uint64_t bmax = std::min<uint64_t>(win, 128 * 1024);
+    uint64_t regen = 0;
+    for (;;) {
+        if (p + 3 > csz) return 7;
+        const uint32_t h = f[p] | (uint32_t)f[p + 1] << 8 | (uint32_t)f[p + 2] << 16; p += 3;
+        const uint32_t last = h & 1, type = (h >> 1) & 3, bsz = h >> 3;
+        if (type == 3) return 8;
+        if (bsz > bmax) return 9;
+        if (type == 1) { if (p + 1 > csz) return 10; p += 1; regen += bsz; }
+        else { if (bsz > csz - p) return 10; p += bsz; if (type == 0) regen += bsz; }
+        if (regen > osz) return 11;
+        if (last) break;
+    }
+    if (cks) p += 4;
+    return p == csz ? 0 : 12;
+}
+
 /* nv_temp(n, max_out, total_out): nvCOMP temp bytes for n frames (nullptr: no nvCOMP; frames are refused) */
 typedef uint64_t (*NvTempFn)(size_t n, size_t max_out, size_t total_out);
 
@@ -166,6 +205,7 @@ static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt
       for (size_t i = 0; i < ix.size(); i++) { r[i] = P.rans[ix[i]]; k[i] = P.rans_key[ix[i]]; P.cls_off[r[i].pad + 1]++; }
       for (int q = 0; q < C_N; q++) P.cls_off[q + 1] += P.cls_off[q];
       P.rans.swap(r); P.rans_key.swap(k); }
+    for (const auto& j : P.nv) if (zstd_frame_check(a + j.in_off, j.csz, j.osz)) return E_STREAM;
     if (!P.nv.empty() && !nvt) return E_NVCOMP;
     for (auto& j : P.nv) { P.max_osz = std::max(P.max_osz, j.osz); P.nv_out_total += j.osz; }
     P.nv_temp = P.nv.empty() ? 0 : nvt(P.nv.size(), P.max_osz, P.nv_out_total);

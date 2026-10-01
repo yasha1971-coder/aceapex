@@ -47,8 +47,12 @@ the requested bytes into `d_out`. nvCOMP has no equivalent: it decodes whole fra
 
 ## Fail-closed
 
-- Framing errors (header, block table, chunk tables, open-pack headers): `plan_create` returns NULL,
-  `aceapex_gpu_last_error()` = `ACEAPEX_GPU_E_ARCHIVE`.
+- Framing errors (header, block table, chunk tables, open-pack headers, zstd frame and block headers -
+  magic, no dictionary, Frame_Content_Size == the expected size, Block_Size <= Block_Maximum_Size, the last block
+  ending the frame): `plan_create` returns NULL, `aceapex_gpu_last_error()` = `ACEAPEX_GPU_E_ARCHIVE`. Damage
+  inside a compressed zstd block passes these checks; nvCOMP reports it per frame (`_ZSTD`). A corrupt frame
+  nvCOMP itself does not finish on cannot be stopped from outside a kernel: open question on Blackwell
+  (verify/repro/README.md).
 - Content errors found on the device set bits of `*d_status`: `ACEAPEX_GPU_STATUS_PIECE` (a rANS chunk or
   piece, spec 3.1.1), `_OPEN` (an open DNA pack, spec 3.4), `_ZSTD` (a frame failed or decoded to another
   size), `_MATCH` (a block's tokens did not decode to exactly its size), `_LIMIT` (a kernel loop hit its step
