@@ -51,3 +51,7 @@ libaceapex_gpu.so.1: src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp src/aceapex_
 
 test:
 	./verify.sh HEAD
+
+# speed gate on ace-core against results/baseline_ace-core.tsv (> 5 % slower: fail); see scripts/perf_gate.sh
+perf-gate:
+	bash scripts/perf_gate.sh

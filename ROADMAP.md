@@ -118,6 +118,10 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+01.10 (18): ворота скорости. CPU: results/baseline_ace-core.tsv (chr1/t2t/silesia x default/open x 1 поток/все, медиана из 5,
+архивы с размером в базе), scripts/perf_gate.sh (make perf-gate): > 5 % медленнее — FAIL с таблицей, --update пишет только
+ускорившиеся строки (отдельный коммит с логом); разброс на ace-core ±3 %. GPU: results/baseline_blackwell.tsv (a7d161d:
+библиотека и инструмент on-device, chr1.open/t2t.open); в Colab строки «gate ...» в SUMMARY, SLOWER валит вердикт.
 01.10 (17): предел кремния ace-core (EPYC 4344P Zen 4, 8/16, AVX-512, 2 канала DDR5): memcpy 21 ГБ/с, чтение 49, запись 29.
 Декод был последовательным на 0.42 с из 0.96 (t2t, 16 потоков): копия архива 853 МБ, page faults, munmap. Сделано: потоки
 читаются из архива на месте, литералы на всех потоках при малых токенах, буферы >= 64 МиБ на huge pages (AX_HUGE),

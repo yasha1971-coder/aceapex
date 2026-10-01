@@ -258,9 +258,20 @@ AR=$(grep -c '^exitapi ' $L); AOK=$(grep -c '^exitapi 0 ' $L); PE=$(grep -c $'^h
 echo "C ABI: $AOK of $AR archives bit-perfect with every range; plan emulator $PE/1" | tee -a $L
 grep '^exitapi [1-9]' $L | sed 's/^/  FAILED: /' | tee -a $L
 NTO=$(grep -c '^TIMEOUT ' $L); echo "steps over the time limit: $NTO" | tee -a $L
+# speed gate against results/baseline_blackwell.tsv (same GPU name only): library and tool on-device ms per archive, a
+# row more than 5 % slower fails the verdict; faster rows are reported for a baseline update (a commit of its own)
+awk -F'\t' -v w="$W/" -v g="$GPU" 'FNR==NR{ if($1==g){ k=$2" "$3; base[k]=$4 } next }
+  $1=="APIROW"{ k=$2; sub(w,"",k); sub(/\.aet$/,"",k); now[k" library"]=$4 }
+  $1=="ROW"{ k=$2; sub(w,"",k); sub(/\.aet$/,"",k); now[k" tool"]=$10 }
+  END{ for(k in base){ if(!(k in now) || now[k]+0<=0) continue; c=100*(now[k]/base[k]-1); v=(c>5?"SLOWER":(c<-5?"FASTER":"OK"))
+         split(k,a," "); line[a[1]]=line[a[1]] sprintf("%s%s %.3f/%.3f ms (%+.1f %%) %s", (line[a[1]]==""?"":", "), a[2], now[k], base[k], c, v) }
+       for(x in line) print "gate " x ": " line[x] }' results/baseline_blackwell.tsv $L | sort > $W/gate.txt
+[ -s $W/gate.txt ] || echo "gate: no baseline for $GPU (results/baseline_blackwell.tsv)" > $W/gate.txt
+cat $W/gate.txt | tee -a $L
 VERDICT=FAILED
 [ "$N" = "$RUN" ] && [ "$E" = 2 ] && [ "$F" = 5 ] && [ "$AOK" = "$AR" ] && [ "$PE" = 1 ] && grep -q "^ROW	$W/chr1.open" $L \
-  && ! grep -q 'archive rejected\|ROUND-TRIP FAILED\|^example .*FAILED\|shared library build FAILED' $L && [ "$NTO" = 0 ] && VERDICT=PASSED
+  && ! grep -q 'archive rejected\|ROUND-TRIP FAILED\|^example .*FAILED\|shared library build FAILED' $L && [ "$NTO" = 0 ] \
+  && ! grep -q SLOWER $W/gate.txt && VERDICT=PASSED
 [ $VERDICT = PASSED ] && echo "RESULT: all passes bit-perfect on $GPU" | tee -a $L \
   || echo "!!! NOT PASSED on $GPU - valid figures only in bit-perfect rows" | tee -a $L
 # == SUMMARY == (<= 15 lines): commit, mode, GPU; per archive library / tool on-device ms, stages, [open variants]; verdict.
@@ -276,7 +287,8 @@ SIZES=""; for X in $CORP; do [ -s $W/$X.fa ] && SIZES="$SIZES $X=$(stat -c%s $W/
     END{ for(i=1;i<=m && i<=11;i++){ k=ord[i]; x=k; sub(/\..*/,"",x)
            lib = (k in api) ? sprintf("library %.3f ms (%.1f GB/s), ", api[k], (api[k]>0 && (x in sz)) ? sz[x]/api[k]/1e6 : 0) : ""
            printf "%s: %stool %.3f ms; seq %s, unpack %.3f, match %.3f ms; %s%s\n", k, lib, t[k], sq[k], un[k], ma[k], ck[k], var[k] } }' $L
-  echo "verdict $VERDICT"; } > $W/summary.txt
+  cat $W/gate.txt
+  echo "verdict $VERDICT$(grep -q SLOWER $W/gate.txt && echo ' (speed gate: slower than results/baseline_blackwell.tsv by > 5 %)')"; } > $W/summary.txt
 cat $W/summary.txt | tee -a $L
 # the summary appended and the whole log copied to Drive: the runtime may be released right after (runtime.unassign)
 [ $HAVE_DRIVE = 1 ] && mkdir -p /content/drive/MyDrive/aceapex_logs && cat $W/summary.txt >> /content/drive/MyDrive/aceapex_logs/summary.txt \
