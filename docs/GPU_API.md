@@ -100,4 +100,6 @@ open profile 2.826 ms against 3.501 ms for the zstd profile through nvCOMP (x1.2
 35.542 ms (x1.31). The library, same GPU, chr1 (`results/colab-2026-09-30-rtx-pro-6000-blackwell-74fc806-gpu-capi.log`,
 on-device, median of 3): open profile 2.474 ms (the tool 2.829 ms on the same archive), zstd profile 3.358 ms
 (3.518 ms); 200 of 200 random windows equal to the original, 16 KiB window 0.691 ms (open) / 1.126 ms (zstd).
-Cost of the XXH3 check: pending the next run.
+Cost of the XXH3 check, first version (`results/colab-2026-10-01-rtx-pro-6000-blackwell-f2e16b7-xxh3.log`): +9.970 ms on
+chr1 zstd (3.297 -> 13.267 ms), +9.850 ms on chr1 open; byte flips caught 20 of 20 on both profiles with the check
+(zstd: 0 of 20 without it). Second version (key table, 64-bit loads, chain prefetch 32 blocks ahead): pending.

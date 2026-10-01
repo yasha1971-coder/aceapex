@@ -49,6 +49,14 @@ AXH_C uint8_t axh_secret[192] = {
     0x45, 0xcb, 0x3a, 0x8f, 0x95, 0x16, 0x04, 0x28, 0xaf, 0xd7, 0xfb, 0xca, 0xbb, 0x4b, 0x40, 0x7e,
 };
 
+AXH_C uint64_t axh_k64[24] = {   /* the secret as 64-bit words at the 8-aligned offsets 0..184 (stripe keys 0..22, scramble keys 16..23) */
+    0xbe4ba423396cfeb8ull, 0x1cad21f72c81017cull, 0xdb979083e96dd4deull, 0x1f67b3b7a4a44072ull,
+    0x78e5c0cc4ee679cbull, 0x2172ffcc7dd05a82ull, 0x8e2443f7744608b8ull, 0x4c263a81e69035e0ull,
+    0xcb00c391bb52283cull, 0xa32e531b8b65d088ull, 0x4ef90da297486471ull, 0xd8acdea946ef1938ull,
+    0x3f349ce33f76faa8ull, 0x1d4f0bc7c7bbdcf9ull, 0x3159b4cd4be0518aull, 0x647378d9c97e9fc8ull,
+    0xc3ebd33483acc5eaull, 0xeb6313faffa081c5ull, 0x49daf0b751dd0d17ull, 0x9e68d429265516d3ull,
+    0xfca1477d58be162bull, 0xce31d07ad1b8f88full, 0x280416958f3acb45ull, 0x7e404bbbcafbd7afull,
+};
 AXH_HD uint64_t axh_r64(const uint8_t* p) { uint64_t v; memcpy(&v, p, 8); return v; }   /* little-endian hosts and GPUs */
 AXH_HD uint32_t axh_r32(const uint8_t* p) { uint32_t v; memcpy(&v, p, 4); return v; }
 AXH_HD uint64_t axh_rotl(uint64_t x, int r) { return (x << r) | (x >> (64 - r)); }
@@ -115,6 +123,14 @@ AXH_HD uint64_t axh_stripe_lane(const uint8_t* st, const uint8_t* k, unsigned la
 AXH_HD uint64_t axh_block_lane(const uint8_t* block, const uint8_t* s, unsigned lane) {
     uint64_t t = 0; for (unsigned st = 0; st < 16; st++) t += axh_stripe_lane(block + 64 * st, s + 8 * st, lane); return t;
 }
+/* the same with the input as aligned 64-bit words (w = block start, 128 words) and the key table */
+AXH_HD uint64_t axh_block_lane_w(const uint64_t* w, const uint64_t* k64, unsigned lane) {
+    uint64_t t = 0;
+    for (unsigned st = 0; st < 16; st++) { uint64_t dk = w[8 * st + lane] ^ k64[st + lane]; t += w[8 * st + (lane ^ 1)] + (uint64_t)(uint32_t)dk * (dk >> 32); }
+    return t;
+}
+/* one chain step with the lane's scramble key (axh_k64[16 + lane]) in a register */
+AXH_HD uint64_t axh_step_k(uint64_t acc, uint64_t S, uint64_t key) { acc += S; acc ^= acc >> 47; acc ^= key; return acc * AXH_P32_1; }
 AXH_HD uint64_t axh_init(unsigned lane) {
     const uint64_t a[8] = {AXH_P32_3, AXH_P64_1, AXH_P64_2, AXH_P64_3, AXH_P64_4, AXH_P32_2, AXH_P64_5, AXH_P32_1}; return a[lane];
 }

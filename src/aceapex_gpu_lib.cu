@@ -51,22 +51,27 @@ __global__ void kg_nvcheck(const int* st, const size_t* act, const size_t* os, u
     for(uint32_t i=blockIdx.x*blockDim.x+threadIdx.x;i<n;i+=gridDim.x*blockDim.x) if(st[i]!=0 || act[i]!=os[i]) atomicOr(e+5,1u); }
 __global__ void kg_status(const uint32_t* e, int* st){
     if(threadIdx.x==0) *st=(e[0]?ACEAPEX_GPU_STATUS_PIECE:0)|(e[2]?ACEAPEX_GPU_STATUS_OPEN:0)|(e[5]?ACEAPEX_GPU_STATUS_ZSTD:0)|(e[4]?ACEAPEX_GPU_STATUS_MATCH:0)|(e[6]?ACEAPEX_GPU_STATUS_HASH:0); }
-// XXH3_64bits of the output (src/ax_xxh3.h): block terms in parallel (8 threads per 1 KiB block), then the
-// scramble chain on 8 lanes of one warp, prefetching 8 blocks ahead, then tail, merge and compare
+// XXH3_64bits of the output (src/ax_xxh3.h): block terms in parallel (8 threads per 1 KiB block, aligned 64-bit
+// words, key table), then the scramble chain - one step per KiB on each of the 8 independent accumulator lanes, one
+// thread per lane, the lane's key in a register and the block terms prefetched 32 steps ahead - then tail, merge, compare
+#define AXH_PF 32
 __global__ void kg_xxh_blocks(const uint8_t* __restrict__ in, uint64_t nb, uint64_t* __restrict__ S){
-    for(uint64_t t=blockIdx.x*(uint64_t)blockDim.x+threadIdx.x;t<nb*8;t+=(uint64_t)gridDim.x*blockDim.x)
-        S[t]=axh_block_lane(in+(t>>3)*AXH_BLOCK,axh_secret,(unsigned)(t&7)); }
-__global__ void kg_xxh_chain(const uint8_t* __restrict__ in, uint64_t len, const uint64_t* __restrict__ S, uint64_t want, uint32_t* e){
+    const bool al=((uintptr_t)in&7)==0;
+    for(uint64_t t=blockIdx.x*(uint64_t)blockDim.x+threadIdx.x;t<nb*8;t+=(uint64_t)gridDim.x*blockDim.x){
+        const unsigned lane=(unsigned)(t&7); const uint8_t* blk=in+(t>>3)*AXH_BLOCK;
+        S[t]= al ? axh_block_lane_w((const uint64_t*)blk,axh_k64,lane) : axh_block_lane(blk,axh_secret,lane); } }
+__global__ void __launch_bounds__(32) kg_xxh_chain(const uint8_t* __restrict__ in, uint64_t len, const uint64_t* __restrict__ S, uint64_t want, uint32_t* e){
     const unsigned lane=threadIdx.x&7;
     if(len<=240){ if(threadIdx.x==0 && axh_short(in,len,axh_secret)!=want) e[6]=1; return; }
-    const uint64_t nb=(len-1)/AXH_BLOCK; uint64_t acc=axh_init(lane), buf[8];
+    const uint64_t nb=(len-1)/AXH_BLOCK, key=axh_k64[16+lane]; const uint64_t* Sl=S+lane; uint64_t acc=axh_init(lane), buf[AXH_PF];
     #pragma unroll
-    for(int i=0;i<8;i++) buf[i] = (uint64_t)i<nb ? S[i*8+lane] : 0;
+    for(int i=0;i<AXH_PF;i++) buf[i] = (uint64_t)i<nb ? __ldg(Sl+8ull*i) : 0;
     uint64_t b=0;
-    for(; b+8<=nb; b+=8){
+    for(; b+AXH_PF<=nb; b+=AXH_PF){
         #pragma unroll
-        for(int i=0;i<8;i++){ const uint64_t v=buf[i]; buf[i] = b+8+i<nb ? S[(b+8+i)*8+lane] : 0; acc=axh_chain_step(acc,v,axh_secret,lane); } }
-    for(int i=0; b<nb; b++, i++) acc=axh_chain_step(acc,buf[i],axh_secret,lane);
+        for(int i=0;i<AXH_PF;i++){ const uint64_t v=buf[i], nx=b+AXH_PF+i; buf[i] = nx<nb ? __ldg(Sl+8ull*nx) : 0; acc=axh_step_k(acc,v,key); } }
+    #pragma unroll
+    for(int i=0;i<AXH_PF;i++) if(b+i<nb) acc=axh_step_k(acc,buf[i],key);
     acc=axh_tail_lane(acc,in,len,axh_secret,lane);
     uint64_t a[8];
     #pragma unroll
