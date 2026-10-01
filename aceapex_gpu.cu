@@ -278,6 +278,10 @@ int main(int argc, char** argv){
     uint64_t nends=0; for(const OpenChunk& q:opn) nends+=q.ncse;          // run ends: at most one per case-run byte
     uint32_t *dEnds, *dNrun; CK(cudaMalloc(&dEnds,(nends+1)*4)); CK(cudaMalloc(&dNrun,(NO+1)*4));
     for(size_t k=0;k<NO;k++){ const OpenChunk& q=opn[k]; ho[k]={dOS+q.off[0],dOS+q.off[1],dOS+q.off[2],dOS+q.off[3],dS[0]+(uint64_t)q.chunk*chunk[0],nullptr,dNrun+k,q.raw,q.ncse,q.ngap,q.nexc}; }
+    // AX_OPEN_EXC: exception positions of every open chunk (chunk k's from eoff[k])
+    std::vector<uint64_t> heo(NO+1,0); for(size_t k=0;k<NO;k++) heo[k+1]=heo[k]+opn[k].nexc;
+    uint64_t* dEoff; uint32_t* dEpos; CK(cudaMalloc(&dEoff,(NO+1)*8)); CK(cudaMalloc(&dEpos,(heo[NO]+1)*4));
+    CK(cudaMemcpy(dEoff,heo.data(),(NO+1)*8,cudaMemcpyHostToDevice));
     { uint64_t e=0; for(size_t k=0;k<NO;k++){ ho[k].ends=dEnds+e; e+=opn[k].ncse; } }
     if(NO) CK(cudaMemcpy(dOD,ho.data(),NO*sizeof(OpenDesc),cudaMemcpyHostToDevice));
     for(auto& r:raws) CK(cudaMemcpy(dS[r.stream]+r.dst_off,r.src,r.n,cudaMemcpyHostToDevice));
@@ -307,8 +311,14 @@ int main(int argc, char** argv){
     auto h2d=[&](cudaStream_t s){ CK(cudaMemcpyAsync(dC,hc,cbytes,cudaMemcpyHostToDevice,s)); };
     auto zstd_rng=[&](cudaStream_t s, size_t i0, size_t i1){ if(i1>i0) NV(nvcompBatchedZstdDecompressAsync(dcp+i0,dcs+i0,dos+i0,dact+i0,i1-i0,dtemp,temp,dop+i0,opts,dst+i0,s)); };
     auto zstd_all=[&](cudaStream_t s){ zstd_rng(s,0,N); };
+    // variants of the open path (same bytes; measured against each other below, "[open variants]"):
+    // AX_OPEN_SEQ=1 windowed refill in k_rans, AX_OPEN_BASES=1 warp-bracketed run search + 32-bit seq load,
+    // AX_OPEN_EXC=1 exception positions in the case-run kernel and the bytes in the bases store
+    int VS=getenv("AX_OPEN_SEQ")?atoi(getenv("AX_OPEN_SEQ")):0, VB=getenv("AX_OPEN_BASES")?atoi(getenv("AX_OPEN_BASES")):0, VE=getenv("AX_OPEN_EXC")?atoi(getenv("AX_OPEN_EXC")):0;
+    const int VS0=VS, VB0=VB, VE0=VE;
     auto pieces=[&](cudaStream_t s, int c0, int c1){ const size_t i0=cls_off[c0], n=cls_off[c1]-i0;
-        if(n) k_rans<<<(unsigned)((n+AXW_WARPS-1)/AXW_WARPS),32*AXW_WARPS,0,s>>>(dC,dRD+i0,(uint32_t)n,dErr); };
+        if(n){ if(VS) k_rans<1><<<(unsigned)((n+AXW_WARPS-1)/AXW_WARPS),32*AXW_WARPS,0,s>>>(dC,dRD+i0,(uint32_t)n,dErr);
+               else   k_rans<0><<<(unsigned)((n+AXW_WARPS-1)/AXW_WARPS),32*AXW_WARPS,0,s>>>(dC,dRD+i0,(uint32_t)n,dErr); } };
     auto rans_all=[&](cudaStream_t s){ pieces(s,0,P_NCLS); };
     auto tok=[&](cudaStream_t s){ zstd_rng(s,0,NT); pieces(s,P_TOK,P_TOK+1); };   // token streams: zstd frames and/or rANS chunks
     auto lit=[&](cudaStream_t s){ zstd_rng(s,NT,N); pieces(s,P_SEQ,P_NCLS); };    // literal zstd frames and open pieces
@@ -318,9 +328,11 @@ int main(int argc, char** argv){
         if(e[2]){ fprintf(stderr,"[%s] open DNA pack: %u of %zu chunks failed the spec 3.4 checks (first: %u) - archive rejected\n",tag,e[2],NO,e[3]); exit(6); } };
     dim3 g1((unsigned)std::max<size_t>(dna.size(),1), (unsigned)((chunk[0]/AXU_PER+255)/256));
     dim3 go((unsigned)std::max<size_t>(NO,1), (unsigned)((chunk[0]/16+255)/256));
-    auto un_seq=[&](cudaStream_t s){ if(NO) k_open_bases<<<go,256,0,s>>>(dOD); };                     // bases + case
-    auto un_cse=[&](cudaStream_t s){ if(NO) k_open_cse<<<(unsigned)NO,AXO_NT,0,s>>>(dOD,dErr+2); };   // case runs -> run ends
-    auto un_exc=[&](cudaStream_t s){ if(NO) k_open_exc<<<(unsigned)NO,AXO_NT,0,s>>>(dOD,dErr+2); };
+    auto un_seq=[&](cudaStream_t s){ if(NO){ if(VE) k_open_bases_v<1><<<go,256,0,s>>>(dOD,dEpos,dEoff);       // bases + case (+ exceptions)
+                                             else if(VB) k_open_bases_v<0><<<go,256,0,s>>>(dOD,dEpos,dEoff); else k_open_bases<<<go,256,0,s>>>(dOD); } };
+    auto un_cse=[&](cudaStream_t s){ if(NO){ if(VE) k_open_cg<<<(unsigned)NO,AXO_NT,0,s>>>(dOD,dEpos,dEoff,dErr+2);  // case runs -> run ends (+ exception positions)
+                                             else k_open_cse<<<(unsigned)NO,AXO_NT,0,s>>>(dOD,dErr+2); } };
+    auto un_exc=[&](cudaStream_t s){ if(NO && !VE) k_open_exc<<<(unsigned)NO,AXO_NT,0,s>>>(dOD,dErr+2); };
     // fused (literal chunks <= 64 KiB, every open chunk has its seq piece at cls_off[P_SEQ]+k): pieces without seq,
     // case runs, seq+bases in one kernel, exceptions - the same bytes as lit + unpack
     // closed 30.09 (Blackwell: fused chr1 2.18 vs 1.47 ms, T2T 19.36 vs 13.23 - one warp decodes the seq piece while
@@ -394,6 +406,30 @@ int main(int argc, char** argv){
         { const uint32_t z0[4]={0u,0xffffffffu,0u,0xffffffffu}; CK(cudaMemcpy(dErr,z0,16,cudaMemcpyHostToDevice)); lit(s0); unpack(s0); CK(cudaStreamSynchronize(s0)); }
         printf("[fused] lit + unpack %.3f ms (lit %.3f + unpack %.3f; seq piece %.3f + bases %.3f) -> fused %.3f ms (seq+bases kernel %.3f); on-device %.3f -> %.3f ms\n",
             mL+mU,mL,mU,mLp[P_SEQ],mUs,mF,mFS,mD,mT+mF+mM);
+    }
+
+    // ---- open variants (AX_OPEN_SEQ / AX_OPEN_BASES / AX_OPEN_EXC), each against the same archive in this run: the
+    // literal stream and the output are cleared, lit + unpack + match run with the variant, the output is hashed
+    // (bit-perfect or the run fails); then seq pieces and unpack timed (median of reps)
+    if(NO){
+        struct V { const char* name; int s,b,e; float seq,un,bases,cse,exc; bool ok; };
+        V vv[4]={{"base",0,0,0},{"AX_OPEN_SEQ=1",1,0,0},{"AX_OPEN_BASES=1",0,1,0},{"AX_OPEN_EXC=1",0,0,1}};
+        for(V& v:vv){ VS=v.s; VB=v.b; VE=v.e;
+            CK(cudaMemset(dS[0],0,ssz[0])); CK(cudaMemset(dOUT,0,orig)); CK(cudaMemset(dOS,0,oscr)); CK(cudaMemset(dEpos,0,(heo[NO]+1)*4));
+            if(N>NT) zstd_rng(s0,NT,N);
+            pieces(s0,P_SEQ,P_NCLS); unpack(s0); match(G,s0,0,nb); CK(cudaStreamSynchronize(s0)); CK(cudaGetLastError());
+            rans_check(v.name); v.ok=fnv_check(v.name); ok=v.ok && ok;
+            std::vector<float> a,b,c,d,e; for(int r=0;r<reps;r++){ a.push_back(elapsed(s0,[&]{pieces(s0,P_SEQ,P_SEQ+1);})); b.push_back(elapsed(s0,[&]{unpack(s0);}));
+                c.push_back(elapsed(s0,[&]{un_seq(s0);})); d.push_back(elapsed(s0,[&]{un_cse(s0);})); e.push_back(elapsed(s0,[&]{un_exc(s0);})); }
+            v.seq=median_ms(a); v.un=median_ms(b); v.bases=median_ms(c); v.cse=median_ms(d); v.exc=median_ms(e); }
+        VS=VS0; VB=VB0; VE=VE0;
+        printf("[open variants] seq pieces %.3f -> %.3f ms (AX_OPEN_SEQ=1, windowed refill, %s); unpack %.3f ms (case %.3f + bases %.3f + exceptions %.3f) -> "
+               "%.3f ms (AX_OPEN_BASES=1: bases %.3f, %s) -> %.3f ms (AX_OPEN_EXC=1: case+exception positions %.3f + bases with exceptions %.3f, %s)\n",
+               vv[0].seq,vv[1].seq,vv[1].ok?"bit-perfect":"DIFFERS",vv[0].un,vv[0].cse,vv[0].bases,vv[0].exc,vv[2].un,vv[2].bases,vv[2].ok?"bit-perfect":"DIFFERS",
+               vv[3].un,vv[3].cse,vv[3].bases,vv[3].ok?"bit-perfect":"DIFFERS");
+        printf("OPENVAR\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%d\n",argv[1],vv[0].seq,vv[1].seq,vv[0].un,vv[2].un,vv[3].un,
+               vv[0].cse,vv[0].bases,vv[0].exc,vv[2].bases,vv[3].cse,vv[3].bases,vv[0].seq+vv[0].un-(std::min(vv[0].seq,vv[1].seq)+std::min(std::min(vv[0].un,vv[2].un),vv[3].un)),
+               (int)(vv[0].ok&&vv[1].ok&&vv[2].ok&&vv[3].ok));
     }
 
     // ---- pipeline: NB batches of frames in order; H2D of batch k+1 on s1 overlaps zstd of batch k on s0

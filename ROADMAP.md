@@ -118,6 +118,13 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+01.10 (7): open-путь T2T на Blackwell (unpack 9.87 = bases 5.44 + exceptions 4.04, seq 4.52, всего 22.5 мс). Данные
+T2T open: 47 212 кусков, ~818 исключений (переводы строк) и ~1450 байт регистровых прогонов на кусок, seq — 16 КиБ
+почти несжимаемых (756 -> 773 МБ). Варианты в инструменте, до/после в одном прогоне, bit-perfect по хэшу:
+AX_OPEN_SEQ=1 (слова rANS из окна регистров — глобальная загрузка была на зависимой цепочке каждого шага),
+AX_OPEN_BASES=1 (вилка поиска прогонов на варп + чтение u32), AX_OPEN_EXC=1 (позиции исключений в ядре прогонов,
+байты — в uint4-записи bases). CPU-судьи rans_warp_emu / open_warp_emu проверяют оба варианта. ncu-профиль ядер open
+на chr1/t2t в Colab (scripts/ncu_summary.py). Судья 58/0. Ждёт Colab (+ проверка 0e365c3: ABI, .so.1).
 01.10 (6): GPU C-ABI заморожен перед 2.3 (flags uint64_t, неизвестные биты -> E_ARGS, версия 20300 + функция,
 libaceapex_gpu.so.1 с SONAME, раздел Stability, head_gpu_abi без CUDA). Автономный repro nvCOMP —
 verify/repro/nvcomp_zstd_hang (4 файла). Судья 58/0. Ждёт Colab (shared library + пример через .so).
@@ -205,6 +212,8 @@ match 30.3, bases 7.4, seq 5.1. Архивы zstd/rans T2T зависят от l
 898 263 414; 1.4.8: 902 319 887 / 898 903 131), open одинаков.
 
 ## Дальше
+0000. По строкам «[open variants]» / ncu: выигравшие варианты open — в библиотеку (k_rans<1>, k_open_cg + k_open_bases_v,
+   temp-раскладка под позиции исключений) и по умолчанию в инструменте.
 000. Colab (Blackwell): t2t.zstd флипы с VALIDATE_ZSTD — пойманы планом, без TIMEOUT; время плана с флагом на Colab.
    Сообщить NVIDIA о зависании nvCOMP (repro готов) — внешнее действие, по слову пользователя.
 00. После тега v2.2.0: публикация release/v2.2.0.md как GitHub Release, пост 4487, задание hw-apex-bench, PR lzbench — по слову.

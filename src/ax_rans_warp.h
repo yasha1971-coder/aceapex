@@ -118,4 +118,17 @@ AXW_HD void axw_refill(uint32_t lane, bool need, uint32_t mask, uint32_t base, u
     if (idx >= W) { bad = true; return; }
     x = (x << 16) | axw_rd16(words + 2 * (size_t)idx);
 }
+/* Windowed refill (AX_OPEN_SEQ 1, same values as axw_refill): the refill word is on the dependent chain of every
+ * step, and a global load there costs hundreds of cycles; instead lane l keeps words wb+l (w0) and wb+32+l (w1) in
+ * registers, a step takes its word from that 64-word window by shuffle (idx - wb < 64: base < wb + 32 at the step
+ * start and at most 31 lanes below), and when base passes wb + 32 the window moves by 32 with one coalesced load
+ * that the next 32 words do not wait for. Words past W read as 0 and are never used (idx >= W is bad, as before). */
+AXW_HD uint32_t axw_wload(const uint8_t* words, uint32_t W, uint32_t idx) { return idx < W ? axw_rd16(words + 2 * (size_t)idx) : 0; }
+/* the word lane `lane` needs this step: its index and position in the window */
+AXW_HD uint32_t axw_widx(uint32_t lane, uint32_t mask, uint32_t base) { return base + axw_popc(mask & ((1u << lane) - 1u)); }
+AXW_HD void axw_refill_v(bool need, uint32_t idx, uint32_t W, uint32_t v, uint32_t& x, bool& bad) {
+    if (!need) return;
+    if (idx >= W) { bad = true; return; }
+    x = (x << 16) | v;
+}
 #endif

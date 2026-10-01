@@ -83,6 +83,70 @@ AXW_HD void axl_bases16(uint32_t g, const uint8_t* seq, const uint32_t* ends, ui
         for (uint32_t k = 0; k < 16; k++) if (i0 + k < raw) dst[i0 + k] = (uint8_t)(w[k >> 2] >> (8 * (k & 3)));
     }
 }
+/* Variants measured against the steps above (AX_OPEN_BASES, AX_OPEN_EXC; same bytes, judged by open_warp_emu):
+ * a warp of k_open_bases covers 512 positions, so two lanes find the runs at its first and last position and every
+ * lane searches only between them (axl_run_in) instead of over all R run ends; the 4 packed bytes of 16 positions are
+ * one 32-bit load. With AX_OPEN_EXC the exception positions are written by the case-run kernel (axl_exc_pos) and the
+ * bases kernel puts the exception bytes into its 16-byte store (axl_bases16_v with epos), so no byte is written twice
+ * and the separate scattered exception pass is gone. */
+/* first run in [lo, hi] whose end is > pos (the answer is known to lie there) */
+AXW_HD uint32_t axl_run_in(const uint32_t* ends, uint32_t lo, uint32_t hi, uint32_t pos) {
+    while (lo < hi) { uint32_t mid = (lo + hi) >> 1; if (ends[mid] > pos) hi = mid; else lo = mid + 1; }
+    return lo;
+}
+/* first exception in [lo, hi] at a position >= pos */
+AXW_HD uint32_t axl_exc_in(const uint32_t* epos, uint32_t lo, uint32_t hi, uint32_t pos) {
+    while (lo < hi) { uint32_t mid = (lo + hi) >> 1; if (epos[mid] >= pos) hi = mid; else lo = mid + 1; }
+    return lo;
+}
+/* positions 16g .. 16g+15 as axl_bases16 from run j = axl_run_of(i0), packed bytes read as one word; with epos: the
+   exceptions e .. ehi-1 (positions ascending, e = first >= i0) inside the 16 positions take val[e] */
+AXW_HD void axl_bases16_v(uint32_t g, const uint8_t* seq, const uint32_t* ends, uint32_t R, uint32_t raw, uint8_t* dst, uint32_t j,
+                          const uint32_t* epos, uint32_t ehi, const uint8_t* val, uint32_t e) {
+    const uint32_t i0 = 16 * g;
+    if (i0 >= raw) return;
+    uint32_t sw = 0, w[4] = {0, 0, 0, 0};
+    if (i0 + 16 <= raw) {
+#ifdef __CUDA_ARCH__
+        sw = *(const uint32_t*)(seq + (i0 >> 2));
+#else
+        memcpy(&sw, seq + (i0 >> 2), 4);
+#endif
+    } else for (uint32_t q = 0; q < 4 && i0 + 4 * q < raw; q++) sw |= (uint32_t)seq[(i0 >> 2) + q] << (8 * q);
+#ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
+    for (uint32_t k = 0; k < 16; k++) {
+        const uint32_t i = i0 + k;
+        if (i < raw) {
+            while (j < R && ends[j] <= i) j++;
+            const uint32_t v = (sw >> (8 * (k >> 2))) & 0xFFu;
+            uint32_t c = (0x54474341u >> (8 * ((v >> (6 - 2 * (k & 3))) & 3))) & 0xFFu;
+            if (j & 1u) c |= 0x20;
+            w[k >> 2] |= c << (8 * (k & 3));
+        }
+    }
+    if (epos) for (; e < ehi; e++) {
+        const uint32_t p = epos[e];
+        if (p >= i0 + 16 || p >= raw) break;
+        if (p >= i0) { const uint32_t k = p - i0; w[k >> 2] = (w[k >> 2] & ~(0xFFu << (8 * (k & 3)))) | ((uint32_t)val[e] << (8 * (k & 3))); }
+    }
+    if (i0 + 16 <= raw) {
+#ifdef __CUDA_ARCH__
+        *(uint4*)(dst + i0) = make_uint4(w[0], w[1], w[2], w[3]);
+#else
+        memcpy(dst + i0, w, 16);
+#endif
+    } else {
+        for (uint32_t k = 0; k < 16; k++) if (i0 + k < raw) dst[i0 + k] = (uint8_t)(w[k >> 2] >> (8 * (k & 3)));
+    }
+}
+/* gap, AX_OPEN_EXC: exception j's position into epos (the checks of axl_exc) */
+AXW_HD void axl_exc_pos(bool term, uint32_t j, uint32_t v, uint64_t end, uint32_t nexc, uint32_t raw, uint32_t* epos, bool& bad) {
+    if (!term) return;
+    if (j >= nexc || (v == 0 && j > 0) || end >= raw) { bad = true; return; }
+    epos[j] = (uint32_t)end;
+}
 /* gap: exception j at position end (inclusive running sum) */
 AXW_HD void axl_exc(bool term, uint32_t j, uint32_t v, uint64_t end, uint32_t nexc, uint32_t raw,
                     const uint8_t* val, uint8_t* dst, bool& bad) {
