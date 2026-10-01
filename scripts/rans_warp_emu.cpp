@@ -64,14 +64,15 @@ static uint64_t rd64(const uint8_t* p) { uint64_t v; memcpy(&v, p, 8); return v;
 static uint32_t rd32(const uint8_t* p) { uint32_t v; memcpy(&v, p, 4); return v; }
 
 // both decoders on one chunk: 0 = agree, 1 = disagree
-static uint64_t g_ok = 0, g_rej = 0, g_bytes = 0;
+static uint64_t g_ok = 0, g_rej = 0, g_bytes = 0, g_scalar = 0;
 static int cmp_chunk(const uint8_t* c, size_t csz, size_t n) {
     std::vector<uint8_t> a(n + 1, 0xAA), e(n + 1, 0x55);
     int ra = axr_decode(c, csz, a.data(), n);
     int re = axw_decode_emu(c, (uint32_t)csz, e.data(), (uint32_t)n);
     std::vector<uint8_t> e1(n + 1, 0x33); int r1 = axw_decode_emu(c, (uint32_t)csz, e1.data(), (uint32_t)n, 1);   // windowed refill
-    if (ra != re || ra != r1) return 1;
-    if (ra == 0) { if (memcmp(a.data(), e.data(), n) || memcmp(a.data(), e1.data(), n)) return 1; g_ok++; g_bytes += n; } else g_rej++;
+    std::vector<uint8_t> s0(n + 1, 0x44); int rs = axr_decode_scalar(c, csz, s0.data(), n); g_scalar++;   // axr_decode is the AVX2 one where the CPU has it
+    if (ra != re || ra != r1 || ra != rs) return 1;
+    if (ra == 0) { if (memcmp(a.data(), e.data(), n) || memcmp(a.data(), e1.data(), n) || memcmp(a.data(), s0.data(), n)) return 1; g_ok++; g_bytes += n; } else g_rej++;
     return 0;
 }
 
@@ -161,8 +162,14 @@ int main(int argc, char** argv) {
             }
         }
     }
-    printf("head_rans_warp_emu\t%s\tGPU rANS warp steps (ax_rans_warp.h) == axr_decode, refill from global and from the register window (AX_OPEN_SEQ, %llu words outside it): %llu round-trips, %llu archive chunks, %llu crafted tables, %llu mutations (%llu accepted, %llu rejected by both), %llu bytes, %llu mismatches\n",
+    printf("head_rans_warp_emu\t%s\tGPU rANS warp steps (ax_rans_warp.h) == axr_decode, refill from global and from the register window (AX_OPEN_SEQ, %llu words outside it), CPU AVX2 decoder == scalar (%s, %llu chunks): %llu round-trips, %llu archive chunks, %llu crafted tables, %llu mutations (%llu accepted, %llu rejected by both), %llu bytes, %llu mismatches\n",
            (bad == 0 && rt > 0 && fx > 0 && crafted > 0 && g_win_out == 0) ? "pass" : "fail", (unsigned long long)g_win_out,
+#ifdef AXR_SIMD
+           __builtin_cpu_supports("avx2") ? "AVX2 on" : "no AVX2 on this CPU",
+#else
+           "no AVX2 path in this build",
+#endif
+           (unsigned long long)g_scalar,
            (unsigned long long)rt, (unsigned long long)fx, (unsigned long long)crafted, (unsigned long long)mut,
            (unsigned long long)g_ok, (unsigned long long)g_rej, (unsigned long long)g_bytes, (unsigned long long)bad);
     return 0;
