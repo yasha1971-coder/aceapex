@@ -111,6 +111,8 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
 проверки — оговорено). План проверен на CPU (head_gpu_plan_emu: 33 архива, 1320 диапазонов, 1980 мутаций, ASan/UBSan
 чисто), судья 54/0. Blackwell 74fc806 (results/colab-2026-09-30-rtx-pro-6000-blackwell-74fc806-gpu-capi.log): C ABI 2/2, ranges 200/200;
 chr1 open 2.474 мс (инструмент 2.829, -12.5 %), zstd 3.358 (3.518); флипы open 20/20 пойманы, zstd 0/20 -> проверка XXH3.
+01.10: gpu-capi в main; флаг ACEAPEX_GPU_VERIFY_XXH3 (XXH3 вывода на карте против заголовка, бит STATUS_HASH),
+разбиение XXH3 проверено на CPU (head_gpu_xxh3_emu), судья 55/0. Цена проверки и флипы zstd с ней — ждут Colab.
 Числа open против nvCOMP zstd (Blackwell, инструмент): chr1 x1.24, T2T x1.31 — не «x3».
 30.09 (5): ворота v2.2.0 зелёные на a3b0bdb — матрица scripts/cross_matrix.sh: x86-64, x86-32, ARM32, ARM64, PPC64LE
 (qemu) по 7 проверкам pass, MinGW собирается (библиотека; CLI только POSIX); найдено и исправлено до тега: сборка

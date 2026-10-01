@@ -17,7 +17,7 @@ size_t  aceapex_gpu_output_bytes(const aceapex_gpu_plan*);
 
 /* 2. device, asynchronous, as often as needed */
 int aceapex_gpu_decompress_async(const aceapex_gpu_plan*, const void* d_in,
-                                 void* d_out, void* d_temp, int* d_status, cudaStream_t);
+                                 void* d_out, void* d_temp, int* d_status, unsigned flags, cudaStream_t);
 int aceapex_gpu_decompress_range_async(const aceapex_gpu_plan*, const void* d_in,
                                        uint64_t offset, uint64_t length,
                                        void* d_out, void* d_temp, int* d_status, cudaStream_t);
@@ -53,9 +53,15 @@ the requested bytes into `d_out`. nvCOMP has no equivalent: it decodes whole fra
   piece, spec 3.1.1), `_OPEN` (an open DNA pack, spec 3.4), `_ZSTD` (a frame failed or decoded to another
   size), `_MATCH` (a block's tokens did not decode to exactly its size). The call does not crash and does
   not read or write outside its buffers (plan limits; CPU judge below, also under ASan/UBSan).
-- Not detected: bytes stored raw in the archive (literal runs, raw pieces) carry no check of their own; a
-  flip there decodes to wrong bytes with status 0. The archive's XXH3 of the original is verified by the CPU
-  decoders; the GPU path does not compute it.
+- Flag `ACEAPEX_GPU_VERIFY_XXH3` (full decode): the device computes XXH3_64bits of the output and compares it
+  with the archive header; a difference sets `ACEAPEX_GPU_STATUS_HASH`. This is what catches bytes stored raw
+  in the archive (literal runs, raw pieces, zstd raw blocks), which carry no check of their own: on the
+  Blackwell run 74fc806 the zstd profile decoded 20 of 20 byte flips to wrong bytes with status 0 without it.
+  XXH3's long path adds stripe terms per 1 KiB block and scrambles the 8 accumulators after each block; the
+  additions do not depend on the accumulators, so the block terms are computed in parallel and only the
+  scramble chain (one step per KiB, 8 lanes) runs sequentially (`src/ax_xxh3.h`, judged on the CPU against
+  `XXH3_64bits`: claim `head_gpu_xxh3_emu`). A range decode cannot be checked this way: the hash covers the
+  whole original.
 
 ## Profiles and nvCOMP
 
@@ -82,7 +88,7 @@ nvcc -std=c++17 -O3 -arch=sm_XX -Isrc examples/gpu_decode.cu src/aceapex_gpu_lib
   zeroed temp with only the selected jobs (a job the selection misses shows up as zeros); 1 980 one-byte
   mutations refused by the planner or run inside their buffers (also under ASan/UBSan).
 - With a GPU (`scripts/colab_gpu_open.sh`, program `scripts/gpu_api_test.cu`): full decode bit-perfect and
-  timed against the measurement tool on the same archive, random windows 1 B .. 1 MiB against the original,
+  timed against the measurement tool on the same archive, the same with the XXH3 check (its cost), random windows 1 B .. 1 MiB against the original,
   single-byte flips of the device copy (caught / silent / harmless counts, no CUDA error), the example on the
   open archive built without nvCOMP.
 
@@ -91,4 +97,7 @@ nvcc -std=c++17 -O3 -arch=sm_XX -Isrc examples/gpu_decode.cu src/aceapex_gpu_lib
 Only measured figures go here, with the log they come from. The measurement tool on the RTX PRO 6000
 Blackwell (`results/colab-2026-09-30-rtx-pro-6000-blackwell-27b61b1.log`, on-device, median of 3): chr1
 open profile 2.826 ms against 3.501 ms for the zstd profile through nvCOMP (x1.24), T2T 27.135 against
-35.542 ms (x1.31). The library's own figures: pending the first Colab run of this API.
+35.542 ms (x1.31). The library, same GPU, chr1 (`results/colab-2026-09-30-rtx-pro-6000-blackwell-74fc806-gpu-capi.log`,
+on-device, median of 3): open profile 2.474 ms (the tool 2.829 ms on the same archive), zstd profile 3.358 ms
+(3.518 ms); 200 of 200 random windows equal to the original, 16 KiB window 0.691 ms (open) / 1.126 ms (zstd).
+Cost of the XXH3 check: pending the next run.

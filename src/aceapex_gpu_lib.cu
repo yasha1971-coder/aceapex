@@ -9,6 +9,7 @@
 #include "aceapex_gpu.h"
 #include "aceapex_gpu_plan.h"
 #include "aceapex_gpu_kernels.cuh"
+#include "ax_xxh3.h"
 #include <cuda_runtime.h>
 #ifdef ACEAPEX_GPU_NVCOMP
 #include <nvcomp/zstd.h>
@@ -29,7 +30,7 @@ static thread_local int g_last = ACEAPEX_GPU_OK;
 static const unsigned TPB = 128, G = 32;
 
 // ---- small kernels of the library
-__global__ void kg_init(uint32_t* e){ if(threadIdx.x==0){ e[0]=0; e[1]=~0u; e[2]=0; e[3]=~0u; e[4]=0; e[5]=0; } }
+__global__ void kg_init(uint32_t* e){ if(threadIdx.x==0){ e[0]=0; e[1]=~0u; e[2]=0; e[3]=~0u; e[4]=0; e[5]=0; e[6]=0; } }
 __global__ void kg_fix_rans(const agp::Rans* t, RansDesc* d, uint32_t n, uint8_t* base){
     for(uint32_t i=blockIdx.x*blockDim.x+threadIdx.x;i<n;i+=gridDim.x*blockDim.x){ agp::Rans r=t[i];
         RansDesc o; o.src=r.src; o.dst=base+r.dst; o.csz=r.csz; o.n=r.n; o.mode=r.mode; d[i]=o; } }
@@ -49,7 +50,28 @@ __global__ void kg_raw(const agp::Raw* t, const uint8_t* in, uint8_t* base){    
 __global__ void kg_nvcheck(const int* st, const size_t* act, const size_t* os, uint32_t n, uint32_t* e){   // nvcompStatus_t is an int enum, success = 0
     for(uint32_t i=blockIdx.x*blockDim.x+threadIdx.x;i<n;i+=gridDim.x*blockDim.x) if(st[i]!=0 || act[i]!=os[i]) atomicOr(e+5,1u); }
 __global__ void kg_status(const uint32_t* e, int* st){
-    if(threadIdx.x==0) *st=(e[0]?ACEAPEX_GPU_STATUS_PIECE:0)|(e[2]?ACEAPEX_GPU_STATUS_OPEN:0)|(e[5]?ACEAPEX_GPU_STATUS_ZSTD:0)|(e[4]?ACEAPEX_GPU_STATUS_MATCH:0); }
+    if(threadIdx.x==0) *st=(e[0]?ACEAPEX_GPU_STATUS_PIECE:0)|(e[2]?ACEAPEX_GPU_STATUS_OPEN:0)|(e[5]?ACEAPEX_GPU_STATUS_ZSTD:0)|(e[4]?ACEAPEX_GPU_STATUS_MATCH:0)|(e[6]?ACEAPEX_GPU_STATUS_HASH:0); }
+// XXH3_64bits of the output (src/ax_xxh3.h): block terms in parallel (8 threads per 1 KiB block), then the
+// scramble chain on 8 lanes of one warp, prefetching 8 blocks ahead, then tail, merge and compare
+__global__ void kg_xxh_blocks(const uint8_t* __restrict__ in, uint64_t nb, uint64_t* __restrict__ S){
+    for(uint64_t t=blockIdx.x*(uint64_t)blockDim.x+threadIdx.x;t<nb*8;t+=(uint64_t)gridDim.x*blockDim.x)
+        S[t]=axh_block_lane(in+(t>>3)*AXH_BLOCK,axh_secret,(unsigned)(t&7)); }
+__global__ void kg_xxh_chain(const uint8_t* __restrict__ in, uint64_t len, const uint64_t* __restrict__ S, uint64_t want, uint32_t* e){
+    const unsigned lane=threadIdx.x&7;
+    if(len<=240){ if(threadIdx.x==0 && axh_short(in,len,axh_secret)!=want) e[6]=1; return; }
+    const uint64_t nb=(len-1)/AXH_BLOCK; uint64_t acc=axh_init(lane), buf[8];
+    #pragma unroll
+    for(int i=0;i<8;i++) buf[i] = (uint64_t)i<nb ? S[i*8+lane] : 0;
+    uint64_t b=0;
+    for(; b+8<=nb; b+=8){
+        #pragma unroll
+        for(int i=0;i<8;i++){ const uint64_t v=buf[i]; buf[i] = b+8+i<nb ? S[(b+8+i)*8+lane] : 0; acc=axh_chain_step(acc,v,axh_secret,lane); } }
+    for(int i=0; b<nb; b++, i++) acc=axh_chain_step(acc,buf[i],axh_secret,lane);
+    acc=axh_tail_lane(acc,in,len,axh_secret,lane);
+    uint64_t a[8];
+    #pragma unroll
+    for(int i=0;i<8;i++) a[i]=__shfl_sync(0xffu,acc,i);
+    if(threadIdx.x==0 && axh_merge(a,len,axh_secret)!=want) e[6]=1; }
 __global__ void kg_set(uint32_t* p, uint32_t v){ *p=v; }
 __global__ void kg_copy(const uint8_t* s, uint8_t* d, uint64_t n){
     for(uint64_t i=blockIdx.x*(uint64_t)blockDim.x+threadIdx.x;i<n;i+=(uint64_t)gridDim.x*blockDim.x) d[i]=s[i]; }
@@ -142,10 +164,15 @@ static int run(const aceapex_gpu_plan* pl, const agp::Sel* S, const uint8_t* in,
     return ACEAPEX_GPU_OK;
 }
 
-extern "C" int aceapex_gpu_decompress_async(const aceapex_gpu_plan* pl, const void* d_in, void* d_out, void* d_temp, int* d_status, cudaStream_t s){
-    if(!pl || !d_in || !d_out || !d_temp || !d_status || ((uintptr_t)d_temp & 255)) return ACEAPEX_GPU_E_ARGS;
+extern "C" int aceapex_gpu_decompress_async(const aceapex_gpu_plan* pl, const void* d_in, void* d_out, void* d_temp, int* d_status, unsigned flags, cudaStream_t s){
+    if(!pl || !d_in || !d_out || !d_temp || !d_status || ((uintptr_t)d_temp & 255) || (flags & ~ACEAPEX_GPU_VERIFY_XXH3)) return ACEAPEX_GPU_E_ARGS;
     int r=run(pl,nullptr,(const uint8_t*)d_in,(uint8_t*)d_out,(uint8_t*)d_temp,d_status,s);
     if(r) return r;
+    if(flags & ACEAPEX_GPU_VERIFY_XXH3){
+        const agp::Plan& P=pl->P; uint8_t* T=(uint8_t*)d_temp; const uint64_t nb = P.orig>240 ? (P.orig-1)/AXH_BLOCK : 0;
+        if(nb) kg_xxh_blocks<<<blocks_for(nb*8),256,0,s>>>((const uint8_t*)d_out,nb,(uint64_t*)(T+P.o_hash));
+        kg_xxh_chain<<<1,8,0,s>>>((const uint8_t*)d_out,P.orig,(const uint64_t*)(T+P.o_hash),P.xxh,(uint32_t*)(T+P.o_err));
+    }
     kg_status<<<1,32,0,s>>>((const uint32_t*)((uint8_t*)d_temp+pl->P.o_err),d_status);
     return cudaGetLastError()==cudaSuccess ? ACEAPEX_GPU_OK : ACEAPEX_GPU_E_CUDA;
 }

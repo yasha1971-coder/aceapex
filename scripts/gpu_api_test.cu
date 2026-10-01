@@ -2,12 +2,15 @@
 //   full     aceapex_gpu_decompress_async: output == original byte for byte, status 0; median time (events)
 //   range    random windows (1 B .. 1 MiB) through aceapex_gpu_decompress_range_async, each == the original
 //            slice (the file the CPU compressed); median time of the 16 KiB windows
-//   corrupt  single-byte flips of the device copy of the archive, whole decode each: counted as caught
-//            (status != 0), silent (status 0, output differs) or harmless (output identical); a CUDA error
-//            (e.g. an illegal address) fails the test
+//   verify   the same full decode with ACEAPEX_GPU_VERIFY_XXH3 (XXH3 of the output on the device against the
+//            header): status 0 on the good archive, and the time it adds
+//   corrupt  single-byte flips of the device copy of the archive, whole decode each, without and with the
+//            hash check: counted as caught (status != 0), silent (status 0, output differs) or harmless (output
+//            identical); a CUDA error (e.g. an illegal address) fails the test
 // Build: nvcc -O3 -arch=sm_XX -Isrc -DACEAPEX_GPU_NVCOMP -I<nvcomp>/include scripts/gpu_api_test.cu src/aceapex_gpu_lib.cu -l:libnvcomp.so.5
 // Usage: gpu_api_test <archive.aet> <original> [repeats=7] [ranges=200] [flips=20]
 // Last line: APIROW <tab> archive bytes api_ms full ranges_ok ranges range16k_ms caught silent harmless plan_ms
+//            verify_ms verify_full caught_v silent_v harmless_v
 #include "aceapex_gpu.h"
 #include <cuda_runtime.h>
 #include <chrono>
@@ -38,17 +41,27 @@ int main(int argc, char** argv){
     CK(cudaMemcpy(d_in,a.data(),a.size(),cudaMemcpyHostToDevice));
     std::vector<uint8_t> out(n); int st=-1;
     // full
-    int r=aceapex_gpu_decompress_async(plan,d_in,d_out,d_temp,d_st,s);
+    int r=aceapex_gpu_decompress_async(plan,d_in,d_out,d_temp,d_st,0,s);
     CK(cudaStreamSynchronize(s)); CK(cudaGetLastError());
     CK(cudaMemcpy(&st,d_st,4,cudaMemcpyDeviceToHost)); CK(cudaMemcpy(out.data(),d_out,n,cudaMemcpyDeviceToHost));
     const bool full_ok = r==0 && st==0 && !memcmp(out.data(),orig.data(),n);
     printf("[api] full decode: return %d, status %d, output %s\n",r,st,full_ok?"MATCHES OK":"DIFFERS X");
     cudaEvent_t e0,e1; CK(cudaEventCreate(&e0)); CK(cudaEventCreate(&e1));
     std::vector<float> tf;
-    for(int i=0;i<reps;i++){ CK(cudaEventRecord(e0,s)); aceapex_gpu_decompress_async(plan,d_in,d_out,d_temp,d_st,s); CK(cudaEventRecord(e1,s)); CK(cudaEventSynchronize(e1));
+    for(int i=0;i<reps;i++){ CK(cudaEventRecord(e0,s)); aceapex_gpu_decompress_async(plan,d_in,d_out,d_temp,d_st,0,s); CK(cudaEventRecord(e1,s)); CK(cudaEventSynchronize(e1));
         float ms; CK(cudaEventElapsedTime(&ms,e0,e1)); tf.push_back(ms); }
     const float api_ms=med(tf);
     printf("[api] full decode on-device %.3f ms (median of %d) -> %.1f GB/s\n",api_ms,reps,n/api_ms/1e6);
+    // the same with the XXH3 check of the output
+    CK(cudaMemset(d_out,0,n)); r=aceapex_gpu_decompress_async(plan,d_in,d_out,d_temp,d_st,ACEAPEX_GPU_VERIFY_XXH3,s); CK(cudaStreamSynchronize(s)); CK(cudaGetLastError());
+    CK(cudaMemcpy(&st,d_st,4,cudaMemcpyDeviceToHost)); CK(cudaMemcpy(out.data(),d_out,n,cudaMemcpyDeviceToHost));
+    const bool vfull_ok = r==0 && st==0 && !memcmp(out.data(),orig.data(),n);
+    std::vector<float> tv;
+    for(int i=0;i<reps;i++){ CK(cudaEventRecord(e0,s)); aceapex_gpu_decompress_async(plan,d_in,d_out,d_temp,d_st,ACEAPEX_GPU_VERIFY_XXH3,s); CK(cudaEventRecord(e1,s)); CK(cudaEventSynchronize(e1));
+        float ms; CK(cudaEventElapsedTime(&ms,e0,e1)); tv.push_back(ms); }
+    const float ver_ms=med(tv);
+    printf("[api] full decode + XXH3 check on-device %.3f ms (median of %d; check adds %.3f ms, %+.1f %%): return %d, status %d, output %s\n",
+        ver_ms,reps,ver_ms-api_ms,100.0*(ver_ms/api_ms-1),r,st,vfull_ok?"MATCHES OK":"DIFFERS X");
     // ranges
     std::mt19937_64 rng(20261001); int rok=0; std::vector<float> t16;
     const uint64_t lens[6]={1,17,4096,16384,65536,1u<<20};
@@ -61,14 +74,17 @@ int main(int argc, char** argv){
     const float r16=med(t16);
     printf("[api] ranges: %d of %d windows == original%s; 16 KiB window %.3f ms (median of %zu)\n",rok,NR,rok==NR?" (MATCHES OK)":" DIFFERS X",r16,t16.size());
     // corruption
-    int caught=0, silent=0, same=0;
+    int caught[2]={0,0}, silent[2]={0,0}, same[2]={0,0};
     for(int i=0;i<NF;i++){ CK(cudaMemcpy(d_bad,d_in,a.size(),cudaMemcpyDeviceToDevice));
         size_t at=a.size()/2+rng()%(a.size()-a.size()/2); uint8_t b=a[at]^(uint8_t)(1+rng()%255); CK(cudaMemcpy(d_bad+at,&b,1,cudaMemcpyHostToDevice));
-        r=aceapex_gpu_decompress_async(plan,d_bad,d_out,d_temp,d_st,s); CK(cudaStreamSynchronize(s)); CK(cudaGetLastError());
-        CK(cudaMemcpy(&st,d_st,4,cudaMemcpyDeviceToHost)); CK(cudaMemcpy(out.data(),d_out,n,cudaMemcpyDeviceToHost));
-        if(r||st) caught++; else if(memcmp(out.data(),orig.data(),n)) silent++; else same++; }
-    printf("[api] %d byte flips in the stream half of the archive: %d caught by status, %d decoded wrong with status 0 (raw bytes carry no check), %d harmless; no CUDA error\n",NF,caught,silent,same);
-    printf("APIROW\t%s\t%zu\t%.3f\t%s\t%d\t%d\t%.3f\t%d\t%d\t%d\t%.1f\n",argv[1],a.size(),api_ms,full_ok?"bit-perfect":"MISMATCH",rok,NR,r16,caught,silent,same,plan_ms);
+        for(int v=0;v<2;v++){
+            r=aceapex_gpu_decompress_async(plan,d_bad,d_out,d_temp,d_st,v?ACEAPEX_GPU_VERIFY_XXH3:0,s); CK(cudaStreamSynchronize(s)); CK(cudaGetLastError());
+            CK(cudaMemcpy(&st,d_st,4,cudaMemcpyDeviceToHost)); CK(cudaMemcpy(out.data(),d_out,n,cudaMemcpyDeviceToHost));
+            if(r||st) caught[v]++; else if(memcmp(out.data(),orig.data(),n)) silent[v]++; else same[v]++; } }
+    printf("[api] %d byte flips in the stream half of the archive: without the hash check %d caught by status, %d decoded wrong with status 0, %d harmless; with ACEAPEX_GPU_VERIFY_XXH3 %d caught, %d silent, %d harmless; no CUDA error\n",
+        NF,caught[0],silent[0],same[0],caught[1],silent[1],same[1]);
+    printf("APIROW\t%s\t%zu\t%.3f\t%s\t%d\t%d\t%.3f\t%d\t%d\t%d\t%.1f\t%.3f\t%s\t%d\t%d\t%d\n",argv[1],a.size(),api_ms,full_ok?"bit-perfect":"MISMATCH",rok,NR,r16,caught[0],silent[0],same[0],plan_ms,
+        ver_ms,vfull_ok?"bit-perfect":"MISMATCH",caught[1],silent[1],same[1]);
     aceapex_gpu_plan_destroy(plan);
-    return (full_ok && rok==NR) ? 0 : 5;
+    return (full_ok && vfull_ok && rok==NR && silent[1]==0) ? 0 : 5;
 }
