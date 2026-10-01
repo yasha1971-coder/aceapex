@@ -141,6 +141,7 @@ pinned(){ case $1.$2 in
   t2t.zstd) case $ZV in 1.4.8) echo 822680738;; 1.5.5) echo 822393156;; esac;;
   t2t.rans) case $ZV in 1.4.8) echo 822818235;; 1.5.5) echo 822531418;; esac;;
   t2t.open) echo 853264869;; t2t.chain) echo 887641942;; esac; }
+NCU=$(command -v ncu || ls /usr/local/cuda/bin/ncu /opt/nvidia/nsight-compute/*/ncu 2>/dev/null | head -n 1); [ -n "$NCU" ] && echo "ncu: $NCU ($($NCU --version 2>/dev/null | tail -1))" | tee -a $L || echo "ncu: not found (no profile)" | tee -a $L
 T=$(nproc); CORP=""
 get_corpus chr1.fa 9465e0f0df6e2c6eb39729c39cee5465 https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr1.fa.gz && CORP="chr1"
 get_corpus t2t.fa cd1e52ce400c027ed0b7ab4b9d613f5a "" && CORP="$CORP t2t"
@@ -201,6 +202,17 @@ PY
         || echo "example gpu_decode $X.$P: FAILED" | tee -a $L; rm -f $W/ex.out
         if [ -x $W/gpu_decode_so ]; then to $TO "gpu_decode (shared) $X.$P" $W/gpu_decode_so $W/$X.$P.aet $W/ex.out >/dev/null 2>&1 && cmp -s $W/ex.out $C \
           && echo "example gpu_decode $X.$P via libaceapex_gpu.so.1 (nvCOMP inside): bit-perfect" | tee -a $L || echo "example gpu_decode $X.$P via libaceapex_gpu.so.1: FAILED" | tee -a $L; rm -f $W/ex.out; fi; fi
+    fi
+    # profile of the open path's kernels (ncu): first launch of each kernel, variants included; --metrics adds
+    # coalescing and stall reasons, without them if this ncu does not know the names
+    if [ $P = open ] && [ -n "$NCU" ]; then
+      KR='regex:k_open_bases|k_open_exc|k_open_cse|k_open_cg|k_rans'
+      SEC="--section SpeedOfLight --section Occupancy --section MemoryWorkloadAnalysis --section LaunchStats --section WarpStateStats"
+      MET="--metrics l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum,l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum,l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum,l1tex__t_requests_pipe_lsu_mem_global_op_st.sum,smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct,smsp__warp_issue_stalled_barrier_per_warp_active.pct,smsp__warp_issue_stalled_short_scoreboard_per_warp_active.pct,smsp__warp_issue_stalled_lg_throttle_per_warp_active.pct,smsp__warp_issue_stalled_mio_throttle_per_warp_active.pct,smsp__warp_issue_stalled_wait_per_warp_active.pct"
+      to $TO "ncu $X.$P" $NCU -k "$KR" --launch-count 70 $SEC $MET --csv --page details $W/aceapex_gpu $W/$X.$P.aet $C auto 1 1 --pipeline=0 > $W/ncu.csv 2>$W/ncu.err \
+        || to $TO "ncu $X.$P (sections only)" $NCU -k "$KR" --launch-count 70 $SEC --csv --page details $W/aceapex_gpu $W/$X.$P.aet $C auto 1 1 --pipeline=0 > $W/ncu.csv 2>>$W/ncu.err \
+        || { echo "ncu $X.$P failed: $(grep -m2 -i 'error\|perm' $W/ncu.err | tr '\n' ' ' | head -c 300)" | tee -a $L; }
+      [ -s $W/ncu.csv ] && python3 scripts/ncu_summary.py $W/ncu.csv $X.$P | tee -a $L
     fi
     echo "== aceapex_gpu $X.$P" | tee -a $L
     to $TO "aceapex_gpu $X.$P" $W/aceapex_gpu $W/$X.$P.aet $C auto $R 4 --pipeline=${PIPE:-auto} $DL 2>&1 | tee -a $L; echo "exit ${PIPESTATUS[0]} $X.$P" | tee -a $L
