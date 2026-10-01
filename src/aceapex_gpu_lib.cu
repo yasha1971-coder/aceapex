@@ -27,6 +27,12 @@ struct aceapex_gpu_plan {
     unsigned grid = 1;                            // match kernel: resident blocks of 128 threads
 };
 static thread_local int g_last = ACEAPEX_GPU_OK;
+// test hook (not in the C ABI; scripts/gpu_api_test.cu): called on the host after each phase of a decode is
+// enqueued, so a test can wait for the stream and name the phase a hang is in. nullptr (default): no call
+typedef void (*aceapex_gpu_phase_fn)(const char* phase, cudaStream_t s);
+static aceapex_gpu_phase_fn g_phase = nullptr;
+extern "C" void aceapex_gpu_debug_phase_hook(aceapex_gpu_phase_fn f){ g_phase=f; }
+static inline void phase(const char* p, cudaStream_t s){ if(g_phase) g_phase(p,s); }
 static const unsigned TPB = 128, G = 32;
 
 // ---- small kernels of the library
@@ -151,21 +157,27 @@ static int run(const aceapex_gpu_plan* pl, const agp::Sel* S, const uint8_t* in,
     auto dna=[&](agp::Seg g){ if(g.hi>g.lo){ const uint32_t n=g.hi-g.lo; k_unpack<<<dim3(n,gy1),256,0,s>>>(dD+g.lo); k_exc<<<n,256,0,s>>>(dD+g.lo); } };
     auto open=[&](agp::Seg g){ if(g.hi>g.lo){ const uint32_t n=g.hi-g.lo;
         k_open_cse<<<n,AXO_NT,0,s>>>(dO+g.lo,err+2); k_open_bases<<<dim3(n,gyo),256,0,s>>>(dO+g.lo); k_open_exc<<<n,AXO_NT,0,s>>>(dO+g.lo,err+2); } };
-    const agp::Seg all_nv{0,NN}, all_r{0,NR}, all_o{0,NO}, all_d{0,ND}, all_w{0,NW};
+    const agp::Seg all_r{0,NR}, all_o{0,NO}, all_d{0,ND}, all_w{0,NW};
     uint32_t b0=0, b1=P.nb; uint8_t* mout=out;
-    if(!S){ raws(all_w); if(!zstd(all_nv)) return ACEAPEX_GPU_E_NVCOMP; pieces(all_r); dna(all_d); open(all_o); }
+    phase("init + fixups",s);
+    if(!S){ raws(all_w); phase("stored chunks",s);
+        if(!zstd(agp::Seg{0,(uint32_t)P.NT})) return ACEAPEX_GPU_E_NVCOMP; phase("nvCOMP zstd token frames",s);
+        if(!zstd(agp::Seg{(uint32_t)P.NT,NN})) return ACEAPEX_GPU_E_NVCOMP; phase("nvCOMP zstd literal frames",s);
+        pieces(all_r); phase("rANS pieces",s); dna(all_d); phase("DNA unpack",s); open(all_o); phase("open DNA pack",s); }
     else {
         for(int st=1;st<4;st++){ raws(S->raw[st]); if(!zstd(S->nv_tok[st])) return ACEAPEX_GPU_E_NVCOMP; pieces(S->rans_tok[st]); }
         if(!zstd(S->nv_lit)) return ACEAPEX_GPU_E_NVCOMP;
         for(int q=agp::C_SEQ;q<agp::C_N;q++) pieces(S->rans_cls[q]);
         dna(S->dna); open(S->open);
         b0=S->b0; b1=S->b1; mout=T+P.temp_bytes-(uint64_t)b0*P.bs;          // window after the temp layout
+        phase("range jobs",s);
     }
     uint32_t* ctr=(uint32_t*)(T+P.o_ctr);
     kg_set<<<1,1,0,s>>>(ctr,b0);
     const uint64_t lanes=(uint64_t)(b1-b0)*G; const unsigned want=(unsigned)std::min<uint64_t>((lanes+TPB-1)/TPB,0x7fffffffull);
     k_decode_g<G><<<std::max(1u,std::min(pl->grid,want)),TPB,0,s>>>(T+P.o_s[0],T+P.o_s[1],T+P.o_s[2],T+P.o_s[3],(const BlockOffsets*)(M+pl->o_bo),
         P.orig,P.bs,mout,ctr,b1,err+4);           // err[4] bad blocks, err[7] step limit
+    phase("match",s);
     return ACEAPEX_GPU_OK;
 }
 
@@ -176,7 +188,9 @@ extern "C" int aceapex_gpu_decompress_async(const aceapex_gpu_plan* pl, const vo
     if(flags & ACEAPEX_GPU_VERIFY_XXH3){
         const agp::Plan& P=pl->P; uint8_t* T=(uint8_t*)d_temp; const uint64_t nb = P.orig>240 ? (P.orig-1)/AXH_BLOCK : 0;
         if(nb) kg_xxh_blocks<<<blocks_for(nb*8),256,0,s>>>((const uint8_t*)d_out,nb,(uint64_t*)(T+P.o_hash));
+        phase("XXH3 block terms",s);
         kg_xxh_chain<<<1,8,0,s>>>((const uint8_t*)d_out,P.orig,(const uint64_t*)(T+P.o_hash),P.xxh,(uint32_t*)(T+P.o_err));
+        phase("XXH3 chain",s);
     }
     kg_status<<<1,32,0,s>>>((const uint32_t*)((uint8_t*)d_temp+pl->P.o_err),d_status);
     return cudaGetLastError()==cudaSuccess ? ACEAPEX_GPU_OK : ACEAPEX_GPU_E_CUDA;

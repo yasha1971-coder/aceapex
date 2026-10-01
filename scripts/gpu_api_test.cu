@@ -10,12 +10,21 @@
 // Progress: stdout unbuffered, a line per phase and per flip with the time since start ([+s]); every wait on
 // the stream is a poll with a watchdog (AX_WATCHDOG seconds, default 300): past it the line TIMEOUT <phase>
 // and exit 4 - a hang names its phase instead of stopping the run
-// Build: nvcc -O3 -arch=sm_XX -Isrc -DACEAPEX_GPU_NVCOMP -I<nvcomp>/include scripts/gpu_api_test.cu src/aceapex_gpu_lib.cu -l:libnvcomp.so.5
+// Flips: each one located (stream, zstd frame or rANS piece) and, in a zstd frame, the frame checked on the host first
+// (libzstd, the plan's header check), saved to AX_REPRO (default verify/repro/run, original and flipped), decoded by
+// nvCOMP alone (batch of 1), then the plan of the flipped archive (refused or not) and the whole decode with a line and
+// a stream wait per phase (aceapex_gpu_debug_phase_hook) - a hang names the frame and the phase.
+// Build: nvcc -O3 -arch=sm_XX -Isrc -DACEAPEX_GPU_NVCOMP -I<nvcomp>/include scripts/gpu_api_test.cu src/aceapex_gpu_lib.cu -l:libnvcomp.so.5 -lzstd
 // Usage: gpu_api_test <archive.aet> <original> [repeats=7] [ranges=200] [flips=20]
 // Last line: APIROW <tab> archive bytes api_ms full ranges_ok ranges range16k_ms caught silent harmless plan_ms
 //            verify_ms verify_full caught_v silent_v harmless_v
 #include "aceapex_gpu.h"
+#include "aceapex_gpu_plan.h"   // host side only: where a flip lands (zstd frame, piece) and the frame header check
 #include <cuda_runtime.h>
+#include <nvcomp/zstd.h>
+#include <zstd.h>
+#include <string>
+#include <sys/stat.h>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -37,6 +46,14 @@ static void wait(cudaStream_t s, const char* what){                  // cudaStre
         if(e!=cudaErrorNotReady){ printf("CUDA error in %s: %s\n",what,cudaGetErrorString(e)); exit(2); }
         if(now_s()-t>lim){ printf("TIMEOUT %s: the stream did not finish in %.0f s\n",what,lim); fflush(stdout); _exit(4); }
         std::this_thread::sleep_for(std::chrono::microseconds(200)); } }
+extern "C" void aceapex_gpu_debug_phase_hook(void (*)(const char*, cudaStream_t));
+static int g_flip=0; static const char* g_flipv="";
+static void on_phase(const char* p, cudaStream_t s){
+    std::string w=std::string("flip ")+std::to_string(g_flip)+g_flipv+": "+p; const double t=now_s(); wait(s,w.c_str());
+    printf("[+%.1f s]   %s done (%.3f s)\n",now_s(),w.c_str(),now_s()-t); }
+static uint64_t nvt_host(size_t n, size_t maxo, size_t tot){ size_t t=0;
+    return nvcompBatchedZstdDecompressGetTempSizeAsync(n,maxo,nvcompBatchedZstdDecompressDefaultOpts,&t,tot)==nvcompSuccess ? t : ~0ull; }
+static void put(const std::string& p, const uint8_t* b, size_t n){ FILE* f=fopen(p.c_str(),"wb"); if(f){ fwrite(b,1,n,f); fclose(f); } }
 static float med(std::vector<float> v){ if(v.empty()) return -1; std::sort(v.begin(),v.end()); return v[v.size()/2]; }
 int main(int argc, char** argv){
     if(argc<3){ fprintf(stderr,"usage: %s <archive.aet> <original> [repeats] [ranges] [flips]\n",argv[0]); return 1; }
@@ -90,16 +107,51 @@ int main(int argc, char** argv){
     printf("[api] ranges: %d of %d windows == original%s; 16 KiB window %.3f ms (median of %zu)\n",rok,NR,rok==NR?" (MATCHES OK)":" DIFFERS X",r16,t16.size());
     // corruption
     int caught[2]={0,0}, silent[2]={0,0}, same[2]={0,0};
+    agp::Plan HP; agp::build(a.data(),a.size(),HP,nvt_host);           // where flips land
+    const char* RD=getenv("AX_REPRO")?getenv("AX_REPRO"):"verify/repro/run"; mkdir("verify/repro",0755); mkdir(RD,0755);
+    std::string base=argv[1]; base=base.substr(base.find_last_of('/')+1);
+    int refused=0;
     uint64_t sb[5]; { uint32_t nb; memcpy(&nb,a.data()+24,4); sb[0]=68+64ull*nb; for(int k=0;k<4;k++){ uint64_t z; memcpy(&z,a.data()+36+8*k,8); sb[k+1]=sb[k]+z; } }
     static const char* SN[4]={"literals","offsets","lengths","commands"};
     for(int i=0;i<NF;i++){ CK(cudaMemcpy(d_bad,d_in,a.size(),cudaMemcpyDeviceToDevice));
         size_t at=a.size()/2+rng()%(a.size()-a.size()/2); uint8_t b=a[at]^(uint8_t)(1+rng()%255); CK(cudaMemcpy(d_bad+at,&b,1,cudaMemcpyHostToDevice));
         int sx=0; while(sx<3 && at>=sb[sx+1]) sx++;
-        for(int v=0;v<2;v++){ const double tf0=now_s();
+        long fk=-1; for(size_t j=0;j<HP.nv.size();j++) if(at>=HP.nv[j].in_off && at<HP.nv[j].in_off+HP.nv[j].csz){ fk=(long)j; break; }
+        long pk=-1; for(size_t j=0;j<HP.rans.size();j++) if(at>=HP.rans[j].src && at<HP.rans[j].src+HP.rans[j].csz){ pk=(long)j; break; }
+        printf("[+%.1f s] flip %d/%d at %zu (%s stream), 0x%02x -> 0x%02x: ",now_s(),i+1,NF,at,SN[sx],a[at],b);
+        if(fk>=0){ const agp::Nv& J=HP.nv[fk]; std::vector<uint8_t> fr(a.begin()+J.in_off,a.begin()+J.in_off+J.csz); fr[at-J.in_off]=b;
+            std::vector<uint8_t> o1(J.osz+64), o2(J.osz+64); const size_t z1=ZSTD_decompress(o1.data(),J.osz,fr.data(),fr.size()); ZSTD_decompress(o2.data(),J.osz,a.data()+J.in_off,J.csz);
+            const std::string rp=std::string(RD)+"/"+base+".flip"+std::to_string(i+1)+".frame"+std::to_string(fk);
+            put(rp+".orig.zst",a.data()+J.in_off,J.csz); put(rp+".flip.zst",fr.data(),fr.size());
+            printf("zstd frame %ld of %zu (%s), byte %llu of %llu, decoded size %llu; libzstd on the CPU: %s; frame header check %d; saved %s.{orig,flip}.zst\n",
+                fk,HP.nv.size(),(size_t)fk<HP.NT?"token":"literal",(unsigned long long)(at-J.in_off),(unsigned long long)J.csz,(unsigned long long)J.osz,
+                ZSTD_isError(z1)?ZSTD_getErrorName(z1):(z1==J.osz&&!memcmp(o1.data(),o2.data(),z1)?"ok, same bytes":"ok, other bytes"),agp::zstd_frame_check(fr.data(),fr.size(),J.osz),rp.c_str());
+            // nvCOMP alone on this frame (batch of 1): a hang here is nvCOMP's, not the schedule's
+            uint8_t *fz,*fo; void* ft; const void** fcp; void** fop; size_t *fcs,*fos,*fact; nvcompStatus_t* fst; size_t tmp=0;
+            nvcompBatchedZstdDecompressGetTempSizeAsync(1,J.osz,nvcompBatchedZstdDecompressDefaultOpts,&tmp,J.osz);
+            CK(cudaMalloc(&fz,J.csz+256)); CK(cudaMalloc(&fo,J.osz+256)); CK(cudaMalloc(&ft,tmp+256)); CK(cudaMalloc(&fcp,8)); CK(cudaMalloc(&fop,8));
+            CK(cudaMalloc(&fcs,8)); CK(cudaMalloc(&fos,8)); CK(cudaMalloc(&fact,8)); CK(cudaMalloc(&fst,sizeof(nvcompStatus_t)));
+            const void* hcp=fz; void* hop=fo; const size_t hcs=J.csz, hos=J.osz;
+            CK(cudaMemcpy(fz,fr.data(),J.csz,cudaMemcpyHostToDevice)); CK(cudaMemcpy(fcp,&hcp,8,cudaMemcpyHostToDevice)); CK(cudaMemcpy(fop,&hop,8,cudaMemcpyHostToDevice));
+            CK(cudaMemcpy(fcs,&hcs,8,cudaMemcpyHostToDevice)); CK(cudaMemcpy(fos,&hos,8,cudaMemcpyHostToDevice));
+            const double tn=now_s(); std::string w="flip "+std::to_string(i+1)+": nvCOMP alone on zstd frame "+std::to_string(fk);
+            if(nvcompBatchedZstdDecompressAsync(fcp,fcs,fos,fact,1,ft,tmp,fop,nvcompBatchedZstdDecompressDefaultOpts,fst,s)==nvcompSuccess){
+                wait(s,w.c_str()); nvcompStatus_t hs; size_t act=0; CK(cudaMemcpy(&hs,fst,sizeof hs,cudaMemcpyDeviceToHost)); CK(cudaMemcpy(&act,fact,8,cudaMemcpyDeviceToHost));
+                printf("[+%.1f s]   %s: finished in %.3f s, status %d, %zu B\n",now_s(),w.c_str(),now_s()-tn,(int)hs,act); }
+            else printf("[+%.1f s]   %s: launch refused\n",now_s(),w.c_str());
+            cudaFree(fz); cudaFree(fo); cudaFree(ft); cudaFree(fcp); cudaFree(fop); cudaFree(fcs); cudaFree(fos); cudaFree(fact); cudaFree(fst); }
+        else if(pk>=0) printf("rANS piece %ld of %zu (class %u)\n",pk,HP.rans.size(),HP.rans[pk].pad);
+        else printf("not in a zstd frame or rANS piece (stored bytes, chunk table or padding)\n");
+        { std::vector<uint8_t> hb=a; hb[at]=b; aceapex_gpu_plan* q=aceapex_gpu_plan_create(hb.data(),hb.size());
+          printf("[+%.1f s]   plan of the flipped archive: %s\n",now_s(),q?"built (the damage is past the host checks)":"REFUSED (fail-closed before any launch)");
+          if(q) aceapex_gpu_plan_destroy(q); else refused++; }
+        for(int v=0;v<2;v++){ const double tf0=now_s(); g_flip=i+1; g_flipv=v?" + XXH3":""; aceapex_gpu_debug_phase_hook(on_phase);
             r=aceapex_gpu_decompress_async(plan,d_bad,d_out,d_temp,d_st,v?ACEAPEX_GPU_VERIFY_XXH3:0,s); wait(s,v?"flip decode + XXH3":"flip decode"); CK(cudaGetLastError());
+            aceapex_gpu_debug_phase_hook(nullptr);
             CK(cudaMemcpy(&st,d_st,4,cudaMemcpyDeviceToHost)); CK(cudaMemcpy(out.data(),d_out,n,cudaMemcpyDeviceToHost));
             const char* k; if(r||st){ caught[v]++; k="caught"; } else if(memcmp(out.data(),orig.data(),n)){ silent[v]++; k="SILENT"; } else { same[v]++; k="harmless"; }
             printf("[+%.1f s] flip %d/%d at %zu (%s stream)%s: return %d, status %d, %s (%.2f s)\n",now_s(),i+1,NF,at,SN[sx],v?" + XXH3":"",r,st,k,now_s()-tf0); } }
+    printf("[api] flips refused by the plan of the flipped archive: %d of %d\n",refused,NF);
     printf("[api] %d byte flips in the stream half of the archive: without the hash check %d caught by status, %d decoded wrong with status 0, %d harmless; with ACEAPEX_GPU_VERIFY_XXH3 %d caught, %d silent, %d harmless; no CUDA error\n",
         NF,caught[0],silent[0],same[0],caught[1],silent[1],same[1]);
     printf("APIROW\t%s\t%zu\t%.3f\t%s\t%d\t%d\t%.3f\t%d\t%d\t%d\t%.1f\t%.3f\t%s\t%d\t%d\t%d\n",argv[1],a.size(),api_ms,full_ok?"bit-perfect":"MISMATCH",rok,NR,r16,caught[0],silent[0],same[0],plan_ms,

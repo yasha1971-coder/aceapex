@@ -115,6 +115,13 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+01.10 (4): T2T.zstd flip TIMEOUT 300 с после f87bf19. Флипы воспроизведены на CPU (libzstd 1.5.5, архив == пин
+822 393 156): флип 1 — кадр zstd 150180 из 191 495 (маска регистра DNA-пака, 1136 B -> 8192 B), байт 291 в секции
+последовательностей; libzstd: Data corruption detected, заголовки кадра/блока проходят. Флипы 2-6 — libzstd
+декодирует в другие байты. Repro в verify/repro (+ scripts/nvcomp_frame_repro.cu: nvCOMP один на кадре, сторож 60 с,
+в Colab до gpu_api_test). gpu_api_test: место флипа, libzstd, nvCOMP на одном кадре, план испорченного архива, фазы
+декода с ожиданием (хук библиотеки). План проверяет заголовки кадров и блоков zstd. AX_VEC=1 остаётся (Blackwell:
+chr1 match -37 %, on-device -12 %). Судья 56/0. Ждёт Colab: висит ли nvCOMP на кадре 150180 сам.
 01.10 (3): GPU-пределы: varint <= 5 байт, размеры дескрипторов 64-бит (куски > 0xFFFFFF00 отклоняет план), в
 инструменте dense: get() в пределах куска, cum-поиск j<K-1, строки = 4096; претензия head_gpu_flip_emu: 1000 флипов —
 510 по статусу, 399 по XXH3, 91 дают оригинал, 0 тихих, 0 над пределом шагов. CPU-декод: три зоны, копии 32 B,
@@ -186,9 +193,9 @@ match 30.3, bases 7.4, seq 5.1. Архивы zstd/rans T2T зависят от l
 898 263 414; 1.4.8: 902 319 887 / 898 903 131), open одинаков.
 
 ## Дальше
-000. Colab (Blackwell) после main: где стояла t2t.zstd (строки [+s] / TIMEOUT), C ABI на T2T, цена XXH3 после
-   ускорения (цель <= +3 мс chr1), строки «vec chr1.zstd/open» (AX_VEC 0 -> 1: match, unpack, on-device).
-   Если uint4 не даёт выигрыша — AX_VEC=0 по умолчанию.
+000. Colab (Blackwell): nvcomp_frame_repro на кадре 150180 (висит ли nvCOMP один) и фаза флипа в gpu_api_test.
+   Если nvCOMP: защита только проверкой кадров до nvCOMP (libzstd на хосте, опция плана) или отказ от nvCOMP для
+   ненадёжных входов — решение пользователя. Если наше ядро: исправить + случай в head_gpu_flip_emu.
 00. После тега v2.2.0: публикация release/v2.2.0.md как GitHub Release, пост 4487, задание hw-apex-bench, PR lzbench — по слову.
 0. dense-open на GPU измерен (Blackwell, bit-perfect): стадия lit chr1 3.89 мс против open lit+unpack 1.46
    (2.7x медленнее), T2T 43.9 против 13.2 (3.3x) — за -4.4 % байт. k_r1 упирается в латентность: 16

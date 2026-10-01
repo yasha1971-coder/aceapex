@@ -80,10 +80,16 @@ for e in rans_warp_emu open_warp_emu; do
 # the GPU library (C ABI, src/aceapex_gpu.h): its plan judged on the CPU, the test program and the 30-line example
 g++ -std=c++17 -O2 -Isrc -o $W/gpu_plan_emu scripts/gpu_plan_emu.cpp src/aceapex_api.cpp -lzstd -lpthread && to $TO "gpu_plan_emu" $W/gpu_plan_emu | tee -a $L
 ARCH="-arch=sm_$SM"; nvcc -arch=sm_$SM -E -x cu /dev/null >/dev/null 2>&1 || ARCH="-gencode arch=compute_90,code=compute_90"
-if to $TO "nvcc gpu_api_test" nvcc -std=c++17 -O3 $ARCH -Isrc -DACEAPEX_GPU_NVCOMP $NVL -o $W/gpu_api_test scripts/gpu_api_test.cu src/aceapex_gpu_lib.cu 2>$W/nvcc_api.err \
+if to $TO "nvcc gpu_api_test" nvcc -std=c++17 -O3 $ARCH -Isrc -DACEAPEX_GPU_NVCOMP $NVL -o $W/gpu_api_test scripts/gpu_api_test.cu src/aceapex_gpu_lib.cu -lzstd 2>$W/nvcc_api.err \
    && to $TO "nvcc gpu_decode" nvcc -std=c++17 -O3 $ARCH -Isrc -o $W/gpu_decode examples/gpu_decode.cu src/aceapex_gpu_lib.cu 2>>$W/nvcc_api.err; then
   echo "built gpu_api_test (nvCOMP) and examples/gpu_decode (no nvCOMP), $ARCH" | tee -a $L
 else echo "BUILD FAILED gpu library" | tee -a $L; cat $W/nvcc_api.err; exit 1; fi
+# saved corrupt zstd frames (verify/repro/README.md): nvCOMP alone on each (batch of 1) against libzstd, before anything
+# else uses nvCOMP - a frame nvCOMP hangs on stops only this step (watchdog 60 s, then the step timeout)
+if to $TO "nvcc nvcomp_frame_repro" nvcc -std=c++17 -O3 $ARCH $NVL -o $W/nvcomp_frame_repro scripts/nvcomp_frame_repro.cu -lzstd 2>>$W/nvcc_api.err; then
+  echo "== nvcomp_frame_repro" | tee -a $L
+  AX_WATCHDOG=60 to $TO "nvcomp_frame_repro" $W/nvcomp_frame_repro verify/repro/t2t_frame150180.orig.zst 8192 verify/repro/t2t_frame150180.flip.zst 8192 2>&1 | tee -a $L
+else echo "build nvcomp_frame_repro failed" | tee -a $L; fi
 
 # the open conformance fixtures on the GPU (inputs regenerated from their seeds); 5 hashes each:
 # warm-up, sequential, old pipeline, stream pipeline on cleared buffers, stream pipeline timed
@@ -182,7 +188,9 @@ PY
     if [ $P = zstd ] || [ $P = open ]; then                   # the C ABI on the same archive: full, ranges, byte flips
       echo "== gpu_api_test $X.$P" | tee -a $L
       NRG=200; NFL=20; [ $X = t2t ] && { NRG=60; NFL=6; }
-      AX_WATCHDOG=$((TO/2)) to $TO "gpu_api_test $X.$P" $W/gpu_api_test $W/$X.$P.aet $C ${REPS:-3} $NRG $NFL 2>&1 | tee -a $L; echo "exitapi ${PIPESTATUS[0]} $X.$P" | tee -a $L
+      AX_WATCHDOG=$((TO/2)) AX_REPRO=verify/repro/run to $TO "gpu_api_test $X.$P" $W/gpu_api_test $W/$X.$P.aet $C ${REPS:-3} $NRG $NFL 2>&1 | tee -a $L; echo "exitapi ${PIPESTATUS[0]} $X.$P" | tee -a $L
+      # the flipped frames (original and flipped) kept on Drive for a repro
+      [ $HAVE_DRIVE = 1 ] && ls verify/repro/run/*.zst >/dev/null 2>&1 && mkdir -p $DRV/repro && cp verify/repro/run/*.zst $DRV/repro/ && echo "flipped frames copied to $DRV/repro ($(ls verify/repro/run/*.zst | wc -l) files)" | tee -a $L
       if [ $P = open ]; then to $TO "gpu_decode $X.$P" $W/gpu_decode $W/$X.$P.aet $W/ex.out >/dev/null 2>&1 && cmp -s $W/ex.out $C && echo "example gpu_decode $X.$P (no nvCOMP): bit-perfect" | tee -a $L \
         || echo "example gpu_decode $X.$P: FAILED" | tee -a $L; rm -f $W/ex.out; fi
     fi
