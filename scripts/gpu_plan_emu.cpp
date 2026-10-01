@@ -68,21 +68,16 @@ struct Exec {
         bad = true; return 0; }
     // k_decode_g with one lane: lengths against the room left, at most cs+1 steps (else the LIMIT bit, 32);
     // steps and copies outside the block are counted for the judge
-    uint64_t steps = 0, limit = 0, oob = 0, vec16 = 0, vcopy = 0, merged = 0; int MM = 0;   // MM 1: k_decode_g<G,1> (AX_MATCH_MERGE)
+    uint64_t steps = 0, limit = 0, oob = 0, vec16 = 0, vcopy = 0;
     static uint32_t match(const uint8_t* lit, const uint8_t* off, const uint8_t* len, const uint8_t* cmd, uint32_t ls, uint32_t os, uint32_t ns, uint32_t cs,
-                          uint8_t* dst, uint32_t n, uint64_t& steps, uint64_t& limit, uint64_t& oob, uint64_t* vcopy = nullptr, int MM = 0, uint64_t* merged = nullptr) {
+                          uint8_t* dst, uint32_t n, uint64_t& steps, uint64_t& limit, uint64_t& oob, uint64_t* vcopy = nullptr) {
         uint32_t lp = 0, op = 0, np = 0, cp = 0, o = 0, rep[4] = {1, 2, 4, 8}, st = 0;
         while (o < n) { int type = 2; uint32_t l = 0, aux = 0; const uint32_t rem = n - o;
             if (++st > cs + 1) { limit++; break; }
             bool vb = false;
             while (cp < cs) { uint8_t c = cmd[cp++];
                 if (c == 0xFF) { rep[0] = 1; rep[1] = 2; rep[2] = 4; rep[3] = 8; continue; }
-                if (c < 0x80) { l = c + 1u; if (l > ls - lp || l > rem) break; type = 0; aux = lp; lp += l;
-                    if (MM) while (cp < cs) { const uint8_t c2 = cmd[cp];
-                        if (c2 == 0xFF) { rep[0] = 1; rep[1] = 2; rep[2] = 4; rep[3] = 8; cp++; continue; }
-                        if (c2 >= 0x80) break;
-                        const uint32_t l2 = c2 + 1u; if (l2 > ls - lp || l2 > rem - l) break;
-                        cp++; lp += l2; l += l2; if (merged) ++*merged; } }
+                if (c < 0x80) { l = c + 1u; if (l > ls - lp || l > rem) break; type = 0; aux = lp; lp += l; }
                 else if ((c & 0xC0) == 0x80) { uint32_t ri = (c >> 4) & 3, lv = c & 0x0F; if (lv == 0x0F) lv += varint(len, np, ns, vb);
                     uint32_t d = rep[ri]; if (ri) { for (int i = ri; i > 0; i--) rep[i] = rep[i - 1]; rep[0] = d; }
                     if (vb || (lv < 0x0F && (c & 0x0F) == 0x0F)) break;
@@ -104,7 +99,7 @@ struct Exec {
         const uint8_t* e = &P.bo[64ull * b]; auto q = [&](int i) { return agp::rd64(e + 8 * i); };
         const uint8_t *lit = at(P.o_s[0] + q(0)), *off = at(P.o_s[1] + q(1)), *len = at(P.o_s[2] + q(2)), *cmd = at(P.o_s[3] + q(3));
         uint64_t base = (uint64_t)b * P.bs, rem = P.orig - base; uint32_t n = (uint32_t)std::min<uint64_t>(rem, P.bs);
-        if (match(lit, off, len, cmd, (uint32_t)q(4), (uint32_t)q(5), (uint32_t)q(6), (uint32_t)q(7), out + base, n, steps, limit, oob, &vcopy, MM, &merged) != n) err |= 8; }
+        if (match(lit, off, len, cmd, (uint32_t)q(4), (uint32_t)q(5), (uint32_t)q(6), (uint32_t)q(7), out + base, n, steps, limit, oob, &vcopy) != n) err |= 8; }
     // the schedule of aceapex_gpu_decompress_async (S == nullptr) / _range_async (S = the selection)
     void run(const agp::Sel* S, uint8_t* out) {
         auto each = [&](agp::Seg g, auto f) { for (uint32_t i = g.lo; i < g.hi; i++) f(i); };
@@ -151,7 +146,7 @@ int main(int argc, char** argv) {
               if (zs > 0) { z.resize(zs); arch.push_back({std::string(k ? "text" : "chr1slice") + "-p" + std::to_string(pi), z}); } }
           for (const char* e : pr) if (e) { std::string k(e); unsetenv(k.substr(0, k.find('=')).c_str()); }
           pi++; } }
-    int archives = 0, refused = 0, bad = 0, ranges = 0, rbad = 0, mut = 0, mref = 0; uint64_t nvec16 = 0, nvcopy = 0, nmerged = 0; std::string fails;
+    int archives = 0, refused = 0, bad = 0, ranges = 0, rbad = 0, mut = 0, mref = 0; uint64_t nvec16 = 0, nvcopy = 0; std::string fails;
     std::mt19937_64 rng(20261001);
     for (auto& A : arch) {
         agp::Plan P; int e = agp::build(A.second.data(), A.second.size(), P, nvt_cpu);
@@ -162,8 +157,6 @@ int main(int argc, char** argv) {
         archives++;
         std::vector<uint8_t> T(P.temp_bytes), out(n + 64);
         Exec X(P, A.second.data(), T); X.run(nullptr, out.data()); nvec16 += X.vec16; nvcopy += X.vcopy;
-        { std::vector<uint8_t> T1(P.temp_bytes), o1(n + 64); Exec X1(P, A.second.data(), T1); X1.MM = 1; X1.run(nullptr, o1.data()); nmerged += X1.merged;
-          if (X1.err || memcmp(o1.data(), ref.data(), n)) { bad++; fails += " merge:" + A.first; continue; } }
         if (X.err || memcmp(out.data(), ref.data(), n)) { bad++; fails += " full:" + A.first; continue; }
         for (int r = 0; r < 40; r++) {
             uint64_t len = std::min<uint64_t>(n, 1 + rng() % std::min<uint64_t>(n, r % 4 == 0 ? 17 : r % 4 == 1 ? 16384 : r % 4 == 2 ? 65536 : 1u << 20));
@@ -184,7 +177,7 @@ int main(int argc, char** argv) {
     // 1000 byte flips of the archive's streams under the plan of the intact archive (what the device sees: the
     // plan is built once on the host, the flips are in d_in), a failed zstd frame leaving random bytes (nvCOMP's
     // output is undefined then): no match loop over its step limit, no copy outside its block
-    int flips = 0; uint64_t fmerge = 0, fsteps = 0, fbound = 0, flimit = 0, foob = 0, fcaught = 0, fhash = 0, fsame = 0, fsilent = 0;
+    int flips = 0; uint64_t fsteps = 0, fbound = 0, flimit = 0, foob = 0, fcaught = 0, fhash = 0, fsame = 0, fsilent = 0;
     { std::vector<size_t> ok_ix; for (size_t i = 0; i < arch.size(); i++) { agp::Plan Q; if (!agp::build(arch[i].second.data(), arch[i].second.size(), Q, nvt_cpu) && Q.orig) ok_ix.push_back(i); }
       for (int f = 0; f < 1000 && !ok_ix.empty(); f++) {
           const auto& A = arch[ok_ix[f % ok_ix.size()]].second; agp::Plan Q; agp::build(A.data(), A.size(), Q, nvt_cpu);
@@ -192,8 +185,6 @@ int main(int argc, char** argv) {
           std::vector<uint8_t> z = A; z[s0 + rng() % (z.size() - s0)] ^= (uint8_t)(1 + rng() % 255); flips++;
           std::vector<uint8_t> T3(Q.temp_bytes), o3(Q.orig + 64);
           const uint64_t js = rng(); Exec Z(Q, z.data(), T3); std::mt19937_64 jr(js); Z.jr = &jr; Z.run(nullptr, o3.data());
-          { std::vector<uint8_t> T4(Q.temp_bytes), o4(Q.orig + 64); Exec Z1(Q, z.data(), T4); std::mt19937_64 jr1(js); Z1.jr = &jr1; Z1.MM = 1; Z1.run(nullptr, o4.data());
-            if (Z1.err != Z.err || memcmp(o3.data(), o4.data(), Q.orig) || Z1.limit || Z1.oob) fmerge++; }
           for (uint32_t b = 0; b < Q.nb; b++) fbound += agp::rd64(&Q.bo[64ull * b] + 56) + 1;
           fsteps += Z.steps; flimit += Z.limit; foob += Z.oob;
           // ACEAPEX_GPU_VERIFY_XXH3: the status flags or the hash of the output against the header; else the output must be the original
@@ -230,11 +221,11 @@ int main(int argc, char** argv) {
     printf("head_gpu_zstd_validate\t%s\t%d archives with zstd frames (%llu frames) pass the validation (%d refused); the saved T2T frame (verify/repro, nvCOMP 5.3 does not finish on it) passes the header check and is %s; %d byte flips inside zstd frames: %d archives refused, %d accepted, %d of them with a frame that does not decode to its size\n",
            vok ? "pass" : "fail", vz_arch, (unsigned long long)vz_frames, vz_bad_intact, vz_repro ? "refused" : "NOT REFUSED", vz_flips, vz_ref, vz_flips - vz_ref, vz_leak);
     const bool ok = archives >= 12 && bad == 0 && rbad == 0;
-    const bool fok = flips == 1000 && flimit == 0 && foob == 0 && fsilent == 0 && wrap_ok && fmerge == 0;
-    printf("head_gpu_plan_emu\t%s\t%d archives decoded through the plan bit-perfect (%d bad; AX_VEC 16-byte paths: %llu unpack stores, %llu match copies; AX_MATCH_MERGE: same bytes, %llu literal tokens merged), %d ranges on a zeroed temp (%d bad), %d refused by the planner, %d mutations (%d refused, the rest ran inside their buffers)%s\n",
-           ok ? "pass" : "fail", archives, bad, (unsigned long long)nvec16, (unsigned long long)nvcopy, (unsigned long long)nmerged, ranges, rbad, refused, mut, mref, fails.empty() ? "" : (";" + fails).c_str());
-    printf("head_gpu_flip_emu\t%s\t%d byte flips of the streams under the plan of the intact archive (as on the device), a failed zstd frame leaving random bytes: %llu match steps of %llu allowed, %llu over the step limit, %llu copies outside a block; %llu flagged by status, %llu more by XXH3, %llu decoded to the original, %llu silent; length 2^32-16 after 100 bytes %s; merged literal tokens (AX_MATCH_MERGE): %llu flips with other bytes or status\n",
+    const bool fok = flips == 1000 && flimit == 0 && foob == 0 && fsilent == 0 && wrap_ok;
+    printf("head_gpu_plan_emu\t%s\t%d archives decoded through the plan bit-perfect (%d bad; AX_VEC 16-byte paths: %llu unpack stores, %llu match copies), %d ranges on a zeroed temp (%d bad), %d refused by the planner, %d mutations (%d refused, the rest ran inside their buffers)%s\n",
+           ok ? "pass" : "fail", archives, bad, (unsigned long long)nvec16, (unsigned long long)nvcopy, ranges, rbad, refused, mut, mref, fails.empty() ? "" : (";" + fails).c_str());
+    printf("head_gpu_flip_emu\t%s\t%d byte flips of the streams under the plan of the intact archive (as on the device), a failed zstd frame leaving random bytes: %llu match steps of %llu allowed, %llu over the step limit, %llu copies outside a block; %llu flagged by status, %llu more by XXH3, %llu decoded to the original, %llu silent; length 2^32-16 after 100 bytes %s\n",
            fok ? "pass" : "fail", flips, (unsigned long long)fsteps, (unsigned long long)fbound, (unsigned long long)flimit, (unsigned long long)foob,
-           (unsigned long long)fcaught, (unsigned long long)fhash, (unsigned long long)fsame, (unsigned long long)fsilent, wrap_ok ? "refused" : "NOT REFUSED", (unsigned long long)fmerge);
+           (unsigned long long)fcaught, (unsigned long long)fhash, (unsigned long long)fsame, (unsigned long long)fsilent, wrap_ok ? "refused" : "NOT REFUSED");
     return ok && fok && vok ? 0 : 1;
 }

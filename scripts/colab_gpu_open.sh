@@ -272,11 +272,10 @@ SIZES=""; for X in $CORP; do [ -s $W/$X.fa ] && SIZES="$SIZES $X=$(stat -c%s $W/
     BEGIN{ n=split(sizes,a," "); for(i=1;i<=n;i++){ split(a[i],kv,"="); sz[kv[1]]=kv[2] } }
     $1=="ROW"{ k=$2; sub(w,"",k); sub(/\.aet$/,"",k); if(!(k in seen)){ seen[k]=1; ord[++m]=k } t[k]=$10; sq[k]=$15; un[k]=$8; ma[k]=$9; ck[k]=$13 }
     $1=="APIROW"{ k=$2; sub(w,"",k); sub(/\.aet$/,"",k); api[k]=$4 }
-    $1=="MATCHVAR"{ k=$2; sub(w,"",k); sub(/\.aet$/,"",k); mv[k]=sprintf("; match %.3f->%.3f (MERGE)%s", $3, $4, ($5=="1"?"":" DIFFERS")) }
     $1=="OPENVAR"{ k=$2; sub(w,"",k); sub(/\.aet$/,"",k); var[k]=sprintf("; variants seq %.3f->%.3f, unpack %.3f->%.3f (EXC)->%.3f (SHB)%s", $3, $4, $5, $6, $7, ($8=="1"?"":" DIFFERS")) }
     END{ for(i=1;i<=m && i<=11;i++){ k=ord[i]; x=k; sub(/\..*/,"",x)
            lib = (k in api) ? sprintf("library %.3f ms (%.1f GB/s), ", api[k], (api[k]>0 && (x in sz)) ? sz[x]/api[k]/1e6 : 0) : ""
-           printf "%s: %stool %.3f ms; seq %s, unpack %.3f, match %.3f ms; %s%s%s\n", k, lib, t[k], sq[k], un[k], ma[k], ck[k], var[k], mv[k] } }' $L
+           printf "%s: %stool %.3f ms; seq %s, unpack %.3f, match %.3f ms; %s%s\n", k, lib, t[k], sq[k], un[k], ma[k], ck[k], var[k] } }' $L
   echo "verdict $VERDICT"; } > $W/summary.txt
 cat $W/summary.txt | tee -a $L
 # the summary appended and the whole log copied to Drive: the runtime may be released right after (runtime.unassign)
