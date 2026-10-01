@@ -232,7 +232,7 @@ __global__ void __launch_bounds__(256) k_open_bases_x(const OpenDesc* __restrict
     const uint32_t i0=16*g; if(i0>=raw) return;
     axl_bases16_v(g,c.seq,c.ends,R,raw,c.dst,axl_run_in(c.ends,jlo,jhi,i0), ep, ehi, c.val, axl_exc_in(ep,elo,ehi,i0));
 }
-// AX_OPEN_SHB=1 (measurement, tool): k_open_bases_x with the block's slice of run ends and exception positions in
+// AX_OPEN_SHB (default since 01.10, tool and library): k_open_bases_x with the block's slice of run ends and exception positions in
 // shared memory. A block covers 4096 positions: four threads (in four warps) find the slice bounds, the block copies
 // the slices with coalesced loads, then every search and walk of the 16-position steps reads shared memory instead
 // of dependent global loads. The steps get the slices as pointers shifted by the slice start, so run parity and the

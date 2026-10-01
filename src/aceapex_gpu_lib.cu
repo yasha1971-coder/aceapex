@@ -162,8 +162,9 @@ static int run(const aceapex_gpu_plan* pl, const agp::Sel* S, const uint8_t* in,
     if((ND && gy1>65535) || (NO && gyo>65535)) return ACEAPEX_GPU_E_ARCHIVE;
     auto dna=[&](agp::Seg g){ if(g.hi>g.lo){ const uint32_t n=g.hi-g.lo; k_unpack<<<dim3(n,gy1),256,0,s>>>(dD+g.lo); k_exc<<<n,256,0,s>>>(dD+g.lo); } };
     auto open=[&](agp::Seg g){ if(g.hi>g.lo){ const uint32_t n=g.hi-g.lo;
-        // case runs + exception positions, then bases with case and exceptions in one store (AX_OPEN_EXC)
-        k_open_cg<<<n,AXO_NT,0,s>>>(dO+g.lo,err+2); k_open_bases_x<<<dim3(n,gyo),256,0,s>>>(dO+g.lo); } };
+        // case runs + exception positions, then bases with case and exceptions in one store (AX_OPEN_EXC), the block's
+        // run ends and exception positions read from shared memory (AX_OPEN_SHB: Blackwell T2T unpack 8.95 -> 7.46 ms)
+        k_open_cg<<<n,AXO_NT,0,s>>>(dO+g.lo,err+2); k_open_bases_s<<<dim3(n,gyo),256,0,s>>>(dO+g.lo); } };
     const agp::Seg all_r{0,NR}, all_o{0,NO}, all_d{0,ND}, all_w{0,NW};
     uint32_t b0=0, b1=P.nb; uint8_t* mout=out;
     phase("init + fixups",s);
