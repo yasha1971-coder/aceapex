@@ -118,6 +118,14 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+01.10 (21): scripts/gpu_run.sh — один скрипт для любой GPU-машины (RunPod: хранилище /workspace/aceapex_store; Colab: Drive;
+иначе $HOME/aceapex_store). QUICK по умолчанию; ONE=1 = всё за один заход + лестница корпусов (chr1 -> T2T (NCBI, md5 .gz и
+.fa) -> GRCh38 (UCSC hg38.fa.gz, md5 .gz; md5 .fa закрепить после первого прогона)); HPRC=1 — первые HPRC_N (10) сборок
+индекса HPP Year1 (sha256 на файл), кодирование по сборкам (RSS, время), библиотека на GPU, AGC 3.2.4 и MBGC 2.1 на тех же
+файлах (командные строки проверены на ace-core). scripts/gpu_stream.cu: вывод больше карты окнами через range-вызов, два
+окна в полёте (или одно, если не влезают), XXH3 на хосте против заголовка + сверка окон с оригиналом. База по карте:
+results/baseline_h100.tsv (пустая, заполнит первый прогон) / baseline_blackwell.tsv. В SUMMARY для H100 — строки статей
+(README, не перемеряются). colab_gpu_open.sh — обёртка над gpu_run.sh.
 01.10 (20): AX_GPU_TILE (библиотека и инструмент, по умолчанию выкл. до замера): k_decode_t строит литералы блока в shared
 (из упакованных оснований, концов прогонов и позиций исключений; open plain куски — из потока литералов, их пишет k_rans),
 без k_open_bases_s и без записи/чтения 3 ГБ потока литералов t2t. План: tile_ok + карта кусков cmap (open / plain), блоки

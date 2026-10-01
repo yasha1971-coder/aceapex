@@ -1,0 +1,5 @@
+# Performance baseline of the GPU decoder on H100 (scripts/gpu_run.sh compares every run in its SUMMARY block): best
+# confirmed on-device ms, median of 3, bit-perfect; a row more than 5 % slower fails the run's verdict. Empty until the first
+# H100 run of the current code; rows are added or replaced only by a faster run, in a commit of their own with the log.
+# The published H100 numbers of the papers (README: FASTQ ERR194147, June 2026) are not rows of this file: they stay as published.
+gpu	archive	metric	base_ms	commit	log
