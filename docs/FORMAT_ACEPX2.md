@@ -140,7 +140,8 @@ lanes ascending. Lane `l` decodes `slot = x & 4095`, the symbol `s` with
 `x < 2^16` takes the next word: `x = (x << 16) | w`. A reader MUST reject: frequencies
 not summing to 4096, a state out of range, a read past W, unread words, or any lane not
 ending at state 2^16. Reference code: `src/ax_rans.h` (the same file is `c/ax_rans.h`).
-Writers emit rANS chunks only when asked for the profile (`AX_TOK=rans`); decoders
+Writers emit rANS chunks only when asked for the profile (`AX_TOK=rans`; environment variables only in builds with
+`ACEAPEX_ENV_TUNING`, the CLI - [ENVIRONMENT.md](ENVIRONMENT.md)); decoders
 without §3.1.1 see a reserved-bit error.
 
 LEGACY: a zero in bits 48..62 is an archive written before the chunk field existed
@@ -236,7 +237,8 @@ size, an unknown piece mode, a piece not decoding to its length, a LEB128 value 
 bits or not terminated inside its stream, bytes left after the last run or gap, runs not
 summing to `raw`, a zero run or gap where forbidden, a position `>= raw`, fewer than `nexc`
 gaps. Reference code: `src/ax_lit_open.h` (the same file is `c/ax_lit_open.h`).
-Writers emit modes 2 and 3 only for the open profile (`AX_LIT=open`, or `AX_PROFILE=open`,
+Writers emit modes 2 and 3 only for the open profile (`AX_LIT=open`, or `AX_PROFILE=open` - only in builds with
+`ACEAPEX_ENV_TUNING`, [ENVIRONMENT.md](ENVIRONMENT.md) -
 which also sets `AX_TOK=rans`); there every literal chunk is mode 2 or 3 (whichever is
 smaller when the chunk qualifies for the DNA pack), and the literal stream is always the
 tagged chunked layout. An archive of this profile contains no zstd frame.

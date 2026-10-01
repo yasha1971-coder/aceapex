@@ -50,7 +50,8 @@ the requested bytes into `d_out`. nvCOMP has no equivalent: it decodes whole fra
 
 ## Untrusted archives
 
-Use the open profile (`AX_PROFILE=open`: no zstd frame, every step on our own kernels, all bounded and judged on the
+Use the open profile (`AX_PROFILE=open` with the CLI - environment variables only in builds with `ACEAPEX_ENV_TUNING`,
+[ENVIRONMENT.md](ENVIRONMENT.md) -: no zstd frame, every step on our own kernels, all bounded and judged on the
 CPU), or create the plan with `ACEAPEX_GPU_VALIDATE_ZSTD`. Reason: nvCOMP 5.3.0.16 does not finish on some corrupt
 zstd frames. Repro in `verify/repro/` (README.md there): T2T frame 150180 with one flipped byte inside its
 compressed block - libzstd 1.5.5 reports `Data corruption detected`, the frame and block headers are valid, and
