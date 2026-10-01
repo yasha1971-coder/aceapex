@@ -4,6 +4,38 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
+## v2.3.0 — DRAFT (not released; numbers marked [H100] are filled by the next H100 run)
+
+Format ACEPX2 unchanged; archive bytes unchanged for a given libzstd (every change below is a decoder change;
+encoder output byte-identical, checked by the conformance fixtures and the speed gate's pinned archive sizes).
+Version macros are bumped at tag time, not in this draft.
+
+- **GPU library with a C ABI** (`src/aceapex_gpu.h`, `libaceapex_gpu.so.1`, `docs/GPU_API.md`): host plan +
+  async decode without allocation or synchronisation, range decode by coordinate, fail-closed status bits,
+  `ACEAPEX_GPU_VERIFY_XXH3` (hash of the output on the device), `ACEAPEX_GPU_VALIDATE_ZSTD` (every zstd frame
+  through libzstd on the host first: nvCOMP 5.3.0.16 does not return on some corrupt frames, repro in
+  `verify/repro/nvcomp_zstd_hang/`). Frozen for 2.3: `plan_create(h, n, uint64_t flags)` (unknown bits ->
+  `E_ARGS`), `ACEAPEX_GPU_API_VERSION` 20300 + `aceapex_gpu_version()`; later versions only add.
+- **GPU fail-closed**: every kernel loop bounded (step limit -> `STATUS_LIMIT`), varints <= 5 bytes, 64-bit sizes in
+  the descriptors; claims `head_gpu_flip_emu`, `head_gpu_zstd_validate`, `head_gpu_abi`.
+- **GPU decode faster** (Blackwell, on-device, same archives): T2T open 27.14 -> 19.58 ms (library), chr1 open
+  2.83 -> 1.93 ms. Steps: rANS refill from a register window (AX_OPEN_SEQ, seq -23 %), exception positions in the
+  case-run kernel and the bytes in the bases store (AX_OPEN_EXC), the block's run ends in shared memory
+  (AX_OPEN_SHB, T2T unpack -17 %), 16-byte stores (AX_VEC). AX_GPU_TILE (literals of a block built in shared
+  memory, no literal stream): in the code, off by default until measured [H100].
+- **CPU decode** (ace-core, EPYC 4344P 8 cores / 16 threads, median of 5, bit-perfect): T2T open 8 threads
+  1.039 -> 0.229 s, all threads 0.955 -> 0.202 s (before = 374e4f0, 2.2.1 + AVX2 rANS); chr1 default 8 threads 0.094 -> 0.026 s; silesia default
+  8 threads 0.074 -> 0.038 s. Steps: AVX2 rANS (AX_RANS_SIMD; open profile 1 thread x1.8-x2.4), compressed
+  streams read in place, transparent huge pages + parallel prefault, literal tiles in L2 instead of a literal
+  stream (AX_LIT_TILE), non-temporal output (AX_NT), default budget = physical cores (all threads >= 1 GiB).
+  AVX-512 rANS (AX_RANS_SIMD=512) kept, not default: no gain on Zen 4.
+- **Speed gates**: `make perf-gate` (`results/baseline_ace-core.tsv`, > 5 % slower fails), per-card GPU baselines
+  checked in the run's SUMMARY.
+- **One GPU run script**: `scripts/gpu_run.sh` (RunPod / Colab / any host; corpus ladder chr1 -> T2T -> GRCh38 ->
+  HPRC with checksums; outputs larger than the card in windows, `scripts/gpu_stream.cu`).
+- Build: `make ZSTD_SRC=<zstd 1.5.x tree>` links zstd statically (1.5.x: chr1 default 1 thread -16 % against the
+  system 1.4.8).
+
 ## v2.2.1 — 2026-09-30
 
 DOI: [10.5281/zenodo.23070077](https://doi.org/10.5281/zenodo.23070077)

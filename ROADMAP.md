@@ -118,6 +118,8 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+01.10 (22): черновик выпуска 2.3: CHANGELOG (раздел v2.3.0 DRAFT), release/v2.3.0.md (CPU-числа ace-core, Blackwell, места
+под H100, заметка про plan_create с flags и VALIDATE_ZSTD). Версия в aceapex.h поднимается при теге. Не публиковать.
 01.10 (21): scripts/gpu_run.sh — один скрипт для любой GPU-машины (RunPod: хранилище /workspace/aceapex_store; Colab: Drive;
 иначе $HOME/aceapex_store). QUICK по умолчанию; ONE=1 = всё за один заход + лестница корпусов (chr1 -> T2T (NCBI, md5 .gz и
 .fa) -> GRCh38 (UCSC hg38.fa.gz, md5 .gz; md5 .fa закрепить после первого прогона)); HPRC=1 — первые HPRC_N (10) сборок
