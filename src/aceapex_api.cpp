@@ -531,3 +531,176 @@ int64_t aceapex_decompress_ranges(
         if(r.dst){ ranges[r.idx].written=(int64_t)r.length; ok++; }
     return ok;
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Streaming decode (aceapex.h aceapex_decompress_stream): the tile path (AX_LIT_TILE) over a read callback.
+// Main thread: header, chunk tables (literal: chunked FSE layout required; tokens: the chunk table of each stream),
+// the block table in windows of 2048 entries, groups of blocks (literal span <= G+1 chunks, <= AX_STREAM_BLOCKS blocks
+// so a group's output stays <= ~1 MiB), and the token chunks the group needs - decoded by the main thread in order into
+// shared buffers the groups hold (a chunk decoded once, freed when its last group is written). Workers: a group's literal
+// chunks read and decoded into the worker's tile, the group's blocks decoded from it into the worker's output buffer,
+// which is handed to the write callback in group order (a sequence counter). Memory: threads x (tile + output + read
+// buffer) + the chunk tables + the groups in flight; nothing proportional to the archive.
+#include <memory>
+#include <mutex>
+#include <condition_variable>
+#include <deque>
+#include "xxhash.h"
+namespace {
+struct StChunk { uint64_t off, raw, pos, csz; bool tg; };                   // a literal chunk: stream offset, size, file offset of its body
+struct StTok { size_t S = 0, CH = 0, nc = 0; std::vector<uint64_t> cs, pos; };   // a token stream: size, chunk, entries and file offsets
+struct StTokBuf { std::vector<uint8_t> d; };
+struct StGroup { uint64_t seq, b0, b1, k0, k1; std::vector<BlockOffsets> bo;    // blocks, literal chunk span, block entries
+                 uint64_t t0[4]; size_t tsz[4]; std::vector<std::shared_ptr<StTokBuf>> tok[4]; };   // per token stream: window start (stream offset), its chunks
+struct StCtx {
+    aceapex_read_fn rd; void* rctx; aceapex_write_fn wr; void* wctx;
+    uint64_t zoff[4]; uint64_t orig, bs, nb; size_t csz; std::vector<StChunk> lch; StTok tk[4];
+    std::mutex m; std::condition_variable cv_q, cv_w; std::deque<std::shared_ptr<StGroup>> q; bool done = false; size_t qcap;
+    uint64_t next_write = 0; std::atomic<int> err{0}; XXH3_state_t* xs = nullptr; unsigned flags;
+    size_t tile_max = 0, out_max = 0, rbuf_max = 0;                             // buffers sized once per worker (no realloc garbage in the arenas)
+};
+static bool st_read(StCtx& c, uint64_t off, void* buf, size_t len) {
+    while (len) { const int64_t r = c.rd(c.rctx, off, buf, len); if (r <= 0) return false; off += (uint64_t)r; buf = (uint8_t*)buf + r; len -= (size_t)r; }
+    return true;
+}
+static void* st_worker(void* v) {
+    StCtx& c = *(StCtx*)v; std::vector<uint8_t> tile(c.tile_max + 64), rbuf(c.rbuf_max + 64), out(c.out_max + 64), tw[4];
+    for (;;) {
+        std::shared_ptr<StGroup> g;
+        { std::unique_lock<std::mutex> lk(c.m); c.cv_q.wait(lk, [&] { return !c.q.empty() || c.done || c.err; });
+          if (c.err || (c.q.empty() && c.done)) return nullptr;
+          g = c.q.front(); c.q.pop_front(); }
+        c.cv_q.notify_all();
+        const uint64_t t0 = g->k0 * c.csz, tsz = std::min((g->k1 + 1) * c.csz, (uint64_t)c.lch.empty() ? 0 : c.lch.back().off + c.lch.back().raw) - t0;
+        if (tile.size() < tsz + 64) tile.resize(tsz + 64);
+        bool bad = false;
+        for (uint64_t k = g->k0; k <= g->k1 && !bad; k++) {
+            const StChunk& ch = c.lch[k];
+            if (rbuf.size() < ch.csz + 64) rbuf.resize(ch.csz + 64);
+            if (ch.csz && !st_read(c, ch.pos, rbuf.data(), ch.csz)) { bad = true; break; }
+            const AxLitChunk d{(size_t)ch.off, (size_t)ch.raw, rbuf.data(), (size_t)ch.csz, ch.tg};
+            if (!ax_lit_chunk_decode(d, tile.data() + (ch.off - t0))) bad = true;
+        }
+        const uint64_t osz = std::min((g->b1) * c.bs, c.orig) - g->b0 * c.bs;
+        if (out.size() < osz + 64) out.resize(osz + 64);
+        for (int st = 1; st < 4; st++) {                                   // the group's token chunks, contiguous (a block's slice may cross a chunk)
+            size_t n = 0; for (auto& b : g->tok[st]) n += b->d.size();
+            if (tw[st].size() < n + 64) tw[st].resize(n + 64);
+            size_t o = 0; for (auto& b : g->tok[st]) { memcpy(tw[st].data() + o, b->d.data(), b->d.size()); o += b->d.size(); }
+            g->tsz[st] = n; }
+        for (uint64_t b = g->b0; b < g->b1 && !bad; b++) {
+            const BlockOffsets& bo = g->bo[b - g->b0]; const uint64_t bstart = b * c.bs, bsize = std::min(c.bs, c.orig - bstart);
+            if (bo.lit_sz && (bo.lit_off < t0 || bo.lit_off + bo.lit_sz > t0 + tsz)) { bad = true; break; }
+            const uint8_t* tp[4] = {nullptr, nullptr, nullptr, nullptr}; const uint64_t so[4] = {0, bo.off_off, bo.len_off, bo.cmd_off}, ss[4] = {0, bo.off_sz, bo.len_sz, bo.cmd_sz};
+            for (int st = 1; st < 4 && !bad; st++) {
+                if (!ss[st]) { tp[st] = tile.data(); continue; }
+                if (so[st] < g->t0[st] || so[st] - g->t0[st] + ss[st] > g->tsz[st]) { bad = true; break; }
+                tp[st] = tw[st].data() + (so[st] - g->t0[st]);
+            }
+            if (bad) break;
+            decompress_streams(out.data() + (bstart - g->b0 * c.bs), (size_t)bsize, tile.data() + (bo.lit_sz ? bo.lit_off - t0 : 0), (size_t)bo.lit_sz,
+                               tp[1], (size_t)ss[1], tp[2], (size_t)ss[2], tp[3], (size_t)ss[3]);
+        }
+        { std::unique_lock<std::mutex> lk(c.m); c.cv_w.wait(lk, [&] { return c.next_write == g->seq || c.err; });
+          if (!c.err) {
+              if (bad) c.err = ACEAPEX_ERR_DATA;
+              else { if (c.xs) XXH3_64bits_update(c.xs, out.data(), (size_t)osz);
+                     if (c.wr(c.wctx, out.data(), (size_t)osz)) c.err = ACEAPEX_ERR_BUFFER; }
+          }
+          c.next_write = g->seq + 1; }
+        c.cv_w.notify_all(); c.cv_q.notify_all();
+        if (c.err) return nullptr;
+    }
+}
+}  // namespace
+
+int64_t aceapex_decompress_stream(aceapex_read_fn rd, void* rctx, aceapex_write_fn wr, void* wctx, int threads, unsigned flags)
+{
+    if (!rd || !wr || (flags & ~ACEAPEX_STREAM_VERIFY)) return ACEAPEX_ERR_BUFFER;
+    StCtx c; c.rd = rd; c.rctx = rctx; c.wr = wr; c.wctx = wctx; c.flags = flags;
+    AetHeader hdr; if (!st_read(c, 0, &hdr, sizeof hdr)) return ACEAPEX_ERR_DATA;
+    if (memcmp(hdr.magic, "ACEPX2\0\0", 8) != 0) return ACEAPEX_ERR_DATA;
+    if (hdr.num_blocks == 0) { if (!ax_is_empty_archive(hdr)) return ACEAPEX_ERR_DATA; return 0; }
+    if (hdr.block_size == 0 || (uint64_t)hdr.num_blocks * hdr.block_size < hdr.orig_size || (uint64_t)(hdr.num_blocks - 1) * hdr.block_size >= hdr.orig_size) return ACEAPEX_ERR_DATA;
+    c.orig = hdr.orig_size; c.bs = hdr.block_size; c.nb = hdr.num_blocks;
+    uint64_t p = sizeof hdr + (uint64_t)hdr.num_blocks * sizeof(BlockOffsets);
+    const uint64_t zsz[4] = {hdr.zlit_sz, hdr.zoff_sz, hdr.zlen_sz, hdr.zcmd_sz};
+    for (int st = 0; st < 4; st++) { c.zoff[st] = p; p += zsz[st]; }
+    // token streams: header + chunk table, file offset of every chunk
+    for (int st = 1; st < 4; st++) {
+        StTok& t = c.tk[st]; if (zsz[st] < 8) continue;
+        uint8_t h8[8]; if (!st_read(c, c.zoff[st], h8, 8)) return ACEAPEX_ERR_DATA;
+        uint64_t h; memcpy(&h, h8, 8); if (h >> 63) return ACEAPEX_ERR_DATA;
+        t.S = fse_stream_size(h8); t.CH = fse_stream_chunk(h8); if (!t.CH) return ACEAPEX_ERR_DATA;
+        t.nc = (t.S + t.CH - 1) / t.CH; if (t.nc > (zsz[st] - 8) / 8) return ACEAPEX_ERR_DATA;
+        std::vector<uint8_t> tb(t.nc * 8); if (t.nc && !st_read(c, c.zoff[st] + 8, tb.data(), tb.size())) return ACEAPEX_ERR_DATA;
+        t.cs.resize(t.nc); t.pos.resize(t.nc); uint64_t q = c.zoff[st] + 8 + 8 * t.nc, end = c.zoff[st] + zsz[st];
+        for (size_t i = 0; i < t.nc; i++) { memcpy(&t.cs[i], tb.data() + 8 * i, 8); if (ax_ce_bad(t.cs[i])) return ACEAPEX_ERR_DATA;
+            const uint64_t raw = std::min<uint64_t>(t.CH, t.S - i * t.CH), z = ax_ce_raw(t.cs[i]) ? raw : ax_ce_size(t.cs[i]);
+            if (z > end - q) return ACEAPEX_ERR_DATA; t.pos[i] = q; q += z; }
+    }
+    // literal stream: the chunked FSE layout (bit 62 + 61), its table, file offset of every chunk
+    { if (zsz[0] < 16) { if (hdr.orig_size) return ACEAPEX_ERR_DATA; }
+      uint8_t h16[16]; if (!st_read(c, c.zoff[0], h16, 16)) return ACEAPEX_ERR_DATA;
+      uint64_t h, cz; memcpy(&h, h16, 8); memcpy(&cz, h16 + 8, 8);
+      const bool chunked = (h >> 61) & 1, tagged = (h >> 60) & 1;
+      if (!((h >> 62) & 1) || !chunked || (h >> 63) || !cz) return ACEAPEX_ERR_DATA;   // legacy layouts: not streamed
+      const uint64_t lsz = h & ~((uint64_t(1) << 62) | (uint64_t(1) << 61) | (uint64_t(1) << 60)); c.csz = (size_t)cz;
+      const uint64_t NW = (lsz + cz - 1) / cz; if (NW > (zsz[0] - 16) / 8 || cz % 4096) return ACEAPEX_ERR_DATA;
+      std::vector<uint8_t> tb(NW * 8); if (NW && !st_read(c, c.zoff[0] + 16, tb.data(), tb.size())) return ACEAPEX_ERR_DATA;
+      uint64_t q = c.zoff[0] + 16 + 8 * NW, end = c.zoff[0] + zsz[0]; c.lch.resize(NW);
+      for (uint64_t t = 0; t < NW; t++) { uint64_t z; memcpy(&z, tb.data() + 8 * t, 8); if (z > end - q) return ACEAPEX_ERR_DATA;
+          const uint64_t off = t * cz, raw = off + cz <= lsz ? cz : lsz - off; c.lch[t] = {off, raw, q, z, tagged}; q += z; }
+      if (NW && c.lch.back().off + c.lch.back().raw != lsz) return ACEAPEX_ERR_DATA; }
+    const int T = std::max(1, ax_decode_budget(threads, c.orig)); c.qcap = (size_t)T * 2;
+    static const uint64_t G = [] { const char* e = ax_getenv("AX_TILE_CHUNKS"); uint64_t v = e ? strtoull(e, 0, 10) : 8; return v ? v : 1; }();
+    static const uint64_t MAXB = [] { const char* e = ax_getenv("AX_STREAM_BLOCKS"); uint64_t v = e ? strtoull(e, 0, 10) : 0; return v ? v : 0; }();
+    const uint64_t maxb = MAXB ? MAXB : std::max<uint64_t>(1, ((uint64_t)1 << 20) / c.bs);
+    c.tile_max = (size_t)((G + 1) * c.csz); c.out_max = (size_t)(maxb * c.bs); for (const StChunk& ch : c.lch) c.rbuf_max = std::max(c.rbuf_max, (size_t)ch.csz);
+    if (flags & ACEAPEX_STREAM_VERIFY) { c.xs = XXH3_createState(); XXH3_64bits_reset(c.xs); }
+    std::vector<pthread_t> th((size_t)T);
+    for (int t = 0; t < T; t++) ax_thread(&th[(size_t)t], st_worker, &c);
+    // the main thread: block table in windows, groups, their token chunks (decoded once, shared)
+    std::shared_ptr<StTokBuf> last[4]; uint64_t lastk[4] = {~0ull, ~0ull, ~0ull, ~0ull};
+    std::vector<BlockOffsets> win; const uint64_t WB = 2048; uint64_t wb0 = 0, wb1 = 0, seq = 0; bool bad = false;
+    auto tokchunk = [&](int st, uint64_t k) -> std::shared_ptr<StTokBuf> {
+        if (lastk[st] == k) return last[st];
+        const StTok& t = c.tk[st]; if (k >= t.nc) return nullptr;
+        auto b = std::make_shared<StTokBuf>(); const uint64_t raw = std::min<uint64_t>(t.CH, t.S - k * t.CH), z = ax_ce_raw(t.cs[k]) ? raw : ax_ce_size(t.cs[k]);
+        std::vector<uint8_t> zb(z + 64); if (z && !st_read(c, t.pos[k], zb.data(), z)) return nullptr;
+        b->d.resize(raw + 64); if (!ax_tok_chunk(t.cs[k], b->d.data(), raw, zb.data(), z)) return nullptr;
+        b->d.resize(raw); last[st] = b; lastk[st] = k; return b; };
+    for (uint64_t b = 0; b < c.nb && !bad; ) {
+        auto g = std::make_shared<StGroup>(); g->seq = seq++; g->b0 = g->b1 = b; g->k0 = ~0ull; g->k1 = 0;
+        for (int st = 1; st < 4; st++) g->t0[st] = ~0ull;
+        uint64_t tk0[4] = {0, ~0ull, ~0ull, ~0ull}, tk1[4] = {0, 0, 0, 0};
+        while (b < c.nb && g->b1 - g->b0 < maxb) {
+            if (b >= wb1) { wb0 = b; wb1 = std::min(c.nb, b + WB); win.resize((size_t)(wb1 - wb0));
+                if (!st_read(c, sizeof hdr + wb0 * sizeof(BlockOffsets), win.data(), (size_t)(wb1 - wb0) * sizeof(BlockOffsets))) { bad = true; break; } }
+            const BlockOffsets& bo = win[(size_t)(b - wb0)];
+            const uint64_t ls = c.lch.empty() ? 0 : c.lch.back().off + c.lch.back().raw;
+            if (bo.lit_off > ls || bo.lit_sz > ls - bo.lit_off) { bad = true; break; }
+            const uint64_t lo = c.csz ? bo.lit_off / c.csz : 0, hi = c.csz ? (bo.lit_sz ? (bo.lit_off + bo.lit_sz - 1) / c.csz : lo) : 0;
+            const uint64_t k0 = std::min(g->k0, lo), k1 = std::max(g->k1, hi);
+            if (g->b1 > g->b0 && k1 - k0 + 1 > G + 1) break;
+            const uint64_t so[4] = {0, bo.off_off, bo.len_off, bo.cmd_off}, ss[4] = {0, bo.off_sz, bo.len_sz, bo.cmd_sz}; bool ok = true;
+            for (int st = 1; st < 4; st++) { if (!ss[st]) continue; const StTok& t = c.tk[st];
+                if (!t.CH || so[st] > t.S || ss[st] > t.S - so[st]) { ok = false; break; }
+                tk0[st] = std::min(tk0[st], so[st] / t.CH); tk1[st] = std::max(tk1[st], (so[st] + ss[st] - 1) / t.CH); }
+            if (!ok) { bad = true; break; }
+            g->k0 = k0; g->k1 = k1; g->bo.push_back(bo); g->b1 = ++b;
+        }
+        if (bad) break;
+        for (int st = 1; st < 4 && !bad; st++) { if (tk0[st] == ~0ull) continue; g->t0[st] = tk0[st] * c.tk[st].CH;
+            for (uint64_t k = tk0[st]; k <= tk1[st]; k++) { auto tb = tokchunk(st, k); if (!tb) { bad = true; break; } g->tok[st].push_back(tb); } }
+        if (bad) break;
+        { std::unique_lock<std::mutex> lk(c.m); c.cv_q.wait(lk, [&] { return c.q.size() < c.qcap || c.err; }); if (c.err) break; c.q.push_back(g); }
+        c.cv_q.notify_all();
+    }
+    { std::lock_guard<std::mutex> lk(c.m); if (bad && !c.err) c.err = ACEAPEX_ERR_DATA; c.done = true; }
+    c.cv_q.notify_all(); c.cv_w.notify_all();
+    for (int t = 0; t < T; t++) pthread_join(th[(size_t)t], nullptr);
+    int64_t r = c.err ? (int64_t)c.err.load() : (int64_t)c.orig;
+    if (c.xs) { const uint64_t h = XXH3_64bits_digest(c.xs); XXH3_freeState(c.xs); uint64_t want; memcpy(&want, hdr.xxhash, 8); if (!c.err && h != want) r = ACEAPEX_ERR_DATA; }
+    return r;
+}

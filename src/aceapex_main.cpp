@@ -9,6 +9,7 @@
 #endif
 #include <stdint.h>
 #include <string>
+#include <memory>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -231,7 +232,10 @@ static void compress_block(const uint8_t* src, size_t src_size,
 
     // ULTRA: Chain flattening origin table
     // origin[local_pos] = original literal source position (local)
-    static thread_local uint32_t origin[1048576];
+    // heap, on the thread's first encode: as a thread_local array (4 MiB of TLS) every thread of a process linking the
+    // library paid 4 MiB of RSS at creation, including decode-only threads (16 stream threads: +64 MiB, found 02.10)
+    static thread_local std::unique_ptr<uint32_t[]> origin_p; if (!origin_p) origin_p.reset(new uint32_t[1048576]);
+    uint32_t* const origin = origin_p.get();
     size_t flat_pos = 0; // track which positions are initialized
     auto init_origin = [&](size_t from, size_t to) {
         for (size_t i = from; i < to && i < 1048576; i++) origin[i] = (uint32_t)i;
@@ -701,7 +705,7 @@ static void decompress_parallel(
     const uint8_t* cmd, size_t cmd_sz)
 {
     // Build ops list first
-    static thread_local DecOp ops_buf[131072];
+    static thread_local std::unique_ptr<DecOp[]> ops_p; if (!ops_p) ops_p.reset(new DecOp[131072]); DecOp* const ops_buf = ops_p.get();   // heap, not TLS (see origin)
     size_t ops_cnt = 0;
     size_t lp=0, op=0, np=0, cp=0, out=0;
     uint32_t rep[4]={1,2,4,8};
@@ -743,8 +747,8 @@ static void decompress_parallel(
 
     // Step 2: Parallel matches where src+len <= ready_end (Bernstein safe)
     // Split into parallel and sequential
-    static thread_local size_t par_idx[131072];
-    static thread_local size_t seq_idx[131072];
+    static thread_local std::unique_ptr<size_t[]> par_p, seq_p; if (!par_p) { par_p.reset(new size_t[131072]); seq_p.reset(new size_t[131072]); }
+    size_t* const par_idx = par_p.get(); size_t* const seq_idx = seq_p.get();
     size_t par_cnt=0, seq_cnt=0;
     for (size_t i = 0; i < ops_cnt; i++) {
         if (!ops_buf[i].is_lit) {
@@ -1854,6 +1858,20 @@ static int do_compress(const char* in_path, const char* out_path, int threads, i
     return 0;
 }
  
+// `aceapex d --in f.aet --out -` (or -c): the streaming decoder (aceapex_decompress_stream) into stdout, XXH3 checked
+#include <fcntl.h>
+static int64_t ax_cli_pread(void* c, uint64_t off, void* b, size_t n) { return pread(*(int*)c, b, n, (off_t)off); }
+static int ax_cli_write(void* c, const void* b, size_t n) { const uint8_t* p = (const uint8_t*)b;
+    while (n) { const ssize_t w = write(*(int*)c, p, n); if (w <= 0) return 1; p += w; n -= (size_t)w; } return 0; }
+static int do_decompress_stream(const char* in_path, int threads) {
+    int fd = open(in_path, O_RDONLY); if (fd < 0) { fprintf(stderr, "Cannot open: %s\n", in_path); return 1; }
+    int out = 1; const double t0 = now_sec();
+    const int64_t n = aceapex_decompress_stream(ax_cli_pread, &fd, ax_cli_write, &out, threads, ACEAPEX_STREAM_VERIFY);
+    close(fd);
+    if (n < 0) { fprintf(stderr, "Stream decode failed (%lld): %s\n", (long long)n, n == ACEAPEX_ERR_DATA ? "corrupt archive, hash mismatch or a literal layout the stream decoder does not take (use --out <file>)" : "write error"); return 1; }
+    fprintf(stderr, "  Stream: %lld bytes to stdout in %.3f s (%.2f GB/s), hash OK\n", (long long)n, now_sec() - t0, (double)n / (now_sec() - t0) / 1e9);
+    return 0;
+}
 static int do_decompress(const char* in_path, const char* out_path, int threads=8) {
     g_dec_err=0;
     double t_wall=now_sec();
@@ -2085,7 +2103,7 @@ int main(int argc, char** argv) {
     if (argc < 2) {
         fprintf(stderr,"ACEAPEX v3 FSE — Global FSE + Parallel decode\n\n"
             "Usage:\n  %s c --in <f> --out <f.aet> [--threads N]\n"
-            "  %s d --in <f.aet> --out <f>\n  %s t --in <f> [--threads N]\n"
+            "  %s d --in <f.aet> --out <f>      (--out - or -c: streaming decode to stdout)\n  %s t --in <f> [--threads N]\n"
             "  %s r --in <f.aet> --out <f> --region OFFSET LENGTH   (bytes of the original)\n",
             argv[0],argv[0],argv[0],argv[0]);
         return 1;
@@ -2095,6 +2113,7 @@ int main(int argc, char** argv) {
     for(int i=2;i<argc;i++) {
         if (!strcmp(argv[i],"--in")&&i+1<argc) in=argv[++i];
         else if (!strcmp(argv[i],"--out")&&i+1<argc) out=argv[++i];
+        else if (!strcmp(argv[i],"-c")) out="-";
         else if (!strcmp(argv[i],"--threads")&&i+1<argc) thr=atoi(argv[++i]);
         else if (!strcmp(argv[i],"--level")&&i+1<argc) level=atoi(argv[++i]);
         else if (!strcmp(argv[i],"--fast")) level=1;
@@ -2102,7 +2121,7 @@ int main(int argc, char** argv) {
     }
     if (!in) { fprintf(stderr,"--in required\n"); return 1; }
     if (!strcmp(cmd,"c")) { if (!out) { fprintf(stderr,"--out required\n"); return 1; } return do_compress(in,out,thr,level); }
-    if (!strcmp(cmd,"d")) { if (!out) { fprintf(stderr,"--out required\n"); return 1; } return do_decompress(in,out,thr); }
+    if (!strcmp(cmd,"d")) { if (!out) { fprintf(stderr,"--out required (or - for stdout)\n"); return 1; } return strcmp(out,"-") ? do_decompress(in,out,thr) : do_decompress_stream(in,thr); }
     if (!strcmp(cmd,"t")) return do_test(in,thr,level);
     if (!strcmp(cmd,"r")) {
         if (!out) { fprintf(stderr,"--out required\n"); return 1; }

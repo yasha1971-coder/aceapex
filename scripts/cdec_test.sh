@@ -98,6 +98,10 @@ if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/env_test scripts/env_test.cpp src/acea
     printf 'head_env_ignored\t%s\tlibrary without ACEAPEX_ENV_TUNING: 6 rows of tuning variables -> the same bytes at level 1 / 1 thread (%s differing or failed; sizes:%s), threads started at threads=1: %s (strace)\n' "$r" "${out%% *}" "${out#* }" "$nc"
   else printf 'head_env_ignored\tdeclared\tstrace not installed\n'; fi
 else printf 'head_env_ignored\tfail\tbuild failed: %s\n' "$(head -c 150 $T/env.err | tr '\n\t' '  ')"; fi
+# streaming decoder: bit-perfect and a peak memory that does not grow with the archive (16 vs 256 MiB in a child process)
+if ${CXX:-g++} -std=c++17 -O2 -DACEAPEX_ENV_TUNING -Isrc -o $T/stream_test scripts/stream_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/stt.err; then
+  $T/stream_test 2>/dev/null || true
+else printf 'head_stream\tfail\tbuild failed: %s\n' "$(head -c 150 $T/stt.err | tr '\n\t' '  ')"; fi
 # python layer over the same fixtures, without installing: ctypes loads a fresh .so
 if python3 -c "import pytest" 2>/dev/null; then
   if ${CC:-gcc} -std=c99 -O2 -fPIC -shared -DACEAPEX_ENV_TUNING -Ic -o $T/libaceapex_decode.so c/aceapex_decode.c -lzstd 2>/dev/null \
