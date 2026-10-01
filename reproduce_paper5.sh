@@ -365,7 +365,7 @@ if [ -f "$CHR1" ]; then
   # Latency of a single 16 KiB region read through the library, archive resident.
   # 0.081 ms measured on EPYC 4344P; the tolerance admits slower hardware.
   ZI=""; [ -n "${ZSTD_INC:-}" ] && ZI="-I$ZSTD_INC"
-  if gcc -O2 -Isrc $ZI -o /tmp/_p5seek scripts/libseek.c src/aceapex_api.cpp \
+  if gcc -O2 -DACEAPEX_ENV_TUNING -Isrc $ZI -o /tmp/_p5seek scripts/libseek.c src/aceapex_api.cpp \
        -lstdc++ -lpthread -lzstd >/dev/null 2>&1; then
     P50=$(env ACEAPEX_BS=16384 FSE_CHUNK=4096 /tmp/_p5seek /tmp/_p5l.aet 2>/dev/null \
           | grep -oE "[0-9]+\.[0-9]+ms" | head -1 | tr -d ms)
@@ -420,7 +420,7 @@ if [ -f "$CHR1" ] && [ -f scripts/batch_test_ci.c ]; then
   env MIN_MATCH=0 ACEAPEX_BS=16384 LIT_CHUNK=65536 FSE_CHUNK=4096 "$BIN" c \
       --in "$CHR1" --out /tmp/_p5b.aet --threads 8 >/dev/null 2>&1
   ZI=""; [ -n "${ZSTD_INC:-}" ] && ZI="-I$ZSTD_INC"
-  gcc -O2 -Isrc $ZI -o /tmp/_p5b.bin scripts/batch_test_ci.c src/aceapex_api.cpp \
+  gcc -O2 -DACEAPEX_ENV_TUNING -Isrc $ZI -o /tmp/_p5b.bin scripts/batch_test_ci.c src/aceapex_api.cpp \
       -lstdc++ -lpthread -lzstd -lm 2>/tmp/_p5b.err
   if [ ! -x /tmp/_p5b.bin ]; then
     echo "  (batch test build failed: $(head -1 /tmp/_p5b.err 2>/dev/null))"
@@ -470,7 +470,7 @@ int main(int c,char**v){long an,on;void*a=rd(v[1],&an);unsigned char*o=(unsigned
 unsigned char*d=(unsigned char*)malloc(on);long long r=aceapex_decompress(a,an,d,on);
 printf("%s\n",(r==on&&!memcmp(d,o,on))?"FULL_API_OK":"FULL_API_FAIL");return 0;}
 CEOF
-    gcc -O2 -Isrc $ZI -o /tmp/_p5f.bin /tmp/_p5f.c src/aceapex_api.cpp -lstdc++ -lpthread -lzstd -lm 2>/dev/null
+    gcc -O2 -DACEAPEX_ENV_TUNING -Isrc $ZI -o /tmp/_p5f.bin /tmp/_p5f.c src/aceapex_api.cpp -lstdc++ -lpthread -lzstd -lm 2>/dev/null
     FOUT=$(env ACEAPEX_BS=16384 FSE_CHUNK=4096 /tmp/_p5f.bin /tmp/_p5b.aet "$CHR1" 2>/dev/null)
     [ "$FOUT" = "FULL_API_OK" ] && V=pass || V=fail
     rec full_api_roundtrip R "bit-perfect" 0 "${FOUT:-no output}" "$V" \
@@ -485,7 +485,7 @@ int main(int c,char**v){FILE*f=fopen(v[1],"rb");fseek(f,0,SEEK_END);long n=ftell
 void*a=malloc(n);if(fread(a,1,n,f)!=(size_t)n)return 2;unsigned char*d=malloc(16000);
 long long r=aceapex_decompress_region(a,n,d,16000,5000000,16000);printf("%lld\n",r);return 0;}
 CEOF
-    gcc -O2 -Isrc $ZI -o /tmp/_p5g.bin /tmp/_p5g.c src/aceapex_api.cpp -lstdc++ -lpthread -lzstd -lm 2>/dev/null
+    gcc -O2 -DACEAPEX_ENV_TUNING -Isrc $ZI -o /tmp/_p5g.bin /tmp/_p5g.c src/aceapex_api.cpp -lstdc++ -lpthread -lzstd -lm 2>/dev/null
     GOUT=$(env -i PATH="$PATH" ACEAPEX_BS=16384 /tmp/_p5g.bin /tmp/_p5b.aet 2>/dev/null)
     case "$GOUT" in -*) V=pass;; *) V=fail;; esac
     rec region_fails_closed_legacy R "error (<0)" 0 "${GOUT:-no output}" "$V" \

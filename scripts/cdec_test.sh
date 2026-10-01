@@ -4,7 +4,7 @@
 # slices of the decoded bytes. No corpus needed. Output: claim_id <TAB> verdict <TAB> measured
 set -uo pipefail; shopt -s nullglob
 F=verify/fixtures; EXP=$(cat $F/chr1_4MiB.sha256); T=$(mktemp -d)
-if ! ${CC:-gcc} -std=c99 -O2 -o $T/axdec c/axdec.c c/aceapex_decode.c -lzstd 2>$T/build.err; then
+if ! ${CC:-gcc} -std=c99 -O2 -DACEAPEX_ENV_TUNING -o $T/axdec c/axdec.c c/aceapex_decode.c -lzstd 2>$T/build.err; then
   printf 'head_cdecoder_fixtures\tfail\tbuild failed: %s\n' "$(head -c 200 $T/build.err | tr '\n\t' '  ')"
   rm -rf $T; exit 0
 fi
