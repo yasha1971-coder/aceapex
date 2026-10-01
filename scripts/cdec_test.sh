@@ -81,7 +81,7 @@ else printf 'head_enc_threads\tfail\tbuild failed: %s\n' "$(head -c 150 $T/apit.
 if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/env_test scripts/env_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/env.err; then
   X=""; [ -f "$HOME/CORPORA/silesia.tar" ] && tar -xOf "$HOME/CORPORA/silesia.tar" xml > $T/xml 2>/dev/null && X=$T/xml
   if command -v strace >/dev/null; then
-    out=$(strace -f -qq -e trace=clone,clone3 -o $T/st.txt $T/env_test $X 2>/dev/null); rc=$?; nc=$(grep -c 'clone' $T/st.txt 2>/dev/null || echo 0)
+    out=$(strace -f -qq -e trace=clone,clone3 -o $T/st.txt $T/env_test $X 2>/dev/null); rc=$?; nc=$(grep -c 'clone' $T/st.txt 2>/dev/null); nc=${nc:-0}
     [ $rc = 0 ] && [ "$nc" = 0 ] && r=pass || r=fail
     printf 'head_env_ignored\t%s\tlibrary without ACEAPEX_ENV_TUNING: 5 rows of tuning variables -> the same bytes at level 1 / 1 thread (%s differing or failed; sizes:%s), threads started at threads=1: %s (strace)\n' "$r" "${out%% *}" "${out#* }" "$nc"
   else printf 'head_env_ignored\tdeclared\tstrace not installed\n'; fi
