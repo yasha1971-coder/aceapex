@@ -49,7 +49,7 @@ __global__ void kg_fix_rans(const agp::Rans* t, RansDesc* d, uint32_t n, uint8_t
 __global__ void kg_fix_open(const agp::Open* t, OpenDesc* d, uint32_t n, uint8_t* base){
     for(uint32_t i=blockIdx.x*blockDim.x+threadIdx.x;i<n;i+=gridDim.x*blockDim.x){ agp::Open r=t[i]; OpenDesc o;
         o.seq=base+r.seq; o.cse=base+r.cse; o.gap=base+r.gap; o.val=base+r.val; o.dst=base+r.dst;
-        o.ends=(uint32_t*)(base+r.ends); o.nrun=(uint32_t*)(base+r.nrun); o.raw=r.raw; o.ncse=r.ncse; o.ngap=r.ngap; o.nexc=r.nexc; o.res=0; d[i]=o; } }
+        o.ends=(uint32_t*)(base+r.ends); o.nrun=(uint32_t*)(base+r.nrun); o.epos=(uint32_t*)(base+r.epos); o.raw=r.raw; o.ncse=r.ncse; o.ngap=r.ngap; o.nexc=r.nexc; o.res=0; d[i]=o; } }
 __global__ void kg_fix_dna(const agp::Dna* t, DnaDesc* d, uint32_t n, uint8_t* base){
     for(uint32_t i=blockIdx.x*blockDim.x+threadIdx.x;i<n;i+=gridDim.x*blockDim.x){ agp::Dna r=t[i]; DnaDesc o;
         o.seq=base+r.seq; o.cse=base+r.cse; o.gap= r.gap==agp::NUL?nullptr:base+r.gap; o.val= r.val==agp::NUL?nullptr:base+r.val;
@@ -162,7 +162,8 @@ static int run(const aceapex_gpu_plan* pl, const agp::Sel* S, const uint8_t* in,
     if((ND && gy1>65535) || (NO && gyo>65535)) return ACEAPEX_GPU_E_ARCHIVE;
     auto dna=[&](agp::Seg g){ if(g.hi>g.lo){ const uint32_t n=g.hi-g.lo; k_unpack<<<dim3(n,gy1),256,0,s>>>(dD+g.lo); k_exc<<<n,256,0,s>>>(dD+g.lo); } };
     auto open=[&](agp::Seg g){ if(g.hi>g.lo){ const uint32_t n=g.hi-g.lo;
-        k_open_cse<<<n,AXO_NT,0,s>>>(dO+g.lo,err+2); k_open_bases<<<dim3(n,gyo),256,0,s>>>(dO+g.lo); k_open_exc<<<n,AXO_NT,0,s>>>(dO+g.lo,err+2); } };
+        // case runs + exception positions, then bases with case and exceptions in one store (AX_OPEN_EXC)
+        k_open_cg<<<n,AXO_NT,0,s>>>(dO+g.lo,err+2); k_open_bases_x<<<dim3(n,gyo),256,0,s>>>(dO+g.lo); } };
     const agp::Seg all_r{0,NR}, all_o{0,NO}, all_d{0,ND}, all_w{0,NW};
     uint32_t b0=0, b1=P.nb; uint8_t* mout=out;
     phase("init + fixups",s);

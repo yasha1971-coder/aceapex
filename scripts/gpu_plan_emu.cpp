@@ -41,18 +41,25 @@ struct Exec {
         if (!d.nexc) return;
         const uint32_t* gap = (const uint32_t*)at(d.gap); const uint8_t* val = d.val == agp::NUL ? nullptr : at(d.val); uint32_t pos = 0;
         for (uint32_t e = 0; e < d.nexc; e++) { uint32_t g; memcpy(&g, gap + e, 4); pos += g; if (pos < d.raw) dst[pos] = val ? val[e] : 0; } }
+    // k_open_cg (case runs, then the exception positions into the plan's epos region) and k_open_bases_x (warps of
+    // 32 x 16 positions, runs / exceptions bracketed per warp, exception bytes in the 16-byte store), one thread at a time
     void open(size_t k) { const agp::Open& d = P.open[k]; const uint8_t* cse = at(d.cse); uint32_t* ends = (uint32_t*)at(d.ends);
+        uint32_t* ep = (uint32_t*)at(d.epos); const uint32_t raw = (uint32_t)d.raw;
         bool bad = false; uint64_t sum = 0; uint32_t j = 0;
         for (uint32_t t = 0; t < d.ncse; t++) { bool term = axl_term(t, cse, d.ncse); uint32_t v = axl_value(t, cse, term, bad);
-            if (term) { sum += v; axl_cse_end(term, j, v, sum, d.raw, ends, bad); j++; } }
+            if (term) { sum += v; axl_cse_end(term, j, v, sum, raw, ends, bad); j++; } }
         if (axl_tail_bad(cse, d.ncse) || sum != d.raw) bad = true;
         uint32_t R = bad ? 0 : j; memcpy(at(d.nrun), &R, 4); if (bad) { err |= 2; return; }
-        for (uint32_t g = 0; 16 * g < d.raw; g++) axl_bases16(g, at(d.seq), ends, R, d.raw, at(d.dst));
-        if (!d.nexc) return;
-        const uint8_t* gp = at(d.gap); sum = 0; j = 0;
-        for (uint32_t t = 0; t < d.ngap; t++) { bool term = axl_term(t, gp, d.ngap); uint32_t v = axl_value(t, gp, term, bad);
-            if (term) { sum += v; axl_exc(term, j, v, sum, d.nexc, d.raw, at(d.val), at(d.dst), bad); j++; } }
-        if (axl_tail_bad(gp, d.ngap) || j != d.nexc || bad) err |= 2; }
+        if (d.nexc) { const uint8_t* gp = at(d.gap); sum = 0; j = 0;
+            for (uint32_t t = 0; t < d.ngap; t++) { bool term = axl_term(t, gp, d.ngap); uint32_t v = axl_value(t, gp, term, bad);
+                if (term) { sum += v; axl_exc_pos(term, j, v, sum, d.nexc, raw, ep, bad); j++; } }
+            if (axl_tail_bad(gp, d.ngap) || j != d.nexc || bad) err |= 2; }
+        for (uint32_t gw = 0; 16 * gw < raw; gw += 32) {
+            const uint32_t first = 16 * gw, last = std::min(first + 511u, raw - 1);
+            const uint32_t jlo = axl_run_of(ends, R, first), jhi = axl_run_of(ends, R, last);
+            const uint32_t elo = axl_exc_in(ep, 0, d.nexc, first), ehi = axl_exc_in(ep, 0, d.nexc, last + 1);
+            for (uint32_t g = gw; g < gw + 32 && 16 * g < raw; g++)
+                axl_bases16_v(g, at(d.seq), ends, R, raw, at(d.dst), axl_run_in(ends, jlo, jhi, 16 * g), ep, ehi, at(d.val), axl_exc_in(ep, elo, ehi, 16 * g)); } }
     static uint32_t varint(const uint8_t* b, uint32_t& p, uint32_t n, bool& bad) {   // rd_varint: <= 5 bytes, else bad
         uint32_t v = 0; for (uint32_t k = 0; k < 5 && p < n; k++) { uint8_t c = b[p++]; v |= (uint32_t)(c & 0x7F) << (7 * k); if (!(c & 0x80)) return v; }
         bad = true; return 0; }

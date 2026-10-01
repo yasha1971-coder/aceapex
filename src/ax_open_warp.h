@@ -83,12 +83,12 @@ AXW_HD void axl_bases16(uint32_t g, const uint8_t* seq, const uint32_t* ends, ui
         for (uint32_t k = 0; k < 16; k++) if (i0 + k < raw) dst[i0 + k] = (uint8_t)(w[k >> 2] >> (8 * (k & 3)));
     }
 }
-/* Variants measured against the steps above (AX_OPEN_BASES, AX_OPEN_EXC; same bytes, judged by open_warp_emu):
- * a warp of k_open_bases covers 512 positions, so two lanes find the runs at its first and last position and every
- * lane searches only between them (axl_run_in) instead of over all R run ends; the 4 packed bytes of 16 positions are
- * one 32-bit load. With AX_OPEN_EXC the exception positions are written by the case-run kernel (axl_exc_pos) and the
- * bases kernel puts the exception bytes into its 16-byte store (axl_bases16_v with epos), so no byte is written twice
- * and the separate scattered exception pass is gone. */
+/* AX_OPEN_EXC (default since 01.10; same bytes, judged by open_warp_emu and gpu_plan_emu): the exception positions are
+ * written by the case-run kernel (axl_exc_pos, k_open_cg) and the bases kernel (k_open_bases_x) puts the exception
+ * bytes into its 16-byte store (axl_bases16_v), so no byte is written twice and the scattered exception pass is gone.
+ * A warp of k_open_bases_x covers 512 positions: lanes find the runs and exceptions at its first and last position and
+ * every lane searches only between them (axl_run_in, axl_exc_in); the 4 packed bytes of 16 positions are one 32-bit
+ * load. (The bracketed search alone, without the exceptions - AX_OPEN_BASES - was slower on Blackwell and is gone.) */
 /* first run in [lo, hi] whose end is > pos (the answer is known to lie there) */
 AXW_HD uint32_t axl_run_in(const uint32_t* ends, uint32_t lo, uint32_t hi, uint32_t pos) {
     while (lo < hi) { uint32_t mid = (lo + hi) >> 1; if (ends[mid] > pos) hi = mid; else lo = mid + 1; }
