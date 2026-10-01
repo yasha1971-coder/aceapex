@@ -1188,6 +1188,9 @@ static void ax_entropy_split(size_t zlit, size_t ztok, int budget, int& lit_t, i
     double f = (zlit + ztok) ? (double)ztok / (double)(zlit + ztok) : 0.5;
     tok_t = (int)(budget * f + 0.5); if (tok_t < 1) tok_t = 1; if (tok_t > budget - 1) tok_t = budget - 1;
     lit_t = budget - tok_t;
+    // token streams under half a thread's share (DNA: < 1 % of the bytes) finish long before the literals: they get
+    // one thread on top of the budget instead of taking one from the literals (2 threads decoded the literals on 1)
+    if (budget * f < 0.5) { lit_t = budget; tok_t = 1; }
 }
 
 // Parallel entropy encode — 4 streams simultaneously
@@ -1425,6 +1428,41 @@ static long long lit_table_check(const uint8_t* src, size_t src_sz, bool chunked
     for(uint64_t t=0;t<NW;t++){ uint64_t z; memcpy(&z,src+hdr+8*t,8); if(z>rest) return -1; rest-=z; }
     return (long long)NW;
 }
+// Decode-side buffers of 64 MiB and more: 2 MiB aligned and marked for transparent huge pages (AX_HUGE, default 1),
+// so first touch costs one fault per 2 MiB instead of per 4 KiB (T2T: ~1.3 M faults and ~30 % system time per decode
+// before). Freed with free(); elsewhere (no Linux, AX_HUGE=0) plain malloc.
+static uint8_t* ax_big_malloc(size_t n) {
+#if defined(__linux__) && defined(MADV_HUGEPAGE)
+    static const bool huge = [] { const char* e = getenv("AX_HUGE"); return e ? atoi(e) != 0 : true; }();
+    if (huge && n >= ((size_t)64 << 20)) {
+        const size_t H = (size_t)2 << 20, r = (n + H - 1) & ~(H - 1);
+        void* p = aligned_alloc(H, r);
+        if (p) { madvise(p, r, MADV_HUGEPAGE); return (uint8_t*)p; }
+    }
+#endif
+    return (uint8_t*)malloc(n ? n : 1);
+}
+
+// Fault a big buffer in on `threads` threads, each touching its own 2 MiB pages, before the decode writes it: with
+// huge pages the first writer of a page zeroes all 2 MiB while the other chunks of that page wait; spread over the
+// threads the zeroing runs in parallel and the decode itself takes no fault (AX_PREFAULT, default 1)
+static void ax_prefault(uint8_t* p, size_t n, int threads) {
+    static const bool on = [] { const char* e = getenv("AX_PREFAULT"); return e ? atoi(e) != 0 : true; }();
+    // measured on ace-core (8 cores / 16 threads): T2T (3.1 GB) prefault helps at 16 lanes (0.729 -> 0.609 s) and costs
+    // at 2-8 (8: 0.568 -> 0.625 s); chr1 (235 MB) at 16 it costs (0.058 -> 0.069 s): only for >= 1 GiB and when the
+    // lanes run on SMT siblings (more lanes than half the hardware threads)
+    const int hw = (int)std::thread::hardware_concurrency();
+    if (!on || threads < 2 || threads <= hw / 2 || n < ((size_t)1 << 30)) return;
+    const size_t H = (size_t)2 << 20, pages = (n + H - 1) / H;
+    struct A { uint8_t* p; size_t n, pages, t, T; };
+    auto fn = [](void* v) -> void* { A* a = (A*)v; for (size_t k = a->t; k < a->pages; k += a->T) { volatile uint8_t* q = a->p + k * ((size_t)2 << 20); *q = 0; } return nullptr; };
+    std::vector<A> args((size_t)threads); std::vector<pthread_t> th((size_t)threads - 1);
+    for (int t = 0; t < threads; t++) args[(size_t)t] = {p, n, pages, (size_t)t, (size_t)threads};
+    for (int t = 1; t < threads; t++) ax_thread(&th[(size_t)t - 1], fn, &args[(size_t)t]);
+    fn(&args[0]);
+    for (int t = 1; t < threads; t++) pthread_join(th[(size_t)t - 1], nullptr);
+}
+
 static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_sz, int lanes_req = 0) {
     // An empty or truncated literal stream must not be read as an 8-byte header.
     // Tiny inputs give zlit_sz==0; the out-of-bounds read corrupted heap metadata
@@ -1440,7 +1478,7 @@ static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_s
     size_t csz=0; long long nwc=-1;
     if(h & (uint64_t(1)<<62)){ nwc=lit_table_check(src,src_sz,chunked,orig_sz,csz);
         if(nwc<0 || nwc>INT32_MAX){ orig_sz=0; g_dec_err=1; return nullptr; } }
-    uint8_t* out=(uint8_t*)malloc(orig_sz?orig_sz:1);
+    uint8_t* out=ax_big_malloc(orig_sz);
     if(!out) return nullptr;
     if(!(h & (uint64_t(1)<<62))){fse_chunked_decomp(src,orig_sz,out);return out;}
     // Размер чанка читается ИЗ ФАЙЛА: архив не должен зависеть от окружения читателя.
@@ -1477,6 +1515,7 @@ static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_s
     if(hw<1) hw=1;
     const int LANES=std::min(hw,NW);
     if(LANES<=1){ dfn(&pool); return out; }          // lanes=1: decode inline, spawn nothing
+    ax_prefault(out,orig_sz,LANES);
     std::vector<pthread_t> pts(LANES-1);
     for(int t=0;t<LANES-1;t++) ax_thread(&pts[t],dfn,&pool);
     dfn(&pool);

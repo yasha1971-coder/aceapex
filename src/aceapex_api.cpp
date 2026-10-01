@@ -1,6 +1,7 @@
 #define ACEAPEX_NO_MAIN
 #include "aceapex_main.cpp"
 #include "aceapex.h"
+#include <chrono>
 #include <vector>
 #include <algorithm>
 #include <atomic>
@@ -83,6 +84,9 @@ int64_t aceapex_decompress(
 // aceapex_decode_streams. On success the four decoded streams and the block table are
 // owned by the caller; on failure nothing is allocated and a negative code is returned.
 struct AxStreams { uint8_t *l,*o,*n,*c; size_t ls,os,ns,cs; std::vector<BlockOffsets> boffs; AetHeader hdr; };
+// AX_PHASE_TIMES=1: wall time of each decode phase on stderr (diagnostics; read once)
+static bool ax_pt(){ static const bool on = getenv("AX_PHASE_TIMES") && atoi(getenv("AX_PHASE_TIMES")); return on; }
+static double ax_now(){ return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 static int64_t ax_entropy_decode(const void* src, size_t src_size, int threads, AxStreams& S)
 {
     if (!src || src_size < sizeof(AetHeader)) return ACEAPEX_ERR_DATA;
@@ -106,30 +110,26 @@ static int64_t ax_entropy_decode(const void* src, size_t src_size, int threads, 
         if (need > src_size) return ACEAPEX_ERR_DATA;
     }
     p+=sizeof(hdr);
+    const double t_a = ax_pt() ? ax_now() : 0;
     S.boffs.assign(hdr.num_blocks, BlockOffsets());
     memcpy(S.boffs.data(),p,hdr.num_blocks*sizeof(BlockOffsets));
     p+=hdr.num_blocks*sizeof(BlockOffsets);
-    // malloc(0) may legally return NULL; an empty stream is not an error.
-    // The old !zl check turned zlit_sz==0 (tiny inputs) into ACEAPEX_ERR_MEMORY.
-    uint8_t* zl=(uint8_t*)malloc(hdr.zlit_sz?hdr.zlit_sz:1);
-    uint8_t* zo=(uint8_t*)malloc(hdr.zoff_sz?hdr.zoff_sz:1);
-    uint8_t* zn=(uint8_t*)malloc(hdr.zlen_sz?hdr.zlen_sz:1);
-    uint8_t* zc=(uint8_t*)malloc(hdr.zcmd_sz?hdr.zcmd_sz:1);
-    if(!zl||!zo||!zn||!zc){free(zl);free(zo);free(zn);free(zc);return ACEAPEX_ERR_MEMORY;}
-    memcpy(zl,p,hdr.zlit_sz); p+=hdr.zlit_sz;
-    memcpy(zo,p,hdr.zoff_sz); p+=hdr.zoff_sz;
-    memcpy(zn,p,hdr.zlen_sz); p+=hdr.zlen_sz;
-    memcpy(zc,p,hdr.zcmd_sz);
+    // the compressed streams are read in place (every reader takes const pointers and its own size; the archive
+    // size was checked above): no copy of the archive (T2T: 853 MB copied and faulted in, serial, ~0.3 s before)
+    const uint8_t* zl=p; p+=hdr.zlit_sz;
+    const uint8_t* zo=p; p+=hdr.zoff_sz;
+    const uint8_t* zn=p; p+=hdr.zlen_sz;
+    const uint8_t* zc=p;
     g_dec_err=0;
     size_t os=0,ns=0,cs=0;
     if (!ax_fse_check(zo,hdr.zoff_sz,&os) || !ax_fse_check(zn,hdr.zlen_sz,&ns) || !ax_fse_check(zc,hdr.zcmd_sz,&cs)) {
-        free(zl);free(zo);free(zn);free(zc); return ACEAPEX_ERR_DATA; }
+        return ACEAPEX_ERR_DATA; }
     { uint64_t cap = hdr.orig_size * 4 + ((uint64_t)1 << 20);
-      if (os > cap || ns > cap || cs > cap) { free(zl);free(zo);free(zn);free(zc); return ACEAPEX_ERR_DATA; } }
-    uint8_t* o=(uint8_t*)malloc(os?os:1);
-    uint8_t* n=(uint8_t*)malloc(ns?ns:1);
-    uint8_t* c=(uint8_t*)malloc(cs?cs:1);
-    if(!o||!n||!c){free(o);free(n);free(c);free(zl);free(zo);free(zn);free(zc);return ACEAPEX_ERR_MEMORY;}
+      if (os > cap || ns > cap || cs > cap) return ACEAPEX_ERR_DATA; }
+    uint8_t* o=ax_big_malloc(os);
+    uint8_t* n=ax_big_malloc(ns);
+    uint8_t* c=ax_big_malloc(cs);
+    if(!o||!n||!c){free(o);free(n);free(c);return ACEAPEX_ERR_MEMORY;}
     // Entropy phase on one budget of hardware threads: literal lanes and one pool for
     // the token streams run concurrently (was: literals, then three streams serially).
     int budget=threads>0?threads:(int)std::thread::hardware_concurrency(); if(budget<1) budget=8;
@@ -138,10 +138,11 @@ static int64_t ax_entropy_decode(const void* src, size_t src_size, int threads, 
     size_t ls=0; uint8_t* l=nullptr; LitArg larg={zl,(size_t)hdr.zlit_sz,&l,&ls,lit_t};
     auto litfn=[](void*a)->void*{LitArg*x=(LitArg*)a; *x->out=lit_decompress(x->s,x->sz,*x->osz,x->lanes); return nullptr;};
     FseStream fst[3]={{zo,os,o},{zn,ns,n},{zc,cs,c}};
+    const double t_b = ax_pt() ? ax_now() : 0;
     if (budget == 1) { litfn(&larg); fse_multi_decomp(fst,3,1); }
     else { pthread_t lt; ax_thread(&lt,litfn,&larg);
            fse_multi_decomp(fst,3,tok_t); pthread_join(lt,nullptr); }
-    free(zl);free(zo);free(zn);free(zc);
+    if (ax_pt()) fprintf(stderr, "[phase] checks+alloc %.3f s, entropy (lit %d + tok %d threads) %.3f s\n", t_b - t_a, lit_t, tok_t, ax_now() - t_b);
     if(!l){free(o);free(n);free(c);return ACEAPEX_ERR_MEMORY;}
     if(g_dec_err){free(l);free(o);free(n);free(c);return ACEAPEX_ERR_DATA;}
 
@@ -164,13 +165,17 @@ int64_t aceapex_decompress_mt(
     const void* src, size_t src_size,
     void*       dst, size_t dst_capacity, int threads)
 {
+    const double t0 = ax_pt() ? ax_now() : 0;
     AxStreams S; int64_t r = ax_entropy_decode(src, src_size, threads, S);
     if (r <= 0) return r;                                    // error, or the empty archive
+    const double t1 = ax_pt() ? ax_now() : 0;
     if (S.hdr.orig_size > dst_capacity) { free(S.l);free(S.o);free(S.n);free(S.c); return ACEAPEX_ERR_BUFFER; }
     int budget=threads>0?threads:(int)std::thread::hardware_concurrency(); if(budget<1) budget=8;
     parallel_decode(S.l,S.o,S.n,S.c,S.boffs.data(),S.hdr.num_blocks,
                     (uint8_t*)dst,S.hdr.orig_size,S.hdr.block_size,budget);
+    const double t2 = ax_pt() ? ax_now() : 0;
     free(S.l);free(S.o);free(S.n);free(S.c);
+    if (ax_pt()) fprintf(stderr, "[phase] entropy total %.3f s, match (%d threads) %.3f s, free %.3f s\n", t1 - t0, budget, t2 - t1, ax_now() - t2);
     return (int64_t)S.hdr.orig_size;
 }
 

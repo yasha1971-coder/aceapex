@@ -215,10 +215,84 @@ __attribute__((target("avx2,popcnt"))) static int axr_decode_avx2(const uint8_t*
 }
 #endif
 
-/* AX_RANS_SIMD: the AVX2 decoder when the CPU has it (default 1), 0 = scalar; read once */
+#ifdef AXR_SIMD
+/* AVX-512 decoder (AX_RANS_SIMD=512; needs AVX-512 F/BW/VL/VBMI2): 16 lanes per vector, the 32 lanes as 2 vectors in
+ * lane order; the same table and steps as axr_decode_avx2; renormalisation by an expand-load of 16-bit words (vpexpandw:
+ * the lanes below 2^16 take the next popcount words in lane order, and only those words are read). */
+__attribute__((target("avx512f,avx512bw,avx512vl,avx512vbmi2,popcnt"))) static int axr_decode_avx512(const uint8_t* src, size_t sz, uint8_t* out, size_t n) {
+    if (sz < 32 + 128 + 4) return -1;
+    const uint8_t* p = src; const uint8_t* e = src + sz;
+    uint32_t tab[AXR_M];
+    uint32_t acc = 0;
+    const uint8_t* bm = p; p += 32;
+    for (int s = 0; s < 256; s++) {
+        if (!(bm[s >> 3] & (1u << (s & 7)))) continue;
+        uint32_t v = 0; int sh = 0;
+        for (;;) { if (p >= e || sh > 14) return -1; uint8_t b = *p++; v |= (uint32_t)(b & 0x7F) << sh; if (!(b & 0x80)) break; sh += 7; }
+        if (v == 0 || acc + v > AXR_M) return -1;
+        const uint32_t base = (uint32_t)s | ((v - 1) << 8);
+        for (uint32_t k = 0; k < v; k++) tab[acc + k] = base | (k << 20);
+        acc += v;
+    }
+    if (acc != AXR_M) return -1;
+    if ((size_t)(e - p) < 128 + 4) return -1;
+    uint32_t x[AXR_LANES];
+    for (int l = 0; l < AXR_LANES; l++) { memcpy(&x[l], p, 4); p += 4; if (x[l] < AXR_L) return -1; }
+    uint32_t W; memcpy(&W, p, 4); p += 4;
+    if ((size_t)(e - p) != (size_t)W * 2) return -1;
+    const uint8_t* wp = p; uint32_t wi = 0;
+    const size_t full = n / AXR_LANES;
+    __m512i X[2];
+    for (int v = 0; v < 2; v++) X[v] = _mm512_loadu_si512((const void*)(x + 16 * v));
+    const __m512i M12 = _mm512_set1_epi32(AXR_M - 1), MF = _mm512_set1_epi32(0xFFF), ONE = _mm512_set1_epi32(1), LIM = _mm512_set1_epi32(AXR_L);
+    for (size_t g = 0; g < full; g++) {
+        uint8_t* o = out + g * AXR_LANES;
+        for (int v = 0; v < 2; v++) {
+            const __m512i slot = _mm512_and_si512(X[v], M12);
+            const __m512i t = _mm512_i32gather_epi32(slot, (const void*)tab, 4);
+            const __m512i fr = _mm512_add_epi32(_mm512_and_si512(_mm512_srli_epi32(t, 8), MF), ONE);
+            __m512i nx = _mm512_add_epi32(_mm512_mullo_epi32(fr, _mm512_srli_epi32(X[v], AXR_PBITS)), _mm512_srli_epi32(t, 20));
+            _mm_storeu_si128((__m128i*)(o + 16 * v), _mm512_cvtepi32_epi8(t));          /* low byte of each entry = symbol */
+            const __mmask16 need = _mm512_cmplt_epu32_mask(nx, LIM);
+            if (need) {
+                const uint32_t k = (uint32_t)_mm_popcnt_u32((uint32_t)need);
+                if (wi + k > W) return -1;
+                const __m256i w16 = _mm256_maskz_expandloadu_epi16(need, (const void*)(wp + 2 * (size_t)wi));
+                nx = _mm512_mask_or_epi32(nx, need, _mm512_slli_epi32(nx, 16), _mm512_cvtepu16_epi32(w16));
+                wi += k;
+            }
+            X[v] = nx;
+        }
+    }
+    for (int v = 0; v < 2; v++) _mm512_storeu_si512((void*)(x + 16 * v), X[v]);
+    if (full * AXR_LANES < n) {
+        for (int l = 0; l < AXR_LANES; l++) {
+            const size_t i = full * AXR_LANES + (size_t)l; if (i >= n) break;
+            const uint32_t slot = x[l] & (AXR_M - 1), t = tab[slot], s = t & 0xFF;
+            out[i] = (uint8_t)s;
+            x[l] = (((t >> 8) & 0xFFF) + 1) * (x[l] >> AXR_PBITS) + (t >> 20);
+            if (x[l] < AXR_L) {
+                if (wi >= W) return -1;
+                uint16_t w; memcpy(&w, wp + 2 * (size_t)wi, 2); wi++;
+                x[l] = (x[l] << 16) | w;
+            }
+        }
+    }
+    if (wi != W) return -1;
+    for (int l = 0; l < AXR_LANES; l++) if (x[l] != AXR_L) return -1;
+    return 0;
+}
+
+#endif
+
+/* AX_RANS_SIMD: the AVX2 decoder when the CPU has it (default 1), 512 = the AVX-512 one, 0 = scalar; read once */
 static inline int axr_decode(const uint8_t* src, size_t sz, uint8_t* out, size_t n) {
 #ifdef AXR_SIMD
-    static const int mode = [] { const char* ev = getenv("AX_RANS_SIMD"); return (ev ? atoi(ev) != 0 : 1) && __builtin_cpu_supports("avx2") && __builtin_cpu_supports("popcnt"); }();
+    static const int mode = [] { const char* ev = getenv("AX_RANS_SIMD"); const int want = ev ? atoi(ev) : 1;
+        if (want == 512 && __builtin_cpu_supports("avx512f") && __builtin_cpu_supports("avx512bw") && __builtin_cpu_supports("avx512vl")
+            && __builtin_cpu_supports("avx512vbmi2")) return 512;
+        return (want != 0 && __builtin_cpu_supports("avx2") && __builtin_cpu_supports("popcnt")) ? 1 : 0; }();
+    if (mode == 512) return axr_decode_avx512(src, sz, out, n);
     if (mode) return axr_decode_avx2(src, sz, out, n);
 #endif
     return axr_decode_scalar(src, sz, out, n);
