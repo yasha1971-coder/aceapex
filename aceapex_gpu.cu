@@ -440,6 +440,35 @@ int main(int argc, char** argv){
         printf("OPENVAR\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%d\n",argv[1],vv[0].seq,vv[1].seq,vv[1].un,vv[2].un,vv[3].un,(int)(vv[0].ok&&vv[1].ok&&vv[2].ok&&vv[3].ok));
     }
 
+    // ---- AX_GPU_TILE: the match kernel builds each block's literals in shared memory (k_decode_t; library: aceapex_gpu_lib.cu)
+    // against the default path (case runs + exception positions, bases kernel into the literal stream, match kernel); both
+    // from cleared buffers, each hashed (bit-perfect or the run fails); only when every literal chunk is an open DNA pack
+    // or an open plain piece and blocks are <= 16 KiB
+    {   const size_t NWc = chunk[0] ? (size_t)((ssz[0] + chunk[0] - 1) / chunk[0]) : 0;
+        std::vector<uint32_t> hcm(NWc, ~0u); std::vector<uint8_t> have(NWc, 0); bool tok_ok = NWc && dna.empty() && N == NT && bs <= 16384 && chunk[0] % 16 == 0;
+        for (size_t k = 0; tok_ok && k < NO; k++) { if (opn[k].chunk >= NWc) tok_ok = false; else { hcm[opn[k].chunk] = (uint32_t)k; have[opn[k].chunk] = 1; } }
+        for (const RansJob& r : rans) if (tok_ok && r.cls == P_PLAIN) { const size_t t = r.dst_off / chunk[0]; if (t >= NWc) tok_ok = false; else have[t] = 1; }
+        for (size_t t = 0; tok_ok && t < NWc; t++) if (!have[t]) tok_ok = false;
+        if (tok_ok && NO) {
+            uint32_t* dCM; CK(cudaMalloc(&dCM, NWc * 4 + 4)); CK(cudaMemcpy(dCM, hcm.data(), NWc * 4, cudaMemcpyHostToDevice));
+            int mb = 1; CK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&mb, k_decode_t, 32 * AXT_SLOTS, 0));
+            const unsigned gt = (unsigned)std::max(1, std::min<int>(nsm * mb, (int)(nb / AXT_SLOTS + 1)));
+            auto tile_match = [&](cudaStream_t s) { const uint32_t z = 0; CK(cudaMemcpyAsync(dCTR, &z, 4, cudaMemcpyHostToDevice, s));
+                k_decode_t<<<gt, 32 * AXT_SLOTS, 0, s>>>(dS[1], dS[2], dS[3], dBO, orig, bs, dOUT, dCTR, nb, dErr + 2, dOD, dCM, dS[0], (uint32_t)NWc, chunk[0], ssz[0]); };
+            float tb, tt; bool okb, okt;
+            {   CK(cudaMemset(dS[0], 0, ssz[0])); CK(cudaMemset(dOUT, 0, orig)); CK(cudaMemset(dOS, 0, oscr));
+                pieces(s0, P_SEQ, P_NCLS); un_cse(s0); un_seq(s0); match(G, s0, 0, nb); CK(cudaStreamSynchronize(s0)); okb = fnv_check("tile base");
+                std::vector<float> t; for (int r = 0; r < reps; r++) t.push_back(elapsed(s0, [&] { un_cse(s0); un_seq(s0); match(G, s0, 0, nb); })); tb = median_ms(t); }
+            {   CK(cudaMemset(dS[0], 0, ssz[0])); CK(cudaMemset(dOUT, 0, orig)); CK(cudaMemset(dOS, 0, oscr));
+                pieces(s0, P_SEQ, P_NCLS); un_cse(s0); tile_match(s0); CK(cudaStreamSynchronize(s0)); CK(cudaGetLastError()); rans_check("AX_GPU_TILE"); okt = fnv_check("AX_GPU_TILE=1");
+                std::vector<float> t; for (int r = 0; r < reps; r++) t.push_back(elapsed(s0, [&] { un_cse(s0); tile_match(s0); })); tt = median_ms(t); }
+            ok = okb && okt && ok;
+            printf("[tile variants] case runs + bases + match %.3f ms -> case runs + tile match %.3f ms (AX_GPU_TILE=1: literals in shared memory, no literal stream, %s)\n", tb, tt, okt ? "bit-perfect" : "DIFFERS");
+            printf("TILEVAR\t%s\t%.3f\t%.3f\t%d\n", argv[1], tb, tt, (int)(okb && okt));
+            CK(cudaFree(dCM));
+        } else printf("[tile variants] not applicable (literal chunks other than open DNA packs / open plain pieces, or blocks > 16 KiB)\n");
+    }
+
     // ---- pipeline: NB batches of frames in order; H2D of batch k+1 on s1 overlaps zstd of batch k on s0
     // (the pieces follow the frames in dC and arrive with the last batch)
     std::vector<size_t> bcut(NB+1); for(int k=0;k<=NB;k++) bcut[k]=(size_t)((double)N*k/NB);

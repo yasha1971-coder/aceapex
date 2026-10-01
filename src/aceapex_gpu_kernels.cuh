@@ -28,23 +28,13 @@ __device__ static inline uint32_t rd_varint(const uint8_t* buf, uint32_t& p, uin
     for(uint32_t k=0;k<5;k++){ if(p>=limit) break; const uint8_t b=buf[p++]; val|=(uint32_t)(b&0x7F)<<(7*k); if(!(b&0x80)) return val; }
     bad=true; return 0;
 }
+// one block's tokens by the G lanes of a group: literals from lit (the block's slice), output into dst (dst_size bytes)
 template<int G>
-__global__ void k_decode_g(const uint8_t* __restrict__ LIT, const uint8_t* __restrict__ OFF,
-                           const uint8_t* __restrict__ LEN, const uint8_t* __restrict__ CMD,
-                           const BlockOffsets* __restrict__ boffs, uint64_t orig_size, uint32_t block_size,
-                           uint8_t* __restrict__ out, uint32_t* __restrict__ blk_ctr, uint32_t blk_end,
-                           uint32_t* __restrict__ err)   // err[0]: blocks that did not decode to their size, err[3]: step limit hit (nullptr: not counted)
+__device__ static inline void decode_block(const uint8_t* __restrict__ lit, const uint8_t* __restrict__ off, const uint8_t* __restrict__ len,
+                                           const uint8_t* __restrict__ cmd, uint32_t lit_sz, uint32_t off_sz, uint32_t len_sz, uint32_t cmd_sz,
+                                           uint8_t* __restrict__ dst, uint32_t dst_size, uint32_t lg, uint32_t leader, uint32_t gmask, uint32_t* __restrict__ err)
 {
-    uint32_t lane=threadIdx.x&31, lg=lane&(G-1), leader=lane&~(uint32_t)(G-1);
-    uint32_t gmask=((G==32)?0xffffffffu:((1u<<G)-1u)<<leader);
-    for(;;){
-        uint32_t b=0; if(lg==0) b=atomicAdd(blk_ctr,1u); b=__shfl_sync(gmask,b,leader); if(b>=blk_end) return;
-        BlockOffsets bo=boffs[b];
-        const uint8_t *lit=LIT+bo.lit_off, *off=OFF+bo.off_off, *len=LEN+bo.len_off, *cmd=CMD+bo.cmd_off;
-        uint64_t base=(uint64_t)b*block_size, rem=orig_size-base;
-        uint32_t dst_size=(uint32_t)(rem<(uint64_t)block_size?rem:(uint64_t)block_size); uint8_t* dst=out+base;
         uint32_t lp=0,op=0,np=0,cp=0,out_pos=0, rep[4]={1,2,4,8};
-        uint32_t cmd_sz=(uint32_t)bo.cmd_sz, lit_sz=(uint32_t)bo.lit_sz, off_sz=(uint32_t)bo.off_sz, len_sz=(uint32_t)bo.len_sz;
         // lengths are checked against the room left (rem), never as out_pos+l: a corrupt varint near 2^32 made
         // out_pos+l wrap below dst_size and the copy run gigabytes past the block. Every token consumes a command
         // byte, so a block takes at most cmd_sz+1 steps; more is a broken invariant: err[3], stop (fail-closed)
@@ -72,6 +62,23 @@ __global__ void k_decode_g(const uint8_t* __restrict__ LIT, const uint8_t* __res
             __syncwarp(gmask); out_pos+=l;
         }
         if(err && lg==0 && out_pos!=dst_size) atomicAdd(err,1u);
+}
+template<int G>
+__global__ void k_decode_g(const uint8_t* __restrict__ LIT, const uint8_t* __restrict__ OFF,
+                           const uint8_t* __restrict__ LEN, const uint8_t* __restrict__ CMD,
+                           const BlockOffsets* __restrict__ boffs, uint64_t orig_size, uint32_t block_size,
+                           uint8_t* __restrict__ out, uint32_t* __restrict__ blk_ctr, uint32_t blk_end,
+                           uint32_t* __restrict__ err)   // err[0]: blocks that did not decode to their size, err[3]: step limit hit (nullptr: not counted)
+{
+    uint32_t lane=threadIdx.x&31, lg=lane&(G-1), leader=lane&~(uint32_t)(G-1);
+    uint32_t gmask=((G==32)?0xffffffffu:((1u<<G)-1u)<<leader);
+    for(;;){
+        uint32_t b=0; if(lg==0) b=atomicAdd(blk_ctr,1u); b=__shfl_sync(gmask,b,leader); if(b>=blk_end) return;
+        BlockOffsets bo=boffs[b];
+        uint64_t base=(uint64_t)b*block_size, rem=orig_size-base;
+        uint32_t dst_size=(uint32_t)(rem<(uint64_t)block_size?rem:(uint64_t)block_size);
+        decode_block<G>(LIT+bo.lit_off,OFF+bo.off_off,LEN+bo.len_off,CMD+bo.cmd_off,(uint32_t)bo.lit_sz,(uint32_t)bo.off_sz,(uint32_t)bo.len_sz,(uint32_t)bo.cmd_sz,
+                        out+base,dst_size,lg,leader,gmask,err);
     }
 }
 typedef void (*kern_t)(const uint8_t*,const uint8_t*,const uint8_t*,const uint8_t*,const BlockOffsets*,uint64_t,uint32_t,uint8_t*,uint32_t*,uint32_t,uint32_t*);
@@ -310,5 +317,49 @@ __global__ void __launch_bounds__(AXO_NT) k_open_exc(const OpenDesc* __restrict_
     if(tid==0 && any){ atomicAdd(err,1u); atomicMin(err+1,k); }
 }
 
+
+
+// ---------------------------------------------------------------- AX_GPU_TILE: literals in shared memory
+// For archives whose literal stream is open DNA pack chunks only (every chunk k has descriptor dO[k]; the plan checks):
+// a group of G lanes builds its block's literal slice in shared memory from the packed bases, run ends and exception
+// positions (k_open_cg must have run; k_open_bases_s does not run) - 16 stream positions per lane step, aligned to 16
+// in the stream, the chunk of each 16 from its position (CH is a multiple of 16) - then decodes the block's tokens
+// from there (decode_block). The 3 GB literal stream of T2T is never written to device memory and read back (the CPU
+// tile path, AX_LIT_TILE, took T2T from 0.555 to 0.229 s on 8 threads). AXT_SLOTS groups per block (TPB = 32 x slots).
+#define AXT_G 32
+#define AXT_SLOTS 2
+#define AXT_SH 16448                                       /* >= (16384 + 30) rounded up to 16 + 16 */
+__global__ void __launch_bounds__(32*AXT_SLOTS) k_decode_t(const uint8_t* __restrict__ OFF, const uint8_t* __restrict__ LEN, const uint8_t* __restrict__ CMD,
+                           const BlockOffsets* __restrict__ boffs, uint64_t orig_size, uint32_t block_size, uint8_t* __restrict__ out,
+                           uint32_t* __restrict__ blk_ctr, uint32_t blk_end, uint32_t* __restrict__ err,
+                           const OpenDesc* __restrict__ dO, const uint32_t* __restrict__ cmap, const uint8_t* __restrict__ LIT,
+                           uint32_t nchunks, uint64_t CH, uint64_t lit_total)
+{
+    __shared__ uint4 shb[AXT_SLOTS][AXT_SH/16];
+    const uint32_t lane=threadIdx.x&31, lg=lane, leader=0, gmask=0xffffffffu; uint8_t* sh=(uint8_t*)shb[threadIdx.x>>5];
+    for(;;){
+        uint32_t b=0; if(lg==0) b=atomicAdd(blk_ctr,1u); b=__shfl_sync(gmask,b,leader); if(b>=blk_end) return;
+        const BlockOffsets bo=boffs[b];
+        const uint64_t base=(uint64_t)b*block_size, rem=orig_size-base;
+        const uint32_t dst_size=(uint32_t)(rem<(uint64_t)block_size?rem:(uint64_t)block_size);
+        const uint64_t a0=bo.lit_off&~15ull, a1=(bo.lit_off+bo.lit_sz+15)&~15ull;
+        bool bad = bo.lit_sz>block_size || a1-a0>AXT_SH-16 || bo.lit_off+bo.lit_sz>lit_total;
+        if(!bad) for(uint64_t pos=a0+16ull*lg; pos<a1; pos+=16ull*AXT_G){
+            const uint64_t k=pos/CH; if(k>=nchunks){ bad=true; break; }
+            const uint32_t ci=cmap[k];
+            if(ci==~0u){ *(uint4*)(sh+(pos-a0))=*(const uint4*)(LIT+pos); continue; }   // open plain chunk: k_rans wrote it into the literal stream
+            const OpenDesc c=dO[ci]; const uint32_t R=*c.nrun, q=(uint32_t)(pos-k*CH);
+            if(!R || c.raw>AXW_MAXN){ bad=true; break; }                    // a chunk k_open_cg rejected
+            if(q>=(uint32_t)c.raw) continue;
+            uint32_t w[4]; axl_bases16_w(q,c.seq,c.ends,R,(uint32_t)c.raw,axl_run_of(c.ends,R,q),c.epos,c.nexc,c.val,axl_exc_in(c.epos,0,c.nexc,q),w);
+            *(uint4*)(sh+(pos-a0))=make_uint4(w[0],w[1],w[2],w[3]);
+        }
+        bad=__any_sync(gmask,bad); __syncwarp(gmask);
+        if(bad){ if(err && lg==0) atomicAdd(err,1u); continue; }
+        decode_block<AXT_G>(sh+(bo.lit_off-a0),OFF+bo.off_off,LEN+bo.len_off,CMD+bo.cmd_off,(uint32_t)bo.lit_sz,(uint32_t)bo.off_sz,(uint32_t)bo.len_sz,(uint32_t)bo.cmd_sz,
+                            out+base,dst_size,lg,leader,gmask,err);
+        __syncwarp(gmask);
+    }
+}
 
 #endif

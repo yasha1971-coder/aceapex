@@ -27,8 +27,9 @@ static_assert(sizeof(agp::Dna) == sizeof(DnaDesc), "Dna layout");
 struct aceapex_gpu_plan {
     agp::Plan P;
     uint8_t* dmem = nullptr;                      // device: block table + descriptor templates
-    size_t o_bo = 0, o_rans = 0, o_open = 0, o_dna = 0, o_nv = 0, o_raw = 0;
+    size_t o_bo = 0, o_rans = 0, o_open = 0, o_dna = 0, o_nv = 0, o_raw = 0, o_cmap = 0;
     unsigned grid = 1;                            // match kernel: resident blocks of 128 threads
+    bool tile = false; unsigned grid_t = 1;       // AX_GPU_TILE (env at plan_create, plan tile_ok): k_decode_t, its resident blocks
 };
 // plan_create, last_error and version are in src/aceapex_gpu_abi.cpp (host C++, judged without CUDA:
 // claim head_gpu_abi); it checks the arguments and calls this
@@ -114,17 +115,20 @@ aceapex_gpu_plan* agpu_plan_build(const void* h_archive, size_t in_bytes, uint64
     agp::Plan& P=pl->P; size_t o=0;
     auto put=[&](size_t n){ size_t r=o; o+=agp::al(n+8); return r; };
     pl->o_bo=put(P.bo.size()); pl->o_rans=put(P.rans.size()*sizeof(agp::Rans)); pl->o_open=put(P.open.size()*sizeof(agp::Open));
-    pl->o_dna=put(P.dna.size()*sizeof(agp::Dna)); pl->o_nv=put(P.nv.size()*sizeof(agp::Nv)); pl->o_raw=put(P.raw.size()*sizeof(agp::Raw));
+    pl->o_dna=put(P.dna.size()*sizeof(agp::Dna)); pl->o_nv=put(P.nv.size()*sizeof(agp::Nv)); pl->o_raw=put(P.raw.size()*sizeof(agp::Raw)); pl->o_cmap=put(P.cmap.size()*4);
     bool ok = cudaMalloc(&pl->dmem,o)==cudaSuccess;
     auto up=[&](size_t off, const void* src, size_t n){ if(ok && n) ok = cudaMemcpy(pl->dmem+off,src,n,cudaMemcpyHostToDevice)==cudaSuccess; };
     up(pl->o_bo,P.bo.data(),P.bo.size()); up(pl->o_rans,P.rans.data(),P.rans.size()*sizeof(agp::Rans));
     up(pl->o_open,P.open.data(),P.open.size()*sizeof(agp::Open)); up(pl->o_dna,P.dna.data(),P.dna.size()*sizeof(agp::Dna));
-    up(pl->o_nv,P.nv.data(),P.nv.size()*sizeof(agp::Nv)); up(pl->o_raw,P.raw.data(),P.raw.size()*sizeof(agp::Raw));
+    up(pl->o_nv,P.nv.data(),P.nv.size()*sizeof(agp::Nv)); up(pl->o_raw,P.raw.data(),P.raw.size()*sizeof(agp::Raw)); up(pl->o_cmap,P.cmap.data(),P.cmap.size()*4);
     int dev=0,nsm=1,maxblk=1;
     if(ok) ok = cudaGetDevice(&dev)==cudaSuccess && cudaDeviceGetAttribute(&nsm,cudaDevAttrMultiProcessorCount,dev)==cudaSuccess
              && cudaOccupancyMaxActiveBlocksPerMultiprocessor(&maxblk,k_decode_g<G>,TPB,0)==cudaSuccess;
+    int maxblk_t=1;
+    if(ok) ok = cudaOccupancyMaxActiveBlocksPerMultiprocessor(&maxblk_t,k_decode_t,32*AXT_SLOTS,0)==cudaSuccess;
     if(!ok){ if(pl->dmem) cudaFree(pl->dmem); delete pl; g_last=ACEAPEX_GPU_E_CUDA; return nullptr; }
-    pl->grid=(unsigned)std::max(1,nsm*maxblk);
+    pl->grid=(unsigned)std::max(1,nsm*maxblk); pl->grid_t=(unsigned)std::max(1,nsm*maxblk_t);
+    { const char* e=getenv("AX_GPU_TILE"); pl->tile = e && atoi(e) && P.tile_ok; }
     return pl;
 }
 extern "C" size_t aceapex_gpu_temp_bytes(const aceapex_gpu_plan* p){ return p ? (size_t)p->P.temp_bytes : 0; }
@@ -163,8 +167,9 @@ static int run(const aceapex_gpu_plan* pl, const agp::Sel* S, const uint8_t* in,
     auto dna=[&](agp::Seg g){ if(g.hi>g.lo){ const uint32_t n=g.hi-g.lo; k_unpack<<<dim3(n,gy1),256,0,s>>>(dD+g.lo); k_exc<<<n,256,0,s>>>(dD+g.lo); } };
     auto open=[&](agp::Seg g){ if(g.hi>g.lo){ const uint32_t n=g.hi-g.lo;
         // case runs + exception positions, then bases with case and exceptions in one store (AX_OPEN_EXC), the block's
-        // run ends and exception positions read from shared memory (AX_OPEN_SHB: Blackwell T2T unpack 8.95 -> 7.46 ms)
-        k_open_cg<<<n,AXO_NT,0,s>>>(dO+g.lo,err+2); k_open_bases_s<<<dim3(n,gyo),256,0,s>>>(dO+g.lo); } };
+        // run ends and exception positions read from shared memory (AX_OPEN_SHB: Blackwell T2T unpack 8.95 -> 7.46 ms);
+        // AX_GPU_TILE: no bases kernel, the match kernel builds each block's literals in shared memory
+        k_open_cg<<<n,AXO_NT,0,s>>>(dO+g.lo,err+2); if(!pl->tile) k_open_bases_s<<<dim3(n,gyo),256,0,s>>>(dO+g.lo); } };
     const agp::Seg all_r{0,NR}, all_o{0,NO}, all_d{0,ND}, all_w{0,NW};
     uint32_t b0=0, b1=P.nb; uint8_t* mout=out;
     phase("init + fixups",s);
@@ -183,6 +188,10 @@ static int run(const aceapex_gpu_plan* pl, const agp::Sel* S, const uint8_t* in,
     uint32_t* ctr=(uint32_t*)(T+P.o_ctr);
     kg_set<<<1,1,0,s>>>(ctr,b0);
     const uint64_t lanes=(uint64_t)(b1-b0)*G; const unsigned want=(unsigned)std::min<uint64_t>((lanes+TPB-1)/TPB,0x7fffffffull);
+    if(pl->tile){ const unsigned want_t=(unsigned)std::min<uint64_t>((uint64_t)(b1-b0)/AXT_SLOTS+1,0x7fffffffull);
+        k_decode_t<<<std::max(1u,std::min(pl->grid_t,want_t)),32*AXT_SLOTS,0,s>>>(T+P.o_s[1],T+P.o_s[2],T+P.o_s[3],(const BlockOffsets*)(M+pl->o_bo),
+            P.orig,P.bs,mout,ctr,b1,err+4,dO,(const uint32_t*)(M+pl->o_cmap),T+P.o_s[0],(uint32_t)P.cmap.size(),P.chunk[0],P.ssz[0]); }
+    else
     k_decode_g<G><<<std::max(1u,std::min(pl->grid,want)),TPB,0,s>>>(T+P.o_s[0],T+P.o_s[1],T+P.o_s[2],T+P.o_s[3],(const BlockOffsets*)(M+pl->o_bo),
         P.orig,P.bs,mout,ctr,b1,err+4);           // err[4] bad blocks, err[7] step limit
     phase("match",s);
