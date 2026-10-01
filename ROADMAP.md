@@ -118,6 +118,10 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+01.10 (24): обновление PR #336 подготовлено локально: lzbench/aceapex-2.2.0 + коммит 5559c9a «aceapex: update to 2.2.2»
+(вендор == release-2.2.2 байт в байт, FASTEST aceapex,3, CHANGELOG lzbench); сборка lzbench ок, 5 строк окружения -> 724378,
+потоков aceapex при -I1 нет (strace). Черновик ответа drafts/lzbench_336_reply.md. Ждёт слова: тег v2.2.2 на release-2.2.2,
+Zenodo, ветка release fast-forward на тег, пуш ветки lzbench в форк.
 01.10 (23): lzbench #336 (просьба Inikep: 16 переменных окружения меняли результаты, LIT_LANES_DEC запускал потоки без -I).
 Ветка release-2.2.2 (от тега v2.2.1): все getenv через ax_getenv() (src/ax_env.h), NULL без ACEAPEX_ENV_TUNING; CLI
 (ACEAPEX_CLI), axdec, Python-читатель и наши инструменты собираются с ним. silesia/xml уровень 1, 1 поток, zstd 1.5.7
