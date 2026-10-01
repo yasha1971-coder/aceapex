@@ -33,10 +33,25 @@
 #define ACEAPEX_GPU_H
 #include <stddef.h>
 #include <stdint.h>
+#if defined(__has_include)
+#if __has_include(<cuda_runtime_api.h>)
 #include <cuda_runtime_api.h>   /* cudaStream_t */
+#else
+typedef struct CUstream_st* cudaStream_t;   /* the CUDA definition: the header compiles without the toolkit */
+#endif
+#else
+#include <cuda_runtime_api.h>
+#endif
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* version of this API (docs/GPU_API.md "Stability"): major*10000 + minor*100 + patch; aceapex_gpu_version() returns
+   the value the library was built with. Shared library: libaceapex_gpu.so.1 (SONAME; `make gpu-lib`). */
+#define ACEAPEX_GPU_API_VERSION_MAJOR 2
+#define ACEAPEX_GPU_API_VERSION_MINOR 3
+#define ACEAPEX_GPU_API_VERSION_PATCH 0
+#define ACEAPEX_GPU_API_VERSION (ACEAPEX_GPU_API_VERSION_MAJOR * 10000 + ACEAPEX_GPU_API_VERSION_MINOR * 100 + ACEAPEX_GPU_API_VERSION_PATCH)
 
 typedef struct aceapex_gpu_plan aceapex_gpu_plan;
 
@@ -56,14 +71,17 @@ typedef struct aceapex_gpu_plan aceapex_gpu_plan;
 #define ACEAPEX_GPU_STATUS_HASH   16   /* ACEAPEX_GPU_VERIFY_XXH3: XXH3_64bits of the output != the archive header */
 #define ACEAPEX_GPU_STATUS_LIMIT  32   /* a kernel loop hit its step limit (a broken invariant: stopped, output invalid) */
 
-/* flags of aceapex_gpu_plan_create */
-#define ACEAPEX_GPU_VALIDATE_ZSTD  1   /* decode every zstd frame with libzstd on the host (all hardware threads);
-                                          one that fails or has another size: NULL, ACEAPEX_GPU_E_ARCHIVE */
+/* flags of aceapex_gpu_plan_create (uint64_t); a bit outside ACEAPEX_GPU_PLAN_FLAGS: NULL, ACEAPEX_GPU_E_ARGS */
+#define ACEAPEX_GPU_VALIDATE_ZSTD  UINT64_C(1)   /* decode every zstd frame with libzstd on the host (all hardware threads);
+                                                    one that fails or has another size: NULL, ACEAPEX_GPU_E_ARCHIVE */
+#define ACEAPEX_GPU_PLAN_FLAGS     (ACEAPEX_GPU_VALIDATE_ZSTD)
 
-/* flags of aceapex_gpu_decompress_async */
-#define ACEAPEX_GPU_VERIFY_XXH3    1   /* hash the whole output on the device and compare with the header (full decode only) */
+/* flags of aceapex_gpu_decompress_async; a bit outside ACEAPEX_GPU_DECODE_FLAGS: ACEAPEX_GPU_E_ARGS */
+#define ACEAPEX_GPU_VERIFY_XXH3    1u  /* hash the whole output on the device and compare with the header (full decode only) */
+#define ACEAPEX_GPU_DECODE_FLAGS   (ACEAPEX_GPU_VERIFY_XXH3)
 
-aceapex_gpu_plan* aceapex_gpu_plan_create(const void* h_archive, size_t in_bytes, unsigned flags);
+unsigned aceapex_gpu_version(void);                          /* ACEAPEX_GPU_API_VERSION of the built library */
+aceapex_gpu_plan* aceapex_gpu_plan_create(const void* h_archive, size_t in_bytes, uint64_t flags);
 int     aceapex_gpu_last_error(void);                        /* of the last plan_create on this thread */
 size_t  aceapex_gpu_temp_bytes(const aceapex_gpu_plan* plan);
 size_t  aceapex_gpu_range_temp_bytes(const aceapex_gpu_plan* plan, uint64_t max_length);

@@ -4,7 +4,8 @@
 // d_in base addresses, stored token chunks d_in -> streams, zstd frames (nvCOMP, optional), rANS pieces,
 // DNA unpack (zstd pack mode 1, open pack mode 2), the match kernel, then the status word. Everything on the
 // caller's stream; no allocation, no host copy, no synchronization.
-// Build: nvcc -O3 -arch=sm_XX [-DACEAPEX_GPU_NVCOMP -I<nvcomp>/include] -c src/aceapex_gpu_lib.cu
+// Build: nvcc -O3 -arch=sm_XX [-DACEAPEX_GPU_NVCOMP -I<nvcomp>/include] -c src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp
+//        (shared library: make gpu-lib [NVCOMP=<dir>] -> libaceapex_gpu.so.1)
 //        (link -l:libnvcomp.so.5 -lzstd with nvCOMP)
 #include "aceapex_gpu.h"
 #ifdef ACEAPEX_GPU_NVCOMP
@@ -29,7 +30,9 @@ struct aceapex_gpu_plan {
     size_t o_bo = 0, o_rans = 0, o_open = 0, o_dna = 0, o_nv = 0, o_raw = 0;
     unsigned grid = 1;                            // match kernel: resident blocks of 128 threads
 };
-static thread_local int g_last = ACEAPEX_GPU_OK;
+// plan_create, last_error and version are in src/aceapex_gpu_abi.cpp (host C++, judged without CUDA:
+// claim head_gpu_abi); it checks the arguments and calls this
+aceapex_gpu_plan* agpu_plan_build(const void* h_archive, size_t in_bytes, uint64_t flags, int* err);
 // test hook (not in the C ABI; scripts/gpu_api_test.cu): called on the host after each phase of a decode is
 // enqueued, so a test can wait for the stream and name the phase a hang is in. nullptr (default): no call
 typedef void (*aceapex_gpu_phase_fn)(const char* phase, cudaStream_t s);
@@ -97,9 +100,8 @@ static uint64_t nv_temp(size_t n, size_t maxo, size_t tot){ size_t t=0;
     if(nvcompBatchedZstdDecompressGetTempSizeAsync(n,maxo,nvcompBatchedZstdDecompressDefaultOpts,&t,tot)!=nvcompSuccess) return ~0ull; return t; }
 #endif
 
-extern "C" aceapex_gpu_plan* aceapex_gpu_plan_create(const void* h_archive, size_t in_bytes, unsigned flags){
-    g_last=ACEAPEX_GPU_OK;
-    if(!h_archive || (flags & ~ACEAPEX_GPU_VALIDATE_ZSTD)){ g_last=ACEAPEX_GPU_E_ARGS; return nullptr; }
+aceapex_gpu_plan* agpu_plan_build(const void* h_archive, size_t in_bytes, uint64_t flags, int* err){
+    int& g_last=*err; g_last=ACEAPEX_GPU_OK;
     aceapex_gpu_plan* pl=new(std::nothrow) aceapex_gpu_plan; if(!pl){ g_last=ACEAPEX_GPU_E_CUDA; return nullptr; }
 #ifdef ACEAPEX_GPU_NVCOMP
     int e=agp::build((const uint8_t*)h_archive,in_bytes,pl->P,nv_temp);
@@ -125,7 +127,6 @@ extern "C" aceapex_gpu_plan* aceapex_gpu_plan_create(const void* h_archive, size
     pl->grid=(unsigned)std::max(1,nsm*maxblk);
     return pl;
 }
-extern "C" int    aceapex_gpu_last_error(void){ return g_last; }
 extern "C" size_t aceapex_gpu_temp_bytes(const aceapex_gpu_plan* p){ return p ? (size_t)p->P.temp_bytes : 0; }
 extern "C" size_t aceapex_gpu_range_temp_bytes(const aceapex_gpu_plan* p, uint64_t len){ return p ? (size_t)(p->P.temp_bytes+agp::window_bytes(p->P,len)) : 0; }
 extern "C" size_t aceapex_gpu_output_bytes(const aceapex_gpu_plan* p){ return p ? (size_t)p->P.orig : 0; }
@@ -186,7 +187,7 @@ static int run(const aceapex_gpu_plan* pl, const agp::Sel* S, const uint8_t* in,
 }
 
 extern "C" int aceapex_gpu_decompress_async(const aceapex_gpu_plan* pl, const void* d_in, void* d_out, void* d_temp, int* d_status, unsigned flags, cudaStream_t s){
-    if(!pl || !d_in || !d_out || !d_temp || !d_status || ((uintptr_t)d_temp & 255) || (flags & ~ACEAPEX_GPU_VERIFY_XXH3)) return ACEAPEX_GPU_E_ARGS;
+    if(!pl || !d_in || !d_out || !d_temp || !d_status || ((uintptr_t)d_temp & 255) || (flags & ~ACEAPEX_GPU_DECODE_FLAGS)) return ACEAPEX_GPU_E_ARGS;
     int r=run(pl,nullptr,(const uint8_t*)d_in,(uint8_t*)d_out,(uint8_t*)d_temp,d_status,s);
     if(r) return r;
     if(flags & ACEAPEX_GPU_VERIFY_XXH3){
