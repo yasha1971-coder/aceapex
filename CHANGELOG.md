@@ -36,6 +36,22 @@ Version macros are bumped at tag time, not in this draft.
 - Build: `make ZSTD_SRC=<zstd 1.5.x tree>` links zstd statically (1.5.x: chr1 default 1 thread -16 % against the
   system 1.4.8).
 
+## v2.2.2 — 2026-10-01
+
+DOI: [10.5281/zenodo.23090998](https://doi.org/10.5281/zenodo.23090998)
+
+Archive bytes identical to 2.2.1 (the defaults are untouched; checked by the judge and on silesia/xml).
+
+- **The library no longer reads the environment** (lzbench #336, Przemysław Skibiński). The 16 tuning variables
+  (`ACEAPEX_BS`, `ACEAPEX_DUMP`, `AX_ATT`, `AX_ENC`, `AX_HLOG`, `AX_LIT`, `AX_MINL`, `AX_NOFLAT`, `AX_PROFILE`, `AX_SKIP`,
+  `AX_TOK`, `FSE_CHUNK`, `LIT_CHUNK`, `LIT_LANES`, `LIT_LANES_DEC`, `LIT_LEVEL`) are read through one `ax_getenv()`
+  (`src/ax_env.h`) that returns NULL unless the build defines `ACEAPEX_ENV_TUNING`. The library is built without it
+  (lzbench, TurboBench, any program linking it); the CLI (`ACEAPEX_CLI`), the C99 reader CLI `axdec`, the Python reader
+  and the repository's tools are built with it. On silesia/xml at level 1, one thread, with lzbench's zstd 1.5.7, five
+  settings of these variables gave 724378 / 853990 / 812809 / 734621 / 829935 bytes in 2.2.1 and give 724378 in all five
+  now. `LIT_LANES_DEC` no longer starts decode threads when the caller asked for one (strace: 7 clones before, 0 now).
+  Claim `head_env_ignored`.
+
 ## v2.2.1 — 2026-09-30
 
 DOI: [10.5281/zenodo.23070077](https://doi.org/10.5281/zenodo.23070077)

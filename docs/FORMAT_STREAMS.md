@@ -31,7 +31,7 @@ an error. Fixture: `verify/fixtures/empty.aet` (68 bytes).
 | 0 | 8 | magic | `ACEPX2\0\0` |
 | 8 | 4 | version | 2 |
 | 12 | 8 | orig_size | uncompressed length |
-| 20 | 4 | block_size | 16384 by default; `ACEAPEX_BS` overrides |
+| 20 | 4 | block_size | 16384 by default; `ACEAPEX_BS` overrides (only in builds with `ACEAPEX_ENV_TUNING`, [ENVIRONMENT.md](ENVIRONMENT.md)) |
 | 24 | 4 | num_blocks | ceil(orig_size / block_size) |
 | 28 | 8 | xxhash | XXH3-64 of the original input |
 | 36 | 8 | zlit_sz | compressed size of the literal stream |
@@ -65,7 +65,8 @@ nc = ceil(orig_size / CHUNK). CHUNK IS READ FROM THE STREAM: bits 48..62 of the
 first word hold CHUNK/4096 (commit 3f2c4d5, 19.09.2026). The same archive therefore
 reads the same way on any machine. Zero in that field is an archive written before
 the field existed: CHUNK is then 512 KB, or the FSE_CHUNK value in the reader's
-environment, exactly as before. Bits 0..47 hold orig_size, capping one stream at
+environment, exactly as before (since 2.2.2 only in readers built with `ACEAPEX_ENV_TUNING`: the CLI, axdec, the
+Python reader; [ENVIRONMENT.md](ENVIRONMENT.md)). Bits 0..47 hold orig_size, capping one stream at
 256 TB, and every reader takes the size through fse_stream_size(). Bit 63 set in
 a size entry means the chunk is stored raw — the low bits are then the uncompressed
 length and the payload is copied rather than decoded. Chunk i covers uncompressed
@@ -98,7 +99,7 @@ The chunk size lives in the file. An earlier revision read it from the environme
 so an archive decoded correctly only in a shell with the same variable set. Nothing
 about decoding may depend on the reader's environment.
 
-Enabled by `LIT_CHUNK=<bytes>` at compression time, minimum 65536. It exists for
+Enabled by `LIT_CHUNK=<bytes>` at compression time (only in builds with `ACEAPEX_ENV_TUNING`, [ENVIRONMENT.md](ENVIRONMENT.md)), minimum 65536. It exists for
 region reads: with the original layout a 16 KB region needs a quarter of the literal
 stream unpacked; with 1 MB chunks it needs one chunk. An older build reading a chunked
 archive fails cleanly rather than producing wrong bytes.
