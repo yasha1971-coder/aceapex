@@ -107,12 +107,3 @@ else
   printf 'head_python_tests\tdeclared\tpytest not installed on this host\n'
 fi
 rm -rf $T
-# python layer over the same fixtures, without installing: ctypes loads a fresh .so
-if python3 -c "import pytest" 2>/dev/null; then
-  if ${CC:-gcc} -std=c99 -O2 -fPIC -shared -DACEAPEX_ENV_TUNING -Ic -o $T/libaceapex_decode.so c/aceapex_decode.c -lzstd 2>/dev/null \
-     && ACEAPEX_DECODE_SO=$T/libaceapex_decode.so PYTHONPATH=python python3 -m pytest -q python/tests >$T/py.log 2>&1; then r=pass; else r=fail; fi
-  printf 'head_python_tests\t%s\t%s\n' "$r" "$(tail -n 1 $T/py.log | tr '\t' ' ' | head -c 120)"
-else
-  printf 'head_python_tests\tdeclared\tpytest not installed on this host\n'
-fi
-rm -rf $T
