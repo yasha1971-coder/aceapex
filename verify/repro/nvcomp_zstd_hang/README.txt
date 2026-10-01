@@ -1,6 +1,6 @@
 nvCOMP batched zstd decompression does not return on a corrupt frame.
 Build:  nvcc -O2 -I$NVCOMP/include -L$NVCOMP/lib64 -o repro repro.cu -l:libnvcomp.so.5   (NVCOMP = pip package dir of nvidia-nvcomp-cu12)
-Run:    LD_LIBRARY_PATH=$NVCOMP/lib64 ./repro good.zst ; ./repro bad.zst
+Run:    export LD_LIBRARY_PATH=$NVCOMP/lib64; ./repro good.zst; ./repro bad.zst
 good.zst: valid zstd frame, 1136 B, content size 8192 B, one compressed block.
 bad.zst:  the same frame with one byte changed: offset 291, 0x3f -> 0xc6 (inside the sequences section).
           libzstd 1.5.5 ZSTD_decompress: "Data corruption detected". Frame and block headers are valid.
