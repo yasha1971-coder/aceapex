@@ -83,11 +83,12 @@ int64_t aceapex_decompress(
 // Header validation + entropy phase shared by aceapex_decompress_mt and
 // aceapex_decode_streams. On success the four decoded streams and the block table are
 // owned by the caller; on failure nothing is allocated and a negative code is returned.
-struct AxStreams { uint8_t *l,*o,*n,*c; size_t ls,os,ns,cs; std::vector<BlockOffsets> boffs; AetHeader hdr; };
+struct AxStreams { uint8_t *l,*o,*n,*c; size_t ls,os,ns,cs; std::vector<BlockOffsets> boffs; AetHeader hdr;
+                   std::vector<AxLitChunk> lch; size_t lcsz = 0; bool tiled = false; };   // tiled: literals not decoded yet (AX_LIT_TILE)
 // AX_PHASE_TIMES=1: wall time of each decode phase on stderr (diagnostics; read once)
 static bool ax_pt(){ static const bool on = getenv("AX_PHASE_TIMES") && atoi(getenv("AX_PHASE_TIMES")); return on; }
 static double ax_now(){ return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
-static int64_t ax_entropy_decode(const void* src, size_t src_size, int threads, AxStreams& S)
+static int64_t ax_entropy_decode(const void* src, size_t src_size, int threads, AxStreams& S, bool tile = false)
 {
     if (!src || src_size < sizeof(AetHeader)) return ACEAPEX_ERR_DATA;
     const uint8_t* p=(const uint8_t*)src;
@@ -132,14 +133,19 @@ static int64_t ax_entropy_decode(const void* src, size_t src_size, int threads, 
     if(!o||!n||!c){free(o);free(n);free(c);return ACEAPEX_ERR_MEMORY;}
     // Entropy phase on one budget of hardware threads: literal lanes and one pool for
     // the token streams run concurrently (was: literals, then three streams serially).
-    int budget=threads>0?threads:(int)std::thread::hardware_concurrency(); if(budget<1) budget=8;
+    int budget=ax_decode_budget(threads,hdr.orig_size);
     int lit_t, tok_t; ax_entropy_split(ax_lit_decoded_size(zl,hdr.zlit_sz), os+ns+cs, budget, lit_t, tok_t);
     struct LitArg{const uint8_t*s;size_t sz;uint8_t**out;size_t*osz;int lanes;};
     size_t ls=0; uint8_t* l=nullptr; LitArg larg={zl,(size_t)hdr.zlit_sz,&l,&ls,lit_t};
     auto litfn=[](void*a)->void*{LitArg*x=(LitArg*)a; *x->out=lit_decompress(x->s,x->sz,*x->osz,x->lanes); return nullptr;};
     FseStream fst[3]={{zo,os,o},{zn,ns,n},{zc,cs,c}};
     const double t_b = ax_pt() ? ax_now() : 0;
-    if (budget == 1) { litfn(&larg); fse_multi_decomp(fst,3,1); }
+    // AX_LIT_TILE: the literal stream is not decoded here; its chunk table is kept and the chunks are decoded tile by
+    // tile next to the blocks that use them (ax_decode_tiled). Streams without the chunked layout: the usual way.
+    if (tile) { const int k = ax_lit_chunks(zl, hdr.zlit_sz, ls, S.lcsz, S.lch); if (k < 0) { free(o);free(n);free(c); return ACEAPEX_ERR_DATA; } S.tiled = k == 1 && S.lcsz > 0 && S.lcsz <= ((size_t)256 << 10);   // a tile of G chunks must stay in L2 (silesia default: 4 chunks of 20 MB)
+                if (ax_pt()) fprintf(stderr, "[phase] literal chunks: %zu of %zu B (%s)\n", S.lch.size(), S.lcsz, S.tiled ? "tiled" : "not tiled"); }
+    if (S.tiled) { fse_multi_decomp(fst,3,budget); l=(uint8_t*)malloc(1); }
+    else if (budget == 1) { litfn(&larg); fse_multi_decomp(fst,3,1); }
     else { pthread_t lt; ax_thread(&lt,litfn,&larg);
            fse_multi_decomp(fst,3,tok_t); pthread_join(lt,nullptr); }
     if (ax_pt()) fprintf(stderr, "[phase] checks+alloc %.3f s, entropy (lit %d + tok %d threads) %.3f s\n", t_b - t_a, lit_t, tok_t, ax_now() - t_b);
@@ -161,17 +167,80 @@ static int64_t ax_entropy_decode(const void* src, size_t src_size, int threads, 
     return (int64_t)hdr.orig_size;
 }
 
+// AX_LIT_TILE (default 1; 0 = literal stream first, then the blocks): literals and blocks in one pass. The blocks are cut into groups whose literal slices span at most
+// AX_TILE_CHUNKS chunks (+1 shared with the next group, decoded by both); a thread decodes a group's chunks into its
+// tile (<= ~0.5 MiB: stays in L2), then decodes the group's blocks from the tile straight into the output. The 3 GB
+// literal stream of T2T is never written to memory and read back. Blocks are independent (every match lies in its
+// block), so groups run in any order.
+static int64_t ax_decode_tiled(AxStreams& S, uint8_t* dst, int budget) {
+    const size_t CH = S.lcsz, nb = S.hdr.num_blocks, bs = S.hdr.block_size, osz = S.hdr.orig_size, NC = S.lch.size();
+    static const size_t G = [] { const char* e = getenv("AX_TILE_CHUNKS"); size_t v = e ? strtoull(e, 0, 10) : 8; return v ? v : 1; }();
+    struct Item { size_t b0, b1, k0, k1; };
+    std::vector<Item> items;
+    auto kof = [&](size_t off) { size_t k = off / CH; return k < NC ? k : (NC ? NC - 1 : 0); };
+    for (size_t b = 0; b < nb; ) {
+        Item it{b, b, (size_t)-1, 0};
+        while (b < nb) {
+            const BlockOffsets& bo = S.boffs[b];
+            const size_t lo = kof(bo.lit_off), hi = bo.lit_sz ? kof(bo.lit_off + bo.lit_sz - 1) : lo;
+            const size_t k0 = std::min(it.k0, lo), k1 = std::max(it.k1, hi);
+            if (it.b1 > it.b0 && k1 - k0 + 1 > G + 1) break;
+            it.k0 = k0; it.k1 = k1; it.b1 = ++b;
+        }
+        items.push_back(it);
+    }
+    // each thread a contiguous run of groups: the chunk a group shares with the next one is moved to the front of the
+    // tile instead of being decoded again (decoded twice only where two threads meet)
+    const int T = std::max(1, std::min<int>(budget, (int)items.size()));
+    struct Ctx { AxStreams* S; uint8_t* dst; const Item* items; size_t n; int T; size_t CH, bs, osz; bool nt; std::atomic<int> bad; };
+    Ctx cx{&S, dst, items.data(), items.size(), T, CH, bs, osz, ax_nt_for(budget, osz), {0}};
+    struct Arg { Ctx* c; int t; };
+    auto fn = [](void* v) -> void* {
+        Arg* ar = (Arg*)v; Ctx* c = ar->c; std::vector<uint8_t> tile, nbuf;
+        const size_t i0 = c->n * (size_t)ar->t / (size_t)c->T, i1 = c->n * (size_t)(ar->t + 1) / (size_t)c->T;
+        size_t have = (size_t)-1;                                   // chunk at the end of the tile from the previous group
+        size_t have_t0 = 0, have_sz = 0;
+        for (size_t i = i0; i < i1; i++) {
+            const Item& it = c->items[i]; const size_t t0 = it.k0 * c->CH;
+            const size_t tsz = std::min((it.k1 + 1) * c->CH, (size_t)c->S->ls) - t0;
+            if (tile.size() < tsz + 64) { std::vector<uint8_t> nt(tsz + 64 + c->CH); if (have != (size_t)-1) memcpy(nt.data(), tile.data(), have_sz); tile.swap(nt); }
+            size_t k = it.k0;
+            if (have == it.k0) {                                    // the shared chunk: from its place in the last tile to the front
+                const size_t at = it.k0 * c->CH - have_t0, len = std::min(c->CH, have_t0 + have_sz - it.k0 * c->CH);
+                memmove(tile.data(), tile.data() + at, len); k++; }
+            for (; k <= it.k1 && k < c->S->lch.size(); k++)
+                if (!ax_lit_chunk_decode(c->S->lch[k], tile.data() + (c->S->lch[k].off - t0))) c->bad = 1;
+            for (size_t b = it.b0; b < it.b1; b++) {
+                const BlockOffsets& bo = c->S->boffs[b]; const size_t bstart = b * c->bs;
+                const size_t bsize = c->osz > bstart ? std::min(c->bs, c->osz - bstart) : 0;
+                if (!bsize) continue;
+                if (bo.lit_sz && (bo.lit_off < t0 || bo.lit_off + bo.lit_sz > t0 + tsz)) { c->bad = 1; continue; }
+                ax_block_out(c->dst, bstart, bsize, bo, tile.data() + (bo.lit_sz ? bo.lit_off - t0 : 0), c->S->o, c->S->n, c->S->c, nbuf, c->nt);
+            }
+            have = it.k1; have_t0 = t0; have_sz = tsz;
+        }
+        ax_nt_fence(); return nullptr;
+    };
+    std::vector<Arg> args((size_t)T); for (int t = 0; t < T; t++) args[(size_t)t] = {&cx, t};
+    if (T == 1) fn(&args[0]);
+    else { std::vector<pthread_t> th((size_t)T - 1); for (int t = 1; t < T; t++) ax_thread(&th[(size_t)t - 1], fn, &args[(size_t)t]);
+           fn(&args[0]); for (int t = 1; t < T; t++) pthread_join(th[(size_t)t - 1], nullptr); }
+    return cx.bad ? ACEAPEX_ERR_DATA : (int64_t)osz;
+}
+
 int64_t aceapex_decompress_mt(
     const void* src, size_t src_size,
     void*       dst, size_t dst_capacity, int threads)
 {
     const double t0 = ax_pt() ? ax_now() : 0;
-    AxStreams S; int64_t r = ax_entropy_decode(src, src_size, threads, S);
+    static const bool tile = [] { const char* e = getenv("AX_LIT_TILE"); return e ? atoi(e) != 0 : true; }();   // default 1
+    AxStreams S; int64_t r = ax_entropy_decode(src, src_size, threads, S, tile);
     if (r <= 0) return r;                                    // error, or the empty archive
     const double t1 = ax_pt() ? ax_now() : 0;
     if (S.hdr.orig_size > dst_capacity) { free(S.l);free(S.o);free(S.n);free(S.c); return ACEAPEX_ERR_BUFFER; }
-    int budget=threads>0?threads:(int)std::thread::hardware_concurrency(); if(budget<1) budget=8;
-    parallel_decode(S.l,S.o,S.n,S.c,S.boffs.data(),S.hdr.num_blocks,
+    const int budget=ax_decode_budget(threads,S.hdr.orig_size);
+    if (S.tiled) { const int64_t q = ax_decode_tiled(S, (uint8_t*)dst, budget); if (q < 0) { free(S.l);free(S.o);free(S.n);free(S.c); return q; } }
+    else parallel_decode(S.l,S.o,S.n,S.c,S.boffs.data(),S.hdr.num_blocks,
                     (uint8_t*)dst,S.hdr.orig_size,S.hdr.block_size,budget);
     const double t2 = ax_pt() ? ax_now() : 0;
     free(S.l);free(S.o);free(S.n);free(S.c);

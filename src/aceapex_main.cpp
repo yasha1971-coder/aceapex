@@ -3,7 +3,11 @@
 #if defined(__SSSE3__)
 #include <tmmintrin.h>
 #endif
+#if defined(__SSE2__)
+#include <emmintrin.h>
+#endif
 #include <stdint.h>
+#include <string>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -886,10 +890,89 @@ struct DecArgs {
     uint8_t* dst; size_t dst_size;
     size_t bid_start; size_t bid_end;
     size_t block_size;
+    bool nt;                                     // AX_NT for this decode
 };
  
+// Physical cores (Linux: distinct core_cpus_list in sysfs; elsewhere the hardware threads), read once.
+static int ax_phys_cores() {
+    static const int n = [] {
+        int hw = (int)std::thread::hardware_concurrency(); if (hw < 1) hw = 8;
+#ifdef __linux__
+        std::vector<std::string> seen;
+        for (int c = 0; c < 4096; c++) {
+            char p[96]; snprintf(p, sizeof p, "/sys/devices/system/cpu/cpu%d/topology/core_cpus_list", c);
+            FILE* f = fopen(p, "r"); if (!f) { if (c >= hw) break; continue; }
+            char b[64] = {0}; if (fgets(b, sizeof b, f)) { std::string s(b); if (std::find(seen.begin(), seen.end(), s) == seen.end()) seen.push_back(s); }
+            fclose(f);
+        }
+        if (!seen.empty() && (int)seen.size() <= hw) return (int)seen.size();
+#endif
+        return hw; }();
+    return n;
+}
+// Default decode budget (threads <= 0): the physical cores; outputs of 1 GiB and more on every hardware thread.
+// ace-core (8 cores / 16 threads): chr1 8 vs 16 threads 0.028 vs 0.034 s, silesia 0.038 vs 0.042, T2T 0.238 vs 0.209.
+static int ax_decode_budget(int threads, uint64_t out_bytes) {
+    if (threads > 0) return threads;
+    if (out_bytes >= ((uint64_t)1 << 30)) { const int hw = (int)std::thread::hardware_concurrency(); return hw > 0 ? hw : 8; }
+    return ax_phys_cores();
+}
+
+// AX_NT (non-temporal output, default 1): a block is decoded into a per-thread buffer that stays in L1/L2 (its matches
+// read it there) and then streamed to the output with non-temporal stores: no read-for-ownership of the output lines and
+// no eviction of the literal tiles. Applied to blocks whose literal share is >= AX_NT_LIT (default 0.9), outputs of at
+// least AX_NT_MIN bytes (default 64 MiB) and budgets of at least AX_NT_THREADS (default 4). sfence once a thread is
+// done, before its blocks are published (thread join). Measured on ace-core (8 threads, with AX_LIT_TILE): T2T open
+// 0.241 -> 0.228 s, chr1 -2 %, silesia.open -1.5 %; on 1 thread it cost up to 2.5 % (a core not bound by memory).
+struct AxNt { bool on; double lit; size_t min; int threads; };
+static const AxNt& ax_nt() {
+    static const AxNt v = [] { AxNt r; const char* e = getenv("AX_NT"); r.on = e ? atoi(e) != 0 : true;
+        e = getenv("AX_NT_LIT"); r.lit = e ? atof(e) : 0.9; e = getenv("AX_NT_MIN"); r.min = e ? strtoull(e, 0, 10) : ((size_t)64 << 20);
+        e = getenv("AX_NT_THREADS"); r.threads = e ? atoi(e) : 4; return r; }();
+    return v;
+}
+static inline void ax_nt_copy(uint8_t* d, const uint8_t* s, size_t n) {
+#if defined(__SSE2__)
+    size_t h = (16 - ((uintptr_t)d & 15)) & 15; if (h > n) h = n;
+    memcpy(d, s, h); d += h; s += h; n -= h;
+    for (; n >= 64; n -= 64, d += 64, s += 64) {
+        const __m128i a = _mm_loadu_si128((const __m128i*)s), b = _mm_loadu_si128((const __m128i*)(s + 16)),
+                      c = _mm_loadu_si128((const __m128i*)(s + 32)), e = _mm_loadu_si128((const __m128i*)(s + 48));
+        _mm_stream_si128((__m128i*)d, a); _mm_stream_si128((__m128i*)(d + 16), b); _mm_stream_si128((__m128i*)(d + 32), c); _mm_stream_si128((__m128i*)(d + 48), e); }
+    memcpy(d, s, n);
+#else
+    memcpy(d, s, n);
+#endif
+}
+static inline void ax_nt_fence() {
+#if defined(__SSE2__)
+    _mm_sfence();
+#endif
+}
+// whether a decode with this budget and output size streams its literal blocks (AX_NT)
+static inline bool ax_nt_for(int budget, size_t dst_size) { const AxNt& nt = ax_nt(); return nt.on && budget >= nt.threads && dst_size >= nt.min; }
+// one block into dst (bstart, bsize): directly, or through the thread's buffer with a non-temporal copy (ntok: AX_NT)
+static inline void ax_block_out(uint8_t* dst, size_t bstart, size_t bsize, const BlockOffsets& bo, const uint8_t* lit,
+                                const uint8_t* off, const uint8_t* len, const uint8_t* cmd, std::vector<uint8_t>& nbuf, bool ntok) {
+    if (ntok && (double)bo.lit_sz >= ax_nt().lit * (double)bsize) {
+        if (nbuf.size() < bsize + 64) nbuf.resize(bsize + 64);
+        decompress_streams(nbuf.data(), bsize, lit, bo.lit_sz, off + bo.off_off, bo.off_sz, len + bo.len_off, bo.len_sz, cmd + bo.cmd_off, bo.cmd_sz);
+        ax_nt_copy(dst + bstart, nbuf.data(), bsize);
+    } else
+        decompress_streams(dst + bstart, bsize, lit, bo.lit_sz, off + bo.off_off, bo.off_sz, len + bo.len_off, bo.len_sz, cmd + bo.cmd_off, bo.cmd_sz);
+}
+
 static void* dec_worker(void* arg) {
     DecArgs* a = (DecArgs*)arg;
+    std::vector<uint8_t> nbuf;
+    if (a->nt) {
+        for (size_t b = a->bid_start; b < a->bid_end; b++) {
+            const BlockOffsets& bo = a->boffs[b]; const size_t bstart = b * a->block_size;
+            const size_t bsize = a->dst_size > bstart ? std::min<size_t>((size_t)a->block_size, a->dst_size - bstart) : 0;
+            if (bsize) ax_block_out(a->dst, bstart, bsize, bo, a->lit + bo.lit_off, a->off, a->len, a->cmd, nbuf, true);
+        }
+        ax_nt_fence(); return nullptr;
+    }
     for (size_t b = a->bid_start; b < a->bid_end; b++) {
         const BlockOffsets& bo = a->boffs[b];
         size_t bstart = b * a->block_size;
@@ -1051,7 +1134,7 @@ static void parallel_decode(
     for(size_t t=0;t<nt;t++) {
         size_t bstart = t * blocks_per_thread;
         size_t bend   = std::min<size_t>(bstart + blocks_per_thread, num_blocks);
-        dargs[t]={lit,off,len,cmd,boffs,dst,dst_size,bstart,bend,block_size};
+        dargs[t]={lit,off,len,cmd,boffs,dst,dst_size,bstart,bend,block_size,ax_nt_for(nthreads,dst_size)};
     }
     if (nt == 1) { dec_worker(&dargs[0]); return; }   // threads=1: nothing is spawned
     std::vector<pthread_t> dpts(nt);
@@ -1463,49 +1546,57 @@ static void ax_prefault(uint8_t* p, size_t n, int threads) {
     for (int t = 1; t < threads; t++) pthread_join(th[(size_t)t - 1], nullptr);
 }
 
+// One chunk of the literal stream (FSE layout, spec 3.2): where its bytes go (offset in the stream), how many, the
+// compressed body and whether it is tagged. ax_lit_chunks parses the table; ax_lit_chunk_decode decodes one chunk
+// into out (the decoders of lit_decompress, also used by the tiled decode of aceapex_decompress_mt, AX_LIT_TILE).
+struct AxLitChunk { size_t off, raw; const uint8_t* in; size_t isz; bool tg; };
+// 1: chunk list in v (csz = chunk size); 0: no FSE layout (legacy stream, lit_decompress decodes it whole); -1: corrupt
+static int ax_lit_chunks(const uint8_t* src, size_t src_sz, size_t& orig_sz, size_t& csz, std::vector<AxLitChunk>& v) {
+    v.clear(); csz=0;
+    if (!src || src_sz < 8) { orig_sz = 0; return 1; }
+    uint64_t h; memcpy(&h, src, 8);
+    const bool chunked=(h & (uint64_t(1)<<61))!=0, tagged=(h & (uint64_t(1)<<60))!=0;
+    if((h>>63) || (tagged && !chunked)){ orig_sz=0; return -1; }
+    orig_sz=h & ~((uint64_t(1)<<62)|(uint64_t(1)<<61)|(uint64_t(1)<<60));
+    if(!(h & (uint64_t(1)<<62))) return 0;
+    const long long nwc=lit_table_check(src,src_sz,chunked,orig_sz,csz);
+    if(nwc<0 || nwc>INT32_MAX){ orig_sz=0; return -1; }
+    const int NW=(int)nwc;
+    const AxU64s zsz{src+(chunked?16:8)};
+    const uint8_t* p=src+(chunked?16:8)+(size_t)NW*8;
+    v.resize((size_t)NW);
+    for(int t=0;t<NW;t++){
+        size_t off=(size_t)t*csz; if(off>orig_sz) off=orig_sz;
+        size_t raw=(off+csz<=orig_sz)?csz:(orig_sz-off);
+        v[(size_t)t]={off,raw,p,(size_t)zsz[t],tagged}; p+=(size_t)zsz[t]; }
+    return 1;
+}
+static bool ax_lit_chunk_decode(const AxLitChunk& d, uint8_t* out) {
+    if(!d.isz) return !d.raw;                                      // a chunk with bytes needs a body
+    if(!d.tg) return zdec_ok(out,d.raw,d.in,d.isz);
+    if(d.in[0]==1){ dna_decompress(d.in+1,d.isz-1,out,d.raw); return true; }
+    if(d.in[0]==2) return axo_dna_decode(d.in+1,d.isz-1,out,d.raw)==0;
+    if(d.in[0]==3) return axo_piece_decode(d.in+1,d.isz-1,out,d.raw)==0;
+    return zdec_ok(out,d.raw,d.in+1,d.isz-1);
+}
+
 static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_sz, int lanes_req = 0) {
     // An empty or truncated literal stream must not be read as an 8-byte header.
     // Tiny inputs give zlit_sz==0; the out-of-bounds read corrupted heap metadata
     // and surfaced as a double-free thousands of calls later. (lzbench issue #2.)
     if (!src || src_sz < 8) { orig_sz = 0; return (uint8_t*)malloc(1); }
-    uint64_t h; memcpy(&h, src, 8);   // alignment-safe (no AX_read64 in this tree)
-    const int NW_LEGACY=4;
-    const bool chunked=(h & (uint64_t(1)<<61))!=0;
-    const bool tagged=(h & (uint64_t(1)<<60))!=0;
-    // spec 3.2: bit 63 is reserved, bit 60 needs 61; such a word is an error, not a size
-    if((h>>63) || (tagged && !chunked)){ orig_sz=0; g_dec_err=1; return nullptr; }
-    orig_sz=h & ~((uint64_t(1)<<62)|(uint64_t(1)<<61)|(uint64_t(1)<<60));
-    size_t csz=0; long long nwc=-1;
-    if(h & (uint64_t(1)<<62)){ nwc=lit_table_check(src,src_sz,chunked,orig_sz,csz);
-        if(nwc<0 || nwc>INT32_MAX){ orig_sz=0; g_dec_err=1; return nullptr; } }
+    size_t csz=0; std::vector<AxLitChunk> ch;
+    const int k=ax_lit_chunks(src,src_sz,orig_sz,csz,ch);
+    if(k<0){ g_dec_err=1; return nullptr; }
     uint8_t* out=ax_big_malloc(orig_sz);
     if(!out) return nullptr;
-    if(!(h & (uint64_t(1)<<62))){fse_chunked_decomp(src,orig_sz,out);return out;}
-    // Размер чанка читается ИЗ ФАЙЛА: архив не должен зависеть от окружения читателя.
-    (void)NW_LEGACY;
-    const int NW = (int)nwc;
-    const AxU64s zsz{src+(chunked?16:8)};
-    const uint8_t* p0=src+(chunked?16:8)+(size_t)NW*8;
-    struct DW{uint8_t*out;size_t raw;const uint8_t*in;size_t isz;bool tg;};
-    std::vector<DW> dws(NW); const uint8_t* p=p0;
-    for(int t=0;t<NW;t++){
-        // Same underflow guard as in lit_compress (decoder side).
-        size_t off=(size_t)t*csz; if(off>orig_sz) off=orig_sz;
-        // Правило совпадает с кодером: кусок равен csz, кроме последнего.
-        // Прежняя формула с (t<NW-1) была под legacy и на чанках расходилась.
-        size_t raw=(off+csz<=orig_sz)?csz:(orig_sz-off);
-        dws[t]={out+off,raw,p,(size_t)zsz[t],tagged}; p+=(size_t)zsz[t];}
-    struct Pool{ DW* w; int n; std::atomic<int> next; };
-    Pool pool{dws.data(),NW,{0}};
+    if(k==0){ fse_chunked_decomp(src,orig_sz,out); return out; }
+    struct Pool{ const AxLitChunk* w; uint8_t* out; int n; std::atomic<int> next; };
+    Pool pool{ch.data(),out,(int)ch.size(),{0}};
     auto dfn=[](void*a)->void*{
         Pool* p=(Pool*)a;
         for(;;){ int i=p->next.fetch_add(1); if(i>=p->n) break;
-            DW& d=p->w[i]; if(!d.isz){ if(d.raw) g_dec_err=1; continue; }   // a chunk with bytes needs a body
-            if(!d.tg){ if(!zdec_ok(d.out,d.raw,d.in,d.isz)) g_dec_err=1; continue; }
-            if(d.in[0]==1) dna_decompress(d.in+1,d.isz-1,d.out,d.raw);
-            else if(d.in[0]==2){ if(axo_dna_decode(d.in+1,d.isz-1,d.out,d.raw)) g_dec_err=1; }
-            else if(d.in[0]==3){ if(axo_piece_decode(d.in+1,d.isz-1,d.out,d.raw)) g_dec_err=1; }
-            else if(!zdec_ok(d.out,d.raw,d.in+1,d.isz-1)) g_dec_err=1; }
+            if(!ax_lit_chunk_decode(p->w[i],p->out+p->w[i].off)) g_dec_err=1; }
         return nullptr;};
     // LANES был жёстко 8; на машинах с бо́льшим числом ядер половина простаивала.
     // Чанки независимы как кадры zstd, пул динамический — берём по числу ядер.
@@ -1513,7 +1604,7 @@ static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_s
     if(lanes_req>0) hw=lanes_req;
     const char* le=getenv("LIT_LANES_DEC"); if(le) hw=atoi(le);
     if(hw<1) hw=1;
-    const int LANES=std::min(hw,NW);
+    const int LANES=std::min(hw,(int)ch.size());
     if(LANES<=1){ dfn(&pool); return out; }          // lanes=1: decode inline, spawn nothing
     ax_prefault(out,orig_sz,LANES);
     std::vector<pthread_t> pts(LANES-1);

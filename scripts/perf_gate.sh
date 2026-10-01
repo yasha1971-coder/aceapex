@@ -38,7 +38,7 @@ while IFS=$'\t' read -r name prof thr base bytes orig gbs commit date; do
     printf '%s\t%s\t%s\t%s\t-\t-\t-\tMISMATCH\n' "$name" "$prof" "$thr" "$base" | tee -a "$LOG"; echo x >> "$FAILS"
     row "$name" "$prof" "$thr" "$base" "$bytes" "$orig" "$gbs" "$commit" "$date"; continue
   fi
-  now=${r%% *}; out=${r##* }
+  now=$(echo "$r" | cut -d" " -f1); out=$(echo "$r" | cut -d" " -f3)
   read -r ch v g < <(awk -v b="$base" -v n="$now" -v t="$TOL" -v o="$out" 'BEGIN{c=100*(n/b-1); printf "%+.1f%% %s %.2f\n", c, (c>t?"FAIL":(c< -t?"FASTER":"OK")), o/n/1e9}')
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$prof" "$thr" "$base" "$now" "$ch" "$g" "$v" | tee -a "$LOG"
   [ "$v" = FAIL ] && echo x >> "$FAILS"
