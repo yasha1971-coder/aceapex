@@ -115,6 +115,12 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+01.10 (5): nvCOMP 5.3.0.16 виснет сам на испорченном кадре zstd (repro verify/repro, кадр 150180 T2T, TIMEOUT 60 с;
+libzstd: Data corruption). Флаг plan_create ACEAPEX_GPU_VALIDATE_ZSTD (plan_create получил аргумент flags): каждый
+кадр через libzstd на хосте во всех потоках, испорченный -> план NULL, nvCOMP не вызывается; T2T 191 495 кадров
+78 мс на 16 потоках (853 мс на 1). gpu_api_test: флипы zstd-профиля — план испорченного архива с флагом. Претензия
+head_gpu_zstd_validate (25 архивов целы, repro-кадр отвергнут, 400 флипов в кадрах: 240 отвергнуты, у 160 принятых
+все кадры целы). GPU_API: недоверенные данные — профиль open или флаг. Судья 57/0. Ждёт Colab.
 01.10 (4): T2T.zstd flip TIMEOUT 300 с после f87bf19. Флипы воспроизведены на CPU (libzstd 1.5.5, архив == пин
 822 393 156): флип 1 — кадр zstd 150180 из 191 495 (маска регистра DNA-пака, 1136 B -> 8192 B), байт 291 в секции
 последовательностей; libzstd: Data corruption detected, заголовки кадра/блока проходят. Флипы 2-6 — libzstd
@@ -193,9 +199,8 @@ match 30.3, bases 7.4, seq 5.1. Архивы zstd/rans T2T зависят от l
 898 263 414; 1.4.8: 902 319 887 / 898 903 131), open одинаков.
 
 ## Дальше
-000. Colab (Blackwell): nvcomp_frame_repro на кадре 150180 (висит ли nvCOMP один) и фаза флипа в gpu_api_test.
-   Если nvCOMP: защита только проверкой кадров до nvCOMP (libzstd на хосте, опция плана) или отказ от nvCOMP для
-   ненадёжных входов — решение пользователя. Если наше ядро: исправить + случай в head_gpu_flip_emu.
+000. Colab (Blackwell): t2t.zstd флипы с VALIDATE_ZSTD — пойманы планом, без TIMEOUT; время плана с флагом на Colab.
+   Сообщить NVIDIA о зависании nvCOMP (repro готов) — внешнее действие, по слову пользователя.
 00. После тега v2.2.0: публикация release/v2.2.0.md как GitHub Release, пост 4487, задание hw-apex-bench, PR lzbench — по слову.
 0. dense-open на GPU измерен (Blackwell, bit-perfect): стадия lit chr1 3.89 мс против open lit+unpack 1.46
    (2.7x медленнее), T2T 43.9 против 13.2 (3.3x) — за -4.4 % байт. k_r1 упирается в латентность: 16
