@@ -75,6 +75,10 @@ else printf 'head_api_concurrent\tfail\tbuild failed: %s\n' "$(head -c 150 $T/ap
 if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/api_th scripts/api_threads.cpp -lzstd -lpthread 2>$T/apit.err; then
   $T/api_th 2>/dev/null || true
 else printf 'head_enc_threads\tfail\tbuild failed: %s\n' "$(head -c 150 $T/apit.err | tr '\n\t' '  ')"; fi
+# the GPU library's plan (src/aceapex_gpu_plan.h) executed job by job on the CPU: full, ranges, mutations
+if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/gpu_plan_emu scripts/gpu_plan_emu.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/gpe.err; then
+  $T/gpu_plan_emu 2>/dev/null || true
+else printf 'head_gpu_plan_emu\tfail\tbuild failed: %s\n' "$(head -c 150 $T/gpe.err | tr '\n\t' '  ')"; fi
 # python layer over the same fixtures, without installing: ctypes loads a fresh .so
 if python3 -c "import pytest" 2>/dev/null; then
   if ${CC:-gcc} -std=c99 -O2 -fPIC -shared -Ic -o $T/libaceapex_decode.so c/aceapex_decode.c -lzstd 2>/dev/null \

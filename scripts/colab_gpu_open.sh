@@ -20,6 +20,9 @@
 #   zstd   FSE_CHUNK=4096       tokens and literals in zstd frames (nvCOMP)
 #   rans   AX_TOK=rans          tokens rANS (k_rans), literals zstd (ADR-018)
 #   open   AX_PROFILE=open      tokens rANS, literals open DNA pack / open plain (ADR-019)
+# plus the GPU library (C ABI, src/aceapex_gpu.h, docs/GPU_API.md) on the zstd and open archives: full decode
+# bit-perfect and timed against the tool's on-device time, random windows of the original through the range
+# call, single-byte flips of the device copy (status, never a CUDA error); its plan judged on the CPU first.
 # plus dense-open (measurement): the open archive's literal stream coded by components/rans1_v4.c and
 # decoded on the GPU (k_r1), compared byte for byte with the stream the archive decodes to; its row in
 # the table is an estimate (tok + dense lit + match; bytes = open - literal stream + AR1L file).
@@ -63,6 +66,13 @@ elif nvcc -O3 -gencode arch=compute_90,code=compute_90 $NVL -o $W/aceapex_gpu ac
 else echo "BUILD FAILED aceapex_gpu" | tee -a $L; cat $W/nvcc.err; exit 1; fi
 for e in rans_warp_emu open_warp_emu; do
   g++ -std=c++17 -O2 -Isrc -o $W/$e scripts/$e.cpp && $W/$e verify/fixtures/conf/*.aet | tee -a $L; done
+# the GPU library (C ABI, src/aceapex_gpu.h): its plan judged on the CPU, the test program and the 30-line example
+g++ -std=c++17 -O2 -Isrc -o $W/gpu_plan_emu scripts/gpu_plan_emu.cpp src/aceapex_api.cpp -lzstd -lpthread && $W/gpu_plan_emu | tee -a $L
+ARCH="-arch=sm_$SM"; nvcc -arch=sm_$SM -E -x cu /dev/null >/dev/null 2>&1 || ARCH="-gencode arch=compute_90,code=compute_90"
+if nvcc -std=c++17 -O3 $ARCH -Isrc -DACEAPEX_GPU_NVCOMP $NVL -o $W/gpu_api_test scripts/gpu_api_test.cu src/aceapex_gpu_lib.cu 2>$W/nvcc_api.err \
+   && nvcc -std=c++17 -O3 $ARCH -Isrc -o $W/gpu_decode examples/gpu_decode.cu src/aceapex_gpu_lib.cu 2>>$W/nvcc_api.err; then
+  echo "built gpu_api_test (nvCOMP) and examples/gpu_decode (no nvCOMP), $ARCH" | tee -a $L
+else echo "BUILD FAILED gpu library" | tee -a $L; cat $W/nvcc_api.err; exit 1; fi
 
 # the open conformance fixtures on the GPU (inputs regenerated from their seeds); 5 hashes each:
 # warm-up, sequential, old pipeline, stream pipeline on cleared buffers, stream pipeline timed
@@ -157,6 +167,13 @@ PY
   for P in zstd rans open chain; do [ -s $W/$X.$P.aet ] || continue
     DL=""; [ $P = open ] && [ -s $W/$X.r1 ] && DL="--dense-lit=$W/$X.r1"; [ $P = open ] && [ -s $W/$X.r2 ] && DL="$DL --dense2-lit=$W/$X.r2"
     R=${REPS:-3}
+    if [ $P = zstd ] || [ $P = open ]; then                   # the C ABI on the same archive: full, ranges, byte flips
+      echo "== gpu_api_test $X.$P" | tee -a $L
+      NRG=200; NFL=20; [ $X = t2t ] && { NRG=60; NFL=6; }
+      $W/gpu_api_test $W/$X.$P.aet $C ${REPS:-3} $NRG $NFL 2>&1 | tee -a $L; echo "exitapi ${PIPESTATUS[0]} $X.$P" | tee -a $L
+      if [ $P = open ]; then $W/gpu_decode $W/$X.$P.aet $W/ex.out >/dev/null 2>&1 && cmp -s $W/ex.out $C && echo "example gpu_decode $X.$P (no nvCOMP): bit-perfect" | tee -a $L \
+        || echo "example gpu_decode $X.$P: FAILED" | tee -a $L; rm -f $W/ex.out; fi
+    fi
     echo "== aceapex_gpu $X.$P" | tee -a $L
     $W/aceapex_gpu $W/$X.$P.aet $C auto $R 4 --pipeline=${PIPE:-auto} $DL 2>&1 | tee -a $L; echo "exit ${PIPESTATUS[0]} $X.$P" | tee -a $L
   done
@@ -181,6 +198,11 @@ for X in $CORP; do
   awk -F'\t' -v x="$X" -v w="$W/" '$1=="ROW" && $2==w x".chain.aet"{o=$10; ob=$3} $1=="ROW" && $2==w x".open.aet"{l=$10; lb=$3; lk=$13}
     END{ if(o!="" && l!="") printf "%s.open (l1) against %s.chain: on-device %.3f vs %.3f ms (%+.1f %%), bytes %d vs %d (%+.2f %%), %s\n", x, x, l, o, 100*(l/o-1), lb, ob, 100*(lb/ob-1), lk }' $L | tee -a $L
 done
+# C ABI against the measurement tool (same archive, same run): on-device ms of the tool (ROW $10) and of the library
+for X in $CORP; do for P in zstd open; do
+  awk -F'\t' -v a="$W/$X.$P.aet" -v x="$X.$P" '$1=="ROW" && $2==a{t=$10} $1=="APIROW" && $2==a{api=$4; ok=$5; r=$6"/"$7; r16=$8; c=$9; si=$10; h=$11}
+    END{ if(api!="") printf "api %s: library %.3f ms vs tool %.3f ms on-device (%+.1f %%), %s, ranges %s == original, 16 KiB window %.3f ms, flips caught/silent/harmless %s/%s/%s\n", x, api, t, (t>0?100*(api/t-1):0), ok, r, r16, c, si, h }' $L | tee -a $L
+done; done
 # verdict: each archive run is valid on its own (the GPU output is hashed against the original);
 # the run as a whole needs both emulators, the 5 fixtures, the chr1 open row, and no failure line.
 # Estimate and reference rows (dense, dense2, chain) do not enter it: they have their own check columns / rule line.
@@ -188,7 +210,10 @@ RUN=$(grep '^exit [0-9]* ' $L | grep -vc '\.chain$'); OK=$(grep '^exit 0 ' $L | 
 E=$(grep -c $'^head_\(rans\|open\)_warp_emu\tpass' $L); F=$(grep -c '^fixture .*: exit 0, [1-9][0-9]* MATCHES OK, 0 DIFFERS$' $L)   # any number of passes, none differing
 echo "archives on the GPU: bit-perfect $N of $RUN (exit 0: $OK); emulators $E/2, fixtures $F/5" | tee -a $L
 grep '^exit [1-9]' $L | sed 's/^/  FAILED: /; s/\.chain$/.chain (reference row, not in the verdict)/' | tee -a $L
-[ "$N" = "$RUN" ] && [ "$E" = 2 ] && [ "$F" = 5 ] && grep -q "^ROW	$W/chr1.open" $L \
+AR=$(grep -c '^exitapi ' $L); AOK=$(grep -c '^exitapi 0 ' $L); PE=$(grep -c $'^head_gpu_plan_emu\tpass' $L)
+echo "C ABI: $AOK of $AR archives bit-perfect with every range; plan emulator $PE/1" | tee -a $L
+grep '^exitapi [1-9]' $L | sed 's/^/  FAILED: /' | tee -a $L
+[ "$N" = "$RUN" ] && [ "$E" = 2 ] && [ "$F" = 5 ] && [ "$AOK" = "$AR" ] && [ "$PE" = 1 ] && grep -q "^ROW	$W/chr1.open" $L \
   && ! grep -q 'archive rejected\|ROUND-TRIP FAILED' $L \
   && echo "RESULT: all passes bit-perfect on $GPU" | tee -a $L \
   || { echo "!!! NOT PASSED on $GPU - valid figures only in bit-perfect rows" | tee -a $L; exit 1; }

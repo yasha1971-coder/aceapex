@@ -106,6 +106,12 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+01.10: ворота 5 — библиотека GPU с C-ABI (ветка gpu-capi, docs/GPU_API.md): две фазы (plan на хосте, async без
+выделений/копий/синхронизаций), range по координате, d_status (fail-closed для структурных ошибок; сырые байты без
+проверки — оговорено). План проверен на CPU (head_gpu_plan_emu: 33 архива, 1320 диапазонов, 1980 мутаций, ASan/UBSan
+чисто), судья 54/0. Blackwell 74fc806 (results/colab-2026-09-30-rtx-pro-6000-blackwell-74fc806-gpu-capi.log): C ABI 2/2, ranges 200/200;
+chr1 open 2.474 мс (инструмент 2.829, -12.5 %), zstd 3.358 (3.518); флипы open 20/20 пойманы, zstd 0/20 -> проверка XXH3.
+Числа open против nvCOMP zstd (Blackwell, инструмент): chr1 x1.24, T2T x1.31 — не «x3».
 30.09 (5): ворота v2.2.0 зелёные на a3b0bdb — матрица scripts/cross_matrix.sh: x86-64, x86-32, ARM32, ARM64, PPC64LE
 (qemu) по 7 проверкам pass, MinGW собирается (библиотека; CLI только POSIX); найдено и исправлено до тега: сборка
 MinGW (sysconf, posix_memalign), malloc(0). Гонка: lzbench-копия 1.0.1 не затронута, 2.1.0 затронута (черновик
