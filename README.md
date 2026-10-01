@@ -77,6 +77,8 @@ Two separate mechanisms, not one. Confining the search is what removes cross-blo
 
 ACEAPEX (CPU) and `aceapex_cuda` (GPU) are included in the [official lzbench 2.3 release](https://github.com/inikep/lzbench/releases/tag/v2.3) and carried as `aceapex 1.0.1` in [lzbench 2.4](https://github.com/inikep/lzbench/releases/tag/v2.4) (format 1 line; this repository is format 2, see CHANGELOG.md) — third-party validation by construction. GPU decoders for LZ77-family formats have been in lzbench since nvcomp's LZ4 and GDeflate; what `aceapex_cuda` adds is a GPU decode path for a format with absolute offsets and position-invariant random access.
 
+ACEAPEX is also part of [TurboBench](https://github.com/powturbo/TurboBench) since v2.2.1 ([PR #57](https://github.com/powturbo/TurboBench/pull/57)).
+
 ---
 
 ## Benchmarks
