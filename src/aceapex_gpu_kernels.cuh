@@ -6,11 +6,19 @@
 #ifndef ACEAPEX_GPU_KERNELS_CUH
 #define ACEAPEX_GPU_KERNELS_CUH
 #include "ax_open_warp.h"   // + ax_rans_warp.h, ax_lit_open.h
+#include "ax_vec.h"         // 16-byte stores (AX_VEC)
 #include <cstdint>
 
 #pragma pack(push,1)
 struct BlockOffsets { uint64_t lit_off, off_off, len_off, cmd_off, lit_sz, off_sz, len_sz, cmd_sz; };
 #pragma pack(pop)
+
+// AX_VEC 1 (default): 16-byte stores (uint4) for long non-overlapping copies in the match kernel and 16 bases per
+// thread in k_unpack; AX_VEC 0: the byte stores before (kept to measure both in one run)
+#ifndef AX_VEC
+#define AX_VEC 1
+#endif
+#define AXU_PER (AX_VEC ? 16 : 4)      /* bases per thread in k_unpack: grid y = ceil(chunk / AXU_PER / 256) */
 
 // ---------------------------------------------------------------- v7-RA match kernel
 // at most 5 bytes (a 32-bit value): a longer varint or one cut by the stream end sets bad (the block fails)
@@ -57,9 +65,9 @@ __global__ void k_decode_g(const uint8_t* __restrict__ LIT, const uint8_t* __res
                 break; } }
             type=__shfl_sync(gmask,type,leader); l=__shfl_sync(gmask,l,leader); aux=__shfl_sync(gmask,aux,leader);
             if(type==2) break;
-            if(type==0){ for(uint32_t i=lg;i<l;i+=G) dst[out_pos+i]=lit[aux+i]; }
+            if(type==0){ if(AX_VEC && l>=64) axv_copy16(dst+out_pos,lit+aux,l,lg,G); else for(uint32_t i=lg;i<l;i+=G) dst[out_pos+i]=lit[aux+i]; }
             else { uint32_t src=out_pos-aux;
-                if(aux>=l){ for(uint32_t i=lg;i<l;i+=G) dst[out_pos+i]=dst[src+i]; }
+                if(aux>=l){ if(AX_VEC && l>=64) axv_copy16(dst+out_pos,dst+src,l,lg,G); else for(uint32_t i=lg;i<l;i+=G) dst[out_pos+i]=dst[src+i]; }
                 else      { for(uint32_t i=lg;i<l;i+=G) dst[out_pos+i]=dst[src+(i%aux)]; } }
             __syncwarp(gmask); out_pos+=l;
         }
@@ -71,10 +79,12 @@ typedef void (*kern_t)(const uint8_t*,const uint8_t*,const uint8_t*,const uint8_
 // ---------------------------------------------------------------- DNA unpack kernels
 struct DnaDesc { const uint8_t *seq,*cse,*gap,*val; uint8_t* dst; uint64_t raw; uint32_t nexc, res; };
 __global__ void k_unpack(const DnaDesc* d){
-    const DnaDesc c=d[blockIdx.x]; const uint64_t i0=((uint64_t)blockIdx.y*blockDim.x+threadIdx.x)*4; if(i0>=c.raw) return;
-    uint8_t v=c.seq[i0>>2], m=c.cse[i0>>3]; uint64_t n=c.raw-i0; if(n>4) n=4;
-    #pragma unroll
-    for(uint32_t k=0;k<4;k++){ if(k<n){ uint8_t b="ACGT"[(v>>(6-2*k))&3]; if(m&(0x80>>((i0+k)&7))) b|=0x20; c.dst[i0+k]=b; } }
+    const DnaDesc c=d[blockIdx.x]; const uint64_t i0=((uint64_t)blockIdx.y*blockDim.x+threadIdx.x)*AXU_PER; if(i0>=c.raw) return;
+#if AX_VEC
+    if(i0+16<=c.raw && !(((uintptr_t)(c.dst+i0))&15)){        // 16 bases: 4 packed bytes, 2 case bytes, one uint4 store
+        uint32_t w[4]; axv_unpack16(c.seq,c.cse,i0,w); axv_store16(c.dst+i0,w[0],w[1],w[2],w[3]); return; }
+#endif
+    for(uint64_t i=i0;i<i0+AXU_PER && i<c.raw;i++){ const uint8_t v=c.seq[i>>2]; uint8_t b="ACGT"[(v>>(6-2*(i&3)))&3]; if(c.cse[i>>3]&(0x80>>(i&7))) b|=0x20; c.dst[i]=b; }
 }
 __global__ void k_exc(const DnaDesc* d){
     const DnaDesc c=d[blockIdx.x]; if(!c.nexc) return; __shared__ uint32_t s[256]; uint64_t carry=0;

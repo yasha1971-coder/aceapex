@@ -71,6 +71,10 @@ if to $TO "nvcc aceapex_gpu" nvcc -O3 -arch=sm_$SM $NVL -o $W/aceapex_gpu aceape
 elif to $TO "nvcc aceapex_gpu PTX" nvcc -O3 -gencode arch=compute_90,code=compute_90 $NVL -o $W/aceapex_gpu aceapex_gpu.cu 2>>$W/nvcc.err; then
   echo "built aceapex_gpu compute_90 PTX, JIT to sm_$SM (this nvcc has no sm_$SM)" | tee -a $L
 else echo "BUILD FAILED aceapex_gpu" | tee -a $L; cat $W/nvcc.err; exit 1; fi
+# the same tool with AX_VEC=0 (byte stores in the match kernel and k_unpack, as before 01.10): chr1 before/after
+to $TO "nvcc aceapex_gpu AX_VEC=0" nvcc -O3 -arch=sm_$SM -DAX_VEC=0 $NVL -o $W/aceapex_gpu_v0 aceapex_gpu.cu 2>>$W/nvcc.err \
+  || to $TO "nvcc aceapex_gpu AX_VEC=0 PTX" nvcc -O3 -gencode arch=compute_90,code=compute_90 -DAX_VEC=0 $NVL -o $W/aceapex_gpu_v0 aceapex_gpu.cu 2>>$W/nvcc.err \
+  || echo "build aceapex_gpu AX_VEC=0 failed (no before/after line)" | tee -a $L
 for e in rans_warp_emu open_warp_emu; do
   g++ -std=c++17 -O2 -Isrc -o $W/$e scripts/$e.cpp && to $TO "$e" $W/$e verify/fixtures/conf/*.aet | tee -a $L; done
 # the GPU library (C ABI, src/aceapex_gpu.h): its plan judged on the CPU, the test program and the 30-line example
@@ -184,6 +188,13 @@ PY
     fi
     echo "== aceapex_gpu $X.$P" | tee -a $L
     to $TO "aceapex_gpu $X.$P" $W/aceapex_gpu $W/$X.$P.aet $C auto $R 4 --pipeline=${PIPE:-auto} $DL 2>&1 | tee -a $L; echo "exit ${PIPESTATUS[0]} $X.$P" | tee -a $L
+    # before/after of the 16-byte stores (AX_VEC): the AX_VEC=0 tool on the same archive right after; its ROW stays out of the log
+    if [ $X = chr1 ] && [ -x $W/aceapex_gpu_v0 ] && { [ $P = zstd ] || [ $P = open ]; }; then
+      to $TO "aceapex_gpu AX_VEC=0 $X.$P" $W/aceapex_gpu_v0 $W/$X.$P.aet $C auto $R 4 --pipeline=${PIPE:-auto} > $W/v0.txt 2>&1
+      awk -F'\t' -v a="$W/$X.$P.aet" -v x="$X.$P" 'FNR==NR{ if($1=="ROW" && $2==a){u0=$8; m0=$9; d0=$10; k0=$13} next } $1=="ROW" && $2==a{u1=$8; m1=$9; d1=$10; k1=$13}
+        END{ if(d0!="" && d1!="") printf "vec %s (16-byte stores, AX_VEC 0 -> 1): match %.3f -> %.3f ms (%+.1f %%), unpack %.3f -> %.3f ms, on-device %.3f -> %.3f ms (%+.1f %%), %s / %s\n", x, m0, m1, (m0>0?100*(m1/m0-1):0), u0, u1, d0, d1, (d0>0?100*(d1/d0-1):0), k0, k1;
+             else printf "vec %s: no ROW from one of the tools\n", x }' $W/v0.txt $L | tee -a $L
+    fi
   done
 done
 
