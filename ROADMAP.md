@@ -93,6 +93,9 @@ StreamLZ (конкурент) декодирует своей GPU-энтропи
   закрепление на релизе требует ветки релизов в aceapex (решение пользователя).
 
 ## 2.3 (план)
+- GPU C-ABI заморожен (сделано 01.10): flags plan_create uint64_t + маски ACEAPEX_GPU_PLAN_FLAGS / _DECODE_FLAGS,
+  ACEAPEX_GPU_API_VERSION 20300 + aceapex_gpu_version(), libaceapex_gpu.so.1 (SONAME, make gpu-lib), GPU_API
+  «Stability»: с 2.3 только добавления. Претензия head_gpu_abi.
 - Сплющивание смещений (origin[]) в chain-энкодере стоит silesia +0.68 % (-1) / +0.62 % (-2) и не ускоряет CPU-декод
   (results/silesia-ratio-flattening-2026-09-30.log); это вся разница ratio с lzbench 1.0.1. Предложение: выключить
   для не-ДНК после замера GPU match на silesia с/без (Colab), меняет байты по умолчанию для текста — по слову.
@@ -115,6 +118,9 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+01.10 (6): GPU C-ABI заморожен перед 2.3 (flags uint64_t, неизвестные биты -> E_ARGS, версия 20300 + функция,
+libaceapex_gpu.so.1 с SONAME, раздел Stability, head_gpu_abi без CUDA). Автономный repro nvCOMP —
+verify/repro/nvcomp_zstd_hang (4 файла). Судья 58/0. Ждёт Colab (shared library + пример через .so).
 01.10 (5): nvCOMP 5.3.0.16 виснет сам на испорченном кадре zstd (repro verify/repro, кадр 150180 T2T, TIMEOUT 60 с;
 libzstd: Data corruption). Флаг plan_create ACEAPEX_GPU_VALIDATE_ZSTD (plan_create получил аргумент flags): каждый
 кадр через libzstd на хосте во всех потоках, испорченный -> план NULL, nvCOMP не вызывается; T2T 191 495 кадров
