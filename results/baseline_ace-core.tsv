@@ -1,0 +1,17 @@
+# Performance baseline of the CPU decoder on ace-core (scripts/perf_gate.sh): best confirmed medians (5 runs after a warm-up,
+# every run compared with the original); threads 0 = all hardware threads, 1 = one thread pinned to CPU 2. Rows are
+# replaced only by a faster measurement (perf_gate.sh --update), in a commit of their own with the gate log.
+# cpu: AMD EPYC 4344P 8-Core Processor
+archive	profile	threads	base_s	archive_bytes	original	GB/s	commit	date
+chr1	default	1	0.1803	59429097	~/golden/genome/chr1.fa	1.41	0752427	2026-10-01
+chr1	default	0	0.0646	59429097	~/golden/genome/chr1.fa	3.93	0752427	2026-10-01
+chr1	open	1	0.1333	63083287	~/golden/genome/chr1.fa	1.90	0752427	2026-10-01
+chr1	open	0	0.0569	63083287	~/golden/genome/chr1.fa	4.46	0752427	2026-10-01
+t2t	default	1	2.4866	806458861	~/golden/genome/t2t.fa	1.27	0752427	2026-10-01
+t2t	default	0	0.6548	806458861	~/golden/genome/t2t.fa	4.82	0752427	2026-10-01
+t2t	open	1	1.7909	853264869	~/golden/genome/t2t.fa	1.76	0752427	2026-10-01
+t2t	open	0	0.6069	853264869	~/golden/genome/t2t.fa	5.20	0752427	2026-10-01
+silesia	default	1	0.1411	69042786	~/CORPORA/silesia.tar	1.50	0752427	2026-10-01
+silesia	default	0	0.0421	69042786	~/CORPORA/silesia.tar	5.03	0752427	2026-10-01
+silesia	open	1	0.1270	88815858	~/CORPORA/silesia.tar	1.67	0752427	2026-10-01
+silesia	open	0	0.0409	88815858	~/CORPORA/silesia.tar	5.18	0752427	2026-10-01
