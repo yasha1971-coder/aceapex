@@ -4,7 +4,7 @@
 # slices of the decoded bytes. No corpus needed. Output: claim_id <TAB> verdict <TAB> measured
 set -uo pipefail; shopt -s nullglob
 F=verify/fixtures; EXP=$(cat $F/chr1_4MiB.sha256); T=$(mktemp -d)
-if ! ${CC:-gcc} -std=c99 -O2 -o $T/axdec c/axdec.c c/aceapex_decode.c -lzstd 2>$T/build.err; then
+if ! ${CC:-gcc} -std=c99 -O2 -DACEAPEX_ENV_TUNING -o $T/axdec c/axdec.c c/aceapex_decode.c -lzstd 2>$T/build.err; then
   printf 'head_cdecoder_fixtures\tfail\tbuild failed: %s\n' "$(head -c 200 $T/build.err | tr '\n\t' '  ')"
   rm -rf $T; exit 0
 fi
@@ -72,7 +72,7 @@ if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/api_cc scripts/api_concurrent.cpp src/
   $T/api_cc 2>/dev/null || true
 else printf 'head_api_concurrent\tfail\tbuild failed: %s\n' "$(head -c 150 $T/apic.err | tr '\n\t' '  ')"; fi
 # thread budget: with threads=1 compress, decompress and region start no thread (2.2.1)
-if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/api_th scripts/api_threads.cpp -lzstd -lpthread 2>$T/apit.err; then
+if ${CXX:-g++} -std=c++17 -O2 -DACEAPEX_ENV_TUNING -Isrc -o $T/api_th scripts/api_threads.cpp -lzstd -lpthread 2>$T/apit.err; then
   $T/api_th 2>/dev/null || true
 else printf 'head_enc_threads\tfail\tbuild failed: %s\n' "$(head -c 150 $T/apit.err | tr '\n\t' '  ')"; fi
 # the GPU library's XXH3 split (src/ax_xxh3.h: parallel block terms + scramble chain) against XXH3_64bits
@@ -80,16 +80,27 @@ if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/xxh3_split_emu scripts/xxh3_split_emu.
   $T/xxh3_split_emu 2>/dev/null || true
 else printf 'head_gpu_xxh3_emu\tfail\tbuild failed: %s\n' "$(head -c 150 $T/xse.err | tr '\n\t' '  ')"; fi
 # the GPU library's plan (src/aceapex_gpu_plan.h) executed job by job on the CPU: full, ranges, mutations
-if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/gpu_plan_emu scripts/gpu_plan_emu.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/gpe.err; then
+if ${CXX:-g++} -std=c++17 -O2 -DACEAPEX_ENV_TUNING -Isrc -o $T/gpu_plan_emu scripts/gpu_plan_emu.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/gpe.err; then
   $T/gpu_plan_emu 2>/dev/null || true
 else printf 'head_gpu_plan_emu\tfail\tbuild failed: %s\n' "$(head -c 150 $T/gpe.err | tr '\n\t' '  ')"; printf 'head_gpu_flip_emu\tfail\tbuild failed\n'; printf 'head_gpu_zstd_validate\tfail\tbuild failed\n'; fi
 # the GPU C ABI's host part (src/aceapex_gpu_abi.cpp): flags, last error, version - no CUDA needed
 if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/gpu_abi_test scripts/gpu_abi_test.cpp src/aceapex_gpu_abi.cpp 2>$T/gab.err; then
   $T/gpu_abi_test 2>/dev/null || true
 else printf 'head_gpu_abi\tfail\tbuild failed: %s\n' "$(head -c 150 $T/gab.err | tr '\n\t' '  ')"; fi
+# lzbench #336: the library built without ACEAPEX_ENV_TUNING ignores the environment - five rows of tuning variables
+# give the same bytes at level 1 / one thread (text + silesia/xml when ~/CORPORA/silesia.tar is there), and no thread
+# is started at threads=1 (strace: no clone)
+if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/env_test scripts/env_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/env.err; then
+  X=""; [ -f "$HOME/CORPORA/silesia.tar" ] && tar -xOf "$HOME/CORPORA/silesia.tar" xml > $T/xml 2>/dev/null && X=$T/xml
+  if command -v strace >/dev/null; then
+    out=$(strace -f -qq -e trace=clone,clone3 -o $T/st.txt $T/env_test $X 2>/dev/null); rc=$?; nc=$(grep -c 'clone' $T/st.txt 2>/dev/null); nc=${nc:-0}
+    [ $rc = 0 ] && [ "$nc" = 0 ] && r=pass || r=fail
+    printf 'head_env_ignored\t%s\tlibrary without ACEAPEX_ENV_TUNING: 6 rows of tuning variables -> the same bytes at level 1 / 1 thread (%s differing or failed; sizes:%s), threads started at threads=1: %s (strace)\n' "$r" "${out%% *}" "${out#* }" "$nc"
+  else printf 'head_env_ignored\tdeclared\tstrace not installed\n'; fi
+else printf 'head_env_ignored\tfail\tbuild failed: %s\n' "$(head -c 150 $T/env.err | tr '\n\t' '  ')"; fi
 # python layer over the same fixtures, without installing: ctypes loads a fresh .so
 if python3 -c "import pytest" 2>/dev/null; then
-  if ${CC:-gcc} -std=c99 -O2 -fPIC -shared -Ic -o $T/libaceapex_decode.so c/aceapex_decode.c -lzstd 2>/dev/null \
+  if ${CC:-gcc} -std=c99 -O2 -fPIC -shared -DACEAPEX_ENV_TUNING -Ic -o $T/libaceapex_decode.so c/aceapex_decode.c -lzstd 2>/dev/null \
      && ACEAPEX_DECODE_SO=$T/libaceapex_decode.so PYTHONPATH=python python3 -m pytest -q python/tests >$T/py.log 2>&1; then r=pass; else r=fail; fi
   printf 'head_python_tests\t%s\t%s\n' "$r" "$(tail -n 1 $T/py.log | tr '\t' ' ' | head -c 120)"
 else

@@ -13,7 +13,7 @@ set -euo pipefail
 LZ=${1:?lzbench dir}; V=$(sed -n 's/#define ACEAPEX_VERSION_STRING "\(.*\)"/\1/p' src/aceapex.h)
 D="$LZ/lz+entropy/aceapex"
 [ -d "$D" ] && [ -f "$LZ/mk/aceapex.mk" ] || { echo "$LZ: no lz+entropy/aceapex or mk/aceapex.mk (lzbench before 2.4.1?)"; exit 1; }
-for f in aceapex.h aceapex_api.cpp aceapex_main.cpp lit_fse.cpp ax_align.h ax_rans.h ax_lit_open.h xxhash.h; do cp src/$f "$D/$f"; done
+for f in aceapex.h aceapex_api.cpp aceapex_main.cpp lit_fse.cpp ax_align.h ax_env.h ax_rans.h ax_lit_open.h xxhash.h; do cp src/$f "$D/$f"; done
 python3 - "$LZ" "$V" <<'PY'
 import sys, re
 lz, v = sys.argv[1], sys.argv[2]

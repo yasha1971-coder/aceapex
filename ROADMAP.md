@@ -118,6 +118,13 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+01.10 (23): lzbench #336 (просьба Inikep: 16 переменных окружения меняли результаты, LIT_LANES_DEC запускал потоки без -I).
+Ветка release-2.2.2 (от тега v2.2.1): все getenv через ax_getenv() (src/ax_env.h), NULL без ACEAPEX_ENV_TUNING; CLI
+(ACEAPEX_CLI), axdec, Python-читатель и наши инструменты собираются с ним. silesia/xml уровень 1, 1 поток, zstd 1.5.7
+(lzbench): 5 настроек давали 724378/853990/812809/734621/829935 B, теперь 724378 во всех; потоков при threads=1: 7 -> 0
+(strace). Байты по умолчанию: 18/18 архивов == v2.2.1. Претензия head_env_ignored; судья ветки 54/0. Версия 2.2.2, CHANGELOG.
+main: то же для всех AX_* (AX_LIT_TILE, AX_NT*, AX_HUGE, AX_PREFAULT, AX_RANS_SIMD, AX_PHASE_TIMES, AX_TILE_CHUNKS,
+AX_GPU_TILE), 6-я строка претензии. Тег v2.2.2, Zenodo, пуш в PR — по слову пользователя.
 01.10 (22): черновик выпуска 2.3: CHANGELOG (раздел v2.3.0 DRAFT), release/v2.3.0.md (CPU-числа ace-core, Blackwell, места
 под H100, заметка про plan_create с flags и VALIDATE_ZSTD). Версия в aceapex.h поднимается при теге. Не публиковать.
 01.10 (21): scripts/gpu_run.sh — один скрипт для любой GPU-машины (RunPod: хранилище /workspace/aceapex_store; Colab: Drive;

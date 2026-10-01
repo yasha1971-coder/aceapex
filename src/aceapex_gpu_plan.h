@@ -24,6 +24,7 @@
 #include <vector>
 #include <algorithm>
 #include "ax_open_warp.h"   /* axo_parse (mode 2 framing), AXO_* */
+#include "ax_env.h"         /* ax_getenv: FSE_CHUNK of legacy archives only with ACEAPEX_ENV_TUNING */
 #ifdef AGP_WITH_ZSTD           /* validate_zstd: libzstd on the host */
 #include <zstd.h>
 #include <atomic>
@@ -128,7 +129,7 @@ static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt
     for (int st = 1; st < 4; st++) {
         const uint8_t* z = a + zoff[st]; if (zsz[st] < 8) continue;
         uint64_t w = rd64(z), osz = w & ((1ull << 48) - 1), ch = ((w >> 48) & 0x7fff) * 4096;
-        if (!ch) { const char* e = getenv("FSE_CHUNK"); ch = e ? strtoull(e, 0, 10) : 524288; }
+        if (!ch) { const char* e = ax_getenv("FSE_CHUNK"); ch = e ? strtoull(e, 0, 10) : 524288; }
         if (!ch) return E_STREAM;
         P.ssz[st] = osz; P.chunk[st] = ch; uint64_t nc = (osz + ch - 1) / ch, pos = 8 + 8 * nc;
         if (nc > (zsz[st] - 8) / 8 || pos > zsz[st]) return E_STREAM;

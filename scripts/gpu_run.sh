@@ -55,7 +55,7 @@ ARCH="-arch=sm_$SM"; nvcc -arch=sm_$SM -E -x cu /dev/null >/dev/null 2>&1 || ARC
 # GPU builds in parallel (each nvcc is one host thread); bld <name> <command...>: exit status in $W/bld.<name>
 bld(){ local n=$1; shift; ( to $TO "build $n" "$@" > $W/bld.$n.err 2>&1; echo $? > $W/bld.$n ) & }
 bld aceapex_gpu nvcc -O3 $ARCH $NVL -o $W/aceapex_gpu aceapex_gpu.cu
-bld gpu_api_test nvcc -std=c++17 -O3 $ARCH -Isrc -DACEAPEX_GPU_NVCOMP $NVL -o $W/gpu_api_test scripts/gpu_api_test.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp -lzstd
+bld gpu_api_test nvcc -std=c++17 -O3 $ARCH -DACEAPEX_ENV_TUNING -Isrc -DACEAPEX_GPU_NVCOMP $NVL -o $W/gpu_api_test scripts/gpu_api_test.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp -lzstd
 bld gpu_decode nvcc -std=c++17 -O3 $ARCH -Isrc -o $W/gpu_decode examples/gpu_decode.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp
 bld gpu_stream nvcc -std=c++17 -O3 $ARCH -Isrc -DACEAPEX_GPU_NVCOMP $NVL -o $W/gpu_stream scripts/gpu_stream.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp -lzstd
 bld gpu_lib sh -c "make -s gpu-lib NVCOMP=$NV GPU_ARCH='$ARCH' && nvcc -std=c++17 -O3 $ARCH -Isrc -o $W/gpu_decode_so examples/gpu_decode.cu -L. -laceapex_gpu -Xlinker -rpath=$(pwd) -Xlinker -rpath-link=$NV/lib64"
@@ -67,7 +67,7 @@ fi
 # CPU judges of the device steps and of the library's plan, meanwhile
 for e in rans_warp_emu open_warp_emu; do
   g++ -std=c++17 -O2 -Isrc -o $W/$e scripts/$e.cpp && to $TO "$e" $W/$e verify/fixtures/conf/*.aet | tee -a $L; done
-g++ -std=c++17 -O2 -Isrc -o $W/gpu_plan_emu scripts/gpu_plan_emu.cpp src/aceapex_api.cpp -lzstd -lpthread && to $TO "gpu_plan_emu" $W/gpu_plan_emu | tee -a $L
+g++ -std=c++17 -O2 -DACEAPEX_ENV_TUNING -Isrc -o $W/gpu_plan_emu scripts/gpu_plan_emu.cpp src/aceapex_api.cpp -lzstd -lpthread && to $TO "gpu_plan_emu" $W/gpu_plan_emu | tee -a $L
 wait
 okb(){ [ "$(cat $W/bld.$1 2>/dev/null)" = 0 ]; }
 okb aceapex_gpu && echo "built aceapex_gpu $ARCH" | tee -a $L || { echo "BUILD FAILED aceapex_gpu" | tee -a $L; tail -20 $W/bld.aceapex_gpu.err; exit 1; }
