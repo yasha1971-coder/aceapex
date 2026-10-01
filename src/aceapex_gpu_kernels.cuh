@@ -28,11 +28,7 @@ __device__ static inline uint32_t rd_varint(const uint8_t* buf, uint32_t& p, uin
     for(uint32_t k=0;k<5;k++){ if(p>=limit) break; const uint8_t b=buf[p++]; val|=(uint32_t)(b&0x7F)<<(7*k); if(!(b&0x80)) return val; }
     bad=true; return 0;
 }
-// M 1 (AX_MATCH_MERGE, measurement): a literal run is extended by the literal tokens that follow it (and the 0xFF
-// resets between them) as long as each passes the same checks, so a stretch of literal tokens is one copy by the whole
-// group instead of one round of parse, shuffles and a <= 128-byte copy per token (T2T: 98 % of the output is literal,
-// ~120 bytes per token). The next token that does not fit is left for the next round, which rejects it as before.
-template<int G, int M=0>
+template<int G>
 __global__ void k_decode_g(const uint8_t* __restrict__ LIT, const uint8_t* __restrict__ OFF,
                            const uint8_t* __restrict__ LEN, const uint8_t* __restrict__ CMD,
                            const BlockOffsets* __restrict__ boffs, uint64_t orig_size, uint32_t block_size,
@@ -58,12 +54,7 @@ __global__ void k_decode_g(const uint8_t* __restrict__ LIT, const uint8_t* __res
             if(++steps>cmd_sz+1){ if(err && lg==0) atomicAdd(err+3,1u); break; }
             if(lg==0){ bool vb=false; while(cp<cmd_sz){ uint8_t c=cmd[cp++];
                 if(c==0xFF){ rep[0]=1;rep[1]=2;rep[2]=4;rep[3]=8; continue; }
-                if(c<0x80){ l=(uint32_t)c+1; if(l>lit_sz-lp||l>rem){type=2;break;} type=0; aux=lp; lp+=l;
-                    if(M) while(cp<cmd_sz){ const uint8_t c2=cmd[cp];
-                        if(c2==0xFF){ rep[0]=1;rep[1]=2;rep[2]=4;rep[3]=8; cp++; continue; }
-                        if(c2>=0x80) break;
-                        const uint32_t l2=(uint32_t)c2+1; if(l2>lit_sz-lp||l2>rem-l) break;
-                        cp++; lp+=l2; l+=l2; } }
+                if(c<0x80){ l=(uint32_t)c+1; if(l>lit_sz-lp||l>rem){type=2;break;} type=0; aux=lp; lp+=l; }
                 else if((c&0xC0)==0x80){ uint32_t ri=(c>>4)&3, lv=c&0x0F; if(lv==0x0F) lv+=rd_varint(len,np,len_sz,vb);
                     uint32_t dist=rep[ri]; if(ri>0){ for(int i=(int)ri;i>0;i--) rep[i]=rep[i-1]; rep[0]=dist; }
                     if(vb||(lv<0x0F&&(c&0x0F)==0x0F)){type=2;break;}              // bad varint / 15 + varint wrapped around

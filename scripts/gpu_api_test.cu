@@ -67,7 +67,10 @@ int main(int argc, char** argv){
     double val_ms=-1;                                                      // the same with ACEAPEX_GPU_VALIDATE_ZSTD
     { phase("plan_create with ACEAPEX_GPU_VALIDATE_ZSTD"); auto tv=std::chrono::steady_clock::now(); aceapex_gpu_plan* q=aceapex_gpu_plan_create(a.data(),a.size(),ACEAPEX_GPU_VALIDATE_ZSTD);
       val_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-tv).count();
-      printf("[api] plan with ACEAPEX_GPU_VALIDATE_ZSTD %.1f ms (+%.1f ms: every zstd frame decoded by libzstd on %u host threads): %s\n",val_ms,val_ms-plan_ms,
+      // the first plan_create above also paid the CUDA context start (~160 ms): compare with a second plain one
+      auto tw=std::chrono::steady_clock::now(); aceapex_gpu_plan* q0=aceapex_gpu_plan_create(a.data(),a.size(),0);
+      const double warm_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-tw).count(); if(q0) aceapex_gpu_plan_destroy(q0);
+      printf("[api] plan with ACEAPEX_GPU_VALIDATE_ZSTD %.1f ms (%+.1f ms against a plain plan of %.1f ms after the CUDA start: every zstd frame decoded by libzstd on %u host threads): %s\n",val_ms,val_ms-warm_ms,warm_ms,
              std::thread::hardware_concurrency(),q?"accepted":"REFUSED");
       if(q) aceapex_gpu_plan_destroy(q); }
     if(!plan){ printf("plan_create failed: %d\nAPIROW\t%s\t%zu\t-1\tNOPLAN\t0\t0\t-1\t0\t0\t0\t%.1f\n",aceapex_gpu_last_error(),argv[1],a.size(),plan_ms); return 3; }

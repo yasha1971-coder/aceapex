@@ -324,8 +324,6 @@ int main(int argc, char** argv){
     // (k_open_bases_s; default 1 since a7d161d: Blackwell T2T unpack 8.948 -> 7.458 ms, chr1 0.605 -> 0.583)
     int VS=getenv("AX_OPEN_SEQ")?atoi(getenv("AX_OPEN_SEQ")):1, VE=getenv("AX_OPEN_EXC")?atoi(getenv("AX_OPEN_EXC")):1, VH=getenv("AX_OPEN_SHB")?atoi(getenv("AX_OPEN_SHB")):1;
     const int VS0=VS, VE0=VE, VH0=VH;
-    // AX_MATCH_MERGE=1: the match kernel extends a literal run by the literal tokens that follow (k_decode_g<G,1>)
-    int VM=getenv("AX_MATCH_MERGE")?atoi(getenv("AX_MATCH_MERGE")):0; const int VM0=VM;
     auto pieces=[&](cudaStream_t s, int c0, int c1){ const size_t i0=cls_off[c0], n=cls_off[c1]-i0;
         if(n){ if(VS) k_rans<1><<<(unsigned)((n+AXW_WARPS-1)/AXW_WARPS),32*AXW_WARPS,0,s>>>(dC,dRD+i0,(uint32_t)n,dErr);
                else   k_rans<0><<<(unsigned)((n+AXW_WARPS-1)/AXW_WARPS),32*AXW_WARPS,0,s>>>(dC,dRD+i0,(uint32_t)n,dErr); } };
@@ -354,7 +352,7 @@ int main(int argc, char** argv){
     const int TPB=128; int dev=0,nsm=0; CK(cudaGetDevice(&dev)); CK(cudaDeviceGetAttribute(&nsm,cudaDevAttrMultiProcessorCount,dev));
     cudaDeviceProp prop; CK(cudaGetDeviceProperties(&prop,dev));
     auto match=[&](int G, cudaStream_t s, uint32_t b0, uint32_t b1){
-        kern_t k = VM ? (G==8?k_decode_g<8,1>:G==16?k_decode_g<16,1>:k_decode_g<32,1>) : (G==8?k_decode_g<8>:G==16?k_decode_g<16>:k_decode_g<32>);
+        kern_t k = G==8?k_decode_g<8>:G==16?k_decode_g<16>:k_decode_g<32>;
         int maxblk=0; CK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&maxblk,k,TPB,0));
         uint64_t lanes=(uint64_t)(b1-b0)*G; uint32_t want=(uint32_t)((lanes+TPB-1)/TPB), grid=(uint32_t)nsm*maxblk; if(grid>want) grid=want; if(grid<1) grid=1;
         CK(cudaMemcpyAsync(dCTR,&b0,4,cudaMemcpyHostToDevice,s));
@@ -442,15 +440,6 @@ int main(int argc, char** argv){
         printf("OPENVAR\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%d\n",argv[1],vv[0].seq,vv[1].seq,vv[1].un,vv[2].un,vv[3].un,(int)(vv[0].ok&&vv[1].ok&&vv[2].ok&&vv[3].ok));
     }
 
-    // ---- match variants (AX_MATCH_MERGE 0 / 1) on the streams decoded above: output cleared, match, hash, then timed
-    { float tm[2]; bool okm[2];
-      for(int m=0;m<2;m++){ VM=m; CK(cudaMemset(dOUT,0,orig)); match(G,s0,0,nb); CK(cudaStreamSynchronize(s0)); CK(cudaGetLastError());
-          okm[m]=fnv_check(m?"AX_MATCH_MERGE=1":"AX_MATCH_MERGE=0"); ok=okm[m] && ok;
-          std::vector<float> t; for(int r=0;r<reps;r++) t.push_back(elapsed(s0,[&]{ match(G,s0,0,nb); })); tm[m]=median_ms(t); }
-      VM=VM0;
-      printf("[match variants] match %.3f -> %.3f ms (AX_MATCH_MERGE 0 -> 1, literal tokens merged into one copy, %s)\n",tm[0],tm[1],okm[1]?"bit-perfect":"DIFFERS");
-      printf("MATCHVAR\t%s\t%.3f\t%.3f\t%d\n",argv[1],tm[0],tm[1],(int)(okm[0]&&okm[1])); }
-
     // ---- pipeline: NB batches of frames in order; H2D of batch k+1 on s1 overlaps zstd of batch k on s0
     // (the pieces follow the frames in dC and arrive with the last batch)
     std::vector<size_t> bcut(NB+1); for(int k=0;k<=NB;k++) bcut[k]=(size_t)((double)N*k/NB);
@@ -532,7 +521,7 @@ int main(int argc, char** argv){
             if(n){ NV(nvcompBatchedZstdDecompressGetTempSizeAsync(n,maxo,opts,&t,o)); qtemp=std::max(qtemp,t); } }
         void* qdtemp; CK(cudaMalloc(&qdtemp,qtemp+256));
         uint32_t* dCTR2; CK(cudaMalloc(&dCTR2,4*(K+1)));
-        kern_t kG = VM ? (G==8?k_decode_g<8,1>:G==16?k_decode_g<16,1>:k_decode_g<32,1>) : (G==8?k_decode_g<8>:G==16?k_decode_g<16>:k_decode_g<32>);
+        kern_t kG = G==8?k_decode_g<8>:G==16?k_decode_g<16>:k_decode_g<32>;
         int maxblk=0; CK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&maxblk,kG,TPB,0));
         std::vector<cudaEvent_t> cev(K); for(auto& e:cev) CK(cudaEventCreateWithFlags(&e,cudaEventDisableTiming));
         cudaEvent_t st0; CK(cudaEventCreateWithFlags(&st0,cudaEventDisableTiming));
