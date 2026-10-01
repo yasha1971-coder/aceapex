@@ -40,10 +40,12 @@ __global__ void __launch_bounds__(32) k_r1(const uint8_t* __restrict__ C, const 
     const R1Desc c=d[blockIdx.x]; const uint8_t* p=C+c.src; uint8_t* o=out+c.dst; const uint32_t n=c.n;
     if(threadIdx.x==0){
         raw_s = n==0 || p[0]==1;
+        if(!raw_s && (p[1]==0 || p[1]>64)){ atomicAdd(err,1u); raw_s=2; }
         if(!raw_s){ const int K=p[1]; K_s=K; const uint8_t* q=p+2;
             for(int i=0;i<K;i++){ sym[i]=q[i]; rmap[q[i]]=(uint8_t)i; } q+=K;
             uint64_t acc=0; int nb=0;
-            auto get=[&](int bits)->uint32_t{ while(nb<bits){ acc|=(uint64_t)(*q++)<<nb; nb+=8; } uint32_t v=(uint32_t)(acc&((1u<<bits)-1)); acc>>=bits; nb-=bits; return v; };
+            const uint8_t* qe=p+c.cs; bool qb=false;      // get(): never past the chunk (a read there sets err)
+            auto get=[&](int bits)->uint32_t{ while(nb<bits){ if(q<qe) acc|=(uint64_t)(*q)<<nb; else qb=true; q++; nb+=8; } uint32_t v=(uint32_t)(acc&((1u<<bits)-1)); acc>>=bits; nb-=bits; return v; };
             uint64_t ru=0; for(int i=0;i<K;i++) ru|=(uint64_t)get(1)<<i;
             for(int i=0;i<K;i++){ cum[i][0]=0;
                 if(!((ru>>i)&1)){ for(int j=0;j<K;j++) cum[i][j+1]=0; continue; }
@@ -51,11 +53,12 @@ __global__ void __launch_bounds__(32) k_r1(const uint8_t* __restrict__ C, const 
                 uint32_t cc=0; for(int j=0;j<K;j++){ if((cu>>j)&1) cc+=get(12)+1; cum[i][j+1]=(uint16_t)cc; } }
             uint32_t sl[4]; for(int j=0;j<4;j++){ sl[j]=q[0]|q[1]<<8|q[2]<<16|(uint32_t)q[3]<<24; q+=4; }
             nck_s=*q++; ckp=q; q+=9*4*nck_s; for(int j=0;j<4;j++){ base[j]=q; q+=sl[j]; }
-            if(q>p+c.cs) atomicAdd(err,1u); }
+            if(qb || q>p+c.cs){ atomicAdd(err,1u); raw_s=2; } }
     }
     __syncthreads();
+    if(raw_s==2) return;
     if(raw_s){ if(n) for(uint32_t i=threadIdx.x;i<n;i+=blockDim.x) o[i]=p[1+i]; return; }
-    const int K=K_s, nck=nck_s; const uint32_t q4=n/4, CK=4096;
+    const int K=K_s, nck=nck_s; const uint32_t q4=n/4, CK=4096; const uint8_t* pe=p+c.cs;
     for(int lane=threadIdx.x; lane<4*(nck+1); lane+=blockDim.x){
         const int j=lane/(nck+1), sg=lane%(nck+1); const uint32_t len = j==3 ? n-3*q4 : q4;
         uint32_t t0=sg*CK, t1= sg<nck ? (sg+1)*CK : len; if(t0>=len) continue;
@@ -70,7 +73,7 @@ __global__ void __launch_bounds__(32) k_r1(const uint8_t* __restrict__ C, const 
             while(lo<hi){ const int mid=(lo+hi)>>1; if(r[mid+1]<=m) lo=mid+1; else hi=mid; }
             const uint32_t st=r[lo], f=r[lo+1]-st;
             x=f*(x>>12)+m-st; ol[t]=sym[lo]; ctx=(uint32_t)lo;
-            if(x<(1u<<15)){ x=(x<<16)|pk[0]|((uint32_t)pk[1]<<8); pk+=2; }
+            if(x<(1u<<15)){ if(pk+2>pe){ atomicAdd(err,1u); break; } x=(x<<16)|pk[0]|((uint32_t)pk[1]<<8); pk+=2; }
         }
     }
 }
@@ -97,18 +100,20 @@ template<int V> __global__ void __launch_bounds__(32) k_r2(const uint8_t* __rest
     if(ln==0){
         raw_s = n==0 || p[0]==1;
         if(!raw_s){ const int K=p[1]; K_s=K; const uint8_t* q=p+2;
-            if(K>KC){ atomicAdd(err,1u); raw_s=2; }
+            if(K>KC || K==0){ atomicAdd(err,1u); raw_s=2; }
             else {
             for(int i=0;i<K;i++) sym[i]=q[i];
             q+=K;
             uint64_t acc=0; int nb=0;
-            auto get=[&](int bits)->uint32_t{ while(nb<bits){ acc|=(uint64_t)(*q++)<<nb; nb+=8; } uint32_t v=(uint32_t)(acc&((1u<<bits)-1)); acc>>=bits; nb-=bits; return v; };
+            const uint8_t* qe=p+c.cs; bool qb=false;      // get(): never past the chunk (a read there sets err)
+            auto get=[&](int bits)->uint32_t{ while(nb<bits){ if(q<qe) acc|=(uint64_t)(*q)<<nb; else qb=true; q++; nb+=8; } uint32_t v=(uint32_t)(acc&((1u<<bits)-1)); acc>>=bits; nb-=bits; return v; };
             uint64_t ru=0; for(int i=0;i<K;i++) ru|=(uint64_t)get(1)<<i;
             for(int i=0;i<K;i++){ cum[i][0]=0;
                 if(!((ru>>i)&1)){ for(int j=0;j<K;j++) cum[i][j+1]=0; continue; }
                 uint64_t cu=0; for(int j=0;j<K;j++) cu|=(uint64_t)get(1)<<j;
                 uint32_t cc=0; for(int j=0;j<K;j++){ if((cu>>j)&1) cc+=get(12)+1; cum[i][j+1]=(uint16_t)cc; } }
-            if(*q++!=32) { atomicAdd(err,1u); raw_s=2; }
+            for(int i=0;i<K;i++) if(((ru>>i)&1) && cum[i][K]!=4096) qb=true;   // a used row must sum to 4096 (the slot searches rely on it)
+            if(qb || q>=qe || *q++!=32) { atomicAdd(err,1u); raw_s=2; }
             lens=q; }
         }
     }
@@ -118,11 +123,11 @@ template<int V> __global__ void __launch_bounds__(32) k_r2(const uint8_t* __rest
     const int K=K_s;
     if(V<=1){                                         // slot table: lane ln fills slots [128 ln, 128 ln + 128) of every used row
         for(int i=0;i<K;i++){ if(cum[i][K]==0) continue;
-            uint32_t m0=ln*128; int j=0; while(cum[i][j+1]<=m0) j++;
+            uint32_t m0=ln*128; int j=0; while(j<K-1 && cum[i][j+1]<=m0) j++;
             if(V==1){ uint32_t* w=(uint32_t*)(slot+i*2048+ln*64);
-                for(int k=0;k<16;k++){ uint32_t v=0; for(int b=0;b<8;b++){ uint32_t m=m0+k*8+b; while(cum[i][j+1]<=m) j++; v|=(uint32_t)j<<(4*b); } w[k]=v; } }
+                for(int k=0;k<16;k++){ uint32_t v=0; for(int b=0;b<8;b++){ uint32_t m=m0+k*8+b; while(j<K-1 && cum[i][j+1]<=m) j++; v|=(uint32_t)j<<(4*b); } w[k]=v; } }
             else { uint32_t* w=(uint32_t*)(slot+i*4096+ln*128);
-                for(int k=0;k<32;k++){ uint32_t v=0; for(int b=0;b<4;b++){ uint32_t m=m0+k*4+b; while(cum[i][j+1]<=m) j++; v|=(uint32_t)j<<(8*b); } w[k]=v; } }
+                for(int k=0;k<32;k++){ uint32_t v=0; for(int b=0;b<4;b++){ uint32_t m=m0+k*4+b; while(j<K-1 && cum[i][j+1]<=m) j++; v|=(uint32_t)j<<(8*b); } w[k]=v; } }
         }
     }
     if(V==2){                                         // lane ln < 16*8: row ln>>3, word ln&7 (and + 32 ...)
@@ -134,9 +139,11 @@ template<int V> __global__ void __launch_bounds__(32) k_r2(const uint8_t* __rest
     const uint32_t L=lens[2*ln]|(uint32_t)lens[2*ln+1]<<8; uint32_t incl=L;
     for(int k=1;k<32;k<<=1){ uint32_t y=__shfl_up_sync(0xffffffffu,incl,k); if(ln>=k) incl+=y; }
     const uint8_t* b=lens+64+(incl-L);
+    if(lens+64+__shfl_sync(0xffffffffu,incl,31)>p+c.cs){ if(ln==0) atomicAdd(err,1u); return; }   // substreams inside the chunk (uniform)
     __syncthreads();
     const uint32_t q=(n/32)&~3u, lo=ln*q, len= ln==31 ? n-31*q : q;
-    uint32_t x=b[0]|b[1]<<8|b[2]<<16|(uint32_t)b[3]<<24; const uint8_t* pk=b+4; uint32_t ctx=0, w=0;
+    if(len && L<4){ atomicAdd(err,1u); return; }        // no initial state (after the last block-wide barrier)
+    uint32_t x= L>=4 ? b[0]|b[1]<<8|b[2]<<16|(uint32_t)b[3]<<24 : 0; const uint8_t* pk=b+4; uint32_t ctx=0, w=0;
     uint32_t* ow=(uint32_t*)(o+lo);
     for(uint32_t t=0;t<len;t++){
         const uint32_t m=x&4095u;
@@ -152,7 +159,7 @@ template<int V> __global__ void __launch_bounds__(32) k_r2(const uint8_t* __rest
         x=f*(x>>12)+m-st; ctx=j;
         w|=(uint32_t)sym[j]<<(8*(t&3));
         if((t&3)==3){ ow[t>>2]=w; w=0; }
-        if(x<(1u<<15)){ x=(x<<16)|pk[0]|((uint32_t)pk[1]<<8); pk+=2; }
+        if(x<(1u<<15)){ if(pk+2>b+L){ atomicAdd(err,1u); break; } x=(x<<16)|pk[0]|((uint32_t)pk[1]<<8); pk+=2; }
     }
     for(uint32_t t=len&~3u;t<len;t++) o[lo+t]=(uint8_t)(w>>(8*(t&3)));
     if(pk!=b+L) atomicAdd(err,1u);
@@ -248,7 +255,7 @@ int main(int argc, char** argv){
     // pieces (rANS token chunks, open-profile pieces) grouped by class; their bytes follow the frames in dC
     std::stable_sort(rans.begin(),rans.end(),[](const RansJob& x,const RansJob& y){ return x.cls<y.cls; });
     const size_t zbytes=cbytes, NR=rans.size(); std::vector<RansDesc> hr(NR); size_t cls_off[P_NCLS+1]={0};
-    for(size_t k=0;k<NR;k++){ hr[k]={cbytes,nullptr,(uint32_t)rans[k].csz,(uint32_t)rans[k].n,rans[k].mode}; cbytes+=rans[k].csz; cls_off[rans[k].cls+1]++; }
+    for(size_t k=0;k<NR;k++){ hr[k]={cbytes,nullptr,(uint64_t)rans[k].n,(uint32_t)rans[k].csz,(uint32_t)rans[k].mode,(uint32_t)rans[k].cls,0u}; cbytes+=rans[k].csz; cls_off[rans[k].cls+1]++; }
     for(int q=0;q<P_NCLS;q++) cls_off[q+1]+=cls_off[q];
     const size_t NTOK=cls_off[P_TOK+1]-cls_off[P_TOK];
     printf("archive %s: orig=%llu block=%u nb=%u; %zu zstd frames (%zu token, %zu literal; %.1f MB), pieces %.1f MB: %zu token rANS chunks, open pack seq/cse/gap/val %zu/%zu/%zu/%zu, open plain %zu; %zu raw chunks, %zu DNA chunks (zstd), %zu open DNA chunks; streams lit/off/len/cmd = %.1f/%.1f/%.1f/%.1f MB\n",
@@ -309,7 +316,7 @@ int main(int argc, char** argv){
     auto rans_check=[&](const char* tag){ uint32_t e[4]; CK(cudaMemcpy(e,dErr,16,cudaMemcpyDeviceToHost));
         if(e[0]){ fprintf(stderr,"[%s] rANS/pieces: %u of %zu failed the spec 3.1.1/3.4 checks (first: piece %u) - archive rejected\n",tag,e[0],NR,e[1]); exit(6); }
         if(e[2]){ fprintf(stderr,"[%s] open DNA pack: %u of %zu chunks failed the spec 3.4 checks (first: %u) - archive rejected\n",tag,e[2],NO,e[3]); exit(6); } };
-    dim3 g1((unsigned)std::max<size_t>(dna.size(),1), (unsigned)((chunk[0]/4+255)/256));
+    dim3 g1((unsigned)std::max<size_t>(dna.size(),1), (unsigned)((chunk[0]/AXU_PER+255)/256));
     dim3 go((unsigned)std::max<size_t>(NO,1), (unsigned)((chunk[0]/16+255)/256));
     auto un_seq=[&](cudaStream_t s){ if(NO) k_open_bases<<<go,256,0,s>>>(dOD); };                     // bases + case
     auto un_cse=[&](cudaStream_t s){ if(NO) k_open_cse<<<(unsigned)NO,AXO_NT,0,s>>>(dOD,dErr+2); };   // case runs -> run ends

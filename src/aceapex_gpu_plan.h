@@ -29,9 +29,12 @@ namespace agp {
 
 /* layouts identical to RansDesc / OpenDesc / DnaDesc in aceapex_gpu_kernels.cuh (pointer fields hold
    offsets into d_temp; UINT64_MAX = null) */
-struct Rans { uint64_t src, dst; uint32_t csz, n, mode, pad; };
-struct Open { uint64_t seq, cse, gap, val, dst, ends, nrun; uint32_t raw, ncse, ngap, nexc; };
-struct Dna  { uint64_t seq, cse, gap, val, dst; uint32_t raw, nexc; };
+struct Rans { uint64_t src, dst, n; uint32_t csz, mode, pad, res; };          /* pad: piece class */
+struct Open { uint64_t seq, cse, gap, val, dst, ends, nrun, raw; uint32_t ncse, ngap, nexc, res; };
+struct Dna  { uint64_t seq, cse, gap, val, dst, raw; uint32_t nexc, res; };
+/* sizes are 64-bit in every descriptor; the per-chunk step helpers (ax_rans_warp.h, ax_open_warp.h) count in
+   32 bits, so a chunk, piece or compressed piece above MAXC is refused here (E_STREAM) */
+static const uint64_t MAXC = 0xFFFFFF00ull;
 struct Nv   { uint64_t in_off, csz, out_off, osz; };          /* one zstd frame for nvCOMP */
 struct Raw  { uint64_t src, dst, n; };                         /* a stored token chunk: d_in -> d_temp */
 struct Seg  { uint32_t lo, hi; };
@@ -86,9 +89,10 @@ static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt
             uint64_t cs = rd64(z + 8 + 8 * i), raw = std::min<uint64_t>(ch, osz - i * ch);
             if (((cs >> 48) & 0x3fff) || ((cs >> 63) && ((cs >> 62) & 1))) return E_STREAM;
             uint64_t csz = (cs >> 63) ? raw : (cs & ((1ull << 48) - 1));
-            if (csz > zsz[st] - pos) return E_STREAM;
+            if (csz > zsz[st] - pos || raw > MAXC) return E_STREAM;
+            if (((cs >> 62) & 1) && !(cs >> 63) && csz > MAXC) return E_STREAM;
             if (cs >> 63) { P.raw.push_back({zoff[st] + pos, ((uint64_t)st << 56) | (i * ch), raw}); P.raw_key.push_back(key(st, i)); }
-            else if ((cs >> 62) & 1) { P.rans.push_back({zoff[st] + pos, ((uint64_t)st << 56) | (i * ch), (uint32_t)csz, (uint32_t)raw, 1, C_TOK}); P.rans_key.push_back(key(st, i)); }
+            else if ((cs >> 62) & 1) { P.rans.push_back({zoff[st] + pos, ((uint64_t)st << 56) | (i * ch), raw, (uint32_t)csz, 1, C_TOK, 0}); P.rans_key.push_back(key(st, i)); }
             else { P.nv.push_back({zoff[st] + pos, csz, ((uint64_t)st << 56) | (i * ch), raw}); P.nv_key.push_back(key(st, i)); }
             pos += csz;
         }
@@ -117,25 +121,26 @@ static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt
                 pos += csz;
                 if (!raw) continue;
                 if (!csz) return E_STREAM;              /* a chunk with bytes needs a body */
+                if (raw > MAXC || csz > MAXC) return E_STREAM;
                 const uint64_t dst0 = o;                /* literal-stream offset */
                 if (tagged && csz && c[0] == 2) {
                     AxoParts Q; if (csz < 2 || axo_parse(c + 1, csz - 1, (uint32_t)raw, &Q)) return E_STREAM;
                     uint64_t off[4];
                     for (int q = 0; q < 4; q++) { off[q] = oscr; oscr += al((uint64_t)Q.n[q] + 64);
-                        if (Q.n[q]) { P.rans.push_back({cpos + 1 + Q.off[q], (6ull << 56) | off[q], Q.h[q], Q.n[q], Q.mode[q], (uint32_t)(C_SEQ + q)}); P.rans_key.push_back(key(0, t)); } }
+                        if (Q.n[q]) { P.rans.push_back({cpos + 1 + Q.off[q], (6ull << 56) | off[q], Q.n[q], Q.h[q], Q.mode[q], (uint32_t)(C_SEQ + q), 0}); P.rans_key.push_back(key(0, t)); } }
                     Open d; d.seq = off[0]; d.cse = off[1]; d.gap = off[2]; d.val = off[3]; d.dst = dst0; d.ends = nends; d.nrun = P.open.size();
-                    d.raw = (uint32_t)raw; d.ncse = Q.ncse; d.ngap = Q.ngap; d.nexc = Q.nexc; nends += Q.ncse;
+                    d.raw = raw; d.res = 0; d.ncse = Q.ncse; d.ngap = Q.ngap; d.nexc = Q.nexc; nends += Q.ncse;
                     P.open.push_back(d); P.open_key.push_back(t); continue;
                 }
                 if (tagged && csz && c[0] == 3) {
                     if (csz < 2 || c[1] > 1 || (c[1] == 0 && csz - 2 != raw)) return E_STREAM;
-                    P.rans.push_back({cpos + 2, dst0, (uint32_t)(csz - 2), (uint32_t)raw, c[1], C_PLAIN}); P.rans_key.push_back(key(0, t)); continue;
+                    P.rans.push_back({cpos + 2, dst0, raw, (uint32_t)(csz - 2), c[1], C_PLAIN, 0}); P.rans_key.push_back(key(0, t)); continue;
                 }
                 if (tagged && csz && c[0] == 1) {
                     if (csz < 21) return E_STREAM;
                     uint32_t nexc = rd32(c + 1), h1 = rd32(c + 5), h2 = rd32(c + 9), h3 = rd32(c + 13), h4 = rd32(c + 17);
                     if ((uint64_t)21 + h1 + h2 + h3 + h4 > csz || nexc > raw) return E_STREAM;
-                    uint64_t f = cpos + 21; Dna d; d.dst = dst0; d.raw = (uint32_t)raw; d.nexc = nexc; d.gap = NUL; d.val = NUL;
+                    uint64_t f = cpos + 21; Dna d; d.dst = dst0; d.raw = raw; d.nexc = nexc; d.res = 0; d.gap = NUL; d.val = NUL;
                     uint64_t sz1 = (raw + 3) / 4, sz2 = (raw + 7) / 8;
                     d.seq = scr; P.nv.push_back({f, h1, (7ull << 56) | scr, sz1}); P.nv_key.push_back(key(0, t)); scr += al(sz1); f += h1;
                     d.cse = scr; P.nv.push_back({f, h2, (7ull << 56) | scr, sz2}); P.nv_key.push_back(key(0, t)); scr += al(sz2); f += h2;

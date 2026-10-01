@@ -1,5 +1,8 @@
 #include "aceapex.h"
 #include "ax_align.h"
+#if defined(__SSSE3__)
+#include <tmmintrin.h>
+#endif
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
@@ -483,15 +486,45 @@ static inline void ax_wild_copy(uint8_t* d, const uint8_t* s, uint32_t len) {
     uint8_t* e = d + len;
     do { ax_copy16(d, s); d += 16; s += 16; } while (d < e);
 }
+static inline void ax_wild_copy32(uint8_t* d, const uint8_t* s, uint32_t len) {   // needs 32 bytes of slack, s <= d - 32 or s disjoint
+    uint8_t* e = d + len;
+    do { memcpy(d, s, 32); d += 32; s += 32; } while (d < e);
+}
+// Close matches without a byte loop: dist 1 is a run of one byte (16-byte stores of that byte); dist 2..15 builds
+// the 16-byte pattern with one pshufb (lane i takes byte i mod dist of the source) and stores it every P bytes,
+// P = the largest multiple of dist <= 16, so each store continues the period; dist >= 16 never overlaps a
+// 16-byte step. Same bytes as the byte loop; 16 bytes of slack as the wild copies. Without SSSE3: period expansion.
+#if defined(__SSSE3__)
+alignas(16) static const uint8_t ax_pat_mask[16][16] = {
+    {0},{0},{0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1},{0,1,2,0,1,2,0,1,2,0,1,2,0,1,2,0},{0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3},
+    {0,1,2,3,4,0,1,2,3,4,0,1,2,3,4,0},{0,1,2,3,4,5,0,1,2,3,4,5,0,1,2,3},{0,1,2,3,4,5,6,0,1,2,3,4,5,6,0,1},
+    {0,1,2,3,4,5,6,7,0,1,2,3,4,5,6,7},{0,1,2,3,4,5,6,7,8,0,1,2,3,4,5,6},{0,1,2,3,4,5,6,7,8,9,0,1,2,3,4,5},
+    {0,1,2,3,4,5,6,7,8,9,10,0,1,2,3,4},{0,1,2,3,4,5,6,7,8,9,10,11,0,1,2,3},{0,1,2,3,4,5,6,7,8,9,10,11,12,0,1,2},
+    {0,1,2,3,4,5,6,7,8,9,10,11,12,13,0,1},{0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,0}};
+#endif
 static inline void ax_match_fast(uint8_t* d, uint32_t dist, uint32_t len) {
+    if (dist >= 32) { ax_wild_copy32(d, d - dist, len); return; }
     if (dist >= 16) { ax_wild_copy(d, d - dist, len); return; }
+    uint8_t* e = d + len;
+#if defined(__SSSE3__)
+    __m128i v;
+    uint32_t P;
+    if (dist == 1) { v = _mm_set1_epi8((char)d[-1]); P = 16; }
+    else { v = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i*)(d - dist)), _mm_load_si128((const __m128i*)ax_pat_mask[dist])); P = 16 - 16 % dist; }
+    do { _mm_storeu_si128((__m128i*)d, v); d += P; } while (d < e);
+#else
     uint32_t P = dist * ((16 + dist - 1) / dist);          // smallest multiple of dist >= 16
     uint32_t head = P < len ? P : len;
     const uint8_t* s = d - dist;
     for (uint32_t i = 0; i < head; i++) d[i] = s[i];
     if (len > head) ax_wild_copy(d + head, d + head - P, len - head);
+#endif
 }
 
+// Three zones per block. Fast: while the block and the literal slice both have room for the longest literal
+// run (128) plus 16 bytes of slack, literal runs are copied with 16-byte steps without any size check and matches
+// check only their own length. Checked: the wild copies where the slack allows, exact copies otherwise. The checks
+// and their order are those of the checked zone, so a corrupt block stops at the same token with the same bytes.
 static void decompress_streams(
     uint8_t* dst, size_t dst_size,
     const uint8_t* lit, size_t lit_sz,
@@ -501,7 +534,32 @@ static void decompress_streams(
 {
     size_t lp=0, op=0, np=0, cp=0, out=0;
     uint32_t rep[4]={1,2,4,8};
-    const size_t SL = 16;                                    // slack for wild copies
+    const size_t SL = 32;                                    // slack for wild copies
+    const size_t FZ = 128 + SL;                              // fast zone: room for any literal run + slack
+    while (cp<cmd_sz && out+FZ<=dst_size && lp+FZ<=lit_sz) {
+        uint8_t c=cmd[cp++];
+        if (c<0x80) {
+            uint32_t l=c+1;
+            ax_wild_copy32(dst+out,lit+lp,l);
+            out+=l; lp+=l;
+            continue;
+        }
+        if (c==0xFF) { rep[0]=1;rep[1]=2;rep[2]=4;rep[3]=8; continue; }
+        uint32_t l, dist;
+        if ((c&0xC0)==0x80) {
+            uint32_t ri=(c>>4)&3, lv=c&0x0F;
+            if (lv==0x0F) lv+=read_varint(len,np,len_sz);
+            l=lv+6; dist=rep[ri];
+            if (ri>0) { for(int i=ri;i>0;i--) rep[i]=rep[i-1]; rep[0]=dist; }
+        } else {
+            uint32_t lv=(c==0xFE)?read_varint(len,np,len_sz):(uint32_t)(c&0x3F);
+            l=lv+6; dist=read_varint(off,op,off_sz);
+            rep[3]=rep[2];rep[2]=rep[1];rep[1]=rep[0];rep[0]=dist;
+        }
+        if (!dist||dist>out||out+l>dst_size) return;
+        if (out+l+SL<=dst_size) ax_match_fast(dst+out,dist,l); else copy_match(dst,out,dist,l);
+        out+=l;
+    }
     while (out<dst_size && cp<cmd_sz) {
         uint8_t c=cmd[cp++];
         if (c==0xFF) { rep[0]=1;rep[1]=2;rep[2]=4;rep[3]=8; continue; }

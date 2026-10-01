@@ -58,9 +58,12 @@ the requested bytes into `d_out`. nvCOMP has no equivalent: it decodes whole fra
   bytes it consumes. The match kernel checks each length against the room left in the block (before 2026-10-01
   it checked `out_pos + l`, which a corrupt varint near 2^32 wrapped below the block size: the copy then ran
   gigabytes past the block) and stops after `cmd_sz + 1` steps (every token consumes a command byte), setting
-  `_LIMIT`. CPU judge (`head_gpu_plan_emu`): 1000 byte flips of the streams under the plan of the intact
+  `_LIMIT`. A varint longer than 5 bytes or cut by the stream end fails the block (`_MATCH`). Descriptor sizes
+  are 64-bit; a chunk or piece above 0xFFFFFF00 bytes is refused by the plan (the per-chunk steps count in
+  32 bits). CPU judge (`head_gpu_flip_emu`): 1000 byte flips of the streams under the plan of the intact
   archive (as on the device), a failed zstd frame leaving random bytes: none over the step limit, no copy
-  outside its block; the wrapped length is refused.
+  outside its block, every changed output flagged by the status or by XXH3 (0 silent; the rest decode to
+  the original); the wrapped length is refused.
 - Flag `ACEAPEX_GPU_VERIFY_XXH3` (full decode): the device computes XXH3_64bits of the output and compares it
   with the archive header; a difference sets `ACEAPEX_GPU_STATUS_HASH`. This is what catches bytes stored raw
   in the archive (literal runs, raw pieces, zstd raw blocks), which carry no check of their own: on the
