@@ -223,6 +223,31 @@ __global__ void __launch_bounds__(256) k_open_bases_x(const OpenDesc* __restrict
     const uint32_t i0=16*g; if(i0>=raw) return;
     axl_bases16_v(g,c.seq,c.ends,R,raw,c.dst,axl_run_in(c.ends,jlo,jhi,i0), ep, ehi, c.val, axl_exc_in(ep,elo,ehi,i0));
 }
+// AX_OPEN_SHB=1 (measurement, tool): k_open_bases_x with the block's slice of run ends and exception positions in
+// shared memory. A block covers 4096 positions: four threads (in four warps) find the slice bounds, the block copies
+// the slices with coalesced loads, then every search and walk of the 16-position steps reads shared memory instead
+// of dependent global loads. The steps get the slices as pointers shifted by the slice start, so run parity and the
+// val index stay global (ax_open_warp.h). A slice longer than AXS_CAP entries: the global arrays, as k_open_bases_x.
+#define AXS_CAP 1024u
+__global__ void __launch_bounds__(256) k_open_bases_s(const OpenDesc* __restrict__ d){
+    __shared__ uint32_t s_end[AXS_CAP], s_ep[AXS_CAP], s_b[4];
+    const OpenDesc c=d[blockIdx.x]; const uint32_t tid=threadIdx.x, g=blockIdx.y*blockDim.x+tid; const uint32_t R=*c.nrun;
+    if(!R || c.raw>AXW_MAXN) return;                                   // block-uniform
+    const uint32_t raw=(uint32_t)c.raw, first=16*blockIdx.y*blockDim.x;
+    if(first>=raw) return;                                             // block-uniform
+    const uint32_t last=min(first+16*blockDim.x-1,raw-1), ne=c.nexc; const uint32_t* ep=c.epos;
+    if(tid==0) s_b[0]=axl_run_of(c.ends,R,first); else if(tid==32) s_b[1]=axl_run_of(c.ends,R,last);
+    else if(tid==64) s_b[2]=axl_exc_in(ep,0,ne,first); else if(tid==96) s_b[3]=axl_exc_in(ep,0,ne,last+1);
+    __syncthreads();
+    const uint32_t jlo=s_b[0], jhi=s_b[1], elo=s_b[2], ehi=s_b[3], nj=min(jhi,R-1)-jlo+1, nx=ehi-elo;
+    const bool sh = nj<=AXS_CAP && nx<=AXS_CAP;
+    if(sh){ for(uint32_t k=tid;k<nj;k+=blockDim.x) s_end[k]=c.ends[jlo+k]; for(uint32_t k=tid;k<nx;k+=blockDim.x) s_ep[k]=ep[elo+k]; }
+    __syncthreads();
+    const uint32_t* E = sh ? s_end-jlo : c.ends; const uint32_t* P = sh ? s_ep-elo : ep;
+    const uint32_t i0=16*g; if(i0>=raw) return;
+    axl_bases16_v(g,c.seq,E,R,raw,c.dst,axl_run_in(E,jlo,jhi,i0), P, ehi, c.val, axl_exc_in(P,elo,ehi,i0));
+}
+
 // AX_OPEN_EXC: case runs (as k_open_cse) and then, in the same block, the exception positions (the parse of
 // k_open_exc writing c.epos instead of the bytes); k_open_bases_x writes the bytes
 __global__ void __launch_bounds__(AXO_NT) k_open_cg(const OpenDesc* __restrict__ d, uint32_t* __restrict__ err){
