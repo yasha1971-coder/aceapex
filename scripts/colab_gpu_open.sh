@@ -34,6 +34,9 @@
 # Since ADR-020 every archive is written by the l1 encoder (DNA default); chain (reference row) is the open profile
 # with the matcher before it (AX_ENC=chain), decoded and hashed like the others, compared with open in one line.
 # dense/dense2 are built from the open archive's literal stream, i.e. they measure l1 + order-1 literals.
+# Modes: QUICK (default, target <= 6 min): builds (in parallel), emulators, fixtures, chr1.open and t2t.open (tool with
+# [open variants], library: full + ranges, example, shared library); no zstd/rans/chain archives, dense, flips, repro.
+# FULL=1: everything below. The first line of the log is MODE.
 # Every step runs under timeout (STEP_TIMEOUT, default 600 s; the encoder ENC_TIMEOUT, 1800 s): on expiry a line
 # "TIMEOUT <s> s: <step>" and the next step - the run never hangs; a TIMEOUT line fails the verdict.
 # CPU round-trip of each archive, aceapex_gpu on each, then per corpus two tables: stages, and the
@@ -45,13 +48,15 @@ TAG=$(echo "$GPU" | tr 'A-Z' 'a-z' | sed 's/^nvidia //; s/^tesla //; s/[^a-z0-9]
 L=results/colab-$D-$TAG-gpu-open.log
 W=${WORK:-/content/work}; mkdir -p $W
 DRV=${DRV:-/content/drive/MyDrive/aceapex_corpus}; HAVE_DRIVE=0; [ -d "$(dirname "$DRV")" ] && HAVE_DRIVE=1
+FULL=${FULL:-0}; [ "$FULL" = 1 ] && MODE=FULL || MODE=QUICK
 TO=${STEP_TIMEOUT:-600}; ETO=${ENC_TIMEOUT:-1800}; exec 3>&1
 # to <seconds> <step name> <command...>: the command under timeout; on expiry the TIMEOUT line goes to the log and
 # to the cell (fd 3, not into the caller's pipe), exit status 124
 to(){ local lim=$1 nm=$2; shift 2; timeout -k 20 $lim "$@"; local rc=$?
   if [ $rc = 124 ] || [ $rc = 137 ]; then echo "TIMEOUT $lim s: $nm" | tee -a $L >&3; return 124; fi; return $rc; }
 RAM_GB=$(awk '/MemTotal/{printf "%d", $2/1048576}' /proc/meminfo)
-{ echo "== provenance $D"
+{ echo "MODE $MODE ($( [ $MODE = FULL ] && echo 'every profile, dense, flips, repro' || echo 'open profile on chr1 and t2t, tool + library; FULL=1 for the rest'))"
+  echo "== provenance $D"
   echo "gpu $GPU | cc $(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1) | driver $(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -n 1)"
   echo "clocks max sm/mem $(nvidia-smi --query-gpu=clocks.max.sm,clocks.max.mem --format=csv,noheader | head -n 1) | memory $(nvidia-smi --query-gpu=memory.total --format=csv,noheader | head -n 1) | power limit $(nvidia-smi --query-gpu=power.limit --format=csv,noheader | head -n 1)"
   echo "host $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | sed 's/^ //'), $(nproc) threads, RAM $RAM_GB GB, drive $HAVE_DRIVE"
@@ -66,36 +71,39 @@ export LD_LIBRARY_PATH=$NV/lib64:${LD_LIBRARY_PATH:-}
 SM=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1 | tr -d '.')
 to $TO "make" make -s 2>&1 | grep -i error; [ -x ./aceapex ] || { echo "no CLI" | tee -a $L; exit 1; }
 NVL="-I$NV/include -L$NV/lib64 -l:libnvcomp.so.5"
-if to $TO "nvcc aceapex_gpu" nvcc -O3 -arch=sm_$SM $NVL -o $W/aceapex_gpu aceapex_gpu.cu 2>$W/nvcc.err; then
-  echo "built aceapex_gpu sm_$SM" | tee -a $L
-elif to $TO "nvcc aceapex_gpu PTX" nvcc -O3 -gencode arch=compute_90,code=compute_90 $NVL -o $W/aceapex_gpu aceapex_gpu.cu 2>>$W/nvcc.err; then
-  echo "built aceapex_gpu compute_90 PTX, JIT to sm_$SM (this nvcc has no sm_$SM)" | tee -a $L
-else echo "BUILD FAILED aceapex_gpu" | tee -a $L; cat $W/nvcc.err; exit 1; fi
-# the same tool with AX_VEC=0 (byte stores in the match kernel and k_unpack, as before 01.10): chr1 before/after
-to $TO "nvcc aceapex_gpu AX_VEC=0" nvcc -O3 -arch=sm_$SM -DAX_VEC=0 $NVL -o $W/aceapex_gpu_v0 aceapex_gpu.cu 2>>$W/nvcc.err \
-  || to $TO "nvcc aceapex_gpu AX_VEC=0 PTX" nvcc -O3 -gencode arch=compute_90,code=compute_90 -DAX_VEC=0 $NVL -o $W/aceapex_gpu_v0 aceapex_gpu.cu 2>>$W/nvcc.err \
-  || echo "build aceapex_gpu AX_VEC=0 failed (no before/after line)" | tee -a $L
+ARCH="-arch=sm_$SM"; nvcc -arch=sm_$SM -E -x cu /dev/null >/dev/null 2>&1 || ARCH="-gencode arch=compute_90,code=compute_90"
+# GPU builds in parallel (each nvcc is one host thread); bld <name> <command...>: exit status in $W/bld.<name>
+bld(){ local n=$1; shift; ( to $TO "build $n" "$@" > $W/bld.$n.err 2>&1; echo $? > $W/bld.$n ) & }
+bld aceapex_gpu nvcc -O3 $ARCH $NVL -o $W/aceapex_gpu aceapex_gpu.cu
+bld gpu_api_test nvcc -std=c++17 -O3 $ARCH -Isrc -DACEAPEX_GPU_NVCOMP $NVL -o $W/gpu_api_test scripts/gpu_api_test.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp -lzstd
+bld gpu_decode nvcc -std=c++17 -O3 $ARCH -Isrc -o $W/gpu_decode examples/gpu_decode.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp
+bld gpu_lib sh -c "make -s gpu-lib NVCOMP=$NV GPU_ARCH='$ARCH' && nvcc -std=c++17 -O3 $ARCH -Isrc -o $W/gpu_decode_so examples/gpu_decode.cu -L. -laceapex_gpu -Xlinker -rpath=$(pwd) -Xlinker -rpath-link=$NV/lib64"
+if [ $MODE = FULL ]; then
+  # the same tool with AX_VEC=0 (byte stores in the match kernel and k_unpack, as before 01.10): chr1 before/after
+  bld aceapex_gpu_v0 nvcc -O3 $ARCH -DAX_VEC=0 $NVL -o $W/aceapex_gpu_v0 aceapex_gpu.cu
+  bld nvcomp_frame_repro nvcc -std=c++17 -O3 $ARCH $NVL -o $W/nvcomp_frame_repro scripts/nvcomp_frame_repro.cu -lzstd
+fi
+# CPU judges of the device steps and of the library's plan, meanwhile
 for e in rans_warp_emu open_warp_emu; do
   g++ -std=c++17 -O2 -Isrc -o $W/$e scripts/$e.cpp && to $TO "$e" $W/$e verify/fixtures/conf/*.aet | tee -a $L; done
-# the GPU library (C ABI, src/aceapex_gpu.h): its plan judged on the CPU, the test program and the 30-line example
 g++ -std=c++17 -O2 -Isrc -o $W/gpu_plan_emu scripts/gpu_plan_emu.cpp src/aceapex_api.cpp -lzstd -lpthread && to $TO "gpu_plan_emu" $W/gpu_plan_emu | tee -a $L
-ARCH="-arch=sm_$SM"; nvcc -arch=sm_$SM -E -x cu /dev/null >/dev/null 2>&1 || ARCH="-gencode arch=compute_90,code=compute_90"
-if to $TO "nvcc gpu_api_test" nvcc -std=c++17 -O3 $ARCH -Isrc -DACEAPEX_GPU_NVCOMP $NVL -o $W/gpu_api_test scripts/gpu_api_test.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp -lzstd 2>$W/nvcc_api.err \
-   && to $TO "nvcc gpu_decode" nvcc -std=c++17 -O3 $ARCH -Isrc -o $W/gpu_decode examples/gpu_decode.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp 2>>$W/nvcc_api.err; then
-  echo "built gpu_api_test (nvCOMP) and examples/gpu_decode (no nvCOMP), $ARCH" | tee -a $L
-else echo "BUILD FAILED gpu library" | tee -a $L; cat $W/nvcc_api.err; exit 1; fi
-# the shared library (make gpu-lib: libaceapex_gpu.so.1, SONAME) with nvCOMP, and the example linked against it
-if to $TO "make gpu-lib" make -s gpu-lib NVCOMP=$NV GPU_ARCH="$ARCH" 2>>$W/nvcc_api.err \
-   && to $TO "nvcc gpu_decode (shared)" nvcc -std=c++17 -O3 $ARCH -Isrc -o $W/gpu_decode_so examples/gpu_decode.cu -L. -laceapex_gpu -Xlinker -rpath=$(pwd) -Xlinker -rpath-link=$NV/lib64 2>>$W/nvcc_api.err; then
-  echo "shared library libaceapex_gpu.so.1: $(readelf -d libaceapex_gpu.so.1 | grep -o 'soname: \[[^]]*\]'), API version $(grep -m1 -o 'VERSION_MAJOR [0-9]*' src/aceapex_gpu.h | cut -d' ' -f2).$(grep -m1 -o 'VERSION_MINOR [0-9]*' src/aceapex_gpu.h | cut -d' ' -f2); examples/gpu_decode linked against it" | tee -a $L
-else echo "shared library build FAILED" | tee -a $L; tail -5 $W/nvcc_api.err; fi
-# saved corrupt zstd frames (verify/repro/README.md): nvCOMP alone on each (batch of 1) against libzstd, before anything
-# else uses nvCOMP - a frame nvCOMP hangs on stops only this step (watchdog 60 s: line NVCOMP HANG, informational -
-# nvCOMP 5.3.0.16 hangs on the flipped frame; the library's guard is ACEAPEX_GPU_VALIDATE_ZSTD)
-if to $TO "nvcc nvcomp_frame_repro" nvcc -std=c++17 -O3 $ARCH $NVL -o $W/nvcomp_frame_repro scripts/nvcomp_frame_repro.cu -lzstd 2>>$W/nvcc_api.err; then
-  echo "== nvcomp_frame_repro" | tee -a $L
-  AX_WATCHDOG=60 to $TO "nvcomp_frame_repro" $W/nvcomp_frame_repro verify/repro/t2t_frame150180.orig.zst 8192 verify/repro/t2t_frame150180.flip.zst 8192 2>&1 | tee -a $L
-else echo "build nvcomp_frame_repro failed" | tee -a $L; fi
+wait
+okb(){ [ "$(cat $W/bld.$1 2>/dev/null)" = 0 ]; }
+okb aceapex_gpu && echo "built aceapex_gpu $ARCH" | tee -a $L || { echo "BUILD FAILED aceapex_gpu" | tee -a $L; tail -20 $W/bld.aceapex_gpu.err; exit 1; }
+okb gpu_api_test && okb gpu_decode && echo "built gpu_api_test (nvCOMP) and examples/gpu_decode (no nvCOMP), $ARCH" | tee -a $L \
+  || { echo "BUILD FAILED gpu library" | tee -a $L; tail -20 $W/bld.gpu_api_test.err $W/bld.gpu_decode.err; exit 1; }
+okb gpu_lib && echo "shared library libaceapex_gpu.so.1: $(readelf -d libaceapex_gpu.so.1 | grep -o 'soname: \[[^]]*\]'), API version $(grep -m1 -o 'VERSION_MAJOR [0-9]*' src/aceapex_gpu.h | cut -d' ' -f2).$(grep -m1 -o 'VERSION_MINOR [0-9]*' src/aceapex_gpu.h | cut -d' ' -f2); examples/gpu_decode linked against it" | tee -a $L \
+  || { echo "shared library build FAILED" | tee -a $L; tail -5 $W/bld.gpu_lib.err; }
+if [ $MODE = FULL ]; then
+  okb aceapex_gpu_v0 || echo "build aceapex_gpu AX_VEC=0 failed (no before/after line)" | tee -a $L
+  # saved corrupt zstd frames (verify/repro/README.md): nvCOMP alone on each (batch of 1) against libzstd - a frame nvCOMP
+  # hangs on stops only this step (watchdog 60 s: line NVCOMP HANG, informational - nvCOMP 5.3.0.16 hangs on the
+  # flipped frame; the library's guard is ACEAPEX_GPU_VALIDATE_ZSTD)
+  if okb nvcomp_frame_repro; then
+    echo "== nvcomp_frame_repro" | tee -a $L
+    AX_WATCHDOG=60 to $TO "nvcomp_frame_repro" $W/nvcomp_frame_repro verify/repro/t2t_frame150180.orig.zst 8192 verify/repro/t2t_frame150180.flip.zst 8192 2>&1 | tee -a $L
+  else echo "build nvcomp_frame_repro failed" | tee -a $L; fi
+fi
 
 # the open conformance fixtures on the GPU (inputs regenerated from their seeds); 5 hashes each:
 # warm-up, sequential, old pipeline, stream pipeline on cleared buffers, stream pipeline timed
@@ -141,13 +149,13 @@ pinned(){ case $1.$2 in
   t2t.zstd) case $ZV in 1.4.8) echo 822680738;; 1.5.5) echo 822393156;; esac;;
   t2t.rans) case $ZV in 1.4.8) echo 822818235;; 1.5.5) echo 822531418;; esac;;
   t2t.open) echo 853264869;; t2t.chain) echo 887641942;; esac; }
-NCU=$(command -v ncu || ls /usr/local/cuda/bin/ncu /opt/nvidia/nsight-compute/*/ncu 2>/dev/null | head -n 1); [ -n "$NCU" ] && echo "ncu: $NCU ($($NCU --version 2>/dev/null | tail -1))" | tee -a $L || echo "ncu: not found (no profile)" | tee -a $L
 T=$(nproc); CORP=""
 get_corpus chr1.fa 9465e0f0df6e2c6eb39729c39cee5465 https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr1.fa.gz && CORP="chr1"
 get_corpus t2t.fa cd1e52ce400c027ed0b7ab4b9d613f5a "" && CORP="$CORP t2t"
 for X in $CORP; do
   C=$W/$X.fa
-  for P in zstd rans open chain; do
+  PROFS="open"; [ $MODE = FULL ] && PROFS="zstd rans open chain"
+  for P in $PROFS; do
     case $P in zstd) E="FSE_CHUNK=4096";; rans) E="AX_TOK=rans";; open) E="AX_PROFILE=open";; chain) E="AX_PROFILE=open AX_ENC=chain";; esac
     A=$W/$X.$P.aet; PIN=$(pinned $X $P); SRC=encoded
     # an archive left in $W by an earlier run is reused only when it has the pinned size (30.09: a stale
@@ -168,7 +176,7 @@ for X in $CORP; do
   done
   # dense-open (measurement, not the format): the literal stream of the open archive coded by
   # components/rans1_v4.c (order-1 rANS, 4 lines, checkpoints every 4096), decoded on the GPU by k_r1
-  if [ -s $W/$X.open.aet ]; then
+  if [ $MODE = FULL ] && [ -s $W/$X.open.aet ]; then
     [ -x $W/rans1_v4 ] || gcc -O3 -march=native -o $W/rans1_v4 components/rans1_v4.c -lm
     [ -x $W/rans1_seg ] || gcc -O3 -march=native -o $W/rans1_seg components/rans1_seg.c -lm
     [ -x $W/dense2_lane_emu ] || g++ -O2 -o $W/dense2_lane_emu scripts/dense2_lane_emu.cpp
@@ -189,12 +197,12 @@ PY
     echo "$X.dense2 (open + rans1_seg order-1 literals, 32 segments/chunk, estimate = open - literal stream + AR2L file): $DB2 B, AR2L $(stat -c%s $W/$X.r2) B" | tee -a $L
     echo "$X.dense (open + rans1_v4 order-1 literals, estimate = open - literal stream + AR1L file): $DB B, AR1L $(stat -c%s $W/$X.r1) B" | tee -a $L
   fi
-  for P in zstd rans open chain; do [ -s $W/$X.$P.aet ] || continue
+  for P in $PROFS; do [ -s $W/$X.$P.aet ] || continue
     DL=""; [ $P = open ] && [ -s $W/$X.r1 ] && DL="--dense-lit=$W/$X.r1"; [ $P = open ] && [ -s $W/$X.r2 ] && DL="$DL --dense2-lit=$W/$X.r2"
     R=${REPS:-3}
     if [ $P = zstd ] || [ $P = open ]; then                   # the C ABI on the same archive: full, ranges, byte flips
       echo "== gpu_api_test $X.$P" | tee -a $L
-      NRG=200; NFL=20; [ $X = t2t ] && { NRG=60; NFL=6; }
+      NRG=200; NFL=20; [ $X = t2t ] && { NRG=60; NFL=6; }; [ $MODE = QUICK ] && NFL=0
       AX_WATCHDOG=$((TO/2)) AX_REPRO=verify/repro/run to $TO "gpu_api_test $X.$P" $W/gpu_api_test $W/$X.$P.aet $C ${REPS:-3} $NRG $NFL 2>&1 | tee -a $L; echo "exitapi ${PIPESTATUS[0]} $X.$P" | tee -a $L
       # the flipped frames (original and flipped) kept on Drive for a repro
       [ $HAVE_DRIVE = 1 ] && ls verify/repro/run/*.zst >/dev/null 2>&1 && mkdir -p $DRV/repro && cp verify/repro/run/*.zst $DRV/repro/ && echo "flipped frames copied to $DRV/repro ($(ls verify/repro/run/*.zst | wc -l) files)" | tee -a $L
@@ -202,17 +210,6 @@ PY
         || echo "example gpu_decode $X.$P: FAILED" | tee -a $L; rm -f $W/ex.out
         if [ -x $W/gpu_decode_so ]; then to $TO "gpu_decode (shared) $X.$P" $W/gpu_decode_so $W/$X.$P.aet $W/ex.out >/dev/null 2>&1 && cmp -s $W/ex.out $C \
           && echo "example gpu_decode $X.$P via libaceapex_gpu.so.1 (nvCOMP inside): bit-perfect" | tee -a $L || echo "example gpu_decode $X.$P via libaceapex_gpu.so.1: FAILED" | tee -a $L; rm -f $W/ex.out; fi; fi
-    fi
-    # profile of the open path's kernels (ncu): first launch of each kernel, variants included; --metrics adds
-    # coalescing and stall reasons, without them if this ncu does not know the names
-    if [ $P = open ] && [ -n "$NCU" ]; then
-      KR='regex:k_open_bases|k_open_exc|k_open_cse|k_open_cg|k_rans'
-      SEC="--section SpeedOfLight --section Occupancy --section MemoryWorkloadAnalysis --section LaunchStats --section WarpStateStats"
-      MET="--metrics l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum,l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum,l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum,l1tex__t_requests_pipe_lsu_mem_global_op_st.sum,smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct,smsp__warp_issue_stalled_barrier_per_warp_active.pct,smsp__warp_issue_stalled_short_scoreboard_per_warp_active.pct,smsp__warp_issue_stalled_lg_throttle_per_warp_active.pct,smsp__warp_issue_stalled_mio_throttle_per_warp_active.pct,smsp__warp_issue_stalled_wait_per_warp_active.pct"
-      to $TO "ncu $X.$P" $NCU -k "$KR" --launch-count 70 $SEC $MET --csv --page details $W/aceapex_gpu $W/$X.$P.aet $C auto 1 1 --pipeline=0 > $W/ncu.csv 2>$W/ncu.err \
-        || to $TO "ncu $X.$P (sections only)" $NCU -k "$KR" --launch-count 70 $SEC --csv --page details $W/aceapex_gpu $W/$X.$P.aet $C auto 1 1 --pipeline=0 > $W/ncu.csv 2>>$W/ncu.err \
-        || { echo "ncu $X.$P failed: $(grep -m2 -i 'error\|perm' $W/ncu.err | tr '\n' ' ' | head -c 300)" | tee -a $L; }
-      [ -s $W/ncu.csv ] && python3 scripts/ncu_summary.py $W/ncu.csv $X.$P | tee -a $L
     fi
     echo "== aceapex_gpu $X.$P" | tee -a $L
     to $TO "aceapex_gpu $X.$P" $W/aceapex_gpu $W/$X.$P.aet $C auto $R 4 --pipeline=${PIPE:-auto} $DL 2>&1 | tee -a $L; echo "exit ${PIPESTATUS[0]} $X.$P" | tee -a $L

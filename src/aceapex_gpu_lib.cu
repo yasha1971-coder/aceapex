@@ -156,7 +156,8 @@ static int run(const aceapex_gpu_plan* pl, const agp::Sel* S, const uint8_t* in,
         return false;
 #endif
     };
-    auto pieces=[&](agp::Seg g){ if(g.hi>g.lo){ const uint32_t n=g.hi-g.lo; k_rans<<<(n+AXW_WARPS-1)/AXW_WARPS,32*AXW_WARPS,0,s>>>(in,dR+g.lo,n,err); } };
+    // rANS pieces with the windowed refill (k_rans<1>, AX_OPEN_SEQ in the tool: Blackwell chr1 seq 0.309 -> 0.238 ms)
+    auto pieces=[&](agp::Seg g){ if(g.hi>g.lo){ const uint32_t n=g.hi-g.lo; k_rans<1><<<(n+AXW_WARPS-1)/AXW_WARPS,32*AXW_WARPS,0,s>>>(in,dR+g.lo,n,err); } };
     const unsigned gy1=(unsigned)((P.chunk[0]/AXU_PER+255)/256), gyo=(unsigned)((P.chunk[0]/16+255)/256);
     if((ND && gy1>65535) || (NO && gyo>65535)) return ACEAPEX_GPU_E_ARCHIVE;
     auto dna=[&](agp::Seg g){ if(g.hi>g.lo){ const uint32_t n=g.hi-g.lo; k_unpack<<<dim3(n,gy1),256,0,s>>>(dD+g.lo); k_exc<<<n,256,0,s>>>(dD+g.lo); } };

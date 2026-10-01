@@ -312,9 +312,10 @@ int main(int argc, char** argv){
     auto zstd_rng=[&](cudaStream_t s, size_t i0, size_t i1){ if(i1>i0) NV(nvcompBatchedZstdDecompressAsync(dcp+i0,dcs+i0,dos+i0,dact+i0,i1-i0,dtemp,temp,dop+i0,opts,dst+i0,s)); };
     auto zstd_all=[&](cudaStream_t s){ zstd_rng(s,0,N); };
     // variants of the open path (same bytes; measured against each other below, "[open variants]"):
-    // AX_OPEN_SEQ=1 windowed refill in k_rans, AX_OPEN_BASES=1 warp-bracketed run search + 32-bit seq load,
-    // AX_OPEN_EXC=1 exception positions in the case-run kernel and the bytes in the bases store
-    int VS=getenv("AX_OPEN_SEQ")?atoi(getenv("AX_OPEN_SEQ")):0, VB=getenv("AX_OPEN_BASES")?atoi(getenv("AX_OPEN_BASES")):0, VE=getenv("AX_OPEN_EXC")?atoi(getenv("AX_OPEN_EXC")):0;
+    // AX_OPEN_SEQ windowed refill in k_rans (default 1 since af2c70c: Blackwell chr1 seq 0.309 -> 0.238 ms; 0 = refill
+    // from global), AX_OPEN_BASES=1 warp-bracketed run search + 32-bit seq load, AX_OPEN_EXC=1 exception positions in
+    // the case-run kernel and the bytes in the bases store
+    int VS=getenv("AX_OPEN_SEQ")?atoi(getenv("AX_OPEN_SEQ")):1, VB=getenv("AX_OPEN_BASES")?atoi(getenv("AX_OPEN_BASES")):0, VE=getenv("AX_OPEN_EXC")?atoi(getenv("AX_OPEN_EXC")):0;
     const int VS0=VS, VB0=VB, VE0=VE;
     auto pieces=[&](cudaStream_t s, int c0, int c1){ const size_t i0=cls_off[c0], n=cls_off[c1]-i0;
         if(n){ if(VS) k_rans<1><<<(unsigned)((n+AXW_WARPS-1)/AXW_WARPS),32*AXW_WARPS,0,s>>>(dC,dRD+i0,(uint32_t)n,dErr);
@@ -413,7 +414,7 @@ int main(int argc, char** argv){
     // (bit-perfect or the run fails); then seq pieces and unpack timed (median of reps)
     if(NO){
         struct V { const char* name; int s,b,e; float seq,un,bases,cse,exc; bool ok; };
-        V vv[4]={{"base",0,0,0},{"AX_OPEN_SEQ=1",1,0,0},{"AX_OPEN_BASES=1",0,1,0},{"AX_OPEN_EXC=1",0,0,1}};
+        V vv[4]={{"AX_OPEN_SEQ=0",0,0,0},{"AX_OPEN_SEQ=1",1,0,0},{"AX_OPEN_BASES=1",1,1,0},{"AX_OPEN_EXC=1",1,0,1}};
         for(V& v:vv){ VS=v.s; VB=v.b; VE=v.e;
             CK(cudaMemset(dS[0],0,ssz[0])); CK(cudaMemset(dOUT,0,orig)); CK(cudaMemset(dOS,0,oscr)); CK(cudaMemset(dEpos,0,(heo[NO]+1)*4));
             if(N>NT) zstd_rng(s0,NT,N);
@@ -423,7 +424,7 @@ int main(int argc, char** argv){
                 c.push_back(elapsed(s0,[&]{un_seq(s0);})); d.push_back(elapsed(s0,[&]{un_cse(s0);})); e.push_back(elapsed(s0,[&]{un_exc(s0);})); }
             v.seq=median_ms(a); v.un=median_ms(b); v.bases=median_ms(c); v.cse=median_ms(d); v.exc=median_ms(e); }
         VS=VS0; VB=VB0; VE=VE0;
-        printf("[open variants] seq pieces %.3f -> %.3f ms (AX_OPEN_SEQ=1, windowed refill, %s); unpack %.3f ms (case %.3f + bases %.3f + exceptions %.3f) -> "
+        printf("[open variants] seq pieces %.3f -> %.3f ms (AX_OPEN_SEQ 0 -> 1, windowed refill, %s); unpack %.3f ms (case %.3f + bases %.3f + exceptions %.3f) -> "
                "%.3f ms (AX_OPEN_BASES=1: bases %.3f, %s) -> %.3f ms (AX_OPEN_EXC=1: case+exception positions %.3f + bases with exceptions %.3f, %s)\n",
                vv[0].seq,vv[1].seq,vv[1].ok?"bit-perfect":"DIFFERS",vv[0].un,vv[0].cse,vv[0].bases,vv[0].exc,vv[2].un,vv[2].bases,vv[2].ok?"bit-perfect":"DIFFERS",
                vv[3].un,vv[3].cse,vv[3].bases,vv[3].ok?"bit-perfect":"DIFFERS");
@@ -523,7 +524,7 @@ int main(int argc, char** argv){
             for(int k=0;k<K;k++){ CK(cudaStreamWaitEvent(s0,cev[k],0));
                 const size_t j0=jc[k], nj=jc[k+1]-j0, r0=rc[k], nr=rc[k+1]-r0, o0=oc[k], no=oc[k+1]-o0, d0=dc[k], nd=dc[k+1]-d0;
                 if(nj) NV(nvcompBatchedZstdDecompressAsync(qdcp+j0,qdcs+j0,qdos+j0,qdact+j0,nj,qdtemp,qtemp,qdop+j0,opts,qdst+j0,s0));
-                if(nr) k_rans<<<(unsigned)((nr+AXW_WARPS-1)/AXW_WARPS),32*AXW_WARPS,0,s0>>>(dC2,qdRD+r0,(uint32_t)nr,dErr);
+                if(nr) k_rans<1><<<(unsigned)((nr+AXW_WARPS-1)/AXW_WARPS),32*AXW_WARPS,0,s0>>>(dC2,qdRD+r0,(uint32_t)nr,dErr);
                 if(nd){ k_unpack<<<dim3((unsigned)nd,g1.y),256,0,s0>>>(dDD+d0); k_exc<<<(unsigned)nd,256,0,s0>>>(dDD+d0); }
                 if(no){ k_open_cse<<<(unsigned)no,AXO_NT,0,s0>>>(dOD+o0,dErr+2); k_open_bases<<<dim3((unsigned)no,go.y),256,0,s0>>>(dOD+o0); k_open_exc<<<(unsigned)no,AXO_NT,0,s0>>>(dOD+o0,dErr+2); }
                 const uint32_t b0=bc[k], b1=bc[k+1]; if(b1>b0){
