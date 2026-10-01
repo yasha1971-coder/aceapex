@@ -82,6 +82,13 @@ typedef struct aceapex_gpu_plan aceapex_gpu_plan;
 
 unsigned aceapex_gpu_version(void);                          /* ACEAPEX_GPU_API_VERSION of the built library */
 aceapex_gpu_plan* aceapex_gpu_plan_create(const void* h_archive, size_t in_bytes, uint64_t flags);
+/* 2.3: a plan of blocks [b0, b1) only - for outputs larger than the device, decoded batch by batch (scripts/gpu_stream.cu).
+   Its decode writes the window of those blocks (aceapex_gpu_output_bytes = the window) into d_out, needs a temp sized
+   for those blocks' chunks only (aceapex_gpu_temp_bytes), and reads the archive bytes [in_lo, in_hi) given by
+   aceapex_gpu_plan_input_window: pass d_in = (the whole archive on the device) + in_lo, or upload just that slice.
+   ACEAPEX_GPU_VERIFY_XXH3 and the range call are refused on such a plan (E_ARGS): the hash covers the whole original. */
+aceapex_gpu_plan* aceapex_gpu_plan_create_blocks(const void* h_archive, size_t in_bytes, uint32_t b0, uint32_t b1, uint64_t flags);
+int     aceapex_gpu_plan_input_window(const aceapex_gpu_plan* plan, uint64_t* in_lo, uint64_t* in_hi);   /* whole plan: 0, in_bytes */
 int     aceapex_gpu_last_error(void);                        /* of the last plan_create on this thread */
 size_t  aceapex_gpu_temp_bytes(const aceapex_gpu_plan* plan);
 size_t  aceapex_gpu_range_temp_bytes(const aceapex_gpu_plan* plan, uint64_t max_length);
