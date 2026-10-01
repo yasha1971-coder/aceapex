@@ -12,12 +12,13 @@
 // and exit 4 - a hang names its phase instead of stopping the run
 // Flips: each one located (stream, zstd frame or rANS piece) and, in a zstd frame, the frame checked on the host first
 // (libzstd, the plan's header check), saved to AX_REPRO (default verify/repro/run, original and flipped), decoded by
-// nvCOMP alone (batch of 1), then the plan of the flipped archive (refused or not) and the whole decode with a line and
-// a stream wait per phase (aceapex_gpu_debug_phase_hook) - a hang names the frame and the phase.
+// nvCOMP alone (batch of 1) when libzstd decodes it, then the plan of the flipped archive - with ACEAPEX_GPU_VALIDATE_ZSTD
+// when it has zstd frames: refused = caught before any launch - and the decode with that plan, a line and a stream wait
+// per phase (aceapex_gpu_debug_phase_hook): a hang names the frame and the phase.
 // Build: nvcc -O3 -arch=sm_XX -Isrc -DACEAPEX_GPU_NVCOMP -I<nvcomp>/include scripts/gpu_api_test.cu src/aceapex_gpu_lib.cu -l:libnvcomp.so.5 -lzstd
 // Usage: gpu_api_test <archive.aet> <original> [repeats=7] [ranges=200] [flips=20]
 // Last line: APIROW <tab> archive bytes api_ms full ranges_ok ranges range16k_ms caught silent harmless plan_ms
-//            verify_ms verify_full caught_v silent_v harmless_v
+//            verify_ms verify_full caught_v silent_v harmless_v validate_plan_ms refused_by_plan
 #include "aceapex_gpu.h"
 #include "aceapex_gpu_plan.h"   // host side only: where a flip lands (zstd frame, piece) and the frame header check
 #include <cuda_runtime.h>
@@ -61,8 +62,14 @@ int main(int argc, char** argv){
     const int reps=argc>3?atoi(argv[3]):7, NR=argc>4?atoi(argv[4]):200, NF=argc>5?atoi(argv[5]):20;
     phase("read archive and original"); std::vector<uint8_t> a=slurp(argv[1]), orig=slurp(argv[2]);
     phase("plan_create"); auto t0=std::chrono::steady_clock::now();
-    aceapex_gpu_plan* plan=aceapex_gpu_plan_create(a.data(),a.size());
+    aceapex_gpu_plan* plan=aceapex_gpu_plan_create(a.data(),a.size(),0);
     const double plan_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count();
+    double val_ms=-1;                                                      // the same with ACEAPEX_GPU_VALIDATE_ZSTD
+    { phase("plan_create with ACEAPEX_GPU_VALIDATE_ZSTD"); auto tv=std::chrono::steady_clock::now(); aceapex_gpu_plan* q=aceapex_gpu_plan_create(a.data(),a.size(),ACEAPEX_GPU_VALIDATE_ZSTD);
+      val_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-tv).count();
+      printf("[api] plan with ACEAPEX_GPU_VALIDATE_ZSTD %.1f ms (+%.1f ms: every zstd frame decoded by libzstd on %u host threads): %s\n",val_ms,val_ms-plan_ms,
+             std::thread::hardware_concurrency(),q?"accepted":"REFUSED");
+      if(q) aceapex_gpu_plan_destroy(q); }
     if(!plan){ printf("plan_create failed: %d\nAPIROW\t%s\t%zu\t-1\tNOPLAN\t0\t0\t-1\t0\t0\t0\t%.1f\n",aceapex_gpu_last_error(),argv[1],a.size(),plan_ms); return 3; }
     const size_t n=aceapex_gpu_output_bytes(plan); const uint64_t RMAX=std::min<uint64_t>(n,1u<<20);
     if(n!=orig.size()){ printf("output size %zu != original %zu\n",n,orig.size()); return 3; }
@@ -119,14 +126,17 @@ int main(int argc, char** argv){
         long fk=-1; for(size_t j=0;j<HP.nv.size();j++) if(at>=HP.nv[j].in_off && at<HP.nv[j].in_off+HP.nv[j].csz){ fk=(long)j; break; }
         long pk=-1; for(size_t j=0;j<HP.rans.size();j++) if(at>=HP.rans[j].src && at<HP.rans[j].src+HP.rans[j].csz){ pk=(long)j; break; }
         printf("[+%.1f s] flip %d/%d at %zu (%s stream), 0x%02x -> 0x%02x: ",now_s(),i+1,NF,at,SN[sx],a[at],b);
+        bool zbad=false;                                                   // libzstd rejects the flipped frame
         if(fk>=0){ const agp::Nv& J=HP.nv[fk]; std::vector<uint8_t> fr(a.begin()+J.in_off,a.begin()+J.in_off+J.csz); fr[at-J.in_off]=b;
             std::vector<uint8_t> o1(J.osz+64), o2(J.osz+64); const size_t z1=ZSTD_decompress(o1.data(),J.osz,fr.data(),fr.size()); ZSTD_decompress(o2.data(),J.osz,a.data()+J.in_off,J.csz);
             const std::string rp=std::string(RD)+"/"+base+".flip"+std::to_string(i+1)+".frame"+std::to_string(fk);
-            put(rp+".orig.zst",a.data()+J.in_off,J.csz); put(rp+".flip.zst",fr.data(),fr.size());
+            put(rp+".orig.zst",a.data()+J.in_off,J.csz); put(rp+".flip.zst",fr.data(),fr.size()); zbad=ZSTD_isError(z1) || z1!=J.osz;
             printf("zstd frame %ld of %zu (%s), byte %llu of %llu, decoded size %llu; libzstd on the CPU: %s; frame header check %d; saved %s.{orig,flip}.zst\n",
                 fk,HP.nv.size(),(size_t)fk<HP.NT?"token":"literal",(unsigned long long)(at-J.in_off),(unsigned long long)J.csz,(unsigned long long)J.osz,
                 ZSTD_isError(z1)?ZSTD_getErrorName(z1):(z1==J.osz&&!memcmp(o1.data(),o2.data(),z1)?"ok, same bytes":"ok, other bytes"),agp::zstd_frame_check(fr.data(),fr.size(),J.osz),rp.c_str());
-            // nvCOMP alone on this frame (batch of 1): a hang here is nvCOMP's, not the schedule's
+            // nvCOMP alone on this frame (batch of 1) - only when libzstd decodes it: nvCOMP 5.3 does not finish on some
+            // frames libzstd rejects (verify/repro/README.md)
+            if(!zbad){
             uint8_t *fz,*fo; void* ft; const void** fcp; void** fop; size_t *fcs,*fos,*fact; nvcompStatus_t* fst; size_t tmp=0;
             nvcompBatchedZstdDecompressGetTempSizeAsync(1,J.osz,nvcompBatchedZstdDecompressDefaultOpts,&tmp,J.osz);
             CK(cudaMalloc(&fz,J.csz+256)); CK(cudaMalloc(&fo,J.osz+256)); CK(cudaMalloc(&ft,tmp+256)); CK(cudaMalloc(&fcp,8)); CK(cudaMalloc(&fop,8));
@@ -139,23 +149,34 @@ int main(int argc, char** argv){
                 wait(s,w.c_str()); nvcompStatus_t hs; size_t act=0; CK(cudaMemcpy(&hs,fst,sizeof hs,cudaMemcpyDeviceToHost)); CK(cudaMemcpy(&act,fact,8,cudaMemcpyDeviceToHost));
                 printf("[+%.1f s]   %s: finished in %.3f s, status %d, %zu B\n",now_s(),w.c_str(),now_s()-tn,(int)hs,act); }
             else printf("[+%.1f s]   %s: launch refused\n",now_s(),w.c_str());
-            cudaFree(fz); cudaFree(fo); cudaFree(ft); cudaFree(fcp); cudaFree(fop); cudaFree(fcs); cudaFree(fos); cudaFree(fact); cudaFree(fst); }
+            cudaFree(fz); cudaFree(fo); cudaFree(ft); cudaFree(fcp); cudaFree(fop); cudaFree(fcs); cudaFree(fos); cudaFree(fact); cudaFree(fst); } }
         else if(pk>=0) printf("rANS piece %ld of %zu (class %u)\n",pk,HP.rans.size(),HP.rans[pk].pad);
         else printf("not in a zstd frame or rANS piece (stored bytes, chunk table or padding)\n");
-        { std::vector<uint8_t> hb=a; hb[at]=b; aceapex_gpu_plan* q=aceapex_gpu_plan_create(hb.data(),hb.size());
-          printf("[+%.1f s]   plan of the flipped archive: %s\n",now_s(),q?"built (the damage is past the host checks)":"REFUSED (fail-closed before any launch)");
-          if(q) aceapex_gpu_plan_destroy(q); else refused++; }
-        for(int v=0;v<2;v++){ const double tf0=now_s(); g_flip=i+1; g_flipv=v?" + XXH3":""; aceapex_gpu_debug_phase_hook(on_phase);
-            r=aceapex_gpu_decompress_async(plan,d_bad,d_out,d_temp,d_st,v?ACEAPEX_GPU_VERIFY_XXH3:0,s); wait(s,v?"flip decode + XXH3":"flip decode"); CK(cudaGetLastError());
+        // the flipped archive as a caller gets it: its own plan. With zstd frames the plan validates them
+        // (ACEAPEX_GPU_VALIDATE_ZSTD, the mode for untrusted archives) and the device decodes with that plan; a
+        // refused plan is caught before any launch. The open profile has no frames: the intact plan, as before.
+        aceapex_gpu_plan* fp=plan; bool fref=false;
+        { std::vector<uint8_t> hb=a; hb[at]=b; const unsigned pf=HP.nv.empty()?0:ACEAPEX_GPU_VALIDATE_ZSTD; const double tq=now_s();
+          aceapex_gpu_plan* q=aceapex_gpu_plan_create(hb.data(),hb.size(),pf);
+          printf("[+%.1f s]   plan of the flipped archive%s: %s (%.3f s)\n",now_s(),pf?" with ACEAPEX_GPU_VALIDATE_ZSTD":"",
+                 q?"built (the damage is past the host checks)":"REFUSED (fail-closed before any launch)",now_s()-tq);
+          if(q && pf && (aceapex_gpu_temp_bytes(q)>tb || aceapex_gpu_output_bytes(q)!=n)){ printf("[+%.1f s]   its layout needs other buffers: counted as refused\n",now_s()); aceapex_gpu_plan_destroy(q); q=nullptr; }
+          if(!q){ refused++; fref=true; } else if(pf) fp=q; else aceapex_gpu_plan_destroy(q); }
+        if(fk>=0 && zbad && !fref) printf("[+%.1f s]   NOTE: libzstd rejects the frame but the plan was built\n",now_s());
+        for(int v=0;v<2;v++){ const double tf0=now_s(); g_flip=i+1; g_flipv=v?" + XXH3":"";
+            if(fref){ caught[v]++; printf("[+%.1f s] flip %d/%d at %zu (%s stream)%s: refused by the plan, caught (no launch)\n",now_s(),i+1,NF,at,SN[sx],v?" + XXH3":""); continue; }
+            aceapex_gpu_debug_phase_hook(on_phase);
+            r=aceapex_gpu_decompress_async(fp,d_bad,d_out,d_temp,d_st,v?ACEAPEX_GPU_VERIFY_XXH3:0,s); wait(s,v?"flip decode + XXH3":"flip decode"); CK(cudaGetLastError());
             aceapex_gpu_debug_phase_hook(nullptr);
             CK(cudaMemcpy(&st,d_st,4,cudaMemcpyDeviceToHost)); CK(cudaMemcpy(out.data(),d_out,n,cudaMemcpyDeviceToHost));
             const char* k; if(r||st){ caught[v]++; k="caught"; } else if(memcmp(out.data(),orig.data(),n)){ silent[v]++; k="SILENT"; } else { same[v]++; k="harmless"; }
-            printf("[+%.1f s] flip %d/%d at %zu (%s stream)%s: return %d, status %d, %s (%.2f s)\n",now_s(),i+1,NF,at,SN[sx],v?" + XXH3":"",r,st,k,now_s()-tf0); } }
-    printf("[api] flips refused by the plan of the flipped archive: %d of %d\n",refused,NF);
+            printf("[+%.1f s] flip %d/%d at %zu (%s stream)%s: return %d, status %d, %s (%.2f s)\n",now_s(),i+1,NF,at,SN[sx],v?" + XXH3":"",r,st,k,now_s()-tf0); }
+        if(fp!=plan) aceapex_gpu_plan_destroy(fp); }
+    printf("[api] flips refused by the plan of the flipped archive%s: %d of %d\n",HP.nv.empty()?"":" (ACEAPEX_GPU_VALIDATE_ZSTD)",refused,NF);
     printf("[api] %d byte flips in the stream half of the archive: without the hash check %d caught by status, %d decoded wrong with status 0, %d harmless; with ACEAPEX_GPU_VERIFY_XXH3 %d caught, %d silent, %d harmless; no CUDA error\n",
         NF,caught[0],silent[0],same[0],caught[1],silent[1],same[1]);
-    printf("APIROW\t%s\t%zu\t%.3f\t%s\t%d\t%d\t%.3f\t%d\t%d\t%d\t%.1f\t%.3f\t%s\t%d\t%d\t%d\n",argv[1],a.size(),api_ms,full_ok?"bit-perfect":"MISMATCH",rok,NR,r16,caught[0],silent[0],same[0],plan_ms,
-        ver_ms,vfull_ok?"bit-perfect":"MISMATCH",caught[1],silent[1],same[1]);
+    printf("APIROW\t%s\t%zu\t%.3f\t%s\t%d\t%d\t%.3f\t%d\t%d\t%d\t%.1f\t%.3f\t%s\t%d\t%d\t%d\t%.1f\t%d\n",argv[1],a.size(),api_ms,full_ok?"bit-perfect":"MISMATCH",rok,NR,r16,caught[0],silent[0],same[0],plan_ms,
+        ver_ms,vfull_ok?"bit-perfect":"MISMATCH",caught[1],silent[1],same[1],val_ms,refused);
     aceapex_gpu_plan_destroy(plan);
     return (full_ok && vfull_ok && rok==NR && silent[1]==0) ? 0 : 5;
 }

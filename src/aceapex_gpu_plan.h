@@ -24,6 +24,11 @@
 #include <vector>
 #include <algorithm>
 #include "ax_open_warp.h"   /* axo_parse (mode 2 framing), AXO_* */
+#ifdef AGP_WITH_ZSTD           /* validate_zstd: libzstd on the host */
+#include <zstd.h>
+#include <atomic>
+#include <thread>
+#endif
 
 namespace agp {
 
@@ -234,6 +239,29 @@ static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt
     for (auto& d : P.dna) { d.seq += P.o_scr; d.cse += P.o_scr; if (d.gap != NUL) d.gap += P.o_scr; if (d.val != NUL) d.val += P.o_scr; d.dst += P.o_s[0]; }
     return E_OK;
 }
+
+#ifdef AGP_WITH_ZSTD
+/* every zstd frame of the plan decoded by libzstd on the host, `threads` threads (0 = all): 0 when each decodes
+   to exactly its expected size, else 1 (*bad = the first failing frame index found). nvCOMP 5.3 does not finish
+   on some corrupt frames (verify/repro/README.md); after this it only gets frames libzstd decoded. */
+static inline int zstd_frame_decodes(ZSTD_DCtx* dc, const uint8_t* f, uint64_t csz, uint8_t* buf, uint64_t osz) {
+    const size_t r = ZSTD_decompressDCtx(dc, buf, osz, f, csz); return !ZSTD_isError(r) && r == osz ? 0 : 1; }
+static inline int validate_zstd(const uint8_t* a, const Plan& P, unsigned threads = 0, uint64_t* bad = nullptr) {
+    if (P.nv.empty()) return 0;
+    if (!threads) threads = std::max(1u, std::thread::hardware_concurrency());
+    threads = (unsigned)std::min<size_t>(threads, (P.nv.size() + 63) / 64);
+    std::atomic<size_t> next(0); std::atomic<uint64_t> first(~0ull);
+    auto work = [&]() { ZSTD_DCtx* dc = ZSTD_createDCtx(); std::vector<uint8_t> buf(P.max_osz + 1);
+        for (;;) { const size_t i0 = next.fetch_add(64); if (i0 >= P.nv.size() || first.load() != ~0ull) break;
+            for (size_t i = i0; i < std::min(i0 + 64, P.nv.size()); i++) { const Nv& j = P.nv[i];
+                if (!dc || zstd_frame_decodes(dc, a + j.in_off, j.csz, buf.data(), j.osz)) { uint64_t e = ~0ull; first.compare_exchange_strong(e, i); break; } } }
+        ZSTD_freeDCtx(dc); };
+    std::vector<std::thread> T; for (unsigned t = 1; t < threads; t++) T.emplace_back(work);
+    work(); for (auto& t : T) t.join();
+    if (bad) *bad = first.load();
+    return first.load() == ~0ull ? 0 : 1;
+}
+#endif
 
 /* the jobs a range needs */
 struct Sel {

@@ -5,8 +5,11 @@
 // DNA unpack (zstd pack mode 1, open pack mode 2), the match kernel, then the status word. Everything on the
 // caller's stream; no allocation, no host copy, no synchronization.
 // Build: nvcc -O3 -arch=sm_XX [-DACEAPEX_GPU_NVCOMP -I<nvcomp>/include] -c src/aceapex_gpu_lib.cu
-//        (link -l:libnvcomp.so.5 with nvCOMP)
+//        (link -l:libnvcomp.so.5 -lzstd with nvCOMP)
 #include "aceapex_gpu.h"
+#ifdef ACEAPEX_GPU_NVCOMP
+#define AGP_WITH_ZSTD       // ACEAPEX_GPU_VALIDATE_ZSTD: libzstd on the host (link -lzstd)
+#endif
 #include "aceapex_gpu_plan.h"
 #include "aceapex_gpu_kernels.cuh"
 #include "ax_xxh3.h"
@@ -94,13 +97,14 @@ static uint64_t nv_temp(size_t n, size_t maxo, size_t tot){ size_t t=0;
     if(nvcompBatchedZstdDecompressGetTempSizeAsync(n,maxo,nvcompBatchedZstdDecompressDefaultOpts,&t,tot)!=nvcompSuccess) return ~0ull; return t; }
 #endif
 
-extern "C" aceapex_gpu_plan* aceapex_gpu_plan_create(const void* h_archive, size_t in_bytes){
+extern "C" aceapex_gpu_plan* aceapex_gpu_plan_create(const void* h_archive, size_t in_bytes, unsigned flags){
     g_last=ACEAPEX_GPU_OK;
-    if(!h_archive){ g_last=ACEAPEX_GPU_E_ARGS; return nullptr; }
+    if(!h_archive || (flags & ~ACEAPEX_GPU_VALIDATE_ZSTD)){ g_last=ACEAPEX_GPU_E_ARGS; return nullptr; }
     aceapex_gpu_plan* pl=new(std::nothrow) aceapex_gpu_plan; if(!pl){ g_last=ACEAPEX_GPU_E_CUDA; return nullptr; }
 #ifdef ACEAPEX_GPU_NVCOMP
     int e=agp::build((const uint8_t*)h_archive,in_bytes,pl->P,nv_temp);
     if(!e && pl->P.nv_temp==~0ull) e=agp::E_NVCOMP;
+    if(!e && (flags & ACEAPEX_GPU_VALIDATE_ZSTD) && agp::validate_zstd((const uint8_t*)h_archive,pl->P)) e=agp::E_STREAM;
 #else
     int e=agp::build((const uint8_t*)h_archive,in_bytes,pl->P,nullptr);
 #endif

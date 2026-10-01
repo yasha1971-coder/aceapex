@@ -9,7 +9,7 @@ Gate 5 of ROADMAP: a library other programs link, not only the measurement tool.
 
 ```c
 /* 1. host, once per archive */
-aceapex_gpu_plan* aceapex_gpu_plan_create(const void* h_archive, size_t in_bytes);
+aceapex_gpu_plan* aceapex_gpu_plan_create(const void* h_archive, size_t in_bytes, unsigned flags);   /* 0 or ACEAPEX_GPU_VALIDATE_ZSTD */
 int     aceapex_gpu_last_error(void);
 size_t  aceapex_gpu_temp_bytes(const aceapex_gpu_plan*);
 size_t  aceapex_gpu_range_temp_bytes(const aceapex_gpu_plan*, uint64_t max_length);
@@ -27,7 +27,8 @@ void aceapex_gpu_plan_destroy(aceapex_gpu_plan*);
 - `plan_create` reads a host copy of the whole archive: header, block table and every chunk table (the
   open DNA pack keeps a small header in each literal chunk, so "only the head" is not enough). It checks the
   framing (the checks of the CPU decoders), builds the job list and uploads it with the block table to the
-  device - its only allocation and copy. It keeps no pointer into `h_archive`.
+  device - its only allocation and copy. It keeps no pointer into `h_archive`. With
+  `ACEAPEX_GPU_VALIDATE_ZSTD` it also decodes every zstd frame with libzstd on all host threads (next section).
 - The async calls launch kernels on `stream` and return. They make no allocation, no host-to-device copy of
   host memory and no synchronization: the job descriptors are copied from the plan into `d_temp` by a kernel
   that adds the addresses of `d_in` and `d_temp` ("fixup"). The return value reports host-side errors only
@@ -44,6 +45,20 @@ each stream, only the chunks those blocks use: on the host, from the plan, it pi
 of every job array (all of them are ordered by stream and chunk) - O(log n), no device transfer - then
 launches the same kernels on those ranges, decodes the blocks into a window after the temp layout and copies
 the requested bytes into `d_out`. nvCOMP has no equivalent: it decodes whole frames.
+
+## Untrusted archives
+
+Use the open profile (`AX_PROFILE=open`: no zstd frame, every step on our own kernels, all bounded and judged on the
+CPU), or create the plan with `ACEAPEX_GPU_VALIDATE_ZSTD`. Reason: nvCOMP 5.3.0.16 does not finish on some corrupt
+zstd frames. Repro in `verify/repro/` (README.md there): T2T frame 150180 with one flipped byte inside its
+compressed block - libzstd 1.5.5 reports `Data corruption detected`, the frame and block headers are valid, and
+nvCOMP alone on that one frame (batch of 1, `scripts/nvcomp_frame_repro.cu`) is still running after 60 s on
+Blackwell. A kernel that never returns cannot be stopped and no status can report it, so the check has to come
+before nvCOMP: the flag decodes every frame with libzstd on the host and refuses the archive (NULL,
+`ACEAPEX_GPU_E_ARCHIVE`) if one fails or decodes to another size; nvCOMP then only sees frames libzstd decoded.
+Cost on ace-core (16 threads, libzstd 1.5.5), T2T default profile, 191 495 frames, 1.44 GB of frame output:
+78 ms (1 thread: 853 ms), plan without it 19 ms. Off by default: an archive from a trusted source decodes without
+the host pass. Judge: claim `head_gpu_zstd_validate`.
 
 ## Fail-closed
 

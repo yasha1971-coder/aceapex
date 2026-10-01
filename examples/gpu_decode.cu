@@ -11,7 +11,7 @@ int main(int argc, char** argv) {
     FILE* f = fopen(argv[1], "rb"); if (!f) { perror(argv[1]); return 1; }
     fseek(f, 0, SEEK_END); std::vector<char> a(ftell(f)); fseek(f, 0, SEEK_SET);
     if (fread(a.data(), 1, a.size(), f) != a.size()) return 1; fclose(f);
-    aceapex_gpu_plan* plan = aceapex_gpu_plan_create(a.data(), a.size());            // phase 1: host, once
+    aceapex_gpu_plan* plan = aceapex_gpu_plan_create(a.data(), a.size(), 0);            // phase 1: host, once
     if (!plan) { fprintf(stderr, "plan: error %d\n", aceapex_gpu_last_error()); return 1; }
     size_t n = aceapex_gpu_output_bytes(plan);
     void *d_in, *d_out, *d_temp; int* d_status; cudaStream_t s; cudaStreamCreate(&s);

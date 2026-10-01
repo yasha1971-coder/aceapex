@@ -227,8 +227,8 @@ for X in $CORP; do
 done
 # C ABI against the measurement tool (same archive, same run): on-device ms of the tool (ROW $10) and of the library
 for X in $CORP; do for P in zstd open; do
-  awk -F'\t' -v a="$W/$X.$P.aet" -v x="$X.$P" '$1=="ROW" && $2==a{t=$10} $1=="APIROW" && $2==a{api=$4; ok=$5; r=$6"/"$7; r16=$8; c=$9; si=$10; h=$11; vm=$13; vok=$14; vc=$15; vs=$16; vh=$17}
-    END{ if(api!="") printf "api %s: library %.3f ms vs tool %.3f ms on-device (%+.1f %%), %s, ranges %s == original, 16 KiB window %.3f ms, flips caught/silent/harmless %s/%s/%s; with XXH3 check %.3f ms (%+.3f ms), %s, flips %s/%s/%s\n", x, api, t, (t>0?100*(api/t-1):0), ok, r, r16, c, si, h, vm, vm-api, vok, vc, vs, vh }' $L | tee -a $L
+  awk -F'\t' -v a="$W/$X.$P.aet" -v x="$X.$P" '$1=="ROW" && $2==a{t=$10} $1=="APIROW" && $2==a{api=$4; ok=$5; r=$6"/"$7; r16=$8; c=$9; si=$10; h=$11; vm=$13; vok=$14; vc=$15; vs=$16; vh=$17; pv=$18; pr=$19}
+    END{ if(api!="") printf "api %s: library %.3f ms vs tool %.3f ms on-device (%+.1f %%), %s, ranges %s == original, 16 KiB window %.3f ms, flips caught/silent/harmless %s/%s/%s; with XXH3 check %.3f ms (%+.3f ms), %s, flips %s/%s/%s; plan with VALIDATE_ZSTD %s ms, flips refused by the plan %s\n", x, api, t, (t>0?100*(api/t-1):0), ok, r, r16, c, si, h, vm, vm-api, vok, vc, vs, vh, pv, pr }' $L | tee -a $L
 done; done
 # verdict: each archive run is valid on its own (the GPU output is hashed against the original);
 # the run as a whole needs both emulators, the 5 fixtures, the chr1 open row, and no failure line.
