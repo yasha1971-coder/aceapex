@@ -118,6 +118,9 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+01.10 (25): v2.2.2 выпущен пользователем (тег 911bbdf, DOI 10.5281/zenodo.23090998, release передвинута, lzbench #336
+обновлён 8c1eb14). В main: CHANGELOG v2.2.2 с датой и DOI, release/v2.2.2.md, README и CITATION.cff (2.2.2), docs/ENVIRONMENT.md
+(16 переменных + ручки 2.3, только с ACEAPEX_ENV_TUNING) и пометки в FORMAT_* / GPU_API. Судья 59/0.
 01.10 (24): обновление PR #336 подготовлено локально: lzbench/aceapex-2.2.0 + коммит 5559c9a «aceapex: update to 2.2.2»
 (вендор == release-2.2.2 байт в байт, FASTEST aceapex,3, CHANGELOG lzbench); сборка lzbench ок, 5 строк окружения -> 724378,
 потоков aceapex при -I1 нет (strace). Черновик ответа drafts/lzbench_336_reply.md. Ждёт слова: тег v2.2.2 на release-2.2.2,
