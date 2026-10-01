@@ -30,7 +30,7 @@ static thread_local int g_last = ACEAPEX_GPU_OK;
 static const unsigned TPB = 128, G = 32;
 
 // ---- small kernels of the library
-__global__ void kg_init(uint32_t* e){ if(threadIdx.x==0){ e[0]=0; e[1]=~0u; e[2]=0; e[3]=~0u; e[4]=0; e[5]=0; e[6]=0; } }
+__global__ void kg_init(uint32_t* e){ if(threadIdx.x==0){ e[0]=0; e[1]=~0u; e[2]=0; e[3]=~0u; e[4]=0; e[5]=0; e[6]=0; e[7]=0; } }
 __global__ void kg_fix_rans(const agp::Rans* t, RansDesc* d, uint32_t n, uint8_t* base){
     for(uint32_t i=blockIdx.x*blockDim.x+threadIdx.x;i<n;i+=gridDim.x*blockDim.x){ agp::Rans r=t[i];
         RansDesc o; o.src=r.src; o.dst=base+r.dst; o.csz=r.csz; o.n=r.n; o.mode=r.mode; d[i]=o; } }
@@ -50,7 +50,7 @@ __global__ void kg_raw(const agp::Raw* t, const uint8_t* in, uint8_t* base){    
 __global__ void kg_nvcheck(const int* st, const size_t* act, const size_t* os, uint32_t n, uint32_t* e){   // nvcompStatus_t is an int enum, success = 0
     for(uint32_t i=blockIdx.x*blockDim.x+threadIdx.x;i<n;i+=gridDim.x*blockDim.x) if(st[i]!=0 || act[i]!=os[i]) atomicOr(e+5,1u); }
 __global__ void kg_status(const uint32_t* e, int* st){
-    if(threadIdx.x==0) *st=(e[0]?ACEAPEX_GPU_STATUS_PIECE:0)|(e[2]?ACEAPEX_GPU_STATUS_OPEN:0)|(e[5]?ACEAPEX_GPU_STATUS_ZSTD:0)|(e[4]?ACEAPEX_GPU_STATUS_MATCH:0)|(e[6]?ACEAPEX_GPU_STATUS_HASH:0); }
+    if(threadIdx.x==0) *st=(e[0]?ACEAPEX_GPU_STATUS_PIECE:0)|(e[2]?ACEAPEX_GPU_STATUS_OPEN:0)|(e[5]?ACEAPEX_GPU_STATUS_ZSTD:0)|(e[4]?ACEAPEX_GPU_STATUS_MATCH:0)|(e[6]?ACEAPEX_GPU_STATUS_HASH:0)|(e[7]?ACEAPEX_GPU_STATUS_LIMIT:0); }
 // XXH3_64bits of the output (src/ax_xxh3.h): block terms in parallel (8 threads per 1 KiB block, aligned 64-bit
 // words, key table), then the scramble chain - one step per KiB on each of the 8 independent accumulator lanes, one
 // thread per lane, the lane's key in a register and the block terms prefetched 32 steps ahead - then tail, merge, compare
@@ -165,7 +165,7 @@ static int run(const aceapex_gpu_plan* pl, const agp::Sel* S, const uint8_t* in,
     kg_set<<<1,1,0,s>>>(ctr,b0);
     const uint64_t lanes=(uint64_t)(b1-b0)*G; const unsigned want=(unsigned)std::min<uint64_t>((lanes+TPB-1)/TPB,0x7fffffffull);
     k_decode_g<G><<<std::max(1u,std::min(pl->grid,want)),TPB,0,s>>>(T+P.o_s[0],T+P.o_s[1],T+P.o_s[2],T+P.o_s[3],(const BlockOffsets*)(M+pl->o_bo),
-        P.orig,P.bs,mout,ctr,b1,err+4);
+        P.orig,P.bs,mout,ctr,b1,err+4);           // err[4] bad blocks, err[7] step limit
     return ACEAPEX_GPU_OK;
 }
 

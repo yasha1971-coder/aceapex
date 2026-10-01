@@ -23,7 +23,7 @@ __global__ void k_decode_g(const uint8_t* __restrict__ LIT, const uint8_t* __res
                            const uint8_t* __restrict__ LEN, const uint8_t* __restrict__ CMD,
                            const BlockOffsets* __restrict__ boffs, uint64_t orig_size, uint32_t block_size,
                            uint8_t* __restrict__ out, uint32_t* __restrict__ blk_ctr, uint32_t blk_end,
-                           uint32_t* __restrict__ err)   // err: blocks that did not decode to their size (nullptr: not counted)
+                           uint32_t* __restrict__ err)   // err[0]: blocks that did not decode to their size, err[3]: step limit hit (nullptr: not counted)
 {
     uint32_t lane=threadIdx.x&31, lg=lane&(G-1), leader=lane&~(uint32_t)(G-1);
     uint32_t gmask=((G==32)?0xffffffffu:((1u<<G)-1u)<<leader);
@@ -35,17 +35,23 @@ __global__ void k_decode_g(const uint8_t* __restrict__ LIT, const uint8_t* __res
         uint32_t dst_size=(uint32_t)(rem<(uint64_t)block_size?rem:(uint64_t)block_size); uint8_t* dst=out+base;
         uint32_t lp=0,op=0,np=0,cp=0,out_pos=0, rep[4]={1,2,4,8};
         uint32_t cmd_sz=(uint32_t)bo.cmd_sz, lit_sz=(uint32_t)bo.lit_sz, off_sz=(uint32_t)bo.off_sz, len_sz=(uint32_t)bo.len_sz;
+        // lengths are checked against the room left (rem), never as out_pos+l: a corrupt varint near 2^32 made
+        // out_pos+l wrap below dst_size and the copy run gigabytes past the block. Every token consumes a command
+        // byte, so a block takes at most cmd_sz+1 steps; more is a broken invariant: err[3], stop (fail-closed)
+        uint32_t steps=0;
         while(out_pos<dst_size){
-            uint32_t type=2,l=0,aux=0;
+            uint32_t type=2,l=0,aux=0; const uint32_t rem=dst_size-out_pos;
+            if(++steps>cmd_sz+1){ if(err && lg==0) atomicAdd(err+3,1u); break; }
             if(lg==0){ while(cp<cmd_sz){ uint8_t c=cmd[cp++];
                 if(c==0xFF){ rep[0]=1;rep[1]=2;rep[2]=4;rep[3]=8; continue; }
-                if(c<0x80){ l=(uint32_t)c+1; if(lp+l>lit_sz||out_pos+l>dst_size){type=2;break;} type=0; aux=lp; lp+=l; }
-                else if((c&0xC0)==0x80){ uint32_t ri=(c>>4)&3, lv=c&0x0F; if(lv==0x0F) lv+=rd_varint(len,np,len_sz); l=lv+6;
+                if(c<0x80){ l=(uint32_t)c+1; if(l>lit_sz-lp||l>rem){type=2;break;} type=0; aux=lp; lp+=l; }
+                else if((c&0xC0)==0x80){ uint32_t ri=(c>>4)&3, lv=c&0x0F; if(lv==0x0F) lv+=rd_varint(len,np,len_sz);
                     uint32_t dist=rep[ri]; if(ri>0){ for(int i=(int)ri;i>0;i--) rep[i]=rep[i-1]; rep[0]=dist; }
-                    if(!dist||dist>out_pos||out_pos+l>dst_size){type=2;break;} type=1; aux=dist; }
-                else { uint32_t lv=(c==0xFE)?rd_varint(len,np,len_sz):(uint32_t)(c&0x3F); l=lv+6; uint32_t dist=rd_varint(off,op,off_sz);
+                    if(lv<0x0F&&(c&0x0F)==0x0F){type=2;break;}                    // 15 + varint wrapped around
+                    if(lv>rem||lv+6>rem||!dist||dist>out_pos){type=2;break;} l=lv+6; type=1; aux=dist; }
+                else { uint32_t lv=(c==0xFE)?rd_varint(len,np,len_sz):(uint32_t)(c&0x3F); uint32_t dist=rd_varint(off,op,off_sz);
                     rep[3]=rep[2];rep[2]=rep[1];rep[1]=rep[0];rep[0]=dist;
-                    if(!dist||dist>out_pos||out_pos+l>dst_size){type=2;break;} type=1; aux=dist; }
+                    if(lv>rem||lv+6>rem||!dist||dist>out_pos){type=2;break;} l=lv+6; type=1; aux=dist; }
                 break; } }
             type=__shfl_sync(gmask,type,leader); l=__shfl_sync(gmask,l,leader); aux=__shfl_sync(gmask,aux,leader);
             if(type==2) break;

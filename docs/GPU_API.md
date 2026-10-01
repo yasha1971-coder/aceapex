@@ -51,8 +51,16 @@ the requested bytes into `d_out`. nvCOMP has no equivalent: it decodes whole fra
   `aceapex_gpu_last_error()` = `ACEAPEX_GPU_E_ARCHIVE`.
 - Content errors found on the device set bits of `*d_status`: `ACEAPEX_GPU_STATUS_PIECE` (a rANS chunk or
   piece, spec 3.1.1), `_OPEN` (an open DNA pack, spec 3.4), `_ZSTD` (a frame failed or decoded to another
-  size), `_MATCH` (a block's tokens did not decode to exactly its size). The call does not crash and does
-  not read or write outside its buffers (plan limits; CPU judge below, also under ASan/UBSan).
+  size), `_MATCH` (a block's tokens did not decode to exactly its size), `_LIMIT` (a kernel loop hit its step
+  limit). The call does not crash and does not read or write outside its buffers (plan limits; CPU judge
+  below, also under ASan/UBSan).
+- No loop runs on data alone: every kernel loop is bounded by plan values (chunk sizes, counts) or by the
+  bytes it consumes. The match kernel checks each length against the room left in the block (before 2026-10-01
+  it checked `out_pos + l`, which a corrupt varint near 2^32 wrapped below the block size: the copy then ran
+  gigabytes past the block) and stops after `cmd_sz + 1` steps (every token consumes a command byte), setting
+  `_LIMIT`. CPU judge (`head_gpu_plan_emu`): 1000 byte flips of the streams under the plan of the intact
+  archive (as on the device), a failed zstd frame leaving random bytes: none over the step limit, no copy
+  outside its block; the wrapped length is refused.
 - Flag `ACEAPEX_GPU_VERIFY_XXH3` (full decode): the device computes XXH3_64bits of the output and compares it
   with the archive header; a difference sets `ACEAPEX_GPU_STATUS_HASH`. This is what catches bytes stored raw
   in the archive (literal runs, raw pieces, zstd raw blocks), which carry no check of their own: on the

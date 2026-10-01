@@ -34,6 +34,8 @@
 # Since ADR-020 every archive is written by the l1 encoder (DNA default); chain (reference row) is the open profile
 # with the matcher before it (AX_ENC=chain), decoded and hashed like the others, compared with open in one line.
 # dense/dense2 are built from the open archive's literal stream, i.e. they measure l1 + order-1 literals.
+# Every step runs under timeout (STEP_TIMEOUT, default 600 s; the encoder ENC_TIMEOUT, 1800 s): on expiry a line
+# "TIMEOUT <s> s: <step>" and the next step - the run never hangs; a TIMEOUT line fails the verdict.
 # CPU round-trip of each archive, aceapex_gpu on each, then per corpus two tables: stages, and the
 # parts of lit (per piece class) and unpack (per kernel). Log: results/colab-<date>-<gpu>-gpu-open.log.
 set -uo pipefail
@@ -43,6 +45,11 @@ TAG=$(echo "$GPU" | tr 'A-Z' 'a-z' | sed 's/^nvidia //; s/^tesla //; s/[^a-z0-9]
 L=results/colab-$D-$TAG-gpu-open.log
 W=${WORK:-/content/work}; mkdir -p $W
 DRV=${DRV:-/content/drive/MyDrive/aceapex_corpus}; HAVE_DRIVE=0; [ -d "$(dirname "$DRV")" ] && HAVE_DRIVE=1
+TO=${STEP_TIMEOUT:-600}; ETO=${ENC_TIMEOUT:-1800}; exec 3>&1
+# to <seconds> <step name> <command...>: the command under timeout; on expiry the TIMEOUT line goes to the log and
+# to the cell (fd 3, not into the caller's pipe), exit status 124
+to(){ local lim=$1 nm=$2; shift 2; timeout -k 20 $lim "$@"; local rc=$?
+  if [ $rc = 124 ] || [ $rc = 137 ]; then echo "TIMEOUT $lim s: $nm" | tee -a $L >&3; return 124; fi; return $rc; }
 RAM_GB=$(awk '/MemTotal/{printf "%d", $2/1048576}' /proc/meminfo)
 { echo "== provenance $D"
   echo "gpu $GPU | cc $(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1) | driver $(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -n 1)"
@@ -57,20 +64,20 @@ NV=$(dirname "$(dirname "$(find / -name libnvcomp.so.5 -path '*libnvcomp/lib64*'
 pip show nvidia-nvcomp-cu12 2>/dev/null | grep -i '^version' | sed 's/^/nvcomp /' | tee -a $L
 export LD_LIBRARY_PATH=$NV/lib64:${LD_LIBRARY_PATH:-}
 SM=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1 | tr -d '.')
-make -s 2>&1 | grep -i error; [ -x ./aceapex ] || { echo "no CLI" | tee -a $L; exit 1; }
+to $TO "make" make -s 2>&1 | grep -i error; [ -x ./aceapex ] || { echo "no CLI" | tee -a $L; exit 1; }
 NVL="-I$NV/include -L$NV/lib64 -l:libnvcomp.so.5"
-if nvcc -O3 -arch=sm_$SM $NVL -o $W/aceapex_gpu aceapex_gpu.cu 2>$W/nvcc.err; then
+if to $TO "nvcc aceapex_gpu" nvcc -O3 -arch=sm_$SM $NVL -o $W/aceapex_gpu aceapex_gpu.cu 2>$W/nvcc.err; then
   echo "built aceapex_gpu sm_$SM" | tee -a $L
-elif nvcc -O3 -gencode arch=compute_90,code=compute_90 $NVL -o $W/aceapex_gpu aceapex_gpu.cu 2>>$W/nvcc.err; then
+elif to $TO "nvcc aceapex_gpu PTX" nvcc -O3 -gencode arch=compute_90,code=compute_90 $NVL -o $W/aceapex_gpu aceapex_gpu.cu 2>>$W/nvcc.err; then
   echo "built aceapex_gpu compute_90 PTX, JIT to sm_$SM (this nvcc has no sm_$SM)" | tee -a $L
 else echo "BUILD FAILED aceapex_gpu" | tee -a $L; cat $W/nvcc.err; exit 1; fi
 for e in rans_warp_emu open_warp_emu; do
-  g++ -std=c++17 -O2 -Isrc -o $W/$e scripts/$e.cpp && $W/$e verify/fixtures/conf/*.aet | tee -a $L; done
+  g++ -std=c++17 -O2 -Isrc -o $W/$e scripts/$e.cpp && to $TO "$e" $W/$e verify/fixtures/conf/*.aet | tee -a $L; done
 # the GPU library (C ABI, src/aceapex_gpu.h): its plan judged on the CPU, the test program and the 30-line example
-g++ -std=c++17 -O2 -Isrc -o $W/gpu_plan_emu scripts/gpu_plan_emu.cpp src/aceapex_api.cpp -lzstd -lpthread && $W/gpu_plan_emu | tee -a $L
+g++ -std=c++17 -O2 -Isrc -o $W/gpu_plan_emu scripts/gpu_plan_emu.cpp src/aceapex_api.cpp -lzstd -lpthread && to $TO "gpu_plan_emu" $W/gpu_plan_emu | tee -a $L
 ARCH="-arch=sm_$SM"; nvcc -arch=sm_$SM -E -x cu /dev/null >/dev/null 2>&1 || ARCH="-gencode arch=compute_90,code=compute_90"
-if nvcc -std=c++17 -O3 $ARCH -Isrc -DACEAPEX_GPU_NVCOMP $NVL -o $W/gpu_api_test scripts/gpu_api_test.cu src/aceapex_gpu_lib.cu 2>$W/nvcc_api.err \
-   && nvcc -std=c++17 -O3 $ARCH -Isrc -o $W/gpu_decode examples/gpu_decode.cu src/aceapex_gpu_lib.cu 2>>$W/nvcc_api.err; then
+if to $TO "nvcc gpu_api_test" nvcc -std=c++17 -O3 $ARCH -Isrc -DACEAPEX_GPU_NVCOMP $NVL -o $W/gpu_api_test scripts/gpu_api_test.cu src/aceapex_gpu_lib.cu 2>$W/nvcc_api.err \
+   && to $TO "nvcc gpu_decode" nvcc -std=c++17 -O3 $ARCH -Isrc -o $W/gpu_decode examples/gpu_decode.cu src/aceapex_gpu_lib.cu 2>>$W/nvcc_api.err; then
   echo "built gpu_api_test (nvCOMP) and examples/gpu_decode (no nvCOMP), $ARCH" | tee -a $L
 else echo "BUILD FAILED gpu library" | tee -a $L; cat $W/nvcc_api.err; exit 1; fi
 
@@ -79,14 +86,14 @@ else echo "BUILD FAILED gpu library" | tee -a $L; cat $W/nvcc_api.err; exit 1; f
 python3 scripts/make_fixtures.py --regen >/dev/null
 FX="dna_open_2MiB dna_open_mixed_300K dna_open_4097B dna_openlit_300K text_open_200K"; FXBAD=""
 for f in $FX; do
-  r=$($W/aceapex_gpu verify/fixtures/conf/$f.aet /tmp/conf_inputs/$f auto 3 1 --pipeline=3 2>&1); rc=$?
+  r=$(to $TO "fixture $f" $W/aceapex_gpu verify/fixtures/conf/$f.aet /tmp/conf_inputs/$f auto 3 1 --pipeline=3 2>&1); rc=$?
   echo "fixture $f on the GPU: exit $rc, $(echo "$r" | grep -c 'MATCHES OK') MATCHES OK, $(echo "$r" | grep -c 'DIFFERS X') DIFFERS" | tee -a $L
   [ $rc = 0 ] || { FXBAD="$FXBAD $f"; echo "$r" | grep -v '^probe' | tail -3 | sed 's/^/  /' | tee -a $L; }
 done
 CS=$(command -v compute-sanitizer || ls /usr/local/cuda/bin/compute-sanitizer 2>/dev/null)
 for f in $FXBAD; do [ -n "$CS" ] || break
   echo "== compute-sanitizer $f" | tee -a $L
-  $CS --tool memcheck --show-backtrace device $W/aceapex_gpu verify/fixtures/conf/$f.aet /tmp/conf_inputs/$f 16 1 1 2>&1 \
+  to $TO "compute-sanitizer $f" $CS --tool memcheck --show-backtrace device $W/aceapex_gpu verify/fixtures/conf/$f.aet /tmp/conf_inputs/$f 16 1 1 2>&1 \
     | grep -v '^probe\|^\[' | grep -m 12 -i 'error\|kernel\|at 0x\|by thread\|in \|====' | tee -a $L
   break   # the first failing fixture is enough to name the kernel
 done
@@ -132,10 +139,11 @@ for X in $CORP; do
     if [ ! -s $A ] && [ $HAVE_DRIVE = 1 ] && [ -n "$PIN" ] && [ "$(stat -c%s $DRV/cache/$X.$P.aet 2>/dev/null)" = "$PIN" ]; then cp $DRV/cache/$X.$P.aet $A; SRC="from Drive cache"; fi
     if [ ! -s $A ]; then
       if [ $X = t2t ] && [ $RAM_GB -lt 20 ]; then echo "$X.$P: RAM $RAM_GB GB < 20 GB for the encoder (11.2 GB RSS) and no cached archive - skipped; run once on a host with more RAM (A100/G4) to fill $DRV/cache" | tee -a $L; continue; fi
-      env -i PATH=$PATH ACEAPEX_BS=16384 LIT_CHUNK=65536 $E ./aceapex c --in $C --out $A --threads $T >/dev/null 2>&1
+      to $ETO "encode $X.$P" env -i PATH=$PATH ACEAPEX_BS=16384 LIT_CHUNK=65536 $E ./aceapex c --in $C --out $A --threads $T >/dev/null 2>&1 || rm -f $A
       [ $HAVE_DRIVE = 1 ] && [ -n "$PIN" ] && [ "$(stat -c%s $A)" = "$PIN" ] && mkdir -p $DRV/cache && cp $A $DRV/cache/ && SRC="encoded, cached on Drive"
     fi
-    env -i PATH=$PATH ./aceapex d --in $A --out $W/rt.bin >/dev/null 2>&1
+    [ -s $A ] || { echo "$X.$P: no archive - skipped" | tee -a $L; continue; }
+    to $TO "CPU decode $X.$P" env -i PATH=$PATH ./aceapex d --in $A --out $W/rt.bin >/dev/null 2>&1
     S=$(stat -c%s $A); if [ -z "$PIN" ]; then PS="no pin for libzstd $ZV"; elif [ "$S" = "$PIN" ]; then PS="== pinned"; else PS="!= pinned $PIN"; fi
     cmp -s $W/rt.bin $C && echo "$X.$P ($E): archive $S B ($PS), $SRC, CPU round-trip bit-perfect" | tee -a $L \
       || { [ $P = chain ] && echo "$X.$P: estimate row, CPU round-trip failed" | tee -a $L || echo "$X.$P: CPU ROUND-TRIP FAILED" | tee -a $L; }
@@ -147,16 +155,16 @@ for X in $CORP; do
     [ -x $W/rans1_v4 ] || gcc -O3 -march=native -o $W/rans1_v4 components/rans1_v4.c -lm
     [ -x $W/rans1_seg ] || gcc -O3 -march=native -o $W/rans1_seg components/rans1_seg.c -lm
     [ -x $W/dense2_lane_emu ] || g++ -O2 -o $W/dense2_lane_emu scripts/dense2_lane_emu.cpp
-    R0=$(pwd); ( cd $W && env -i PATH=$PATH ACEAPEX_DUMP=1 $R0/aceapex d --in $X.open.aet --out rt.bin >/dev/null 2>&1 ); rm -f $W/rt.bin
+    R0=$(pwd); ( cd $W && to $TO "stream dump $X.open" env -i PATH=$PATH ACEAPEX_DUMP=1 $R0/aceapex d --in $X.open.aet --out rt.bin >/dev/null 2>&1 ); rm -f $W/rt.bin
     python3 - $W/streams.bin $W/$X.lit <<'PY'
 import struct,sys
 s=open(sys.argv[1],'rb').read(); nb=struct.unpack_from('<I',s,24)[0]; H=68; b=H+64*(nb-1)
 lo=struct.unpack_from('<Q',s,b)[0]; ls=struct.unpack_from('<Q',s,b+32)[0]
 open(sys.argv[2],'wb').write(s[H+64*nb:H+64*nb+lo+ls])
 PY
-    rm -f $W/streams.bin; $W/rans1_v4 c $W/$X.lit $W/$X.r1 >/dev/null 2>&1
+    rm -f $W/streams.bin; to $TO "rans1_v4 $X" $W/rans1_v4 c $W/$X.lit $W/$X.r1 >/dev/null 2>&1
     # dense-open v2: 32 segments per chunk, context reset per segment, slot tables (components/rans1_seg.c, k_r2)
-    $W/rans1_seg c $W/$X.lit $W/$X.r2 >/dev/null 2>&1; echo "$X.dense2 lane emulator: $($W/dense2_lane_emu $W/$X.r2 $W/$X.lit | tr '\n' ' ')" | tee -a $L; rm -f $W/$X.lit
+    to $TO "rans1_seg $X" $W/rans1_seg c $W/$X.lit $W/$X.r2 >/dev/null 2>&1; echo "$X.dense2 lane emulator: $(to $TO "dense2_lane_emu $X" $W/dense2_lane_emu $W/$X.r2 $W/$X.lit | tr '\n' ' ')" | tee -a $L; rm -f $W/$X.lit
     DB=$(python3 -c "import struct,os;a=open('$W/$X.open.aet','rb').read(80);print(os.path.getsize('$W/$X.open.aet')-struct.unpack_from('<Q',a,36)[0]+os.path.getsize('$W/$X.r1'))")
     echo "$DB" > $W/$X.dense.bytes
     DB2=$(python3 -c "import struct,os;a=open('$W/$X.open.aet','rb').read(80);print(os.path.getsize('$W/$X.open.aet')-struct.unpack_from('<Q',a,36)[0]+os.path.getsize('$W/$X.r2'))")
@@ -170,12 +178,12 @@ PY
     if [ $P = zstd ] || [ $P = open ]; then                   # the C ABI on the same archive: full, ranges, byte flips
       echo "== gpu_api_test $X.$P" | tee -a $L
       NRG=200; NFL=20; [ $X = t2t ] && { NRG=60; NFL=6; }
-      $W/gpu_api_test $W/$X.$P.aet $C ${REPS:-3} $NRG $NFL 2>&1 | tee -a $L; echo "exitapi ${PIPESTATUS[0]} $X.$P" | tee -a $L
-      if [ $P = open ]; then $W/gpu_decode $W/$X.$P.aet $W/ex.out >/dev/null 2>&1 && cmp -s $W/ex.out $C && echo "example gpu_decode $X.$P (no nvCOMP): bit-perfect" | tee -a $L \
+      AX_WATCHDOG=$((TO/2)) to $TO "gpu_api_test $X.$P" $W/gpu_api_test $W/$X.$P.aet $C ${REPS:-3} $NRG $NFL 2>&1 | tee -a $L; echo "exitapi ${PIPESTATUS[0]} $X.$P" | tee -a $L
+      if [ $P = open ]; then to $TO "gpu_decode $X.$P" $W/gpu_decode $W/$X.$P.aet $W/ex.out >/dev/null 2>&1 && cmp -s $W/ex.out $C && echo "example gpu_decode $X.$P (no nvCOMP): bit-perfect" | tee -a $L \
         || echo "example gpu_decode $X.$P: FAILED" | tee -a $L; rm -f $W/ex.out; fi
     fi
     echo "== aceapex_gpu $X.$P" | tee -a $L
-    $W/aceapex_gpu $W/$X.$P.aet $C auto $R 4 --pipeline=${PIPE:-auto} $DL 2>&1 | tee -a $L; echo "exit ${PIPESTATUS[0]} $X.$P" | tee -a $L
+    to $TO "aceapex_gpu $X.$P" $W/aceapex_gpu $W/$X.$P.aet $C auto $R 4 --pipeline=${PIPE:-auto} $DL 2>&1 | tee -a $L; echo "exit ${PIPESTATUS[0]} $X.$P" | tee -a $L
   done
 done
 
@@ -213,7 +221,8 @@ grep '^exit [1-9]' $L | sed 's/^/  FAILED: /; s/\.chain$/.chain (reference row, 
 AR=$(grep -c '^exitapi ' $L); AOK=$(grep -c '^exitapi 0 ' $L); PE=$(grep -c $'^head_gpu_plan_emu\tpass' $L)
 echo "C ABI: $AOK of $AR archives bit-perfect with every range; plan emulator $PE/1" | tee -a $L
 grep '^exitapi [1-9]' $L | sed 's/^/  FAILED: /' | tee -a $L
+NTO=$(grep -c '^TIMEOUT ' $L); echo "steps over the time limit: $NTO" | tee -a $L
 [ "$N" = "$RUN" ] && [ "$E" = 2 ] && [ "$F" = 5 ] && [ "$AOK" = "$AR" ] && [ "$PE" = 1 ] && grep -q "^ROW	$W/chr1.open" $L \
-  && ! grep -q 'archive rejected\|ROUND-TRIP FAILED' $L \
+  && ! grep -q 'archive rejected\|ROUND-TRIP FAILED' $L && [ "$NTO" = 0 ] \
   && echo "RESULT: all passes bit-perfect on $GPU" | tee -a $L \
   || { echo "!!! NOT PASSED on $GPU - valid figures only in bit-perfect rows" | tee -a $L; exit 1; }
