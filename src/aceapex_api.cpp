@@ -86,7 +86,7 @@ int64_t aceapex_decompress(
 struct AxStreams { uint8_t *l,*o,*n,*c; size_t ls,os,ns,cs; std::vector<BlockOffsets> boffs; AetHeader hdr;
                    std::vector<AxLitChunk> lch; size_t lcsz = 0; bool tiled = false; };   // tiled: literals not decoded yet (AX_LIT_TILE)
 // AX_PHASE_TIMES=1: wall time of each decode phase on stderr (diagnostics; read once)
-static bool ax_pt(){ static const bool on = getenv("AX_PHASE_TIMES") && atoi(getenv("AX_PHASE_TIMES")); return on; }
+static bool ax_pt(){ static const bool on = [] { const char* e = ax_getenv("AX_PHASE_TIMES"); return e && atoi(e); }(); return on; }
 static double ax_now(){ return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 static int64_t ax_entropy_decode(const void* src, size_t src_size, int threads, AxStreams& S, bool tile = false)
 {
@@ -174,7 +174,7 @@ static int64_t ax_entropy_decode(const void* src, size_t src_size, int threads, 
 // block), so groups run in any order.
 static int64_t ax_decode_tiled(AxStreams& S, uint8_t* dst, int budget) {
     const size_t CH = S.lcsz, nb = S.hdr.num_blocks, bs = S.hdr.block_size, osz = S.hdr.orig_size, NC = S.lch.size();
-    static const size_t G = [] { const char* e = getenv("AX_TILE_CHUNKS"); size_t v = e ? strtoull(e, 0, 10) : 8; return v ? v : 1; }();
+    static const size_t G = [] { const char* e = ax_getenv("AX_TILE_CHUNKS"); size_t v = e ? strtoull(e, 0, 10) : 8; return v ? v : 1; }();
     struct Item { size_t b0, b1, k0, k1; };
     std::vector<Item> items;
     auto kof = [&](size_t off) { size_t k = off / CH; return k < NC ? k : (NC ? NC - 1 : 0); };
@@ -233,7 +233,7 @@ int64_t aceapex_decompress_mt(
     void*       dst, size_t dst_capacity, int threads)
 {
     const double t0 = ax_pt() ? ax_now() : 0;
-    static const bool tile = [] { const char* e = getenv("AX_LIT_TILE"); return e ? atoi(e) != 0 : true; }();   // default 1
+    static const bool tile = [] { const char* e = ax_getenv("AX_LIT_TILE"); return e ? atoi(e) != 0 : true; }();   // default 1
     AxStreams S; int64_t r = ax_entropy_decode(src, src_size, threads, S, tile);
     if (r <= 0) return r;                                    // error, or the empty archive
     const double t1 = ax_pt() ? ax_now() : 0;

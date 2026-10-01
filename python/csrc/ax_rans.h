@@ -87,6 +87,7 @@ static inline size_t axr_encode(const uint8_t* in, size_t n, uint8_t* out, uint1
 #if (defined(__x86_64__) || defined(__i386__)) && (defined(__GNUC__) || defined(__clang__)) && defined(__cplusplus) && !defined(__CUDACC__)
 #define AXR_SIMD 1
 #include <immintrin.h>
+#include "ax_env.h"     /* ax_getenv (AX_RANS_SIMD only with ACEAPEX_ENV_TUNING) */
 #include <stdlib.h>
 #endif
 
@@ -288,7 +289,7 @@ __attribute__((target("avx512f,avx512bw,avx512vl,avx512vbmi2,popcnt"))) static i
 /* AX_RANS_SIMD: the AVX2 decoder when the CPU has it (default 1), 512 = the AVX-512 one, 0 = scalar; read once */
 static inline int axr_decode(const uint8_t* src, size_t sz, uint8_t* out, size_t n) {
 #ifdef AXR_SIMD
-    static const int mode = [] { const char* ev = getenv("AX_RANS_SIMD"); const int want = ev ? atoi(ev) : 1;
+    static const int mode = [] { const char* ev = ax_getenv("AX_RANS_SIMD"); const int want = ev ? atoi(ev) : 1;
         if (want == 512 && __builtin_cpu_supports("avx512f") && __builtin_cpu_supports("avx512bw") && __builtin_cpu_supports("avx512vl")
             && __builtin_cpu_supports("avx512vbmi2")) return 512;
         return (want != 0 && __builtin_cpu_supports("avx2") && __builtin_cpu_supports("popcnt")) ? 1 : 0; }();

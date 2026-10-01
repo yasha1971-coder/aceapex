@@ -12,6 +12,7 @@
 #define AGP_WITH_ZSTD       // ACEAPEX_GPU_VALIDATE_ZSTD: libzstd on the host (link -lzstd)
 #endif
 #include "aceapex_gpu_plan.h"
+#include "ax_env.h"         // ax_getenv: AX_GPU_TILE only with ACEAPEX_ENV_TUNING (gpu_api_test, gpu_run.sh)
 #include "aceapex_gpu_kernels.cuh"
 #include "ax_xxh3.h"
 #include <cuda_runtime.h>
@@ -128,7 +129,7 @@ aceapex_gpu_plan* agpu_plan_build(const void* h_archive, size_t in_bytes, uint64
     if(ok) ok = cudaOccupancyMaxActiveBlocksPerMultiprocessor(&maxblk_t,k_decode_t,32*AXT_SLOTS,0)==cudaSuccess;
     if(!ok){ if(pl->dmem) cudaFree(pl->dmem); delete pl; g_last=ACEAPEX_GPU_E_CUDA; return nullptr; }
     pl->grid=(unsigned)std::max(1,nsm*maxblk); pl->grid_t=(unsigned)std::max(1,nsm*maxblk_t);
-    { const char* e=getenv("AX_GPU_TILE"); pl->tile = e && atoi(e) && P.tile_ok; }
+    { const char* e=ax_getenv("AX_GPU_TILE"); pl->tile = e && atoi(e) && P.tile_ok; }
     return pl;
 }
 extern "C" size_t aceapex_gpu_temp_bytes(const aceapex_gpu_plan* p){ return p ? (size_t)p->P.temp_bytes : 0; }
