@@ -24,7 +24,7 @@ Version macros are bumped at tag time, not in this draft.
   (AX_OPEN_SHB, T2T unpack -17 %), 16-byte stores (AX_VEC). AX_GPU_TILE (literals of a block built in shared
   memory, no literal stream): in the code, off by default until measured [H100].
 - **CPU decode** (ace-core, EPYC 4344P 8 cores / 16 threads, median of 5, bit-perfect): T2T open 8 threads
-  1.039 -> 0.229 s, all threads 0.955 -> 0.202 s; chr1 default 8 threads 0.094 -> 0.026 s; silesia default
+  1.039 -> 0.229 s, all threads 0.955 -> 0.202 s (before = 374e4f0, 2.2.1 + AVX2 rANS); chr1 default 8 threads 0.094 -> 0.026 s; silesia default
   8 threads 0.074 -> 0.038 s. Steps: AVX2 rANS (AX_RANS_SIMD; open profile 1 thread x1.8-x2.4), compressed
   streams read in place, transparent huge pages + parallel prefault, literal tiles in L2 instead of a literal
   stream (AX_LIT_TILE), non-temporal output (AX_NT), default budget = physical cores (all threads >= 1 GiB).
