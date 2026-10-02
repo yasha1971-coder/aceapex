@@ -14,7 +14,7 @@
 # Corpus ladder (md5 / sha256 pinned; from the store, else downloaded and kept in the store):
 #   chr1    hg38 chr1 (the canon of the papers)          UCSC chromosomes/chr1.fa.gz            md5 9465e0f0... (fa)
 #   t2t     T2T-CHM13 v2.0                                NCBI GCA_009914755.4 genomic.fna.gz    md5 cd1e52ce... (fa)
-#   grch38  GRCh38 whole (UCSC hg38.fa.gz)                ONE=1                                  md5 1c9dcadd... (gz)
+#   grch38  GRCh38 whole (UCSC hg38.fa.gz)                ONE=1                                  md5 b2aee9f8... (fa)
 #   hprc    HPRC year-1 assemblies, first HPRC_N (10)      HPRC=1, index of HPP_Year1_Assemblies  sha256 per file (gz)
 # Store: Colab with Drive: MyDrive/aceapex_corpus (corpora) + cache/ (archives); RunPod: /workspace/aceapex_store;
 # elsewhere $HOME/aceapex_store (STORE=... overrides). Speed gate: results/baseline_<card>.tsv for this card only.
@@ -146,7 +146,7 @@ pinned(){ case $1.$2 in
 T=$(nproc); CORP=""
 get_corpus chr1.fa 9465e0f0df6e2c6eb39729c39cee5465 https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr1.fa.gz && CORP="chr1"
 get_corpus t2t.fa cd1e52ce400c027ed0b7ab4b9d613f5a https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/009/914/755/GCA_009914755.4_T2T-CHM13v2.0/GCA_009914755.4_T2T-CHM13v2.0_genomic.fna.gz 9280657210e4161147cbe13b022225b9 && CORP="$CORP t2t"
-[ $MODE = ONE ] && get_corpus grch38.fa "" https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz 1c9dcaddfa41027f17cd8f7a82c7293b && CORP="$CORP grch38"
+[ $MODE = ONE ] && get_corpus grch38.fa b2aee9f885accc00531e59c4736bee63 https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz 1c9dcaddfa41027f17cd8f7a82c7293b && CORP="$CORP grch38"
 for X in $CORP; do
   C=$W/$X.fa
   PROFS="open"; [ $MODE = FULL ] && PROFS="zstd rans open chain"
