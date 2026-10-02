@@ -133,7 +133,7 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
 (3) AX_LINEMODEL (только ENV_TUNING, контейнер AXLINE01): open -6.6..-6.8 %, default -3.8..-4.7 % на chr1/T2T/GRCh38,
 декод +3..+20 %, исключения open T2T 38.6 М -> 0; претензия head_linemodel. (4) Суперблоки: T2T 16 КиБ +2.02 -> +0.69 %
 (zstd-столбцы +0.51 %). (5) aceapex faidx == samtools faidx (претензия head_faidx, 1000 регионов); T2T на процесс
-p50 1.2 мс против 1.75 у samtools bgzip, в одном вызове 172 против 117 мкс. (6) Пакет: scripts/package_linux.sh,
+p50 1.26 мс против 1.88 у samtools bgzip, в одном вызове 158 против 113 мкс. (6) Пакет: scripts/package_linux.sh,
 статический x86-64-v2 + zstd 1.5.7 (.wk/pkg, не отправлен). (7) FORMAT_V3_NOTES: порядок R0, таблица, R1, R2.
 02.10 (3-4): проверки реальности и пангеном (results/reality-2026-10-02.log, results/pangenome-2026-10-02.log,
 docs/FORMAT_V3_NOTES.md). T1: на T2T маскированные повторы — 34 % байт и 35 % бит (2.13 бит/байт, как уникальное),
