@@ -1391,7 +1391,9 @@ static uint8_t* dna_compress(const uint8_t* s, size_t n, size_t& out_sz){
     return buf;
 }
 
-static void dna_decompress(const uint8_t* src, size_t src_sz, uint8_t* dst, size_t n){
+// Aligned to 64 B: its unpack loops are sensitive to where the function lands; an unrelated 300-byte change elsewhere in
+// this file moved it and cost +17 % on the default chr1 decode, 1 thread (perf gate, 03.10); aligned, 0.137 s either way.
+__attribute__((aligned(64))) static void dna_decompress(const uint8_t* src, size_t src_sz, uint8_t* dst, size_t n){
     // framing checked before any read: 20-byte header, sub-frames inside the chunk, nexc <= n
     if(src_sz<20){ g_dec_err=1; return; }
     uint32_t h[5]; memcpy(h,src,20);
