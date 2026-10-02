@@ -1,6 +1,9 @@
 #define ACEAPEX_NO_MAIN
 #include "aceapex_main.cpp"
 #include "aceapex.h"
+#ifdef ACEAPEX_ENV_TUNING
+#include "ax_linemodel.h"                                   // AX_LINEMODEL experiment (tuning builds only)
+#endif
 #include <chrono>
 #include <vector>
 #include <algorithm>
@@ -27,6 +30,9 @@ int64_t aceapex_compress(
     if (!src || !dst) return ACEAPEX_ERR_DATA;
     if (threads <= 0) threads = 8;
     if (level <= 0)   level   = 2;
+#ifdef ACEAPEX_ENV_TUNING
+    if (axlm::wanted()) return axlm::compress((const uint8_t*)src, src_size, (uint8_t*)dst, dst_capacity, level, threads);
+#endif
 
     std::vector<BlockOffsets> boffs;
     uint8_t *rl,*ro,*rn,*rc;
@@ -266,6 +272,9 @@ int64_t aceapex_decompress_mt(
     const void* src, size_t src_size,
     void*       dst, size_t dst_capacity, int threads)
 {
+#ifdef ACEAPEX_ENV_TUNING
+    if (axlm::is(src, src_size)) return dst ? axlm::decompress((const uint8_t*)src, src_size, (uint8_t*)dst, dst_capacity, threads) : ACEAPEX_ERR_DATA;
+#endif
     const double t0 = ax_pt() ? ax_now() : 0;
     static const bool tile = [] { const char* e = ax_getenv("AX_LIT_TILE"); return e ? atoi(e) != 0 : true; }();   // default 1
     AxStreams S; int64_t r = ax_entropy_decode(src, src_size, threads, S, tile);
@@ -316,6 +325,9 @@ int64_t aceapex_decompress_region(
     void*       dst, size_t dst_capacity,
     uint64_t    offset, uint64_t length)
 {
+#ifdef ACEAPEX_ENV_TUNING
+    if (axlm::is(src, src_size)) return dst ? axlm::region((const uint8_t*)src, src_size, (uint8_t*)dst, dst_capacity, offset, length) : ACEAPEX_ERR_DATA;
+#endif
     if (!src || src_size < sizeof(AetHeader)) return ACEAPEX_ERR_DATA;
     const uint8_t* p = (const uint8_t*)src;
     AetHeader hdr; memcpy(&hdr, p, sizeof(hdr));
