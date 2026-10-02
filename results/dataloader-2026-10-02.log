@@ -11,13 +11,13 @@
 [h5-emu] 4096 x 32768: 11887 blocks (194.8 MB of slots), 28003 rANS + 6609 open + 0 stored jobs, selection 1048 us, == original
 ## chr1.open: claim head_gpu_windows_emu (same 8 batches)
 ## CPU loader: aceapex_decompress_region per window (1 thread: one batch; 16 threads: median of 20 batches), 1 % compared; no card here, so no H2D
-[dl] W  1024 n   256: CPU 1 t     9455 w/s, 16 t     83253 w/s, + H2D     83253 w/s | 1 % checked == original
-[dl] W  1024 n  4096: CPU 1 t     9977 w/s, 16 t     87219 w/s, + H2D     87219 w/s | 1 % checked == original
-[dl] W  1024 n 65536: CPU 1 t     9913 w/s, 16 t     84996 w/s, + H2D     84996 w/s | 1 % checked == original
-[dl] W  8192 n   256: CPU 1 t     8911 w/s, 16 t     77246 w/s, + H2D     77246 w/s | 1 % checked == original
-[dl] W  8192 n  4096: CPU 1 t     9068 w/s, 16 t     82692 w/s, + H2D     82692 w/s | 1 % checked == original
-[dl] W  8192 n 65536: CPU 1 t     9434 w/s, 16 t     81994 w/s, + H2D     81994 w/s | 1 % checked == original
-[dl] W 32768 n   256: CPU 1 t     7902 w/s, 16 t     69995 w/s, + H2D     69995 w/s | 1 % checked == original
-[dl] W 32768 n  4096: CPU 1 t     7585 w/s, 16 t     73866 w/s, + H2D     73866 w/s | 1 % checked == original
-[dl] W 32768 n 65536: CPU 1 t     7651 w/s, 16 t     72925 w/s, + H2D     72925 w/s | 1 % checked == original
+[dl] W  1024 n   256: CPU 1 t     9455 w/s, 16 t     83253 w/s | 1 % checked == original
+[dl] W  1024 n  4096: CPU 1 t     9977 w/s, 16 t     87219 w/s | 1 % checked == original
+[dl] W  1024 n 65536: CPU 1 t     9913 w/s, 16 t     84996 w/s | 1 % checked == original
+[dl] W  8192 n   256: CPU 1 t     8911 w/s, 16 t     77246 w/s | 1 % checked == original
+[dl] W  8192 n  4096: CPU 1 t     9068 w/s, 16 t     82692 w/s | 1 % checked == original
+[dl] W  8192 n 65536: CPU 1 t     9434 w/s, 16 t     81994 w/s | 1 % checked == original
+[dl] W 32768 n   256: CPU 1 t     7902 w/s, 16 t     69995 w/s | 1 % checked == original
+[dl] W 32768 n  4096: CPU 1 t     7585 w/s, 16 t     73866 w/s | 1 % checked == original
+[dl] W 32768 n 65536: CPU 1 t     7651 w/s, 16 t     72925 w/s | 1 % checked == original
 # GPU rows (windows/s, GB/s, batch p50/p99, host time), CPU + H2D and the speed-up: T-H5 on the card (gpu_run.sh, HTESTS=1 or ONE)
