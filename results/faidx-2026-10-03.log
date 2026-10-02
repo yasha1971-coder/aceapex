@@ -14,3 +14,7 @@ old t64: RHROW	10000	120.8/270.2	123.0/273.8	99.0/189.3	ok
 new t16: RHROW	10000	49.8/125.2	51.0/126.5	99.8/191.1	ok
 new t64: RHROW	10000	78.9/230.0	80.3/232.6	101.8/194.8	ok
 # RHROW: n, aceapex_decompress_region, + line ends out, htslib faidx_fetch_seq64 (fai_load3 once, default cache), status
+## perf gate on the first version: chr1 default 1 thread +17 %, t2t default 1 thread +13 % (FAIL) - dna_decompress moved
+## (0x83b0 -> 0x8690), its own code unchanged; with __attribute__((aligned(64))) 0.137 s (main 0.139 s); gate PASS after
+final (aligned): faidx -r t16 0.71-0.72 s (71-72 us per region), md5 90523a49; RHROW 10000 49.7/125.1 50.8/126.7 102.1/193.1 ok
+judge 66 pass / 0 fail; perf gate PASS (results/perf-gate-2026-10-02-*.log of this branch)
