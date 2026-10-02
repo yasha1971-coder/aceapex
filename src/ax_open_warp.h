@@ -172,6 +172,9 @@ static inline int axo_parse(const uint8_t* s, size_t sz, uint32_t raw, AxoParts*
     if (o != sz) return -1;
     if (P->nexc == 0 ? (P->ngap || P->h[2] || P->h[3]) : (P->ngap < P->nexc || !P->h[2] || !P->h[3])) return -1;
     if (P->ncse == 0 || P->nexc > raw) return -1;
+    /* hard bounds (verify/repro/gpu_hang): a run or a gap is one LEB128 of <= 5 bytes and there are <= raw + 1 runs;
+       without them a flipped high byte of ncse made a 3 G-symbol rANS piece: 15 GB of temp, a 93 M-trip warp loop */
+    if ((uint64_t)P->ncse > 5 * (uint64_t)raw + 5 || (uint64_t)P->ngap > 5 * (uint64_t)P->nexc) return -1;
     P->n[0] = (raw + 3) / 4; P->n[1] = P->ncse; P->n[2] = P->ngap; P->n[3] = P->nexc;
     for (int k = 0; k < 4; k++) {
         if (P->n[k] == 0) { if (P->h[k]) return -1; P->mode[k] = 0; continue; }
