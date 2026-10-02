@@ -24,11 +24,26 @@ Version macros are bumped at tag time, not in this draft.
   (AX_OPEN_SHB, T2T unpack -17 %), 16-byte stores (AX_VEC). AX_GPU_TILE (literals of a block built in shared
   memory, no literal stream): in the code, off by default until measured [H100].
 - **CPU decode** (ace-core, EPYC 4344P 8 cores / 16 threads, median of 5, bit-perfect): T2T open 8 threads
-  1.039 -> 0.229 s, all threads 0.955 -> 0.202 s (before = 374e4f0, 2.2.1 + AVX2 rANS); chr1 default 8 threads 0.094 -> 0.026 s; silesia default
+  1.039 -> 0.229 s, all threads 0.955 -> 0.183 s (before = 374e4f0, 2.2.1 + AVX2 rANS); chr1 default 8 threads 0.094 -> 0.026 s; silesia default
   8 threads 0.074 -> 0.038 s. Steps: AVX2 rANS (AX_RANS_SIMD; open profile 1 thread x1.8-x2.4), compressed
   streams read in place, transparent huge pages + parallel prefault, literal tiles in L2 instead of a literal
   stream (AX_LIT_TILE), non-temporal output (AX_NT), default budget = physical cores (all threads >= 1 GiB).
   AVX-512 rANS (AX_RANS_SIMD=512) kept, not default: no gain on Zen 4.
+- **Streaming decode (CPU)**: `aceapex_decompress_stream(read cb, write cb, threads, flags)` on the tile path, memory
+  O(threads x tile), not O(archive): T2T open 16 threads 14.2 GB/s at 34.9 MB RSS, 1 thread 1.8 GB/s at 7 MB
+  (`results/stream-2026-10-02.log`); `ACEAPEX_STREAM_VERIFY` checks XXH3 against the header; CLI `d --out -` / `-c`
+  to stdout (archives without the chunked literal layout fall back to the whole-file decoder). Claim `head_stream`.
+- **Thread start**: the encoder's two thread_local arrays (8 MiB of TLS, zeroed in every new thread of a process
+  linking the library, decode threads included) are heap buffers on first use: T2T open full decode, all threads,
+  0.202 -> 0.183 s.
+- **GPU outputs larger than the card**: block-range plans `aceapex_gpu_plan_create_blocks(h, n, b0, b1, flags)` +
+  `aceapex_gpu_plan_input_window` (ABI additions): streams restricted to the blocks' chunks, temp and output sized
+  for the batch; `scripts/gpu_stream.cu` decodes batches sized from the free memory, two in flight (decode / D2H),
+  XXH3 on the host. CPU judge: 121 batches through the plan emulator == original [H100: speed].
+- **Measurement tools** (no format change; `results/dep-range-2026-10-01.log`, `results/reality-2026-10-02.log`,
+  `results/pangenome-2026-10-02.log`): match reach, bits by region class, approximate-repeat estimate, block cost
+  and thread tail (`AX_BLOCK_TIMES`, `AX_SCHED_COST`), and the AX_REFSEG pangenome prototype (`scripts/refseg.cpp`,
+  its own container). Encoder knobs for them in tuning builds only: `AX_MAXDIST`, `AX_HASH12`; default bytes unchanged.
 - **Speed gates**: `make perf-gate` (`results/baseline_ace-core.tsv`, > 5 % slower fails), per-card GPU baselines
   checked in the run's SUMMARY.
 - **One GPU run script**: `scripts/gpu_run.sh` (RunPod / Colab / any host; corpus ladder chr1 -> T2T -> GRCh38 ->

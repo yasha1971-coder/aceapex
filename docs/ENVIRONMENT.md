@@ -27,6 +27,11 @@ nothing: the defaults below apply, the archive bytes and the threads depend only
 | `LIT_LANES_DEC` | the call's budget | decoder: literal lanes |
 | `ACEAPEX_DUMP` | unset | decoder: write the decoded streams to `streams.bin` (diagnostics) |
 | `AX_MAXDIST` | unset (128 MiB) | experiment: matches farther back than this many bytes are not taken (results/dep-range-2026-10-01.log) |
+| `AX_HASH12` | unset (0) | encoder experiment: head table keyed by 12 bytes, not 4 (with `AX_HLOG=22`; results/reality-2026-10-02.log T1) |
+| `AX_BLOCK_TIMES` | unset | CPU tile decode: per group / block times to this file (results/reality-2026-10-02.log T2, scripts/block_times.py) |
+| `AX_SCHED_COST` | unset (0) | CPU tile decode: 1 = thread runs of equal estimated cost, 2 = LPT (T2: within noise / 3-8 % slower) |
+| `AX_COST_CMD` | 4 | weight of a command byte against a literal byte in `AX_SCHED_COST` |
+| `AX_REFSEG` | unset (0) | `scripts/refseg.cpp` only: reference segments between assemblies (prototype, own container) |
 
 ## Decoder knobs (2.3) — only in builds with ACEAPEX_ENV_TUNING
 

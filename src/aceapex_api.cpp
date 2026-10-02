@@ -192,15 +192,41 @@ static int64_t ax_decode_tiled(AxStreams& S, uint8_t* dst, int budget) {
     // each thread a contiguous run of groups: the chunk a group shares with the next one is moved to the front of the
     // tile instead of being decoded again (decoded twice only where two threads meet)
     const int T = std::max(1, std::min<int>(budget, (int)items.size()));
-    struct Ctx { AxStreams* S; uint8_t* dst; const Item* items; size_t n; int T; size_t CH, bs, osz; bool nt; std::atomic<int> bad; };
-    Ctx cx{&S, dst, items.data(), items.size(), T, CH, bs, osz, ax_nt_for(budget, osz), {0}};
+    // AX_BLOCK_TIMES=<file> (diagnostics, tuning builds): per group its thread, start and end (ns from the call), the
+    // literal chunk time and per block its decode time - results/reality-2026-10-02.log T2
+    static const char* const times_path = ax_getenv("AX_BLOCK_TIMES");
+    // AX_SCHED_COST (tuning builds; default 0 = equal numbers of groups): 1 = contiguous runs of equal estimated cost,
+    // 2 = LPT (groups by cost, largest first, to the least loaded thread; each thread keeps its groups in stream order).
+    // The cost of a group is known once the token streams are decoded: literal bytes + AX_COST_CMD x command bytes.
+    static const int sched = [] { const char* e = ax_getenv("AX_SCHED_COST"); return e ? atoi(e) : 0; }();
+    static const double ccmd = [] { const char* e = ax_getenv("AX_COST_CMD"); return e ? atof(e) : 4.0; }();
+    std::vector<std::vector<size_t>> lists; std::vector<size_t> cut((size_t)T + 1, 0);
+    for (int t = 0; t <= T; t++) cut[(size_t)t] = items.size() * (size_t)t / (size_t)T;
+    if (sched && T > 1) {
+        std::vector<double> cost(items.size()); double tot = 0;
+        for (size_t i = 0; i < items.size(); i++) { double c = 0; for (size_t b = items[i].b0; b < items[i].b1; b++) c += (double)S.boffs[b].lit_sz + ccmd * (double)S.boffs[b].cmd_sz; cost[i] = c; tot += c; }
+        if (sched == 1) { double acc = 0; int t = 1; for (size_t i = 0; i < items.size() && t < T; i++) { acc += cost[i]; while (t < T && acc >= tot * t / T) cut[(size_t)t++] = i + 1; } for (; t < T; t++) cut[(size_t)t] = items.size(); }
+        else { std::vector<size_t> ix(items.size()); for (size_t i = 0; i < ix.size(); i++) ix[i] = i;
+               std::stable_sort(ix.begin(), ix.end(), [&](size_t x, size_t y) { return cost[x] > cost[y]; });
+               lists.assign((size_t)T, {}); std::vector<double> load((size_t)T, 0);
+               for (size_t i : ix) { const size_t t = (size_t)(std::min_element(load.begin(), load.end()) - load.begin()); lists[t].push_back(i); load[t] += cost[i]; }
+               for (auto& l : lists) std::sort(l.begin(), l.end()); }
+    }
+    struct GT { uint32_t t; double s, e, lit; };
+    std::vector<GT> gt(times_path ? items.size() : 0); std::vector<float> bt(times_path ? nb : 0); const double tc0 = ax_now();
+    struct Ctx { AxStreams* S; uint8_t* dst; const Item* items; size_t n; int T; size_t CH, bs, osz; bool nt; std::atomic<int> bad;
+                 const size_t* cut; const std::vector<std::vector<size_t>>* lists; GT* gt; float* bt; double tc0; };
+    Ctx cx{&S, dst, items.data(), items.size(), T, CH, bs, osz, ax_nt_for(budget, osz), {0}, cut.data(), &lists, gt.empty() ? nullptr : gt.data(), bt.empty() ? nullptr : bt.data(), tc0};
     struct Arg { Ctx* c; int t; };
     auto fn = [](void* v) -> void* {
         Arg* ar = (Arg*)v; Ctx* c = ar->c; std::vector<uint8_t> tile, nbuf;
-        const size_t i0 = c->n * (size_t)ar->t / (size_t)c->T, i1 = c->n * (size_t)(ar->t + 1) / (size_t)c->T;
+        const bool lst = !c->lists->empty(); const std::vector<size_t>* L = lst ? &(*c->lists)[(size_t)ar->t] : nullptr;
+        const size_t i0 = lst ? 0 : c->cut[ar->t], i1 = lst ? L->size() : c->cut[ar->t + 1];
         size_t have = (size_t)-1;                                   // chunk at the end of the tile from the previous group
         size_t have_t0 = 0, have_sz = 0;
-        for (size_t i = i0; i < i1; i++) {
+        for (size_t q = i0; q < i1; q++) {
+            const size_t i = lst ? (*L)[q] : q;
+            const double gs = c->gt ? ax_now() : 0;
             const Item& it = c->items[i]; const size_t t0 = it.k0 * c->CH;
             const size_t tsz = std::min((it.k1 + 1) * c->CH, (size_t)c->S->ls) - t0;
             if (tile.size() < tsz + 64) { std::vector<uint8_t> nt(tsz + 64 + c->CH); if (have != (size_t)-1) memcpy(nt.data(), tile.data(), have_sz); tile.swap(nt); }
@@ -210,13 +236,16 @@ static int64_t ax_decode_tiled(AxStreams& S, uint8_t* dst, int budget) {
                 memmove(tile.data(), tile.data() + at, len); k++; }
             for (; k <= it.k1 && k < c->S->lch.size(); k++)
                 if (!ax_lit_chunk_decode(c->S->lch[k], tile.data() + (c->S->lch[k].off - t0))) c->bad = 1;
+            const double gl = c->gt ? ax_now() : 0; double bl = gl;
             for (size_t b = it.b0; b < it.b1; b++) {
                 const BlockOffsets& bo = c->S->boffs[b]; const size_t bstart = b * c->bs;
                 const size_t bsize = c->osz > bstart ? std::min(c->bs, c->osz - bstart) : 0;
                 if (!bsize) continue;
                 if (bo.lit_sz && (bo.lit_off < t0 || bo.lit_off + bo.lit_sz > t0 + tsz)) { c->bad = 1; continue; }
                 ax_block_out(c->dst, bstart, bsize, bo, tile.data() + (bo.lit_sz ? bo.lit_off - t0 : 0), c->S->o, c->S->n, c->S->c, nbuf, c->nt);
+                if (c->bt) { const double x = ax_now(); c->bt[b] = (float)((x - bl) * 1e9); bl = x; }
             }
+            if (c->gt) c->gt[i] = {(uint32_t)ar->t, (gs - c->tc0) * 1e9, (ax_now() - c->tc0) * 1e9, (gl - gs) * 1e9};
             have = it.k1; have_t0 = t0; have_sz = tsz;
         }
         ax_nt_fence(); return nullptr;
@@ -225,6 +254,11 @@ static int64_t ax_decode_tiled(AxStreams& S, uint8_t* dst, int budget) {
     if (T == 1) fn(&args[0]);
     else { std::vector<pthread_t> th((size_t)T - 1); for (int t = 1; t < T; t++) ax_thread(&th[(size_t)t - 1], fn, &args[(size_t)t]);
            fn(&args[0]); for (int t = 1; t < T; t++) pthread_join(th[(size_t)t - 1], nullptr); }
+    if (times_path) { FILE* f = fopen(times_path, "w");
+        if (f) { fprintf(f, "#threads %d sched %d wall_ns %.0f\n", T, sched, (ax_now() - tc0) * 1e9);
+                 for (size_t i = 0; i < items.size(); i++) { fprintf(f, "G\t%zu\t%u\t%.0f\t%.0f\t%.0f\t%zu\t%zu\n", i, gt[i].t, gt[i].s, gt[i].e, gt[i].lit, items[i].b0, items[i].b1); }
+                 for (size_t b = 0; b < nb; b++) fprintf(f, "B\t%zu\t%.0f\t%llu\t%llu\t%llu\n", b, (double)bt[b], (unsigned long long)S.boffs[b].lit_sz, (unsigned long long)S.boffs[b].cmd_sz, (unsigned long long)S.boffs[b].off_sz);
+                 fclose(f); } }
     return cx.bad ? ACEAPEX_ERR_DATA : (int64_t)osz;
 }
 

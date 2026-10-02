@@ -119,7 +119,18 @@ struct ThreadHashTable {
     int       noflat;      // no offset flattening (l1)
     uint32_t  minl;        // shortest match taken (l1: 32; 0 = any)
     uint32_t  skip;        // literal-run skip shift (l1: 4; 0 = off)
+    int       h16;         // AX_HASH12 (tuning builds): head table keyed by 12 bytes, not 4 (DNA: a 4-byte key holds 256
+                           // values, its latest position is rarely the copy; results/reality-2026-10-02.log T1, AX_REFSEG)
 };
+// head-table slot of position p: 4 bytes (default) or, AX_HASH12 in tuning builds, 12 bytes (the callers stay 12
+// bytes before the block end: pos + 12 < bend)
+static inline uint32_t ax_hslot(const ThreadHashTable* ht, const uint8_t* p) {
+#ifdef ACEAPEX_ENV_TUNING
+    if (ht->h16) { const uint64_t a = AX_read64(p); const uint32_t b = AX_read32(p + 8);
+        return (uint32_t)(((a * 0x9E3779B97F4A7C15ull) ^ ((uint64_t)b * 0xC2B2AE3D27D4EB4Full)) >> 42) & ht->hash_mask; }
+#endif
+    return ((AX_read32(p)*0x9E3779B1u)>>10)&ht->hash_mask;
+}
  
 struct BlockOffsets {
     uint64_t lit_off, off_off, len_off, cmd_off;
@@ -166,6 +177,7 @@ static inline uint32_t ax_max_dist() {
         return (x > 0 && x < MAX_DIST) ? (uint32_t)x : (uint32_t)MAX_DIST; }();
     return v;
 }
+// bstart here is the window's low end: the block start, or (AX_REFSEG, tuning builds) the start of the reference prefix
 static inline int find_matches(const uint8_t* src, size_t pos, size_t bstart, size_t bend,
                                 ThreadHashTable* ht, uint32_t* rep, Match* out, int maxout) {
     int max_attempts = ht->max_attempts;
@@ -177,7 +189,7 @@ static inline int find_matches(const uint8_t* src, size_t pos, size_t bstart, si
         uint32_t l=ax_ext(src+pos,src+pos-d,4,maxl);
         if (l>=6) out[n++]={l,d,i};
     }
-    uint32_t h=((AX_read32(src+pos)*0x9E3779B1u)>>10)&ht->hash_mask;
+    uint32_t h=ax_hslot(ht,src+pos);
     uint32_t rp=(uint32_t)(pos-bstart);
     uint32_t hr=(ht->epoch[h]==ht->cur_epoch)?ht->pos[h]:AX_NOPOS;
     ht->pos[h]=rp; ht->epoch[h]=ht->cur_epoch;
@@ -203,9 +215,12 @@ static inline int find_matches(const uint8_t* src, size_t pos, size_t bstart, si
     }
     return n;
 }
+// wlo < bstart (AX_REFSEG, tuning builds): the bytes [wlo, bstart) are a history the block may copy from (a reference
+// segment put before it): entered into the head table first, matches may reach back to wlo. Default wlo = bstart.
 static void compress_block(const uint8_t* src, size_t src_size,
                             size_t bstart, size_t bend,
-                            ThreadHashTable* ht, BlockResult* res) {
+                            ThreadHashTable* ht, BlockResult* res, size_t wlo = (size_t)-1) {
+    if (wlo > bstart) wlo = bstart;
     size_t bsz = bend - bstart;
     size_t cap = bsz * 2 + 1024;
     res->lit_buf = (uint8_t*)malloc(cap);
@@ -224,6 +239,8 @@ static void compress_block(const uint8_t* src, size_t src_size,
     }
     if (!ht->l1) { size_t n = bsz < (size_t)ht->chain_mask + 1 ? bsz : (size_t)ht->chain_mask + 1;
       memset(ht->chain, 0xFF, n * sizeof(uint32_t)); }        // no stale links from earlier blocks
+    for (size_t p = wlo; p + 16 <= bstart; p++) {             // AX_REFSEG: the prefix into the head table (l1: no chain)
+        const uint32_t hh = ax_hslot(ht, src + p); ht->pos[hh] = (uint32_t)(p - wlo); ht->epoch[hh] = ht->cur_epoch; }
  
     size_t lit_i=0, off_i=0, len_i=0, cmd_i=0, pos=bstart;
     uint32_t rep[4]={1,2,4,8}, lit_run=0, miss=0;
@@ -259,12 +276,12 @@ static void compress_block(const uint8_t* src, size_t src_size,
  
     while (pos + 12 < bend && !ov) {
         uint32_t c_len=0, c_off=0; int c_rep=-1;
-        Match matches[36]; int nm=find_matches(src,pos,bstart,bend,ht,rep,matches,36);
+        Match matches[36]; int nm=find_matches(src,pos,wlo,bend,ht,rep,matches,36);
         for(int mi=0;mi<nm;mi++) if(matches[mi].len>c_len){c_len=matches[mi].len;c_off=matches[mi].off;c_rep=matches[mi].rep;}
         if (c_len >= 6 && c_len < 64 && pos+13 < bend) {
-            uint32_t h1=((AX_read32(src+pos+1)*0x9E3779B1u)>>10)&ht->hash_mask;
-            int64_t mp1=(ht->epoch[h1]==ht->cur_epoch)?(int64_t)bstart+ht->pos[h1]:-1;
-            if (mp1>=0 && (size_t)mp1>=bstart && (size_t)mp1<pos+1) {
+            uint32_t h1=ax_hslot(ht,src+pos+1);
+            int64_t mp1=(ht->epoch[h1]==ht->cur_epoch)?(int64_t)wlo+ht->pos[h1]:-1;
+            if (mp1>=0 && (size_t)mp1>=wlo && (size_t)mp1<pos+1) {
                 uint32_t dist1=(uint32_t)(pos+1-mp1);
                 if (dist1<ax_max_dist() && dist1!=rep[0]) {
                     uint32_t mlen1=min_match_len(dist1);
@@ -284,9 +301,9 @@ static void compress_block(const uint8_t* src, size_t src_size,
             }
             // Lazy check pos+2
             if (c_len >= 6 && c_len < 64 && pos+14 < bend) {
-                uint32_t h2=((AX_read32(src+pos+2)*0x9E3779B1u)>>10)&ht->hash_mask;
-                int64_t mp2=(ht->epoch[h2]==ht->cur_epoch)?(int64_t)bstart+ht->pos[h2]:-1;
-                if (mp2>=0 && (size_t)mp2>=bstart && (size_t)mp2<pos+2) {
+                uint32_t h2=ax_hslot(ht,src+pos+2);
+                int64_t mp2=(ht->epoch[h2]==ht->cur_epoch)?(int64_t)wlo+ht->pos[h2]:-1;
+                if (mp2>=0 && (size_t)mp2>=wlo && (size_t)mp2<pos+2) {
                     uint32_t dist2=(uint32_t)(pos+2-mp2);
                     if (dist2<ax_max_dist() && dist2!=rep[0]) {
                         uint32_t maxl2=(uint32_t)(bend-pos-2);
@@ -347,10 +364,10 @@ static void compress_block(const uint8_t* src, size_t src_size,
             // Insert intermediate positions for short matches only
             if (c_len < 32) {
               uint32_t step=1+(c_len>>3);
-              for(size_t ii=1;ii<c_len&&pos+ii+4<bend;ii+=step){
-                uint32_t hh=((AX_read32(src+pos+ii)*0x9E3779B1u)>>10)&ht->hash_mask;
-                if (!ht->l1) ht->chain[(uint32_t)(pos+ii-bstart)&ht->chain_mask]=(ht->epoch[hh]==ht->cur_epoch)?ht->pos[hh]:AX_NOPOS;
-                ht->pos[hh]=(uint32_t)(pos+ii-bstart); ht->epoch[hh]=ht->cur_epoch;
+              for(size_t ii=1;ii<c_len&&pos+ii+(ht->h16?12:4)<bend;ii+=step){
+                uint32_t hh=ax_hslot(ht,src+pos+ii);
+                if (!ht->l1) ht->chain[(uint32_t)(pos+ii-wlo)&ht->chain_mask]=(ht->epoch[hh]==ht->cur_epoch)?ht->pos[hh]:AX_NOPOS;
+                ht->pos[hh]=(uint32_t)(pos+ii-wlo); ht->epoch[hh]=ht->cur_epoch;
               }
             }
             pos+=c_len; continue;
@@ -358,8 +375,8 @@ static void compress_block(const uint8_t* src, size_t src_size,
         if (lit_i>=lit_cap) { ov=1; break; }
         res->lit_buf[lit_i++]=src[pos++]; lit_run++; miss++;
         if (miss>=1 && pos+12<bend) {
-            uint32_t hh=((AX_read32(src+pos)*0x9E3779B1u)>>10)&ht->hash_mask;
-            if(hh<=ht->hash_mask) { ht->pos[hh]=(uint32_t)(pos-bstart); ht->epoch[hh]=ht->cur_epoch; }
+            uint32_t hh=ax_hslot(ht,src+pos);
+            if(hh<=ht->hash_mask) { ht->pos[hh]=(uint32_t)(pos-wlo); ht->epoch[hh]=ht->cur_epoch; }
             if (lit_i>=lit_cap) { ov=1; break; }
             res->lit_buf[lit_i++]=src[pos++]; lit_run++;
             // l1: skip faster through literal runs (LZ4-style): 1 + miss>>l1_skip extra bytes
@@ -379,6 +396,13 @@ static void compress_block(const uint8_t* src, size_t src_size,
     res->len_size=len_i; res->cmd_size=cmd_i; res->overflow=ov;
 }
  
+#ifdef ACEAPEX_ENV_TUNING
+// AX_REFSEG prototype (scripts/refseg.cpp, tuning builds only; not a format): the tool supplies a block's reference
+// prefix (bytes of another assembly, or their reverse complement); the block is parsed after it with matches allowed
+// into it. Null (the default and every library call) = blocks alone, as always.
+typedef size_t (*AxRefFn)(void* ctx, size_t block, const uint8_t** prefix);
+static AxRefFn g_ax_ref_fn = nullptr; static void* g_ax_ref_ctx = nullptr;
+#endif
 static void* worker_func(void* arg) {
     WorkerArgs* wa=(WorkerArgs*)arg;
     PoolState*  ps=wa->pool;
@@ -387,6 +411,12 @@ static void* worker_func(void* arg) {
         if (bid>=ps->num_blocks) break;
         size_t bstart=bid*g_block_size, bend=bstart+g_block_size;
         if (bend>ps->src_size) bend=ps->src_size;
+#ifdef ACEAPEX_ENV_TUNING
+        if (g_ax_ref_fn) { const uint8_t* pre = nullptr; const size_t pl = g_ax_ref_fn(g_ax_ref_ctx, bid, &pre);
+            if (pl) { static thread_local std::vector<uint8_t> V; const size_t n = bend - bstart; V.resize(pl + n + 64);
+                memcpy(V.data(), pre, pl); memcpy(V.data() + pl, ps->src + bstart, n); memset(V.data() + pl + n, 0, 64);
+                compress_block(V.data(), pl + n, pl, pl + n, wa->htab, &ps->results[bid], 0); continue; } }
+#endif
         compress_block(ps->src,ps->src_size,bstart,bend,wa->htab,&ps->results[bid]);
     }
     return nullptr;
@@ -541,14 +571,16 @@ static inline void ax_match_fast(uint8_t* d, uint32_t dist, uint32_t len) {
 // run (128) plus 16 bytes of slack, literal runs are copied with 16-byte steps without any size check and matches
 // check only their own length. Checked: the wild copies where the slack allows, exact copies otherwise. The checks
 // and their order are those of the checked zone, so a corrupt block stops at the same token with the same bytes.
+// out0 > 0 (AX_REFSEG prototype only): dst[0, out0) already holds the block's reference prefix, the block is written
+// after it and its matches may reach into it; the bounds checks stay (dist <= out, out + l <= dst_size).
 static void decompress_streams(
     uint8_t* dst, size_t dst_size,
     const uint8_t* lit, size_t lit_sz,
     const uint8_t* off, size_t off_sz,
     const uint8_t* len, size_t len_sz,
-    const uint8_t* cmd, size_t cmd_sz)
+    const uint8_t* cmd, size_t cmd_sz, size_t out0 = 0)
 {
-    size_t lp=0, op=0, np=0, cp=0, out=0;
+    size_t lp=0, op=0, np=0, cp=0, out=out0;
     uint32_t rep[4]={1,2,4,8};
     const size_t SL = 32;                                    // slack for wild copies
     const size_t FZ = 128 + SL;                              // fast zone: room for any literal run + slack
@@ -1075,6 +1107,7 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
         { const char* e=ax_getenv("AX_MINL"); htabs[i]->minl = !l1 ? 0 : e ? (uint32_t)atoi(e) : 32; }
         { const char* e=ax_getenv("AX_SKIP"); htabs[i]->skip = !l1 ? 0 : e ? (uint32_t)atoi(e) : 4; }
         { const char* e=ax_getenv("AX_ATT"); if(e) htabs[i]->max_attempts=atoi(e); }
+        { const char* e=ax_getenv("AX_HASH12"); htabs[i]->h16 = e ? atoi(e) : 0; }
     }
     BlockResult* results=(BlockResult*)calloc(num_blocks,sizeof(BlockResult));
     if(!results){return false;}
@@ -1863,8 +1896,16 @@ static int do_compress(const char* in_path, const char* out_path, int threads, i
 static int64_t ax_cli_pread(void* c, uint64_t off, void* b, size_t n) { return pread(*(int*)c, b, n, (off_t)off); }
 static int ax_cli_write(void* c, const void* b, size_t n) { const uint8_t* p = (const uint8_t*)b;
     while (n) { const ssize_t w = write(*(int*)c, p, n); if (w <= 0) return 1; p += w; n -= (size_t)w; } return 0; }
+static int do_decompress(const char* in_path, const char* out_path, int threads);
 static int do_decompress_stream(const char* in_path, int threads) {
     int fd = open(in_path, O_RDONLY); if (fd < 0) { fprintf(stderr, "Cannot open: %s\n", in_path); return 1; }
+    {   // a literal stream without the chunked layout (text before 2.1, or a literal stream of more than 65535 chunks:
+        // DNA inputs above ~4 GiB of literals, lit_compress) is not streamed: the whole-file decoder writes to stdout
+        AetHeader h; uint64_t w = 0;
+        if (pread(fd, &h, sizeof h, 0) == (ssize_t)sizeof h && !memcmp(h.magic, "ACEPX2\0\0", 8) && h.num_blocks && h.zlit_sz >= 8 &&
+            pread(fd, &w, 8, (off_t)(sizeof h + (uint64_t)h.num_blocks * sizeof(BlockOffsets))) == 8 && !(((w >> 62) & 1) && ((w >> 61) & 1))) {
+            close(fd); fprintf(stderr, "  literal stream not chunked: whole-file decode to stdout (memory = archive + output)\n");
+            return do_decompress(in_path, "/dev/stdout", threads); } }
     int out = 1; const double t0 = now_sec();
     const int64_t n = aceapex_decompress_stream(ax_cli_pread, &fd, ax_cli_write, &out, threads, ACEAPEX_STREAM_VERIFY);
     close(fd);
