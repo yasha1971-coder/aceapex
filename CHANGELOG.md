@@ -40,6 +40,8 @@ Version macros are bumped at tag time, not in this draft.
   `aceapex_gpu_plan_input_window` (ABI additions): streams restricted to the blocks' chunks, temp and output sized
   for the batch; `scripts/gpu_stream.cu` decodes batches sized from the free memory, two in flight (decode / D2H),
   XXH3 on the host. CPU judge: 121 batches through the plan emulator == original [H100: speed].
+- open: token chunk 16 KiB by default; region decode CPU p50 -21 % (T2T) / -37 % (chr1), p99 -35 % / -26 %; +452 B on T2T
+  (+8 186 B on chr1); full decode unchanged within 2.3 %; old archives decode unchanged (`results/open-tok16-2026-10-02.log`).
 - **Literal chunk cap lifted** (65 535 -> 2^30 chunks): a DNA input above ~4 GiB of literals keeps the chunked layout
   and the DNA transform - HPRC x 3 in one file 2 705 974 278 -> 2 140 557 191 B (ratio 3.36 -> 4.24) - and streams.
   Archive bytes change only for such inputs; the 2.2.2 C++ and C99 decoders read them (`results/litcap-2026-10-02.log`).

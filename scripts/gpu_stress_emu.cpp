@@ -8,6 +8,7 @@
 // (2^22: the intact archive needs at most 2^9 per job) is what the device turns into a multi-second kernel - a hang
 // for the T-H4 watchdog. Such copies are saved (archive + kind + index) when a directory is given.
 // Usage: gpu_stress_emu <archive.open.aet> <original> [n=10000] [save_dir]  |  gpu_stress_emu --check <archive>
+//        gpu_stress_emu --decode <archive> <original>   (the GPU plan + executor, one archive)
 // Last line: STRESSEMU <tab> n refused caught harmless silent silent_xxh3 hangs ok|FAILED
 // Build: g++ -std=c++17 -O2 -Isrc scripts/gpu_stress_emu.cpp src/aceapex_api.cpp -lzstd -lpthread
 #define main gpu_plan_emu_main
@@ -21,6 +22,11 @@ int main(int argc, char** argv) {
         agp::Plan P; if (agp::build(a.data(), a.size(), P, nvt_cpu)) { printf("refused\n"); return 0; }
         uint64_t trips = 0; for (const auto& r : P.rans) trips = std::max<uint64_t>(trips, (r.n + 31) / 32);
         printf("accepted, longest loop %llu trips, temp %llu B\n", (unsigned long long)trips, (unsigned long long)P.temp_bytes); return 0; }
+    if (argc == 4 && !strcmp(argv[1], "--decode")) {                  // one archive through the plan and the executor == original
+        auto rd = [](const char* q) { std::vector<uint8_t> v; FILE* f = fopen(q, "rb"); if (!f) { perror(q); exit(1); } fseek(f, 0, SEEK_END); v.resize((size_t)ftell(f)); fseek(f, 0, SEEK_SET); if (fread(v.data(), 1, v.size(), f) != v.size()) exit(1); fclose(f); return v; };
+        const std::vector<uint8_t> a = rd(argv[2]), o = rd(argv[3]); agp::Plan P; if (agp::build(a.data(), a.size(), P, nvt_cpu)) { printf("refused\n"); return 1; }
+        std::vector<uint8_t> T(P.temp_bytes), out(P.orig + 64); Exec X(P, a.data(), T); X.run(nullptr, out.data());
+        const bool ok = !X.err && P.orig == o.size() && !memcmp(out.data(), o.data(), o.size()); printf("%s\n", ok ? "bit-perfect" : "DIFFERS"); return ok ? 0 : 1; }
     if (argc < 3) { fprintf(stderr, "usage: %s <archive.open.aet> <original> [n] [save_dir]\n", argv[0]); return 1; }
     auto slurp = [](const char* p) { std::vector<uint8_t> v; FILE* f = fopen(p, "rb"); if (!f) { perror(p); exit(1); }
         fseek(f, 0, SEEK_END); v.resize((size_t)ftell(f)); fseek(f, 0, SEEK_SET); if (fread(v.data(), 1, v.size(), f) != v.size()) exit(1); fclose(f); return v; };
