@@ -39,6 +39,7 @@ nothing: the defaults below apply, the archive bytes and the threads depend only
 
 `AX_LIT_TILE`, `AX_TILE_CHUNKS`, `AX_NT`, `AX_NT_LIT`, `AX_NT_MIN`, `AX_NT_THREADS`, `AX_HUGE`, `AX_PREFAULT`,
 `AX_RANS_SIMD`, `AX_PHASE_TIMES`, `AX_STREAM_BLOCKS` (CPU decoder, `src/aceapex_main.cpp`, `src/aceapex_api.cpp`, `src/ax_rans.h`) and
-`AX_GPU_TILE` (GPU library, read at `plan_create`). Their defaults are the measured best paths; the variables exist to
+`AX_GPU_TILE` (GPU library, read at `plan_create`; slower, do not use: Blackwell 02.10 t2t 12.508 -> 32.957 ms, chr1
+1.055 -> 2.659 ms on-device; off by default, the code stays). Their defaults are the measured best paths; the variables exist to
 measure the alternatives side by side (CHANGELOG 2.3.0, `results/`). The GPU measurement tool `aceapex_gpu.cu` reads its
 own variants (`AX_OPEN_*`, `AX_VEC` at build time) and is a tool, not the library.

@@ -2,6 +2,7 @@
 # gpu_run.sh - the GPU run on any machine with an NVIDIA GPU: RunPod (H100: the main card; persistent storage in
 # /workspace), Colab (Blackwell / A100 / L4 / T4: Drive at /content/drive) or any CUDA host. One line:
 #   git clone -q https://github.com/yasha1971-coder/aceapex && ONE=1 bash aceapex/scripts/gpu_run.sh
+# On RunPod the pod stops itself at the end (logs copied to /workspace/aceapex_logs first); KEEP=1 to keep it.
 # Modes: QUICK (default): builds, emulators, fixtures, chr1.open + t2t.open (tool with [open variants] / [tile variants],
 #   library); FULL=1 or ONE=1: every profile, dense, flips, repro and the corpus ladder below in one go (one stay on the
 #   card), SUMMARY at the end; ONE also runs the card tests T-H1..T-H4 (HTESTS=1 runs them in QUICK). HPRC=1 adds the
@@ -34,6 +35,15 @@ L=results/$PLATFORM-$D-$TAG-gpu.log
 ONE=${ONE:-0}; FULL=${FULL:-0}; [ "$ONE" = 1 ] && FULL=1
 [ "$FULL" = 1 ] && MODE=FULL || MODE=QUICK; [ "$ONE" = 1 ] && MODE=ONE
 TO=${STEP_TIMEOUT:-600}; ETO=${ENC_TIMEOUT:-1800}; exec 3>&1
+# RunPod: on any exit (done, failed, interrupted) the logs go to /workspace (persistent volume) and the pod stops, so an
+# unattended run does not keep billing; KEEP=1 leaves the pod running. Needs RUNPOD_POD_ID (set by RunPod) and runpodctl.
+runpod_stop(){ local rc=$?
+  if [ -n "${RUNPOD_POD_ID:-}" ] && [ "${KEEP:-0}" != 1 ]; then
+    mkdir -p /workspace/aceapex_logs && cp -f results/*.log /workspace/aceapex_logs/ 2>/dev/null
+    echo "auto-stop: logs in /workspace/aceapex_logs, stopping pod $RUNPOD_POD_ID (KEEP=1 keeps it)" >&3
+    if command -v runpodctl >/dev/null; then runpodctl stop pod "$RUNPOD_POD_ID"; else echo "auto-stop: runpodctl not found - stop the pod by hand" >&3; fi
+  fi; return $rc; }
+trap runpod_stop EXIT
 # to <seconds> <step name> <command...>: the command under timeout; on expiry the TIMEOUT line goes to the log and
 # to the cell (fd 3, not into the caller's pipe), exit status 124
 to(){ local lim=$1 nm=$2; shift 2; timeout -k 20 $lim "$@"; local rc=$?
@@ -249,6 +259,11 @@ if [ $HT = 1 ] && [ -x $W/gpu_h100_tests ] && [ -s $W/t2t.open.aet ]; then
   if [ -n "$SAMV" ] && [ ! -s $W/t2t.fa.bgz.gzi ]; then bgzip -@ $T -c $W/t2t.fa > $W/t2t.fa.bgz && samtools faidx $W/t2t.fa.bgz && echo "bgzip t2t: $(stat -c%s $W/t2t.fa.bgz) B" | tee -a $L; fi
   if [ -n "$SAMV" ]; then to $((TO*2)) "T-H3" $W/gpu_h100_tests ra $W/t2t.open.aet $W/t2t.fa 10000 5000 samtools $W/t2t.fa.bgz 2>&1 | tee -a $L
   else to $TO "T-H3" $W/gpu_h100_tests ra $W/t2t.open.aet $W/t2t.fa 10000 5000 2>&1 | tee -a $L; fi
+  # the same regions on an archive with 16 KiB token chunks (FSE_CHUNK=16384; +452 B on T2T): a region decodes 3 token
+  # chunks with one warp each, 64 KiB chunks are 2048 sequential warp steps - the bulk of the GPU region time
+  env -i PATH=$PATH ACEAPEX_BS=16384 LIT_CHUNK=65536 AX_PROFILE=open FSE_CHUNK=16384 ./aceapex c --in $W/t2t.fa --out $W/t2t.ra16.aet >/dev/null 2>&1 \
+    && echo "== T-H3b random access, 16 KiB token chunks ($(stat -c%s $W/t2t.ra16.aet) B)" | tee -a $L \
+    && to $TO "T-H3b" $W/gpu_h100_tests ra $W/t2t.ra16.aet $W/t2t.fa 10000 5000 2>&1 | sed 's/^H3ROW/H3BROW/' | tee -a $L; rm -f $W/t2t.ra16.aet
   if [ -s $W/chr1.fa ]; then tail -c +100000001 $W/chr1.fa | head -c 16777216 > $W/stress.fa
     env -i PATH=$PATH ACEAPEX_BS=16384 LIT_CHUNK=65536 AX_PROFILE=open ./aceapex c --in $W/stress.fa --out $W/stress.open.aet >/dev/null 2>&1
     echo "== T-H4 stress ($(stat -c%s $W/stress.open.aet 2>/dev/null) B archive of a 16 MB chr1 slice)" | tee -a $L
@@ -359,7 +374,7 @@ cat $W/gate.txt | tee -a $L
 VERDICT=FAILED
 [ "$N" = "$RUN" ] && [ "$E" = 2 ] && [ "$F" = 5 ] && [ "$AOK" = "$AR" ] && [ "$PE" = 1 ] && grep -q "^ROW	$W/chr1.open" $L \
   && ! grep -q 'archive rejected\|ROUND-TRIP FAILED\|^example .*FAILED\|shared library build FAILED' $L && [ "$NTO" = 0 ] \
-  && ! grep -q SLOWER $W/gate.txt && ! grep -q $'^H[1-4]ROW\t.*\tFAILED$' $L && VERDICT=PASSED
+  && ! grep -q SLOWER $W/gate.txt && ! grep -qE $'^H([1-4]|3B)ROW\t.*\tFAILED(\t|$)' $L && VERDICT=PASSED
 [ $VERDICT = PASSED ] && echo "RESULT: all passes bit-perfect on $GPU" | tee -a $L \
   || echo "!!! NOT PASSED on $GPU - valid figures only in bit-perfect rows" | tee -a $L
 # == SUMMARY == (<= 15 lines): commit, mode, GPU; per archive library / tool on-device ms, stages, [open variants]; verdict.
@@ -379,8 +394,8 @@ SIZES=""; for X in $CORP; do [ -s $W/$X.fa ] && SIZES="$SIZES $X=$(stat -c%s $W/
   grep -h '^HPRC GPU library\|^HPRC ACEAPEX open\|^HPRC AGC\|^HPRC MBGC' $L | head -n 4
   awk -F'\t' '$1=="STREAMROW"||$1=="STREAMROW_CAP"{ k=$2; sub(/.*\//,"",k); printf "stream %s%s: %s batches of %s blocks (slot %s MB), %.2f GB/s with D2H + host XXH3, hash %s, batches %s\n", k, ($1=="STREAMROW_CAP"?" (capped)":""), $5, $6, $7, $10, $11, $12 }' $L
   awk -F'\t' '$1=="H1ROW"{ printf "T-H1 saturation %s: peak %.1f GB/s with %s decodes at once (K: GB/s %s), XXH3 %s\n", $2, $5, $6, $7, $8 }
-    $1=="H2ROW"{ printf "T-H2 PCIe: H2D %.1f GB/s; ring slot: output GB/s / with D2H / share of the bus %s; %s\n", $3, $4, $5 }
-    $1=="H3ROW"{ printf "T-H3 %s regions x %s b, p50/p99 us: GPU %s, GPU graph %s, CPU %s, samtools bgzip %s (one call: %.1f us/region); %s\n", $3, $4, $5, $6, $7, $8, $9, $10 }
+    $1=="H2ROW"{ printf "T-H2 PCIe: H2D %.1f GB/s; pieces: output GB/s / with D2H / output over bus %s; %s\n", $3, $4, $5 }
+    $1=="H3ROW"||$1=="H3BROW"{ printf "T-H3%s %s regions x %s b, p50/p99 us: GPU %s (launch/kernels/D2H/wait %s), GPU graph %s, CPU %s, samtools bgzip %s (one call: %.1f us/region); %s\n", ($1=="H3BROW"?"b (16 KiB token chunks)":""), $3, $4, $5, $12, $6, $7, $8, $9, $10 }
     $1=="H4ROW"{ printf "T-H4 %s corrupt archives: refused %s, caught %s, harmless %s, silent %s (no hash) / %s (XXH3), hangs %s; %s\n", $3, $4, $5, $6, $7, $8, $9, $10 }' $L
   case "$GPU" in *H100*) echo "paper rows (README, H100 SXM, June 2026, not re-measured): FASTQ ERR194147 5 GB 168.9 GB/s ratio 3.31; 50 GB range decode 165.7 GB/s ratio 3.99; 5 GB genome full decode 29.71 ms";; esac
   cat $W/gate.txt

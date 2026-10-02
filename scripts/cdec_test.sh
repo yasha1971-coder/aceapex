@@ -102,6 +102,16 @@ else printf 'head_env_ignored\tfail\tbuild failed: %s\n' "$(head -c 150 $T/env.e
 if ${CXX:-g++} -std=c++17 -O2 -DACEAPEX_ENV_TUNING -Isrc -o $T/stream_test scripts/stream_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/stt.err; then
   $T/stream_test 2>/dev/null || true
 else printf 'head_stream\tfail\tbuild failed: %s\n' "$(head -c 150 $T/stt.err | tr '\n\t' '  ')"; fi
+# T-H4 on the CPU (scripts/gpu_stress_emu.cpp): the saved corrupt copy that hung the GPU (verify/repro/gpu_hang) is refused
+# by the plan, and the first 1000 of the 10 000 copies (918 among them) through plan + executor: 0 hangs, 0 silent with XXH3
+if [ -s $HOME/golden/genome/chr1.fa ] && [ -x ./aceapex ] && ${CXX:-g++} -std=c++17 -O2 -Isrc -Iscripts -o $T/semu scripts/gpu_stress_emu.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/semu.err; then
+  tail -c +100000001 $HOME/golden/genome/chr1.fa | head -c 16777216 > $T/stress.fa
+  env -i PATH=$PATH ACEAPEX_BS=16384 LIT_CHUNK=65536 AX_PROFILE=open ./aceapex c --in $T/stress.fa --out $T/stress.aet >/dev/null 2>&1
+  rp=$($T/semu --check verify/repro/gpu_hang/th4_copy00918.aet); se=$($T/semu $T/stress.aet $T/stress.fa 1000 | grep '^STRESSEMU')
+  if [ "$rp" = refused ] && [ "$(md5sum < $T/stress.aet | cut -c1-32)" = 84eba8783bbb5f91508308429c4c9d1c ] && [ "$(echo "$se" | cut -f9)" = ok ]; then
+    printf 'head_gpu_stress_emu\tpass\tT-H4 copy 918 (ncse 2 986 345 694 for raw 65 536) refused by the plan; 1000 corrupt copies through plan + executor: refused %s, hangs %s, silent with XXH3 %s\n' "$(echo "$se" | cut -f3)" "$(echo "$se" | cut -f8)" "$(echo "$se" | cut -f7)"
+  else printf 'head_gpu_stress_emu\tfail\trepro: %s; run: %s\n' "$rp" "$se"; fi
+fi
 # aceapex faidx against samtools faidx (1000 regions, exit codes, -r, .fai)
 [ -x ./aceapex ] && bash scripts/faidx_test.sh ./aceapex 2>/dev/null
 # AX_LINEMODEL (tuning builds): bit-perfect on 4 kinds of input, full and regions, fused and two-pass decode

@@ -143,7 +143,8 @@ __device__ static bool rans_warp(const uint8_t* __restrict__ src, uint32_t csz, 
             uint32_t base=0; const uint32_t groups=(n+31)/32;
             for(uint32_t g=0; g<groups; g++){
                 const bool need=axw_step(lane,sh,g,n,x,dst); const uint32_t m=__ballot_sync(FULL,need);
-                axw_refill(lane,need,m,base,W,words,x,b); base+=__popc(m); }
+                axw_refill(lane,need,m,base,W,words,x,b); base+=__popc(m);
+                if((g&255)==255 && __any_sync(FULL,b)) break; }   // words ran out: stop within 256 groups (corrupt piece), not after n/32
             b|= base!=W || x!=AXR_L; bad=__any_sync(FULL,b);
         }
         else if(!bad){
@@ -153,7 +154,8 @@ __device__ static bool rans_warp(const uint8_t* __restrict__ src, uint32_t csz, 
                 const uint32_t idx=axw_widx(lane,m,base), o=idx-wb;
                 const uint32_t v0=__shfl_sync(FULL,w0,o&31), v1=__shfl_sync(FULL,w1,o&31);
                 axw_refill_v(need,idx,W,o<32?v0:v1,x,b); base+=__popc(m);
-                if(base>=wb+32){ wb+=32; w0=w1; w1=axw_wload(words,W,wb+32+lane); } }
+                if(base>=wb+32){ wb+=32; w0=w1; w1=axw_wload(words,W,wb+32+lane); }
+                if((g&255)==255 && __any_sync(FULL,b)) break; }   // as above
             b|= base!=W || x!=AXR_L; bad=__any_sync(FULL,b);
         }
     }
@@ -260,8 +262,9 @@ __global__ void __launch_bounds__(256) k_open_bases_s(const OpenDesc* __restrict
 __global__ void __launch_bounds__(AXO_NT) k_open_cg(const OpenDesc* __restrict__ d, uint32_t* __restrict__ err){
     __shared__ uint64_t sh[AXO_NT/32];
     const uint32_t k=blockIdx.x, tid=threadIdx.x; const OpenDesc c=d[k];
-    bool bad= c.raw>AXW_MAXN; const uint32_t raw=(uint32_t)(bad?0:c.raw);
-    { const uint8_t* b=c.cse; const uint32_t n=c.ncse; uint64_t carry=0; uint32_t jb=0;
+    // the plan's bounds again (axo_parse): runs and gaps are LEB128 of <= 5 bytes; a corrupt count loops over nothing
+    bool bad= c.raw>AXW_MAXN || (uint64_t)c.ncse>5ull*c.raw+5 || (uint64_t)c.ngap>5ull*c.nexc; const uint32_t raw=(uint32_t)(bad?0:c.raw);
+    { const uint8_t* b=c.cse; const uint32_t n=bad?0u:c.ncse; uint64_t carry=0; uint32_t jb=0;
       for(uint32_t base=0; base<n; base+=AXO_NT){
           const uint32_t t=base+tid; const bool term=axl_term(t,b,n); const uint32_t v=axl_value(t,b,term,bad);
           uint64_t total; const uint64_t ex=b_scan64(term?(AXO_KEY_J|v):0,total,sh);

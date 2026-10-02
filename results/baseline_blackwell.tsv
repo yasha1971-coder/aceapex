@@ -3,7 +3,7 @@
 # only by a faster run, in a commit of their own with that run's log. Metrics: library = aceapex_gpu_decompress_async
 # full decode (APIROW 4), tool = aceapex_gpu on-device (ROW 10). gpu: name as nvidia-smi prints it.
 gpu	archive	metric	base_ms	commit	log
-NVIDIA RTX PRO 6000 Blackwell Server Edition	chr1.open	library	1.928	a7d161d	results/colab-2026-10-01-rtx-pro-6000-blackwell-a7d161d-quick.log
+NVIDIA RTX PRO 6000 Blackwell Server Edition	chr1.open	library	1.921	855d5a9	results/colab-2026-10-02-rtx-pro-6000-blackwell-server-edition-gpu.log
 NVIDIA RTX PRO 6000 Blackwell Server Edition	chr1.open	tool	2.289	a7d161d	results/colab-2026-10-01-rtx-pro-6000-blackwell-a7d161d-quick.log
-NVIDIA RTX PRO 6000 Blackwell Server Edition	t2t.open	library	19.720	a7d161d	results/colab-2026-10-01-rtx-pro-6000-blackwell-a7d161d-quick.log
+NVIDIA RTX PRO 6000 Blackwell Server Edition	t2t.open	library	18.175	855d5a9	results/colab-2026-10-02-rtx-pro-6000-blackwell-server-edition-gpu.log
 NVIDIA RTX PRO 6000 Blackwell Server Edition	t2t.open	tool	20.367	a7d161d	results/colab-2026-10-01-rtx-pro-6000-blackwell-a7d161d-quick.log
