@@ -21,3 +21,4 @@
 [dl] W 32768 n  4096: CPU 1 t     7585 w/s, 16 t     73866 w/s | 1 % checked == original
 [dl] W 32768 n 65536: CPU 1 t     7651 w/s, 16 t     72925 w/s | 1 % checked == original
 # GPU rows (windows/s, GB/s, batch p50/p99, host time), CPU + H2D and the speed-up: T-H5 on the card (gpu_run.sh, HTESTS=1 or ONE)
+# Colab RTX PRO 6000 Blackwell, b024296 (verdict PASSED, T-H5 9/9 ok): host time of a windows call, per batch: 32-34 us (launches only)
