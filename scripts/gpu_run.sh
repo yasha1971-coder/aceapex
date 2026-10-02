@@ -213,12 +213,16 @@ PY
   done
 done
 
-# output larger than the card (ONE): the biggest open archive decoded in 1 GiB windows through the range call, D2H in
-# flight, XXH3 of the whole output on the host against the header, every window compared with the original
+# output larger than the card (ONE): block-range plans (aceapex_gpu_plan_create_blocks), batches of K blocks sized from
+# the free device memory, two in flight (decode of i+1 while i goes to the host), XXH3 of the whole output on the host
+# against the header, every batch compared with the original. Once with the automatic K, once with slots capped at
+# 256 MB (many batches) on t2t - the mode a corpus larger than the card takes.
 if [ $MODE = ONE ] && [ -x $W/gpu_stream ]; then
   for X in grch38 t2t; do [ -s $W/$X.open.aet ] || continue
-    echo "== gpu_stream $X.open (windows of 1024 MiB)" | tee -a $L
-    to $TO "gpu_stream $X.open" $W/gpu_stream $W/$X.open.aet 1024 $W/$X.fa 2>&1 | tee -a $L; break; done
+    echo "== gpu_stream $X.open (batches from the free memory)" | tee -a $L
+    to $TO "gpu_stream $X.open" $W/gpu_stream $W/$X.open.aet $W/$X.fa 2>&1 | tee -a $L; break; done
+  if [ -s $W/t2t.open.aet ]; then echo "== gpu_stream t2t.open (slots capped at 256 MB: many batches)" | tee -a $L
+    AX_STREAM_MAX_MB=256 to $TO "gpu_stream t2t.open capped" $W/gpu_stream $W/t2t.open.aet $W/t2t.fa 2>&1 | sed 's/^STREAMROW/STREAMROW_CAP/' | tee -a $L; fi
 fi
 # HPRC rung (HPRC=1): the first HPRC_N (10) haplotype assemblies of the HPRC year-1 index (sha256 per file), each encoded
 # in the open profile (peak RSS and time), decoded on the GPU through the library (full + 20 ranges), against AGC and MBGC
@@ -343,7 +347,7 @@ SIZES=""; for X in $CORP; do [ -s $W/$X.fa ] && SIZES="$SIZES $X=$(stat -c%s $W/
            lib = (k in api) ? sprintf("library %.3f ms (%.1f GB/s), ", api[k], (api[k]>0 && (x in sz)) ? sz[x]/api[k]/1e6 : 0) : ""
            printf "%s: %stool %.3f ms; seq %s, unpack %.3f, match %.3f ms; %s%s%s\n", k, lib, t[k], sq[k], un[k], ma[k], ck[k], var[k], tv[k] } }' $L
   grep -h '^HPRC GPU library\|^HPRC ACEAPEX open\|^HPRC AGC\|^HPRC MBGC' $L | head -n 4
-  awk -F'\t' '$1=="STREAMROW"{ k=$2; sub(/.*\//,"",k); printf "stream %s: %s windows of %s MiB, %.2f GB/s with D2H + host XXH3, hash %s, windows %s\n", k, $5, $6, $9, $10, $11 }' $L
+  awk -F'\t' '$1=="STREAMROW"||$1=="STREAMROW_CAP"{ k=$2; sub(/.*\//,"",k); printf "stream %s%s: %s batches of %s blocks (slot %s MB), %.2f GB/s with D2H + host XXH3, hash %s, batches %s\n", k, ($1=="STREAMROW_CAP"?" (capped)":""), $5, $6, $7, $10, $11, $12 }' $L
   case "$GPU" in *H100*) echo "paper rows (README, H100 SXM, June 2026, not re-measured): FASTQ ERR194147 5 GB 168.9 GB/s ratio 3.31; 50 GB range decode 165.7 GB/s ratio 3.99; 5 GB genome full decode 29.71 ms";; esac
   cat $W/gate.txt
   echo "verdict $VERDICT$(grep -q SLOWER $W/gate.txt && echo " (speed gate: slower than $BASEF by > 5 %)")"; } > $W/summary.txt

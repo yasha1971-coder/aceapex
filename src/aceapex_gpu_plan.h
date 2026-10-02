@@ -61,6 +61,9 @@ struct Plan {
     std::vector<Raw>  raw;  std::vector<uint64_t> raw_key;
     uint64_t xxh = 0;                                          /* XXH3_64bits of the original, from the header */
     bool contiguous = true;                                    /* block slices back to back in every stream (range decode needs it) */
+    bool partial = false; uint32_t b0 = 0;                     /* a block-range plan (build with [b0,b1)): the output window is blocks
+                                                                  b0.., jobs read the archive slice [in_lo, in_hi) (in_off relative to in_lo) */
+    uint64_t in_lo = 0, in_hi = 0;
     bool tile_ok = false;                                      /* AX_GPU_TILE: literal chunks are open DNA packs or open plain pieces */
     std::vector<uint32_t> cmap;                                /* literal chunk k -> open index, or NUL32 for an open plain chunk */
     uint64_t max_osz = 0, nv_out_total = 0, nv_temp = 0;
@@ -115,7 +118,11 @@ static inline int zstd_frame_check(const uint8_t* f, uint64_t csz, uint64_t osz)
 /* nv_temp(n, max_out, total_out): nvCOMP temp bytes for n frames (nullptr: no nvCOMP; frames are refused) */
 typedef uint64_t (*NvTempFn)(size_t n, size_t max_out, size_t total_out);
 
-static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt) {
+/* b1 > b0: a plan of blocks [b0, b1) only - the streams restricted to the chunks those blocks use, offsets relative to
+   the first used chunk, the output = the window of those blocks, in_off relative to in_lo (the archive slice the jobs
+   read); no XXH3 (the hash covers the whole original), no range selection. For streaming decodes of outputs larger
+   than the device (scripts/gpu_stream.cu) and the CPU judge of that (gpu_plan_emu). */
+static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt, uint32_t b0 = 0, uint32_t b1 = 0) {
     P = Plan();
     if (!a || in_bytes < 68 || memcmp(a, "ACEPX2\0\0", 8) || rd32(a + 8) != 2) return E_HEADER;
     P.in_bytes = in_bytes; P.orig = rd64(a + 12); P.xxh = rd64(a + 28); P.bs = rd32(a + 20); P.nb = rd32(a + 24);
@@ -124,6 +131,16 @@ static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt
     uint64_t p = 68 + 64ull * P.nb, zoff[4];
     if (p > in_bytes) return E_HEADER;
     for (int i = 0; i < 4; i++) { zoff[i] = p; if (zsz[i] > in_bytes - p) return E_HEADER; p += zsz[i]; }
+    const bool part = b1 > b0;
+    if (part && b1 > P.nb) return E_HEADER;
+    uint64_t lo[4] = {~0ull, ~0ull, ~0ull, ~0ull}, hi[4] = {0, 0, 0, 0}, c0[4] = {0, 0, 0, 0}, c1[4] = {0, 0, 0, 0};   /* bytes / chunks of the range per stream */
+    if (part) for (uint32_t b = b0; b < b1; b++) { const uint8_t* e = a + 68 + 64ull * b;
+        for (int st = 0; st < 4; st++) { const uint64_t o = rd64(e + 8 * st), n = rd64(e + 32 + 8 * st); if (!n) continue; lo[st] = std::min(lo[st], o); hi[st] = std::max(hi[st], o + n); } }
+    auto crange = [&](int st, uint64_t ch, uint64_t osz) {                /* the chunks the range needs; none when it has no bytes */
+        if (!part) { c0[st] = 0; c1[st] = ch ? (osz ? (osz - 1) / ch : 0) : 0; return; }
+        if (lo[st] == ~0ull) { c0[st] = 1; c1[st] = 0; return; }
+        c0[st] = lo[st] / ch; c1[st] = (hi[st] - 1) / ch; };
+    auto inrange = [&](int st, uint64_t t) { return !part || (t >= c0[st] && t <= c1[st]); };
     P.bo.assign(a + 68, a + 68 + 64ull * P.nb);
     /* token streams off/len/cmd */
     for (int st = 1; st < 4; st++) {
@@ -133,15 +150,19 @@ static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt
         if (!ch) return E_STREAM;
         P.ssz[st] = osz; P.chunk[st] = ch; uint64_t nc = (osz + ch - 1) / ch, pos = 8 + 8 * nc;
         if (nc > (zsz[st] - 8) / 8 || pos > zsz[st]) return E_STREAM;
+        crange(st, ch, osz); if (part && lo[st] != ~0ull && hi[st] > osz) return E_TABLE;
+        if (part) P.ssz[st] = c1[st] >= c0[st] ? std::min(osz, (c1[st] + 1) * ch) - c0[st] * ch : 0;
         for (uint64_t i = 0; i < nc; i++) {
             uint64_t cs = rd64(z + 8 + 8 * i), raw = std::min<uint64_t>(ch, osz - i * ch);
             if (((cs >> 48) & 0x3fff) || ((cs >> 63) && ((cs >> 62) & 1))) return E_STREAM;
             uint64_t csz = (cs >> 63) ? raw : (cs & ((1ull << 48) - 1));
             if (csz > zsz[st] - pos || raw > MAXC) return E_STREAM;
             if (((cs >> 62) & 1) && !(cs >> 63) && csz > MAXC) return E_STREAM;
-            if (cs >> 63) { P.raw.push_back({zoff[st] + pos, ((uint64_t)st << 56) | (i * ch), raw}); P.raw_key.push_back(key(st, i)); }
-            else if ((cs >> 62) & 1) { P.rans.push_back({zoff[st] + pos, ((uint64_t)st << 56) | (i * ch), raw, (uint32_t)csz, 1, C_TOK, 0}); P.rans_key.push_back(key(st, i)); }
-            else { P.nv.push_back({zoff[st] + pos, csz, ((uint64_t)st << 56) | (i * ch), raw}); P.nv_key.push_back(key(st, i)); }
+            if (!inrange(st, i)) { pos += csz; continue; }
+            const uint64_t dst = (i - c0[st]) * ch;
+            if (cs >> 63) { P.raw.push_back({zoff[st] + pos, ((uint64_t)st << 56) | dst, raw}); P.raw_key.push_back(key(st, i - c0[st])); }
+            else if ((cs >> 62) & 1) { P.rans.push_back({zoff[st] + pos, ((uint64_t)st << 56) | dst, raw, (uint32_t)csz, 1, C_TOK, 0}); P.rans_key.push_back(key(st, i - c0[st])); }
+            else { P.nv.push_back({zoff[st] + pos, csz, ((uint64_t)st << 56) | dst, raw}); P.nv_key.push_back(key(st, i - c0[st])); }
             pos += csz;
         }
     }
@@ -162,6 +183,8 @@ static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt
             if (NW > (zsz[0] - hd) / 8) return E_STREAM;
             uint64_t pos = hd + 8 * NW; P.ssz[0] = sz; P.chunk[0] = CH ? CH : 1;
             if (pos > zsz[0]) return E_STREAM;
+            crange(0, P.chunk[0], sz); if (part && lo[0] != ~0ull && hi[0] > sz) return E_TABLE;
+            if (part) P.ssz[0] = c1[0] >= c0[0] ? std::min(sz, (c1[0] + 1) * P.chunk[0]) - c0[0] * P.chunk[0] : 0;
             for (uint64_t t = 0; t < NW; t++) {
                 uint64_t o = t * CH, raw = o >= sz ? 0 : (o + CH <= sz ? CH : sz - o), csz = rd64(z + hd + 8 * t);
                 const uint64_t cpos = zoff[0] + pos; const uint8_t* c = a + cpos;
@@ -170,19 +193,20 @@ static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt
                 if (!raw) continue;
                 if (!csz) return E_STREAM;              /* a chunk with bytes needs a body */
                 if (raw > MAXC || csz > MAXC) return E_STREAM;
-                const uint64_t dst0 = o;                /* literal-stream offset */
+                if (!inrange(0, t)) continue;
+                const uint64_t dst0 = o - c0[0] * CH;  /* literal-stream offset (of the restricted stream) */
                 if (tagged && csz && c[0] == 2) {
                     AxoParts Q; if (csz < 2 || axo_parse(c + 1, csz - 1, (uint32_t)raw, &Q)) return E_STREAM;
                     uint64_t off[4];
                     for (int q = 0; q < 4; q++) { off[q] = oscr; oscr += al((uint64_t)Q.n[q] + 64);
-                        if (Q.n[q]) { P.rans.push_back({cpos + 1 + Q.off[q], (6ull << 56) | off[q], Q.n[q], Q.h[q], Q.mode[q], (uint32_t)(C_SEQ + q), 0}); P.rans_key.push_back(key(0, t)); } }
+                        if (Q.n[q]) { P.rans.push_back({cpos + 1 + Q.off[q], (6ull << 56) | off[q], Q.n[q], Q.h[q], Q.mode[q], (uint32_t)(C_SEQ + q), 0}); P.rans_key.push_back(key(0, t - c0[0])); } }
                     Open d; d.seq = off[0]; d.cse = off[1]; d.gap = off[2]; d.val = off[3]; d.dst = dst0; d.ends = nends; d.nrun = P.open.size(); d.epos = nepos;
                     d.raw = raw; d.res = 0; d.ncse = Q.ncse; d.ngap = Q.ngap; d.nexc = Q.nexc; nends += Q.ncse; nepos += Q.nexc;
-                    P.open.push_back(d); P.open_key.push_back(t); continue;
+                    P.open.push_back(d); P.open_key.push_back(t - c0[0]); continue;
                 }
                 if (tagged && csz && c[0] == 3) {
                     if (csz < 2 || c[1] > 1 || (c[1] == 0 && csz - 2 != raw)) return E_STREAM;
-                    P.rans.push_back({cpos + 2, dst0, raw, (uint32_t)(csz - 2), c[1], C_PLAIN, 0}); P.rans_key.push_back(key(0, t)); continue;
+                    P.rans.push_back({cpos + 2, dst0, raw, (uint32_t)(csz - 2), c[1], C_PLAIN, 0}); P.rans_key.push_back(key(0, t - c0[0])); continue;
                 }
                 if (tagged && csz && c[0] == 1) {
                     if (csz < 21) return E_STREAM;
@@ -190,16 +214,23 @@ static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt
                     if ((uint64_t)21 + h1 + h2 + h3 + h4 > csz || nexc > raw) return E_STREAM;
                     uint64_t f = cpos + 21; Dna d; d.dst = dst0; d.raw = raw; d.nexc = nexc; d.res = 0; d.gap = NUL; d.val = NUL;
                     uint64_t sz1 = (raw + 3) / 4, sz2 = (raw + 7) / 8;
-                    d.seq = scr; P.nv.push_back({f, h1, (7ull << 56) | scr, sz1}); P.nv_key.push_back(key(0, t)); scr += al(sz1); f += h1;
-                    d.cse = scr; P.nv.push_back({f, h2, (7ull << 56) | scr, sz2}); P.nv_key.push_back(key(0, t)); scr += al(sz2); f += h2;
-                    if (h3) { d.gap = scr; P.nv.push_back({f, h3, (7ull << 56) | scr, (uint64_t)nexc * 4}); P.nv_key.push_back(key(0, t)); scr += al((uint64_t)nexc * 4); } f += h3;
-                    if (h4) { d.val = scr; P.nv.push_back({f, h4, (7ull << 56) | scr, (uint64_t)nexc}); P.nv_key.push_back(key(0, t)); scr += al((uint64_t)nexc); }
+                    d.seq = scr; P.nv.push_back({f, h1, (7ull << 56) | scr, sz1}); P.nv_key.push_back(key(0, t - c0[0])); scr += al(sz1); f += h1;
+                    d.cse = scr; P.nv.push_back({f, h2, (7ull << 56) | scr, sz2}); P.nv_key.push_back(key(0, t - c0[0])); scr += al(sz2); f += h2;
+                    if (h3) { d.gap = scr; P.nv.push_back({f, h3, (7ull << 56) | scr, (uint64_t)nexc * 4}); P.nv_key.push_back(key(0, t - c0[0])); scr += al((uint64_t)nexc * 4); } f += h3;
+                    if (h4) { d.val = scr; P.nv.push_back({f, h4, (7ull << 56) | scr, (uint64_t)nexc}); P.nv_key.push_back(key(0, t - c0[0])); scr += al((uint64_t)nexc); }
                     if (nexc && (!h3 || !h4)) return E_STREAM;
-                    P.dna.push_back(d); P.dna_key.push_back(t); continue;
+                    P.dna.push_back(d); P.dna_key.push_back(t - c0[0]); continue;
                 }
-                P.nv.push_back({tagged ? cpos + 1 : cpos, tagged ? csz - 1 : csz, dst0, raw}); P.nv_key.push_back(key(0, t));
+                P.nv.push_back({tagged ? cpos + 1 : cpos, tagged ? csz - 1 : csz, dst0, raw}); P.nv_key.push_back(key(0, t - c0[0]));
             }
         }
+    }
+    if (part) {                                        /* the block table of the range, offsets relative to the restricted streams */
+        std::vector<uint8_t> bo(64ull * (b1 - b0));
+        for (uint32_t b = b0; b < b1; b++) { const uint8_t* e = a + 68 + 64ull * b; uint8_t* o = &bo[64ull * (b - b0)];
+            for (int st = 0; st < 4; st++) { const uint64_t off = rd64(e + 8 * st), n = rd64(e + 32 + 8 * st), r = n ? off - c0[st] * P.chunk[st] : 0;
+                memcpy(o + 8 * st, &r, 8); memcpy(o + 32 + 8 * st, &n, 8); } }
+        P.bo.swap(bo); P.partial = true; P.b0 = b0; P.orig = std::min<uint64_t>((uint64_t)b1 * P.bs, P.orig) - (uint64_t)b0 * P.bs; P.nb = b1 - b0; P.xxh = 0;
     }
     /* block table: every block's slices inside the stream sizes */
     for (uint32_t b = 0; b < P.nb; b++) {
@@ -215,6 +246,16 @@ static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt
       for (int q = 0; q < C_N; q++) P.cls_off[q + 1] += P.cls_off[q];
       P.rans.swap(r); P.rans_key.swap(k); }
     for (const auto& j : P.nv) if (zstd_frame_check(a + j.in_off, j.csz, j.osz)) return E_STREAM;
+    if (part) {                                        /* the archive slice the jobs read: in_off relative to in_lo */
+        P.in_lo = ~0ull; P.in_hi = 0;
+        for (const auto& j : P.nv) { P.in_lo = std::min(P.in_lo, j.in_off); P.in_hi = std::max(P.in_hi, j.in_off + j.csz); }
+        for (const auto& r : P.rans) { P.in_lo = std::min(P.in_lo, r.src); P.in_hi = std::max(P.in_hi, r.src + r.csz); }
+        for (const auto& r : P.raw) { P.in_lo = std::min(P.in_lo, r.src); P.in_hi = std::max(P.in_hi, r.src + r.n); }
+        if (P.in_lo == ~0ull) { P.in_lo = 0; P.in_hi = 0; }
+        for (auto& j : P.nv) j.in_off -= P.in_lo;
+        for (auto& r : P.rans) r.src -= P.in_lo;
+        for (auto& r : P.raw) r.src -= P.in_lo;
+    } else P.in_hi = in_bytes;
     {   /* AX_GPU_TILE: every literal chunk is an open DNA pack (built in shared memory from its parts) or an open plain piece
            (k_rans writes it into the literal stream as before; the tile kernel copies it from there); no zstd frame, no zstd
            DNA pack; a block's literal slice fits the kernel's shared buffer (AXT_SH: 16 KiB blocks) */
@@ -295,6 +336,7 @@ static inline uint64_t window_bytes(const Plan& P, uint64_t length) {
 }
 static inline int select(const Plan& P, uint64_t off, uint64_t len, Sel& S) {
     S = Sel();
+    if (P.partial) return -1;
     if (len == 0 || off > P.orig || len > P.orig - off) return -1;
     if (!P.contiguous) return -2;
     S.b0 = (uint32_t)(off / P.bs); S.b1 = (uint32_t)((off + len - 1) / P.bs + 1); S.win_off = off - (uint64_t)S.b0 * P.bs;

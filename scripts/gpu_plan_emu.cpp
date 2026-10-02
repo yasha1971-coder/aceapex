@@ -169,7 +169,7 @@ int main(int argc, char** argv) {
               if (zs > 0) { z.resize(zs); arch.push_back({std::string(k ? "text" : "chr1slice") + "-p" + std::to_string(pi), z}); } }
           for (const char* e : pr) if (e) { std::string k(e); unsetenv(k.substr(0, k.find('=')).c_str()); }
           pi++; } }
-    int archives = 0, refused = 0, bad = 0, ranges = 0, rbad = 0, mut = 0, mref = 0; uint64_t nvec16 = 0, nvcopy = 0, ntiles = 0; int ntile_arch = 0, ntile_rng = 0; std::string fails;
+    int archives = 0, refused = 0, bad = 0, ranges = 0, rbad = 0, mut = 0, mref = 0; uint64_t nvec16 = 0, nvcopy = 0, ntiles = 0; int ntile_arch = 0, ntile_rng = 0, nbatch = 0; std::string fails;
     std::mt19937_64 rng(20261001);
     for (auto& A : arch) {
         agp::Plan P; int e = agp::build(A.second.data(), A.second.size(), P, nvt_cpu);
@@ -180,6 +180,15 @@ int main(int argc, char** argv) {
         archives++;
         std::vector<uint8_t> T(P.temp_bytes), out(n + 64);
         Exec X(P, A.second.data(), T); X.run(nullptr, out.data()); nvec16 += X.vec16; nvcopy += X.vcopy;
+        {   // block-range plans (aceapex_gpu_plan_create_blocks): 5 batches of blocks, each its own plan and temp, the jobs reading the
+            // archive slice [in_lo, in_hi), the windows concatenated == the original
+            const uint32_t K = std::max<uint32_t>(1, (P.nb + 4) / 5); std::vector<uint8_t> cat(n + 64); bool bb = false; uint64_t pos = 0;
+            for (uint32_t b0 = 0; b0 < P.nb && !bb; b0 += K) { const uint32_t b1 = std::min(P.nb, b0 + K); agp::Plan Q;
+                if (agp::build(A.second.data(), A.second.size(), Q, nvt_cpu, b0, b1) || Q.in_hi > A.second.size() || pos + Q.orig > n) { bb = true; break; }
+                std::vector<uint8_t> T2(Q.temp_bytes); Exec Y(Q, A.second.data() + Q.in_lo, T2); Y.run(nullptr, cat.data() + pos); pos += Q.orig; nbatch++;
+                if (Y.err) bb = true; }
+            if (bb || pos != n || memcmp(cat.data(), ref.data(), n)) { bad++; fails += " batch:" + A.first; continue; }
+        }
         if (P.tile_ok) {                                  // AX_GPU_TILE: the same bytes from the tile schedule, full and 10 ranges
             ntile_arch++;
             std::vector<uint8_t> T1(P.temp_bytes), o1(n + 64); Exec X1(P, A.second.data(), T1); X1.tile = true; X1.run(nullptr, o1.data()); ntiles += X1.tiles;
@@ -255,8 +264,8 @@ int main(int argc, char** argv) {
            vok ? "pass" : "fail", vz_arch, (unsigned long long)vz_frames, vz_bad_intact, vz_repro ? "refused" : "NOT REFUSED", vz_flips, vz_ref, vz_flips - vz_ref, vz_leak);
     const bool ok = archives >= 12 && bad == 0 && rbad == 0 && ntile_arch >= 2;
     const bool fok = flips == 1000 && flimit == 0 && foob == 0 && fsilent == 0 && wrap_ok;
-    printf("head_gpu_plan_emu\t%s\t%d archives decoded through the plan bit-perfect (%d bad; AX_VEC 16-byte paths: %llu unpack stores, %llu match copies; AX_GPU_TILE: %d archives, %d ranges, %llu literal 16-byte steps, same bytes), %d ranges on a zeroed temp (%d bad), %d refused by the planner, %d mutations (%d refused, the rest ran inside their buffers)%s\n",
-           ok ? "pass" : "fail", archives, bad, (unsigned long long)nvec16, (unsigned long long)nvcopy, ntile_arch, ntile_rng, (unsigned long long)ntiles, ranges, rbad, refused, mut, mref, fails.empty() ? "" : (";" + fails).c_str());
+    printf("head_gpu_plan_emu\t%s\t%d archives decoded through the plan bit-perfect (%d bad; AX_VEC 16-byte paths: %llu unpack stores, %llu match copies; AX_GPU_TILE: %d archives, %d ranges, %llu literal 16-byte steps, same bytes; block-range plans: %d batches, windows == original), %d ranges on a zeroed temp (%d bad), %d refused by the planner, %d mutations (%d refused, the rest ran inside their buffers)%s\n",
+           ok ? "pass" : "fail", archives, bad, (unsigned long long)nvec16, (unsigned long long)nvcopy, ntile_arch, ntile_rng, (unsigned long long)ntiles, nbatch, ranges, rbad, refused, mut, mref, fails.empty() ? "" : (";" + fails).c_str());
     printf("head_gpu_flip_emu\t%s\t%d byte flips of the streams under the plan of the intact archive (as on the device), a failed zstd frame leaving random bytes: %llu match steps of %llu allowed, %llu over the step limit, %llu copies outside a block; %llu flagged by status, %llu more by XXH3, %llu decoded to the original, %llu silent; length 2^32-16 after 100 bytes %s\n",
            fok ? "pass" : "fail", flips, (unsigned long long)fsteps, (unsigned long long)fbound, (unsigned long long)flimit, (unsigned long long)foob,
            (unsigned long long)fcaught, (unsigned long long)fhash, (unsigned long long)fsame, (unsigned long long)fsilent, wrap_ok ? "refused" : "NOT REFUSED");

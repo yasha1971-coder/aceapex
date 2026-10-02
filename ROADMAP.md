@@ -118,6 +118,11 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+02.10 (2): GPU больше VRAM: планы по диапазону блоков (agp::build(b0,b1): потоки сужены до нужных чанков, смещения
+относительные, срез архива [in_lo,in_hi)); API aceapex_gpu_plan_create_blocks + plan_input_window (добавления, ABI 2.3);
+scripts/gpu_stream.cu: батчи K блоков по свободной памяти, два в полёте (H2D/decode/D2H), XXH3 на хосте; gpu_run.sh ONE:
+автоматический K и слот 256 МБ (много батчей) на t2t. CPU-судья: 121 батч по 33 архивам == оригинал (head_gpu_plan_emu),
+head_gpu_abi проверяет новые вызовы. Замер — на карте.
 02.10 (1): потоковый декодер aceapex_decompress_stream(rd, wr, threads, flags) на тайловом пути: главный поток — таблица
 блоков окнами, группы (<= 9 чанков литералов, <= 1 МиБ вывода), чанки токенов по порядку (общие буферы); рабочие —
 тайл + блоки группы, вывод по порядку через callback; ACEAPEX_STREAM_VERIFY = XXH3 против заголовка. CLI `d --out -` / `-c`.

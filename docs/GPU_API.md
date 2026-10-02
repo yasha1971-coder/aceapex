@@ -104,6 +104,17 @@ nvCOMP 5 (`-l:libnvcomp.so.5`), otherwise `plan_create` returns NULL with `ACEAP
 Match kernel: v7-RA with 32 lanes per block (the value the tool's probe picked on T4, L4, A100 and the
 Blackwell); grid from the occupancy of the current device at `plan_create`.
 
+## Outputs larger than the card (2.3)
+
+`aceapex_gpu_plan_create_blocks(h, n, b0, b1, flags)` builds a plan of blocks [b0, b1) only: the streams restricted to the
+chunks those blocks use, a temp sized for them (`aceapex_gpu_temp_bytes`), the output = the window of those blocks
+(`aceapex_gpu_output_bytes`), and the jobs reading the archive slice [in_lo, in_hi) of `aceapex_gpu_plan_input_window` -
+pass `d_in` = the archive on the device + in_lo, or upload just that slice. Blocks are independent (every match lies in
+its block, `results/dep-range-2026-10-01.log`), so batches decode in any order and concatenate to the original.
+`scripts/gpu_stream.cu` decodes a corpus in batches sized from the free memory, two in flight, hashing the output on the
+host against the header; the CPU judge runs 5 batches of every fixture through the plan emulator (`head_gpu_plan_emu`).
+The XXH3 flag and the range call are refused on a block-range plan (the hash covers the whole original).
+
 ## Stability
 
 From 2.3 (`ACEAPEX_GPU_API_VERSION` 20300) the C ABI is frozen: the signatures, structures' absence (the plan is
