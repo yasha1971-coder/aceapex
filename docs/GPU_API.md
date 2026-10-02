@@ -115,6 +115,16 @@ its block, `results/dep-range-2026-10-01.log`), so batches decode in any order a
 host against the header; the CPU judge runs 5 batches of every fixture through the plan emulator (`head_gpu_plan_emu`).
 The XXH3 flag and the range call are refused on a block-range plan (the hash covers the whole original).
 
+## Windows batch for data loaders (2.3)
+
+`aceapex_gpu_decompress_windows_async(plan, d_in, d_offsets, n, window_len, d_out, d_temp, d_status, stream)` decodes n
+windows of `window_len` bytes at offsets held in device memory into one buffer (window i at i x window_len) - the input of
+a model step. The selection runs on the device: the blocks the windows cover are marked, the chunks of those blocks picked,
+only those rANS / open / stored jobs and those blocks decoded (one slot per block), the windows gathered; the host only
+launches. Temp: `aceapex_gpu_windows_temp_bytes(plan, n, window_len)`. Open-profile archives (no zstd frame). A window past
+the end sets `ACEAPEX_GPU_STATUS_RANGE` and is not written. CPU judge: `scripts/gpu_windows_emu.cpp` (claim
+head_gpu_windows_emu); on the card: T-H5 in `scripts/gpu_run.sh`.
+
 ## Stability
 
 From 2.3 (`ACEAPEX_GPU_API_VERSION` 20300) the C ABI is frozen: the signatures, structures' absence (the plan is

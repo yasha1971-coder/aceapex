@@ -19,12 +19,13 @@
 //                                          the bgzip file per region (a process per call) and for all regions in one
 //                                          call (-r). Latency p50 / p99, every result compared with the FASTA.
 //                                          Writes regions.txt (chr:start-end, 1-based) next to the archive.
+//   dl     <archive.open> <original> [cpu threads]   T-H5: the data loader (windows batches, see t_dl); dl-cpu: CPU rows only
 //   stress <archive.open> <original> [n]   T-H4: n (10 000) corrupt copies (bit flip, random bytes, zeroed run,
 //                                          truncation, header/table hit, literal or token stream hit); each: plan
 //                                          (refused?), decode with a 10 s watchdog (hang?), status, output against
 //                                          the original (harmless / caught / silent), then the same with
 //                                          ACEAPEX_GPU_VERIFY_XXH3 (silent must be 0).
-// Last line of each: H1ROW / H2ROW / H3ROW / H4ROW (tab separated) for the SUMMARY.
+// Last line of each: H1ROW / H2ROW / H3ROW / H4ROW (tab separated) for the SUMMARY; dl: one H5ROW per window size x batch.
 // Build: nvcc -std=c++17 -O3 -arch=sm_90 -Isrc [-DACEAPEX_GPU_NVCOMP <nvcomp>] scripts/gpu_h100_tests.cu
 //        src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp src/aceapex_api.cpp -lzstd -lpthread
 #include "aceapex_gpu.h"
@@ -40,6 +41,8 @@
 #include <random>
 #include <string>
 #include <vector>
+#include <thread>
+#include <atomic>
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -278,6 +281,69 @@ static int t_ra(int argc, char** argv) {
     return ok ? 0 : 5;
 }
 
+// ---------------------------------------------------------------- T-H5 data loader (random windows, output stays on the device)
+// For every window size W (1 / 8 / 32 KiB) and batch size n (256 / 4096 / 65536): the archive resident, the plan made once,
+// the windows of 20 batches (fixed seed) uploaded once; GPU = aceapex_gpu_decompress_windows_async into one n x W buffer
+// (no D2H): latency per batch (call to sync, p50 / p99), host time of the call (selection on the device: launches only),
+// throughput (20 batches back to back). 1 % of the windows of the first batch copied back and compared with the
+// original. CPU = aceapex_decompress_region per window into a pinned buffer (1 thread: one batch; 16 threads: 20 batches)
+// and the H2D of that buffer to the device. dl-cpu: the CPU rows only (a host without a card).
+static int t_dl(int argc, char** argv) {
+    const bool gpu = strcmp(argv[1], "dl-cpu") != 0;
+    const std::vector<uint8_t> a = slurp(argv[2]), o = slurp(argv[3]); const int NB = 20, TH = argc > 4 ? atoi(argv[4]) : 16;
+    uint64_t orig; memcpy(&orig, a.data() + 12, 8); if (orig != o.size()) { printf("[dl] original size differs\n"); return 2; }
+    aceapex_gpu_plan* pl = nullptr; uint8_t* d_in = nullptr; cudaStream_t s = 0; double plan_ms = 0;
+    if (gpu) { const double t0 = now_s(); pl = aceapex_gpu_plan_create(a.data(), a.size(), 0); plan_ms = (now_s() - t0) * 1e3;
+        if (!pl) { printf("plan_create: %d\n", aceapex_gpu_last_error()); return 3; }
+        CK(cudaMalloc(&d_in, a.size())); CK(cudaMemcpy(d_in, a.data(), a.size(), cudaMemcpyHostToDevice)); CK(cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking)); }
+    printf("[dl] %s: %.2f GB original, archive resident, plan %.0f ms (once)\n", base(argv[2]), orig / 1e9, plan_ms);
+    const uint32_t Ws[3] = {1024, 8192, 32768}; const uint32_t Ns[3] = {256, 4096, 65536}; bool all_ok = true;
+    for (uint32_t W : Ws) for (uint32_t n : Ns) {
+        std::mt19937_64 g(20261002ull + W * 7 + n); std::vector<uint64_t> off((size_t)n * NB); for (auto& x : off) x = g() % (orig - W + 1);
+        double g_p50 = 0, g_p99 = 0, g_wps = 0, g_host = 0; bool ok = true;
+        if (gpu) {
+            uint64_t *d_off; uint8_t *d_out, *d_tmp; int* d_st; const size_t tb = aceapex_gpu_windows_temp_bytes(pl, n, W);
+            CK(cudaMalloc(&d_off, off.size() * 8)); CK(cudaMemcpy(d_off, off.data(), off.size() * 8, cudaMemcpyHostToDevice));
+            CK(cudaMalloc(&d_out, (size_t)n * W)); CK(cudaMalloc(&d_tmp, tb)); CK(cudaMalloc(&d_st, 4));
+            std::vector<double> lat, host;
+            for (int r = -2; r < NB; r++) { const int k = r < 0 ? 0 : r; const double t0 = now_s();
+                const int rc = aceapex_gpu_decompress_windows_async(pl, d_in, d_off + (size_t)k * n, n, W, d_out, d_tmp, d_st, s); const double t1 = now_s();
+                CK(cudaStreamSynchronize(s)); const double t2 = now_s(); if (rc) { ok = false; printf("[dl] call: %d\n", rc); break; }
+                if (r >= 0) { lat.push_back(t2 - t0); host.push_back(t1 - t0); }
+                if (r == 0) { int st = -1; CK(cudaMemcpy(&st, d_st, 4, cudaMemcpyDeviceToHost)); if (st) { ok = false; printf("[dl] status %d\n", st); }
+                    std::vector<uint8_t> w(W); for (uint32_t i = 0; i < n; i += 100) { CK(cudaMemcpy(w.data(), d_out + (size_t)i * W, W, cudaMemcpyDeviceToHost));
+                        if (memcmp(w.data(), o.data() + off[i], W)) { ok = false; break; } } } }
+            CK(cudaStreamSynchronize(s)); const double t0 = now_s();
+            for (int r = 0; r < NB; r++) aceapex_gpu_decompress_windows_async(pl, d_in, d_off + (size_t)r * n, n, W, d_out, d_tmp, d_st, s);
+            CK(cudaStreamSynchronize(s)); const double tt = now_s() - t0;
+            g_p50 = pct(lat, .5); g_p99 = pct(lat, .99); g_host = pct(host, .5); g_wps = (double)n * NB / tt;
+            cudaFree(d_off); cudaFree(d_out); cudaFree(d_tmp); cudaFree(d_st);
+        }
+        // CPU: region calls into a pinned buffer, 16 threads over 20 batches, 1 thread over one, + H2D of the buffer
+        uint8_t* h_buf = nullptr; uint8_t* d_buf = nullptr;
+        if (gpu) { CK(cudaHostAlloc(&h_buf, (size_t)n * W, cudaHostAllocDefault)); CK(cudaMalloc(&d_buf, (size_t)n * W)); } else h_buf = (uint8_t*)malloc((size_t)n * W);
+        auto cpu_batch = [&](int k, int T) { std::vector<std::thread> th; std::atomic<uint32_t> nx{0}; std::atomic<int> bad{0};
+            for (int t = 0; t < T; t++) th.emplace_back([&] { for (uint32_t i; (i = nx++) < n; ) { const uint64_t x = off[(size_t)k * n + i];
+                if (aceapex_decompress_region(a.data(), a.size(), h_buf + (size_t)i * W, W, x, W) != (int64_t)W) bad = 1; } });
+            for (auto& x : th) x.join(); return !bad; };
+        double t0 = now_s(); if (!cpu_batch(0, 1)) ok = false; const double c1 = now_s() - t0;
+        for (uint32_t i = 0; i < n; i += 100) if (memcmp(h_buf + (size_t)i * W, o.data() + off[i], W)) { ok = false; break; }
+        std::vector<double> c16, h2d;
+        for (int r = 0; r < NB; r++) { t0 = now_s(); if (!cpu_batch(r, TH)) ok = false; c16.push_back(now_s() - t0);
+            if (gpu) { t0 = now_s(); CK(cudaMemcpy(d_buf, h_buf, (size_t)n * W, cudaMemcpyHostToDevice)); h2d.push_back(now_s() - t0); } }
+        const double c16m = pct(c16, .5), h2dm = gpu ? pct(h2d, .5) : 0;
+        if (gpu) { cudaFreeHost(h_buf); cudaFree(d_buf); } else free(h_buf);
+        const double cpu1_wps = n / c1, cpu16_wps = n / c16m, cpuh2d_wps = n / (c16m + h2dm);
+        printf("[dl] W %5u n %5u: GPU %10.0f windows/s %6.1f GB/s, batch p50 %.3f p99 %.3f ms, host %.1f us | CPU 1 t %8.0f w/s, %d t %9.0f w/s, + H2D %9.0f w/s | x%.1f | %s\n",
+               W, n, g_wps, g_wps * W / 1e9, g_p50 * 1e3, g_p99 * 1e3, g_host * 1e6, cpu1_wps, TH, cpu16_wps, cpuh2d_wps, gpu ? g_wps / cpuh2d_wps : 0.0, ok ? "1 % checked == original" : "DIFFERS");
+        printf("H5ROW\t%u\t%u\t%.0f\t%.2f\t%.3f\t%.3f\t%.1f\t%.0f\t%.0f\t%.0f\t%.2f\t%s\n", W, n, g_wps, g_wps * W / 1e9, g_p50 * 1e3, g_p99 * 1e3, g_host * 1e6,
+               cpu1_wps, cpu16_wps, cpuh2d_wps, gpu ? g_wps / cpuh2d_wps : 0.0, ok ? "ok" : "FAILED");
+        all_ok = all_ok && ok;
+    }
+    if (pl) aceapex_gpu_plan_destroy(pl);
+    return all_ok ? 0 : 5;
+}
+
 // ---------------------------------------------------------------- T-H4 corrupt archives
 static int t_stress(int argc, char** argv) {
     const std::vector<uint8_t> a0 = slurp(argv[2]), orig = slurp(argv[3]); const int N = argc > 4 ? atoi(argv[4]) : 10000;
@@ -335,5 +401,6 @@ int main(int argc, char** argv) {
     if (!strcmp(argv[1], "pcie") && argc >= 4) return t_pcie(argc, argv);
     if ((!strcmp(argv[1], "ra") || !strcmp(argv[1], "ra-cpu")) && argc >= 4) return t_ra(argc, argv);
     if (!strcmp(argv[1], "stress") && argc >= 4) return t_stress(argc, argv);
+    if ((!strcmp(argv[1], "dl") || !strcmp(argv[1], "dl-cpu")) && argc >= 4) return t_dl(argc, argv);
     fprintf(stderr, "bad arguments\n"); return 1;
 }

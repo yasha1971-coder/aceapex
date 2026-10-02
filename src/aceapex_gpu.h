@@ -70,6 +70,7 @@ typedef struct aceapex_gpu_plan aceapex_gpu_plan;
 #define ACEAPEX_GPU_STATUS_MATCH   8   /* a block's tokens did not decode to exactly its size */
 #define ACEAPEX_GPU_STATUS_HASH   16   /* ACEAPEX_GPU_VERIFY_XXH3: XXH3_64bits of the output != the archive header */
 #define ACEAPEX_GPU_STATUS_LIMIT  32   /* a kernel loop hit its step limit (a broken invariant: stopped, output invalid) */
+#define ACEAPEX_GPU_STATUS_RANGE  64   /* 2.3 windows batch: a window reaches past the end of the original (not written) */
 
 /* flags of aceapex_gpu_plan_create (uint64_t); a bit outside ACEAPEX_GPU_PLAN_FLAGS: NULL, ACEAPEX_GPU_E_ARGS */
 #define ACEAPEX_GPU_VALIDATE_ZSTD  UINT64_C(1)   /* decode every zstd frame with libzstd on the host (all hardware threads);
@@ -102,6 +103,17 @@ int aceapex_gpu_decompress_async(const aceapex_gpu_plan* plan, const void* d_in,
 int aceapex_gpu_decompress_range_async(const aceapex_gpu_plan* plan, const void* d_in,
                                        uint64_t offset, uint64_t length,
                                        void* d_out, void* d_temp, int* d_status, cudaStream_t stream);
+
+/* 2.3, windows batch (training data loaders): n windows of window_len bytes of the original at the offsets in
+   d_offsets (device memory, n x uint64) into d_out (n x window_len bytes, window i at i x window_len) - one call, the
+   selection on the device: the blocks the windows cover are marked, the chunks of those blocks picked, only those jobs
+   and blocks decoded (one slot per block), the windows gathered. No host work beyond the launches, no host copy, no
+   synchronization; offsets may change between calls without a new plan. d_temp: aceapex_gpu_windows_temp_bytes(plan,
+   n, window_len) bytes (>= the plan's temp). Archives of the open profile (no zstd frame); else ACEAPEX_GPU_E_ARGS.
+   A window past the end is not written and sets ACEAPEX_GPU_STATUS_RANGE. */
+size_t aceapex_gpu_windows_temp_bytes(const aceapex_gpu_plan* plan, uint64_t max_windows, uint32_t window_len);
+int aceapex_gpu_decompress_windows_async(const aceapex_gpu_plan* plan, const void* d_in, const uint64_t* d_offsets,
+                                         uint32_t n, uint32_t window_len, void* d_out, void* d_temp, int* d_status, cudaStream_t stream);
 
 void aceapex_gpu_plan_destroy(aceapex_gpu_plan* plan);
 
