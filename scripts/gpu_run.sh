@@ -420,8 +420,8 @@ SIZES=""; for X in $CORP; do [ -s $W/$X.fa ] && SIZES="$SIZES $X=$(stat -c%s $W/
   awk -F'\t' '$1=="H1ROW"{ printf "T-H1 saturation %s: peak %.1f GB/s with %s decodes at once (K: GB/s %s), XXH3 %s\n", $2, $5, $6, $7, $8 }
     $1=="H2ROW"{ printf "T-H2 PCIe: H2D %.1f GB/s; pieces: output GB/s / with D2H / output over bus %s; %s\n", $3, $4, $5 }
     $1=="H3ROW"||$1=="H3BROW"{ printf "T-H3%s %s regions x %s b, p50/p99 us: GPU %s (p50 launch/kernels/D2H/wait %s), GPU graph %s, CPU %s, samtools bgzip %s (one call: %s); %s\n", ($1=="H3BROW"?"b (64 KiB token chunks, before 02.10)":""), $3, $4, $5, $11, $6, $7, ($8=="0.0/0.0"?"-":$8), ($9<0?"-":sprintf("%.1f us/region",$9)), $10 }
-    $1=="H5ROW"{ h5=h5 sprintf("%s%sK x %s: %.2fM w/s %.0f GB/s p50 %.2f ms (CPU+H2D %.0fk w/s, x%.0f)", (h5==""?"":"; "), $2/1024, $3, $4/1e6, $5, $6, $10/1e3, $11); if($12!="ok") h5bad=1 }
-    END{ if(h5!="") printf "T-H5 data loader t2t.open: %s; %s\n", h5, (h5bad?"FAILED":"1 %% checked == original") }
+    $1=="H5ROW"{ h5=h5 sprintf("%s%sK x %s: %.2fM w/s %.2f GB/s p50 %.2f ms host %.0f us (CPU+H2D %.0fk w/s, x%.1f)", (h5==""?"":"; "), $2/1024, $3, $4/1e6, $5, $6, $8, $11/1e3, $12); h5n++; if($13=="ok") h5ok++ }
+    END{ if(h5n) printf "T-H5 data loader t2t.open (x = GPU / CPU 16 threads + H2D): %s; %d/%d %s\n", h5, h5ok, h5n, (h5ok==h5n?"ok, 1 % checked == original":"FAILED") }
     $1=="H4ROW"{ printf "T-H4 %s corrupt archives: refused %s, caught %s, harmless %s, silent %s (no hash) / %s (XXH3), hangs %s; %s\n", $3, $4, $5, $6, $7, $8, $9, $10 }' $L
   case "$GPU" in *H100*) echo "paper rows (README, H100 SXM, June 2026, not re-measured): FASTQ ERR194147 5 GB 168.9 GB/s ratio 3.31; 50 GB range decode 165.7 GB/s ratio 3.99; 5 GB genome full decode 29.71 ms";; esac
   cat $LOC/gate.txt
