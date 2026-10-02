@@ -102,6 +102,8 @@ else printf 'head_env_ignored\tfail\tbuild failed: %s\n' "$(head -c 150 $T/env.e
 if ${CXX:-g++} -std=c++17 -O2 -DACEAPEX_ENV_TUNING -Isrc -o $T/stream_test scripts/stream_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/stt.err; then
   $T/stream_test 2>/dev/null || true
 else printf 'head_stream\tfail\tbuild failed: %s\n' "$(head -c 150 $T/stt.err | tr '\n\t' '  ')"; fi
+# aceapex faidx against samtools faidx (1000 regions, exit codes, -r, .fai)
+[ -x ./aceapex ] && bash scripts/faidx_test.sh ./aceapex 2>/dev/null
 # AX_LINEMODEL (tuning builds): bit-perfect on 4 kinds of input, full and regions, fused and two-pass decode
 if ${CXX:-g++} -std=c++17 -O2 -DACEAPEX_ENV_TUNING -Isrc -o $T/lmtest scripts/linemodel_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/lmt.err; then
   l1=$($T/lmtest 2>/dev/null); l2=$(AX_LIT_TILE=0 $T/lmtest 2>/dev/null)

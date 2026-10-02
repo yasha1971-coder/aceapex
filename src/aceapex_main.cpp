@@ -33,6 +33,7 @@
 #include <atomic>
 #include <thread>
 #include <vector>
+#include <unordered_map>
 #include <algorithm>
 #include <zstd.h>
 #define XXH_STATIC_LINKING_ONLY
@@ -2180,13 +2181,93 @@ static int do_region_cli(const char* in_path,const char* out_path,uint64_t off,u
     return 0;
 }
 #endif
+// `aceapex faidx <archive.aet> [-n W] [-r regions.txt] [region ...]` - regions by name and 1-based coordinates
+// (name, name:start, name:start-end; commas allowed), printed as samtools faidx prints them: ">region" as given, then
+// the bases at W (60) per line; an end past the record is cut (stderr note), a start past it gives the header alone,
+// an unknown name or start > end gives the header and exit status 1. The FASTA index of the original sits next to the
+// archive as <archive>.fai (samtools' format: name, length, offset, line bases, line width); without regions, or when
+// it is missing, it is built by one streaming decode. The bytes come from aceapex_decompress_region on the mapped archive.
+#include <sys/mman.h>
+struct AxFai { std::string name; uint64_t len, off, lb, lw; };
+struct AxFaiBuild { std::vector<AxFai> v; uint64_t pos = 0; int state = 0; std::string hdr; uint64_t line = 0; bool bad = false; uint64_t last = 0, nlines = 0; };
+static void ax_fai_feed(AxFaiBuild& B, const uint8_t* p, size_t n) {
+    for (size_t i = 0; i < n; i++, B.pos++) { const uint8_t c = p[i];
+        if (B.state == 1) { if (c == '\n') { B.state = 2; AxFai f; f.name = B.hdr.substr(0, B.hdr.find_first_of(" \t")); f.len = 0; f.off = B.pos + 1; f.lb = 0; f.lw = 0; B.v.push_back(f); B.line = 0; B.nlines = 0; } else B.hdr += (char)c; continue; }
+        if (c == '>' && B.line == 0) { if (!B.v.empty() && B.nlines > 1 && B.last > B.v.back().lb) B.bad = true; B.state = 1; B.hdr.clear(); continue; }
+        if (B.v.empty()) continue;
+        if (c == '\n') { AxFai& f = B.v.back(); if (!f.lb && B.line) { f.lb = B.line; f.lw = B.line + 1; }
+            else if (B.line && f.lb && B.last != f.lb && B.nlines > 0) B.bad = true;   // a short line before the last one
+            if (B.line) { B.last = B.line; B.nlines++; } B.line = 0; continue; }
+        if (c == '\r') { B.bad = true; continue; }
+        B.v.back().len++; B.line++; }
+}
+static int ax_fai_build(const char* arc, std::vector<AxFai>& out) {
+    AxFaiBuild B; int fd = open(arc, O_RDONLY); if (fd < 0) return 1;
+    struct Ctx { AxFaiBuild* B; } cx{&B};
+    const int64_t n = aceapex_decompress_stream(ax_cli_pread, &fd, [](void* c, const void* b, size_t m) -> int { ax_fai_feed(*((Ctx*)c)->B, (const uint8_t*)b, m); return 0; }, &cx, 0, ACEAPEX_STREAM_VERIFY);
+    if (n < 0) {                                              // not streamable (AXLINE01, pre-2.1 literals): whole decode
+        struct stat st; fstat(fd, &st); std::vector<uint8_t> z((size_t)st.st_size); if (pread(fd, z.data(), z.size(), 0) != (ssize_t)z.size()) { close(fd); return 1; }
+        AetHeader h; memcpy(&h, z.data(), sizeof h); uint64_t orig = h.orig_size; if (!memcmp(z.data(), "AXLINE01", 8)) memcpy(&orig, z.data() + 8, 8);
+        std::vector<uint8_t> o(orig + 64); if (aceapex_decompress_mt(z.data(), z.size(), o.data(), o.size(), 0) != (int64_t)orig) { close(fd); return 1; }
+        B = AxFaiBuild(); ax_fai_feed(B, o.data(), orig); }
+    close(fd);
+    if (B.bad) { fprintf(stderr, "[faidx] lines of different lengths inside a record (or CR): no index, as samtools\n"); return 1; }
+    out = B.v; std::string fp = std::string(arc) + ".fai"; FILE* f = fopen(fp.c_str(), "w"); if (!f) return 1;
+    for (auto& x : out) fprintf(f, "%s\t%llu\t%llu\t%llu\t%llu\n", x.name.c_str(), (unsigned long long)x.len, (unsigned long long)x.off, (unsigned long long)x.lb, (unsigned long long)x.lw);
+    fclose(f); return 0;
+}
+static int do_faidx(int argc, char** argv) {
+    if (argc < 3) { fprintf(stderr, "usage: %s faidx <archive.aet> [-n width] [-r regions.txt] [region ...]\n", argv[0]); return 1; }
+    const char* arc = argv[2]; int W = 60; std::vector<std::string> regs; bool build_only = true;
+    for (int i = 3; i < argc; i++) { if (!strcmp(argv[i], "-n") && i + 1 < argc) W = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "-r") && i + 1 < argc) { FILE* f = fopen(argv[++i], "r"); if (!f) { fprintf(stderr, "Cannot open: %s\n", argv[i]); return 1; }
+            char ln[4096]; while (fgets(ln, sizeof ln, f)) { std::string r(ln); while (!r.empty() && (r.back() == '\n' || r.back() == '\r')) r.pop_back(); if (!r.empty()) regs.push_back(r); } fclose(f); build_only = false; }
+        else { regs.push_back(argv[i]); build_only = false; } }
+    if (W <= 0) W = 60;
+    std::vector<AxFai> fai; std::string fp = std::string(arc) + ".fai";
+    if (FILE* f = build_only ? nullptr : fopen(fp.c_str(), "r")) { char nm[4096]; unsigned long long a, b, c, d;
+        while (fscanf(f, "%4095s %llu %llu %llu %llu", nm, &a, &b, &c, &d) == 5) fai.push_back({nm, a, b, c, d}); fclose(f); }
+    else if (ax_fai_build(arc, fai)) { fprintf(stderr, "[faidx] cannot index %s\n", arc); return 1; }
+    if (build_only) return 0;
+    int fd = open(arc, O_RDONLY); if (fd < 0) { fprintf(stderr, "Cannot open: %s\n", arc); return 1; }
+    struct stat st; fstat(fd, &st); const size_t zn = (size_t)st.st_size;
+    const uint8_t* z = (const uint8_t*)mmap(nullptr, zn, PROT_READ, MAP_PRIVATE, fd, 0); if (z == MAP_FAILED) { close(fd); return 1; }
+    std::unordered_map<std::string, size_t> by; for (size_t i = 0; i < fai.size(); i++) by.emplace(fai[i].name, i);
+    std::string out; std::vector<uint8_t> buf; int rc = 0;
+    for (const std::string& r : regs) {
+        out += '>'; out += r; out += '\n';
+        std::string nm = r; uint64_t s = 1, e = UINT64_MAX; bool range = false;
+        const size_t col = r.rfind(':');
+        if (col != std::string::npos && !by.count(r)) { std::string q; for (char c : r.substr(col + 1)) if (c != ',') q += c;
+            const size_t dash = q.find('-'); char* end = nullptr;
+            if (!q.empty() && isdigit((unsigned char)q[0])) { s = strtoull(q.c_str(), &end, 10); if (dash != std::string::npos && dash + 1 < q.size()) e = strtoull(q.c_str() + dash + 1, nullptr, 10); nm = r.substr(0, col); range = true; } }
+        auto it = by.find(nm); if (it == by.end()) { fprintf(stderr, "[faidx] Failed to fetch sequence in %s\n", r.c_str()); rc = 1; continue; }
+        const AxFai& f = fai[it->second]; if (s == 0) s = 1;
+        if (range && e < s) { fprintf(stderr, "[faidx] Failed to fetch sequence in %s\n", r.c_str()); rc = 1; continue; }
+        if (e > f.len) { if (range && e != UINT64_MAX) fprintf(stderr, "[faidx] Truncated sequence: %s\n", r.c_str()); e = f.len; }
+        if (s > e) { if (range) fprintf(stderr, "[faidx] Zero length sequence: %s\n", r.c_str()); continue; }
+        auto bo = [&](uint64_t x) { return f.off + x / f.lb * f.lw + x % f.lb; };       // 0-based base -> byte
+        const uint64_t lo = bo(s - 1), hi = bo(e - 1) + 1; buf.resize(hi - lo + 64);
+        const int64_t got = aceapex_decompress_region(z, zn, buf.data(), buf.size(), lo, hi - lo);
+        if (got != (int64_t)(hi - lo)) { fprintf(stderr, "[faidx] region decode failed (%lld) for %s\n", (long long)got, r.c_str()); rc = 1; continue; }
+        uint64_t col_n = 0;
+        for (uint64_t i = 0; i < hi - lo; i++) { const uint8_t c = buf[i]; if (c == '\n' || c == '\r') continue; out += (char)c; if (++col_n == (uint64_t)W) { out += '\n'; col_n = 0; } }
+        if (col_n) out += '\n';
+        if (out.size() > ((size_t)8 << 20)) { fwrite(out.data(), 1, out.size(), stdout); out.clear(); }
+    }
+    fwrite(out.data(), 1, out.size(), stdout); munmap((void*)z, zn); close(fd);
+    return rc;
+}
+
 int main(int argc, char** argv) {
+    if (argc >= 2 && !strcmp(argv[1], "faidx")) return do_faidx(argc, argv);
     if (argc < 2) {
         fprintf(stderr,"ACEAPEX v3 FSE — Global FSE + Parallel decode\n\n"
             "Usage:\n  %s c --in <f> --out <f.aet> [--threads N]\n"
             "  %s d --in <f.aet> --out <f>      (--out - or -c: streaming decode to stdout)\n  %s t --in <f> [--threads N]\n"
-            "  %s r --in <f.aet> --out <f> --region OFFSET LENGTH   (bytes of the original)\n",
-            argv[0],argv[0],argv[0],argv[0]);
+            "  %s r --in <f.aet> --out <f> --region OFFSET LENGTH   (bytes of the original)\n"
+            "  %s faidx <f.aet> [-n W] [-r regions.txt] [chr:start-end ...]   (as samtools faidx; index <f.aet>.fai)\n",
+            argv[0],argv[0],argv[0],argv[0],argv[0]);
         return 1;
     }
     const char* cmd=argv[1]; const char* in=nullptr; const char* out=nullptr; int thr=8; int level=2;
