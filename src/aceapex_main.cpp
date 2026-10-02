@@ -2259,8 +2259,13 @@ static int do_faidx(int argc, char** argv) {
     return rc;
 }
 
+#ifndef ACEAPEX_BUILD_ID
+#define ACEAPEX_BUILD_ID ACEAPEX_VERSION_STRING "-dev"   /* scripts/package_linux.sh passes the release id */
+#endif
 int main(int argc, char** argv) {
     if (argc >= 2 && !strcmp(argv[1], "faidx")) return do_faidx(argc, argv);
+    if (argc >= 2 && (!strcmp(argv[1], "--version") || !strcmp(argv[1], "version"))) {
+        printf("aceapex %s (format ACEPX2, libzstd %s)\n", ACEAPEX_BUILD_ID, ZSTD_versionString()); return 0; }
     if (argc < 2) {
         fprintf(stderr,"ACEAPEX v3 FSE — Global FSE + Parallel decode\n\n"
             "Usage:\n  %s c --in <f> --out <f.aet> [--threads N]\n"
