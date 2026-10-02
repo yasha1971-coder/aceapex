@@ -102,6 +102,33 @@ else printf 'head_env_ignored\tfail\tbuild failed: %s\n' "$(head -c 150 $T/env.e
 if ${CXX:-g++} -std=c++17 -O2 -DACEAPEX_ENV_TUNING -Isrc -o $T/stream_test scripts/stream_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/stt.err; then
   $T/stream_test 2>/dev/null || true
 else printf 'head_stream\tfail\tbuild failed: %s\n' "$(head -c 150 $T/stt.err | tr '\n\t' '  ')"; fi
+# AX_REFSEG prototype (tuning build, own container): assembly B = A with 1/1000 substitutions, its third MiB
+# reverse-complemented and 70 columns; both FASTA files back byte for byte from the container, B under 10 % of A with references,
+# and the default encoder bytes untouched by the hook (A's part identical with and without AX_REFSEG)
+if ${CXX:-g++} -std=c++17 -O2 -DACEAPEX_ENV_TUNING -Isrc -o $T/refseg scripts/refseg.cpp -lzstd -lpthread 2>$T/rsg.err; then
+  python3 - "$T" <<'PYEOF'
+import random, sys
+T = sys.argv[1]; random.seed(11); B = b'ACGT'
+a = bytearray(random.choice(B) for _ in range(6_000_000))
+for s in range(0, len(a), 50_000): a[s:s+300] = a[s:s+300].lower()
+b = bytearray(a)
+for i in random.sample(range(len(b)), len(b) // 1000): b[i] = random.choice(B) | (b[i] & 0x20)
+comp = bytes.maketrans(b'ACGTacgt', b'TGCAtgca')
+b[2 << 20:3 << 20] = bytes(b[2 << 20:3 << 20]).translate(comp)[::-1]     # one block reverse-complemented (one segment per block)
+for nm, x, w in (('A', a, 60), ('B', b, 70)):
+    with open(f'{T}/rs_{nm}.fa', 'wb') as f:
+        f.write(b'>' + nm.encode() + b' test\n')
+        for i in range(0, len(x), w): f.write(bytes(x[i:i+w]) + b'\n')
+PYEOF
+  r0=$(AX_REFSEG=0 AX_HASH12=1 $T/refseg $T/rs0.axr $T/rs_A.fa $T/rs_B.fa 2>/dev/null | grep REFSEGROW)
+  r1=$(AX_REFSEG=1 AX_HASH12=1 $T/refseg $T/rs1.axr $T/rs_A.fa $T/rs_B.fa 2>/dev/null | grep REFSEGROW)
+  a0=$(echo "$r0" | tr '\t' '\n' | grep '^rs_A.fa:' | cut -d: -f2); a1=$(echo "$r1" | tr '\t' '\n' | grep '^rs_A.fa:' | cut -d: -f2)
+  b1=$(echo "$r1" | tr '\t' '\n' | grep '^rs_B.fa:' | cut -d: -f2)
+  ok0=$(echo "$r0" | awk -F'\t' '{print $NF}'); ok1=$(echo "$r1" | awk -F'\t' '{print $NF}')
+  if [ "$ok0" = ok ] && [ "$ok1" = ok ] && [ -n "$a1" ] && [ "$a0" = "$a1" ] && [ $((b1 * 100)) -lt $((a1 * 10)) ]; then
+    printf 'head_refseg\tpass\tAX_REFSEG prototype: A and B (1/1000 substitutions, a reverse-complemented MiB) bit-perfect from the container; B %s B with references against A %s B alone; A unchanged by the hook\n' "$b1" "$a1"
+  else printf 'head_refseg\tfail\tno refs: %s | refs: %s\n' "$(echo $r0 | cut -c1-120)" "$(echo $r1 | cut -c1-120)"; fi
+else printf 'head_refseg\tfail\tbuild failed: %s\n' "$(head -c 150 $T/rsg.err | tr '\n\t' '  ')"; fi
 # python layer over the same fixtures, without installing: ctypes loads a fresh .so
 if python3 -c "import pytest" 2>/dev/null; then
   if ${CC:-gcc} -std=c99 -O2 -fPIC -shared -DACEAPEX_ENV_TUNING -Ic -o $T/libaceapex_decode.so c/aceapex_decode.c -lzstd 2>/dev/null \
