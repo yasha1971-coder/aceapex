@@ -128,6 +128,15 @@ if [ -s $HOME/golden/genome/chr1.fa ] && [ -x ./aceapex ] && [ -x $T/semu ]; the
   else printf 'head_open_compat\tfail\tarchive %s, cli %s, c99 %s, python %s, gpu-emu %s\n' "${am:0:12}" "${m1:0:12}" "${m2:0:12}" "${m3:0:12}" "$m4"; fi
   rm -f $T/old.aet
 fi
+# windows batch of the GPU library (aceapex_gpu_decompress_windows_async) on the CPU: the device selection replayed from
+# the plan, the jobs and blocks by the plan executor, every window of 8 batches (1 / 8 / 32 KiB x 256 / 4096 / 65536)
+# == the original; chr1 in the open profile
+if [ -s $HOME/golden/genome/chr1.fa ] && [ -x ./aceapex ] && ${CXX:-g++} -std=c++17 -O2 -Isrc -Iscripts -o $T/wemu scripts/gpu_windows_emu.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/wemu.err; then
+  env -i PATH=$PATH ACEAPEX_BS=16384 LIT_CHUNK=65536 AX_PROFILE=open ./aceapex c --in $HOME/golden/genome/chr1.fa --out $T/w.aet >/dev/null 2>&1
+  r=$($T/wemu $T/w.aet $HOME/golden/genome/chr1.fa | grep '^H5EMU'); rm -f $T/w.aet
+  if [ "$(echo "$r" | awk -F'\t' '{print $NF}')" = ok ]; then printf 'head_gpu_windows_emu\tpass\twindows batch, device selection on the CPU, chr1 open: %s\n' "$(echo "$r" | cut -f2 | cut -c1-300)"
+  else printf 'head_gpu_windows_emu\tfail\t%s\n' "$(echo "$r" | cut -c1-300)"; fi
+fi
 # aceapex faidx against samtools faidx (1000 regions, exit codes, -r, .fai)
 [ -x ./aceapex ] && bash scripts/faidx_test.sh ./aceapex 2>/dev/null
 # AX_LINEMODEL (tuning builds): bit-perfect on 4 kinds of input, full and regions, fused and two-pass decode

@@ -279,6 +279,10 @@ if [ $HT = 1 ] && [ -x $W/gpu_h100_tests ] && [ -s $W/t2t.open.aet ]; then
   env -i PATH=$PATH ACEAPEX_BS=16384 LIT_CHUNK=65536 AX_PROFILE=open FSE_CHUNK=65536 ./aceapex c --in $W/t2t.fa --out $W/t2t.ra16.aet >/dev/null 2>&1 \
     && echo "== T-H3b random access, 64 KiB token chunks as before 02.10 ($(stat -c%s $W/t2t.ra16.aet) B)" | tee -a $L \
     && to $TO "T-H3b" $W/gpu_h100_tests ra $W/t2t.ra16.aet $W/t2t.fa 10000 5000 2>&1 | sed 's/^H3ROW/H3BROW/' | tee -a $L; rm -f $W/t2t.ra16.aet
+  # T-H5 data loader: random windows (1 / 8 / 32 KiB x 256 / 4096 / 65536 per batch) from the resident t2t.open archive into
+  # one device buffer (aceapex_gpu_decompress_windows_async, the selection on the device), against region calls on 16 CPU
+  # threads + H2D; 1 % of the windows compared with the original
+  echo "== T-H5 data loader" | tee -a $L; to $((TO*2)) "T-H5" $W/gpu_h100_tests dl $W/t2t.open.aet $W/t2t.fa $T 2>&1 | tee -a $L
   if [ -s $W/chr1.fa ]; then tail -c +100000001 $W/chr1.fa | head -c 16777216 > $W/stress.fa
     env -i PATH=$PATH ACEAPEX_BS=16384 LIT_CHUNK=65536 AX_PROFILE=open ./aceapex c --in $W/stress.fa --out $W/stress.open.aet >/dev/null 2>&1
     echo "== T-H4 stress ($(stat -c%s $W/stress.open.aet 2>/dev/null) B archive of a 16 MB chr1 slice)" | tee -a $L
@@ -391,10 +395,10 @@ VERDICT=FAILED; WHY=""                                   # every failed conditio
 [ "$AOK" = "$AR" ] || WHY="$WHY; C ABI $AOK of $AR"; [ "$PE" = 1 ] || WHY="$WHY; plan emulator"; grep -aq "^ROW	$W/chr1.open" $L || WHY="$WHY; no chr1.open row"
 grep -aq 'archive rejected\|ROUND-TRIP FAILED\|^example .*FAILED\|shared library build FAILED' $L && WHY="$WHY; a failure line in the log"
 [ "$NTO" = 0 ] || WHY="$WHY; $NTO steps over the time limit"; grep -q SLOWER $LOC/gate.txt && WHY="$WHY; speed gate: slower than $BASEF by > 5 %"
-grep -aqE $'^H([1-4]|3B)ROW\t.*\tFAILED(\t|$)' $L && WHY="$WHY; a card test (T-H) failed"
+grep -aqE $'^H([1-5]|3B)ROW\t.*\tFAILED(\t|$)' $L && WHY="$WHY; a card test (T-H) failed"
 [ "$N" = "$RUN" ] && [ "$E" = 2 ] && [ "$F" = 5 ] && [ "$AOK" = "$AR" ] && [ "$PE" = 1 ] && grep -aq "^ROW	$W/chr1.open" $L \
   && ! grep -aq 'archive rejected\|ROUND-TRIP FAILED\|^example .*FAILED\|shared library build FAILED' $L && [ "$NTO" = 0 ] \
-  && ! grep -q SLOWER $LOC/gate.txt && ! grep -aqE $'^H([1-4]|3B)ROW\t.*\tFAILED(\t|$)' $L && VERDICT=PASSED
+  && ! grep -q SLOWER $LOC/gate.txt && ! grep -aqE $'^H([1-5]|3B)ROW\t.*\tFAILED(\t|$)' $L && VERDICT=PASSED
 [ $VERDICT = PASSED ] && echo "RESULT: all passes bit-perfect on $GPU" | tee -a $L \
   || echo "!!! NOT PASSED on $GPU - valid figures only in bit-perfect rows" | tee -a $L
 # == SUMMARY == (<= 15 lines): commit, mode, GPU; per archive library / tool on-device ms, stages, [open variants]; verdict.
@@ -416,6 +420,8 @@ SIZES=""; for X in $CORP; do [ -s $W/$X.fa ] && SIZES="$SIZES $X=$(stat -c%s $W/
   awk -F'\t' '$1=="H1ROW"{ printf "T-H1 saturation %s: peak %.1f GB/s with %s decodes at once (K: GB/s %s), XXH3 %s\n", $2, $5, $6, $7, $8 }
     $1=="H2ROW"{ printf "T-H2 PCIe: H2D %.1f GB/s; pieces: output GB/s / with D2H / output over bus %s; %s\n", $3, $4, $5 }
     $1=="H3ROW"||$1=="H3BROW"{ printf "T-H3%s %s regions x %s b, p50/p99 us: GPU %s (p50 launch/kernels/D2H/wait %s), GPU graph %s, CPU %s, samtools bgzip %s (one call: %s); %s\n", ($1=="H3BROW"?"b (64 KiB token chunks, before 02.10)":""), $3, $4, $5, $11, $6, $7, ($8=="0.0/0.0"?"-":$8), ($9<0?"-":sprintf("%.1f us/region",$9)), $10 }
+    $1=="H5ROW"{ h5=h5 sprintf("%s%sK x %s: %.2fM w/s %.0f GB/s p50 %.2f ms (CPU+H2D %.0fk w/s, x%.0f)", (h5==""?"":"; "), $2/1024, $3, $4/1e6, $5, $6, $10/1e3, $11); if($12!="ok") h5bad=1 }
+    END{ if(h5!="") printf "T-H5 data loader t2t.open: %s; %s\n", h5, (h5bad?"FAILED":"1 %% checked == original") }
     $1=="H4ROW"{ printf "T-H4 %s corrupt archives: refused %s, caught %s, harmless %s, silent %s (no hash) / %s (XXH3), hangs %s; %s\n", $3, $4, $5, $6, $7, $8, $9, $10 }' $L
   case "$GPU" in *H100*) echo "paper rows (README, H100 SXM, June 2026, not re-measured): FASTQ ERR194147 5 GB 168.9 GB/s ratio 3.31; 50 GB range decode 165.7 GB/s ratio 3.99; 5 GB genome full decode 29.71 ms";; esac
   cat $LOC/gate.txt

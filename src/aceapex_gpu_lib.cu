@@ -28,7 +28,7 @@ static_assert(sizeof(agp::Dna) == sizeof(DnaDesc), "Dna layout");
 struct aceapex_gpu_plan {
     agp::Plan P;
     uint8_t* dmem = nullptr;                      // device: block table + descriptor templates
-    size_t o_bo = 0, o_rans = 0, o_open = 0, o_dna = 0, o_nv = 0, o_raw = 0, o_cmap = 0;
+    size_t o_bo = 0, o_rans = 0, o_open = 0, o_dna = 0, o_nv = 0, o_raw = 0, o_cmap = 0, o_rkey = 0, o_okey = 0, o_wkey = 0;   // keys: windows batch
     unsigned grid = 1;                            // match kernel: resident blocks of 128 threads
     bool tile = false; unsigned grid_t = 1;       // AX_GPU_TILE (env at plan_create, plan tile_ok): k_decode_t, its resident blocks
 };
@@ -44,7 +44,7 @@ static inline void phase(const char* p, cudaStream_t s){ if(g_phase) g_phase(p,s
 static const unsigned TPB = 128, G = 32;
 
 // ---- small kernels of the library
-__global__ void kg_init(uint32_t* e){ if(threadIdx.x==0){ e[0]=0; e[1]=~0u; e[2]=0; e[3]=~0u; e[4]=0; e[5]=0; e[6]=0; e[7]=0; } }
+__global__ void kg_init(uint32_t* e){ if(threadIdx.x==0){ e[0]=0; e[1]=~0u; e[2]=0; e[3]=~0u; e[4]=0; e[5]=0; e[6]=0; e[7]=0; e[8]=0; } }
 __global__ void kg_fix_rans(const agp::Rans* t, RansDesc* d, uint32_t n, uint8_t* base){
     for(uint32_t i=blockIdx.x*blockDim.x+threadIdx.x;i<n;i+=gridDim.x*blockDim.x){ agp::Rans r=t[i];
         RansDesc o; o.src=r.src; o.dst=base+r.dst; o.n=r.n; o.csz=r.csz; o.mode=r.mode; o.cls=r.pad; o.res=0; d[i]=o; } }
@@ -64,7 +64,7 @@ __global__ void kg_raw(const agp::Raw* t, const uint8_t* in, uint8_t* base){    
 __global__ void kg_nvcheck(const int* st, const size_t* act, const size_t* os, uint32_t n, uint32_t* e){   // nvcompStatus_t is an int enum, success = 0
     for(uint32_t i=blockIdx.x*blockDim.x+threadIdx.x;i<n;i+=gridDim.x*blockDim.x) if(st[i]!=0 || act[i]!=os[i]) atomicOr(e+5,1u); }
 __global__ void kg_status(const uint32_t* e, int* st){
-    if(threadIdx.x==0) *st=(e[0]?ACEAPEX_GPU_STATUS_PIECE:0)|(e[2]?ACEAPEX_GPU_STATUS_OPEN:0)|(e[5]?ACEAPEX_GPU_STATUS_ZSTD:0)|(e[4]?ACEAPEX_GPU_STATUS_MATCH:0)|(e[6]?ACEAPEX_GPU_STATUS_HASH:0)|(e[7]?ACEAPEX_GPU_STATUS_LIMIT:0); }
+    if(threadIdx.x==0) *st=(e[0]?ACEAPEX_GPU_STATUS_PIECE:0)|(e[2]?ACEAPEX_GPU_STATUS_OPEN:0)|(e[5]?ACEAPEX_GPU_STATUS_ZSTD:0)|(e[4]?ACEAPEX_GPU_STATUS_MATCH:0)|(e[6]?ACEAPEX_GPU_STATUS_HASH:0)|(e[7]?ACEAPEX_GPU_STATUS_LIMIT:0)|(e[8]?ACEAPEX_GPU_STATUS_RANGE:0); }
 // XXH3_64bits of the output (src/ax_xxh3.h): block terms in parallel (8 threads per 1 KiB block, aligned 64-bit
 // words, key table), then the scramble chain - one step per KiB on each of the 8 independent accumulator lanes, one
 // thread per lane, the lane's key in a register and the block terms prefetched 32 steps ahead - then tail, merge, compare
@@ -92,6 +92,32 @@ __global__ void __launch_bounds__(32) kg_xxh_chain(const uint8_t* __restrict__ i
     for(int i=0;i<8;i++) a[i]=__shfl_sync(0xffu,acc,i);
     if(threadIdx.x==0 && axh_merge(a,len,axh_secret)!=want) e[6]=1; }
 __global__ void kg_set(uint32_t* p, uint32_t v){ *p=v; }
+// ---- windows batch: the selection on the device (aceapex_gpu_decompress_windows_async)
+struct WinArgs { uint64_t cb[4], ch[4]; };
+__global__ void kw_mark(const uint64_t* off, uint32_t n, uint32_t W, uint32_t bs, uint64_t orig, uint8_t* need, uint32_t* err){
+    for(uint32_t i=blockIdx.x*blockDim.x+threadIdx.x;i<n;i+=gridDim.x*blockDim.x){ const uint64_t o=off[i];
+        if(o>orig || W>orig-o){ atomicOr(err+8,1u); continue; }                     // a window past the end: STATUS_RANGE
+        for(uint64_t b=o/bs; b<=(o+W-1)/bs; b++) need[b]=1; } }
+__global__ void kw_chunks(const BlockOffsets* bo, uint32_t nb, const uint8_t* need, WinArgs a, uint8_t* cneed){
+    for(uint32_t b=blockIdx.x*blockDim.x+threadIdx.x;b<nb;b+=gridDim.x*blockDim.x){ if(!need[b]) continue; const BlockOffsets e=bo[b];
+        const uint64_t o[4]={e.lit_off,e.off_off,e.len_off,e.cmd_off}, z[4]={e.lit_sz,e.off_sz,e.len_sz,e.cmd_sz};
+        for(int s=0;s<4;s++){ if(!z[s] || !a.ch[s]) continue; for(uint64_t k=o[s]/a.ch[s]; k<=(o[s]+z[s]-1)/a.ch[s]; k++) cneed[a.cb[s]+k]=1; } } }
+__global__ void __launch_bounds__(1024) kw_scan(const uint8_t* need, uint32_t nb, uint32_t* slot, uint32_t* list, uint32_t* cnt){   // one block
+    __shared__ uint32_t sh[1024]; uint32_t carry=0; const uint32_t t=threadIdx.x;
+    for(uint32_t base=0; base<nb; base+=1024){ const uint32_t b=base+t, v= b<nb ? need[b] : 0; sh[t]=v; __syncthreads();
+        for(uint32_t o=1;o<1024;o<<=1){ const uint32_t x= t>=o ? sh[t-o] : 0; __syncthreads(); sh[t]+=x; __syncthreads(); }
+        if(v){ const uint32_t q=carry+sh[t]-1; slot[b]=q; list[q]=b; } carry+=sh[1023]; __syncthreads(); }
+    if(t==0) cnt[3]=carry; }
+// jobs whose chunk is needed, copied to a compact list (any order; descriptors are 8-byte multiples)
+__global__ void kw_pick(const uint8_t* all, uint32_t sz, const uint64_t* key, uint32_t n, const uint8_t* cneed, WinArgs a, uint8_t* out, uint32_t* cnt){
+    for(uint32_t i=blockIdx.x*blockDim.x+threadIdx.x;i<n;i+=gridDim.x*blockDim.x){ const uint64_t k=key[i], st=k>>48, c=k&((1ull<<48)-1);
+        if(st<4 && cneed[a.cb[st]+c]){ const uint32_t q=atomicAdd(cnt,1u); for(uint32_t w=0;w<sz/8;w++) ((uint64_t*)(out+(uint64_t)q*sz))[w]=((const uint64_t*)(all+(uint64_t)i*sz))[w]; } } }
+__global__ void kw_raw_n(const agp::Raw* t, const uint32_t* dn, const uint8_t* in, uint8_t* base){
+    const uint32_t n=*dn; for(uint32_t j=blockIdx.x;j<n;j+=gridDim.x){ const agp::Raw r=t[j]; for(uint64_t i=threadIdx.x;i<r.n;i+=blockDim.x) base[r.dst+i]=in[r.src+i]; } }
+__global__ void kw_gather(const uint64_t* off, uint32_t n, uint32_t W, uint32_t bs, uint64_t orig, const uint32_t* slot, const uint8_t* sbuf, uint8_t* out){
+    for(uint32_t i=blockIdx.x;i<n;i+=gridDim.x){ const uint64_t o=off[i]; if(o>orig || W>orig-o) continue; const uint64_t b=o/bs;
+        const uint8_t* src=sbuf+(uint64_t)slot[b]*bs+(o%bs); uint8_t* dst=out+(uint64_t)i*W;
+        for(uint32_t j=threadIdx.x;j<W;j+=blockDim.x) dst[j]=src[j]; } }
 __global__ void kg_copy(const uint8_t* s, uint8_t* d, uint64_t n){
     for(uint64_t i=blockIdx.x*(uint64_t)blockDim.x+threadIdx.x;i<n;i+=(uint64_t)gridDim.x*blockDim.x) d[i]=s[i]; }
 
@@ -117,11 +143,13 @@ aceapex_gpu_plan* agpu_plan_build(const void* h_archive, size_t in_bytes, uint64
     auto put=[&](size_t n){ size_t r=o; o+=agp::al(n+8); return r; };
     pl->o_bo=put(P.bo.size()); pl->o_rans=put(P.rans.size()*sizeof(agp::Rans)); pl->o_open=put(P.open.size()*sizeof(agp::Open));
     pl->o_dna=put(P.dna.size()*sizeof(agp::Dna)); pl->o_nv=put(P.nv.size()*sizeof(agp::Nv)); pl->o_raw=put(P.raw.size()*sizeof(agp::Raw)); pl->o_cmap=put(P.cmap.size()*4);
+    pl->o_rkey=put(P.rans_key.size()*8); pl->o_okey=put(P.open_key.size()*8); pl->o_wkey=put(P.raw_key.size()*8);
     bool ok = cudaMalloc(&pl->dmem,o)==cudaSuccess;
     auto up=[&](size_t off, const void* src, size_t n){ if(ok && n) ok = cudaMemcpy(pl->dmem+off,src,n,cudaMemcpyHostToDevice)==cudaSuccess; };
     up(pl->o_bo,P.bo.data(),P.bo.size()); up(pl->o_rans,P.rans.data(),P.rans.size()*sizeof(agp::Rans));
     up(pl->o_open,P.open.data(),P.open.size()*sizeof(agp::Open)); up(pl->o_dna,P.dna.data(),P.dna.size()*sizeof(agp::Dna));
     up(pl->o_nv,P.nv.data(),P.nv.size()*sizeof(agp::Nv)); up(pl->o_raw,P.raw.data(),P.raw.size()*sizeof(agp::Raw)); up(pl->o_cmap,P.cmap.data(),P.cmap.size()*4);
+    up(pl->o_rkey,P.rans_key.data(),P.rans_key.size()*8); up(pl->o_okey,P.open_key.data(),P.open_key.size()*8); up(pl->o_wkey,P.raw_key.data(),P.raw_key.size()*8);
     int dev=0,nsm=1,maxblk=1;
     if(ok) ok = cudaGetDevice(&dev)==cudaSuccess && cudaDeviceGetAttribute(&nsm,cudaDevAttrMultiProcessorCount,dev)==cudaSuccess
              && cudaOccupancyMaxActiveBlocksPerMultiprocessor(&maxblk,k_decode_g<G>,TPB,0)==cudaSuccess;
@@ -136,6 +164,39 @@ extern "C" size_t aceapex_gpu_temp_bytes(const aceapex_gpu_plan* p){ return p ? 
 extern "C" size_t aceapex_gpu_range_temp_bytes(const aceapex_gpu_plan* p, uint64_t len){ return p ? (size_t)(p->P.temp_bytes+agp::window_bytes(p->P,len)) : 0; }
 extern "C" size_t aceapex_gpu_output_bytes(const aceapex_gpu_plan* p){ return p ? (size_t)p->P.orig : 0; }
 extern "C" int    aceapex_gpu_plan_input_window(const aceapex_gpu_plan* p, uint64_t* lo, uint64_t* hi){ if(!p||!lo||!hi) return ACEAPEX_GPU_E_ARGS; *lo=p->P.in_lo; *hi=p->P.in_hi; return ACEAPEX_GPU_OK; }
+extern "C" size_t aceapex_gpu_windows_temp_bytes(const aceapex_gpu_plan* p, uint64_t max_windows, uint32_t window_len){
+    return (p && window_len) ? (size_t)agp::win_layout(p->P, max_windows, window_len).total : 0; }
+extern "C" int aceapex_gpu_decompress_windows_async(const aceapex_gpu_plan* pl, const void* d_in, const uint64_t* d_offsets, uint32_t n, uint32_t W,
+                                                    void* d_out, void* d_temp, int* d_status, cudaStream_t s){
+    if(!pl || !d_in || !d_offsets || !d_out || !d_temp || !d_status || !n || !W || ((uintptr_t)d_temp & 255)) return ACEAPEX_GPU_E_ARGS;
+    const agp::Plan& P=pl->P; if(P.partial || !P.nv.empty() || !P.dna.empty() || pl->tile || W>P.orig || !P.contiguous) return ACEAPEX_GPU_E_ARGS;   // open profile, whole plan
+    const agp::WinLayout L=agp::win_layout(P,n,W); uint8_t* T=(uint8_t*)d_temp; const uint8_t* M=pl->dmem; const uint8_t* in=(const uint8_t*)d_in;
+    uint32_t* err=(uint32_t*)(T+P.o_err); uint32_t* cnt=(uint32_t*)(T+L.cnt); const uint32_t NR=(uint32_t)P.rans.size(), NO=(uint32_t)P.open.size(), NW=(uint32_t)P.raw.size();
+    RansDesc* dR=(RansDesc*)(T+P.o_rans); OpenDesc* dO=(OpenDesc*)(T+P.o_open);
+    WinArgs a; for(int q=0;q<4;q++){ a.cb[q]=L.cb[q]; a.ch[q]=P.chunk[q]; }
+    WinArgs a0=a; for(int q=1;q<4;q++) a0.cb[q]=a.cb[0];                       // open keys: the literal chunk index alone (stream 0)
+    kg_init<<<1,32,0,s>>>(err);
+    cudaMemsetAsync(T+L.need,0,(size_t)P.nb,s); cudaMemsetAsync(T+L.cneed,0,(size_t)(L.cb[3]+L.nc[3]),s); cudaMemsetAsync(cnt,0,64,s);
+    if(NR) kg_fix_rans<<<blocks_for(NR),256,0,s>>>((const agp::Rans*)(M+pl->o_rans),dR,NR,T);
+    if(NO) kg_fix_open<<<blocks_for(NO),256,0,s>>>((const agp::Open*)(M+pl->o_open),dO,NO,T);
+    kw_mark<<<std::max(1u,std::min(blocks_for(n),4096u)),256,0,s>>>(d_offsets,n,W,(uint32_t)P.bs,P.orig,T+L.need,err);
+    kw_chunks<<<std::max(1u,std::min(blocks_for(P.nb),4096u)),256,0,s>>>((const BlockOffsets*)(M+pl->o_bo),P.nb,T+L.need,a,T+L.cneed);
+    kw_scan<<<1,1024,0,s>>>(T+L.need,P.nb,(uint32_t*)(T+L.slot),(uint32_t*)(T+L.list),cnt);
+    if(NR) kw_pick<<<std::min(blocks_for(NR),4096u),256,0,s>>>((const uint8_t*)dR,(uint32_t)sizeof(RansDesc),(const uint64_t*)(M+pl->o_rkey),NR,T+L.cneed,a,T+L.rj,cnt+0);
+    if(NO) kw_pick<<<std::min(blocks_for(NO),4096u),256,0,s>>>((const uint8_t*)dO,(uint32_t)sizeof(OpenDesc),(const uint64_t*)(M+pl->o_okey),NO,T+L.cneed,a0,T+L.oj,cnt+1);
+    if(NW) kw_pick<<<std::min(blocks_for(NW),4096u),256,0,s>>>((const uint8_t*)(M+pl->o_raw),(uint32_t)sizeof(agp::Raw),(const uint64_t*)(M+pl->o_wkey),NW,T+L.cneed,a,T+L.wj,cnt+2);
+    if(NW) kw_raw_n<<<std::min(NW,4096u),256,0,s>>>((const agp::Raw*)(T+L.wj),cnt+2,in,T);
+    const unsigned gw=std::max(1u,pl->grid*4), gyo=(unsigned)((P.chunk[0]/16+255)/256);
+    if(NR) k_rans_n<1><<<std::min(gw,(NR+AXW_WARPS-1)/AXW_WARPS),32*AXW_WARPS,0,s>>>(in,(const RansDesc*)(T+L.rj),cnt+0,err);
+    if(NO){ k_open_cg_n<<<std::min(gw,NO),AXO_NT,0,s>>>((const OpenDesc*)(T+L.oj),cnt+1,err+2);
+            k_open_bases_s_n<<<dim3(std::min(gw,NO),gyo),256,0,s>>>((const OpenDesc*)(T+L.oj),cnt+1); }
+    uint32_t* ctr=(uint32_t*)(T+P.o_ctr); kg_set<<<1,1,0,s>>>(ctr,0);
+    k_decode_list<G><<<std::max(1u,pl->grid),TPB,0,s>>>(T+P.o_s[0],T+P.o_s[1],T+P.o_s[2],T+P.o_s[3],(const BlockOffsets*)(M+pl->o_bo),P.orig,P.bs,T+L.sbuf,
+        (const uint32_t*)(T+L.list),cnt+3,ctr,err+4);
+    kw_gather<<<std::max(1u,std::min(n,65535u)),256,0,s>>>(d_offsets,n,W,(uint32_t)P.bs,P.orig,(const uint32_t*)(T+L.slot),T+L.sbuf,(uint8_t*)d_out);
+    kg_status<<<1,32,0,s>>>(err,d_status);
+    return cudaGetLastError()==cudaSuccess ? ACEAPEX_GPU_OK : ACEAPEX_GPU_E_CUDA;
+}
 extern "C" void   aceapex_gpu_plan_destroy(aceapex_gpu_plan* p){ if(p){ if(p->dmem) cudaFree(p->dmem); delete p; } }
 
 // the whole schedule; S == nullptr: every job and every block into d_out; S: the range selection into the window

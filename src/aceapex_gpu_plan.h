@@ -334,6 +334,21 @@ static inline Seg seg_of(const std::vector<uint64_t>& keys, size_t lo, size_t hi
 static inline uint64_t window_bytes(const Plan& P, uint64_t length) {
     return length ? al(((length - 1) / P.bs + 2) * (uint64_t)P.bs + 256) : 0;
 }
+/* windows batch (aceapex_gpu_decompress_windows_async): n windows of W bytes at offsets given on the device; the
+   selection runs on the device in a region after the plan's temp layout. need: a byte per block; slot / list: the
+   needed blocks in order (prefix sum) and back; cneed: a byte per chunk of each stream (cb: where each stream starts);
+   cnt: job and block counts; rj / oj / wj: the picked rANS, open and stored-chunk jobs; sbuf: the decoded blocks, one
+   slot each (at most n x (ceil(W / bs) + 1) blocks). Open-profile archives only (no zstd job). */
+struct WinLayout { uint64_t need, slot, list, cneed, cnt, rj, oj, wj, sbuf, total; uint64_t nc[4], cb[4]; uint64_t maxb; };
+static inline WinLayout win_layout(const Plan& P, uint64_t n, uint64_t W) {
+    WinLayout L; uint64_t t = P.temp_bytes; const uint64_t nb = P.nb;
+    L.maxb = std::min<uint64_t>(nb, n * ((W + P.bs - 1) / P.bs + 1));
+    L.need = t; t += al(nb + 64); L.slot = t; t += al(4 * nb + 64); L.list = t; t += al(4 * nb + 64);
+    uint64_t c = 0; for (int s = 0; s < 4; s++) { L.nc[s] = P.chunk[s] ? (P.ssz[s] + P.chunk[s] - 1) / P.chunk[s] : 0; L.cb[s] = c; c += L.nc[s]; }
+    L.cneed = t; t += al(c + 64); L.cnt = t; t += 256;
+    L.rj = t; t += al(sizeof(Rans) * (P.rans.size() + 1)); L.oj = t; t += al(sizeof(Open) * (P.open.size() + 1)); L.wj = t; t += al(sizeof(Raw) * (P.raw.size() + 1));
+    L.sbuf = t; t += al(L.maxb * P.bs + 256); L.total = t; return L;
+}
 static inline int select(const Plan& P, uint64_t off, uint64_t len, Sel& S) {
     S = Sel();
     if (P.partial) return -1;

@@ -81,6 +81,25 @@ __global__ void k_decode_g(const uint8_t* __restrict__ LIT, const uint8_t* __res
                         out+base,dst_size,lg,leader,gmask,err);
     }
 }
+// windows batch: the blocks in list[0, *dn) decoded into slots (slot q at sbuf + q * block_size)
+template<int G>
+__global__ void k_decode_list(const uint8_t* __restrict__ LIT, const uint8_t* __restrict__ OFF,
+                              const uint8_t* __restrict__ LEN, const uint8_t* __restrict__ CMD,
+                              const BlockOffsets* __restrict__ boffs, uint64_t orig_size, uint32_t block_size,
+                              uint8_t* __restrict__ sbuf, const uint32_t* __restrict__ list, const uint32_t* __restrict__ dn,
+                              uint32_t* __restrict__ blk_ctr, uint32_t* __restrict__ err)
+{
+    uint32_t lane=threadIdx.x&31, lg=lane&(G-1), leader=lane&~(uint32_t)(G-1);
+    uint32_t gmask=((G==32)?0xffffffffu:((1u<<G)-1u)<<leader); const uint32_t n=*dn;
+    for(;;){
+        uint32_t q=0; if(lg==0) q=atomicAdd(blk_ctr,1u); q=__shfl_sync(gmask,q,leader); if(q>=n) return;
+        const uint32_t b=list[q]; BlockOffsets bo=boffs[b];
+        uint64_t base=(uint64_t)b*block_size, rem=orig_size-base;
+        uint32_t dst_size=(uint32_t)(rem<(uint64_t)block_size?rem:(uint64_t)block_size);
+        decode_block<G>(LIT+bo.lit_off,OFF+bo.off_off,LEN+bo.len_off,CMD+bo.cmd_off,(uint32_t)bo.lit_sz,(uint32_t)bo.off_sz,(uint32_t)bo.len_sz,(uint32_t)bo.cmd_sz,
+                        sbuf+(uint64_t)q*block_size,dst_size,lg,leader,gmask,err);
+    }
+}
 typedef void (*kern_t)(const uint8_t*,const uint8_t*,const uint8_t*,const uint8_t*,const BlockOffsets*,uint64_t,uint32_t,uint8_t*,uint32_t*,uint32_t,uint32_t*);
 
 // ---------------------------------------------------------------- DNA unpack kernels
@@ -161,14 +180,25 @@ __device__ static bool rans_warp(const uint8_t* __restrict__ src, uint32_t csz, 
     }
     return bad;
 }
+template<int V>
+__device__ static inline void rans_job(const uint8_t* __restrict__ C, const RansDesc* __restrict__ d, uint32_t k, AxwShared& sh, uint32_t lane, uint32_t* __restrict__ err){
+    const RansDesc c=d[k];
+    const bool bad= c.n>AXW_MAXN || rans_warp<V>(C+c.src,c.csz,(uint32_t)c.n,c.mode,c.dst,sh,lane);
+    if(bad && lane==0){ atomicAdd(err,1u); atomicMin(err+1,k); }
+}
 template<int V=0>
 __global__ void __launch_bounds__(32*AXW_WARPS) k_rans(const uint8_t* __restrict__ C, const RansDesc* __restrict__ d, uint32_t nd, uint32_t* __restrict__ err){
     __shared__ AxwShared sh_all[AXW_WARPS];
     const uint32_t lane=threadIdx.x&31, k=blockIdx.x*AXW_WARPS+(threadIdx.x>>5);
     if(k>=nd) return;                                   // whole warp: nd is uniform
-    const RansDesc c=d[k];
-    const bool bad= c.n>AXW_MAXN || rans_warp<V>(C+c.src,c.csz,(uint32_t)c.n,c.mode,c.dst,sh_all[threadIdx.x>>5],lane);
-    if(bad && lane==0){ atomicAdd(err,1u); atomicMin(err+1,k); }
+    rans_job<V>(C,d,k,sh_all[threadIdx.x>>5],lane,err);
+}
+// the same over a job list whose length is on the device (windows batch): every warp takes jobs k, k + all warps, ...
+template<int V=0>
+__global__ void __launch_bounds__(32*AXW_WARPS) k_rans_n(const uint8_t* __restrict__ C, const RansDesc* __restrict__ d, const uint32_t* __restrict__ dn, uint32_t* __restrict__ err){
+    __shared__ AxwShared sh_all[AXW_WARPS];
+    const uint32_t lane=threadIdx.x&31, n=*dn, step=gridDim.x*AXW_WARPS;
+    for(uint32_t k=blockIdx.x*AXW_WARPS+(threadIdx.x>>5); k<n; k+=step){ rans_job<V>(C,d,k,sh_all[threadIdx.x>>5],lane,err); __syncwarp(); }
 }
 
 // ---------------------------------------------------------------- open DNA pack (ADR-019, spec 3.4)
@@ -238,9 +268,9 @@ __global__ void __launch_bounds__(256) k_open_bases_x(const OpenDesc* __restrict
 // of dependent global loads. The steps get the slices as pointers shifted by the slice start, so run parity and the
 // val index stay global (ax_open_warp.h). A slice longer than AXS_CAP entries: the global arrays, as k_open_bases_x.
 #define AXS_CAP 1024u
-__global__ void __launch_bounds__(256) k_open_bases_s(const OpenDesc* __restrict__ d){
+__device__ static inline void open_bases_s_body(const OpenDesc* __restrict__ d, uint32_t ci){
     __shared__ uint32_t s_end[AXS_CAP], s_ep[AXS_CAP], s_b[4];
-    const OpenDesc c=d[blockIdx.x]; const uint32_t tid=threadIdx.x, g=blockIdx.y*blockDim.x+tid; const uint32_t R=*c.nrun;
+    const OpenDesc c=d[ci]; const uint32_t tid=threadIdx.x, g=blockIdx.y*blockDim.x+tid; const uint32_t R=*c.nrun;
     if(!R || c.raw>AXW_MAXN) return;                                   // block-uniform
     const uint32_t raw=(uint32_t)c.raw, first=16*blockIdx.y*blockDim.x;
     if(first>=raw) return;                                             // block-uniform
@@ -256,12 +286,15 @@ __global__ void __launch_bounds__(256) k_open_bases_s(const OpenDesc* __restrict
     const uint32_t i0=16*g; if(i0>=raw) return;
     axl_bases16_v(g,c.seq,E,R,raw,c.dst,axl_run_in(E,jlo,jhi,i0), P, ehi, c.val, axl_exc_in(P,elo,ehi,i0));
 }
+__global__ void __launch_bounds__(256) k_open_bases_s(const OpenDesc* __restrict__ d){ open_bases_s_body(d,blockIdx.x); }
+__global__ void __launch_bounds__(256) k_open_bases_s_n(const OpenDesc* __restrict__ d, const uint32_t* __restrict__ dn){   // job list on the device
+    const uint32_t n=*dn; for(uint32_t ci=blockIdx.x; ci<n; ci+=gridDim.x){ open_bases_s_body(d,ci); __syncthreads(); } }
 
 // AX_OPEN_EXC: case runs (as k_open_cse) and then, in the same block, the exception positions (the parse of
 // k_open_exc writing c.epos instead of the bytes); k_open_bases_x writes the bytes
-__global__ void __launch_bounds__(AXO_NT) k_open_cg(const OpenDesc* __restrict__ d, uint32_t* __restrict__ err){
+__device__ static inline void open_cg_body(const OpenDesc* __restrict__ d, uint32_t k, uint32_t* __restrict__ err){
     __shared__ uint64_t sh[AXO_NT/32];
-    const uint32_t k=blockIdx.x, tid=threadIdx.x; const OpenDesc c=d[k];
+    const uint32_t tid=threadIdx.x; const OpenDesc c=d[k];
     // the plan's bounds again (axo_parse): runs and gaps are LEB128 of <= 5 bytes; a corrupt count loops over nothing
     bool bad= c.raw>AXW_MAXN || (uint64_t)c.ncse>5ull*c.raw+5 || (uint64_t)c.ngap>5ull*c.nexc; const uint32_t raw=(uint32_t)(bad?0:c.raw);
     { const uint8_t* b=c.cse; const uint32_t n=bad?0u:c.ncse; uint64_t carry=0; uint32_t jb=0;
@@ -287,6 +320,9 @@ __global__ void __launch_bounds__(AXO_NT) k_open_cg(const OpenDesc* __restrict__
       const int any=__syncthreads_or(bad);
       if(tid==0 && any){ atomicAdd(err,1u); atomicMin(err+1,k); } }
 }
+__global__ void __launch_bounds__(AXO_NT) k_open_cg(const OpenDesc* __restrict__ d, uint32_t* __restrict__ err){ open_cg_body(d,blockIdx.x,err); }
+__global__ void __launch_bounds__(AXO_NT) k_open_cg_n(const OpenDesc* __restrict__ d, const uint32_t* __restrict__ dn, uint32_t* __restrict__ err){   // job list on the device
+    const uint32_t n=*dn; for(uint32_t k=blockIdx.x; k<n; k+=gridDim.x){ open_cg_body(d,k,err); __syncthreads(); } }
 
 // Fused seq piece + bases (literal chunks <= 64 KiB): warp 0 decodes the chunk's seq piece (2-bit pack,
 // <= 16 KiB) into shared memory instead of the global scratch, then the block writes bases with their
