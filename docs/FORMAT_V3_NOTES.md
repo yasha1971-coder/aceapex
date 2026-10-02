@@ -13,7 +13,7 @@ implemented in the format; the prototypes are tuning-build tools with their own 
    dependency order on the GPU.
 4. **R2 match with substitutions** - +1.2..3 % by a model only; worth it mainly together with R1 (SNPs against a
    reference end every exact match).
-R4 (literal chunk cap) needs no version: the 2.2.2 decoders read such archives (branch `litcap`, waiting for the word).
+R4 (literal chunk cap) needed no version: the 2.2.2 decoders read such archives; lifted in main 02.10 (2.3).
 
 ## R1. Reference blocks (pangenome)
 
@@ -90,4 +90,4 @@ is one more stream in the plan (its chunks decoded like the token streams).
   it the pre-2.1 layout was used (three human assemblies in one file: ratio 3.36 instead of 4.24). The decoders never
   had the cap: an archive of the lifted encoder (branch `litcap`, 136 008 chunks) decodes byte for byte with the 2.2.2
   C++ CLI and the 2.2.2 C99 `axdec` (full and regions past 4.5 and 8 GB) and with the 2.3 GPU plan emulator
-  (`results/litcap-2026-10-02.log`). Not a v3 item: no version needed, waiting for the word to merge.
+  (`results/litcap-2026-10-02.log`). Not a v3 item: no version needed; merged into main 02.10 (2.3).
