@@ -159,14 +159,14 @@ static int t_pcie(int argc, char** argv) {
             if (st || pos + B[i].out > orig.size() || memcmp(h_o[0], orig.data() + pos, B[i].out)) bad++; pos += B[i].out; }
         if (pos != orig.size()) bad++;
         printf("[pcie] pieces of %d MB (tables + token streams first, %.1f MB), %zu batches (<= %.1f MB of output), outputs in a ring of %d: H2D in these pieces %.1f GB/s; "
-               "H2D -> decode %.3f s = %.1f GB/s of output (%.0f %% of the bus bound); + D2H %.3f s = %.1f GB/s; batches %s\n",
-               smb, (pc[0].hi + pc[1].hi - pc[1].lo) / 1e6, B.size(), mo / 1e6, NS, h2d_p, tp, n / tp / 1e9, 100.0 * (n / tp) / (h2d * n / av.size()), tpd, n / tpd / 1e9, bad ? "DIFFER" : "== original");
-        char b[160]; snprintf(b, sizeof b, "%s%dMB:%.1f/%.1f/%.0f%%", row.empty() ? "" : ",", smb, n / tp / 1e9, n / tpd / 1e9, 100.0 * (n / tp) / (h2d * n / av.size())); row += b;
+               "H2D -> decode %.3f s = %.1f GB/s of output = %.2fx the bus (H2D %.1f GB/s); + D2H %.3f s = %.1f GB/s; batches %s\n",
+               smb, (pc[0].hi + pc[1].hi - pc[1].lo) / 1e6, B.size(), mo / 1e6, NS, h2d_p, tp, n / tp / 1e9, (n / tp / 1e9) / h2d, h2d, tpd, n / tpd / 1e9, bad ? "DIFFER" : "== original");
+        char b[160]; snprintf(b, sizeof b, "%s%dMB:%.1f/%.1f/%.2fx", row.empty() ? "" : ",", smb, n / tp / 1e9, n / tpd / 1e9, (n / tp / 1e9) / h2d); row += b;
         for (int k = 0; k < NS; k++) { cudaFree(d_o[k]); cudaFree(d_t[k]); cudaFree(d_s[k]); cudaFreeHost(h_o[k]); cudaStreamDestroy(s[k]); }
         for (auto& b : B) aceapex_gpu_plan_destroy(b.p);
         if (bad) { printf("H2ROW\t%s\t%.1f\t%s\tFAILED\n", base(argv[2]), h2d, row.c_str()); return 5; }
     }
-    printf("H2ROW\t%s\t%.1f\t%s\tok\n", base(argv[2]), h2d, row.c_str());   // bus GB/s; per piece size: output GB/s / with D2H / share of the bus bound
+    printf("H2ROW\t%s\t%.1f\t%s\tok\n", base(argv[2]), h2d, row.c_str());   // bus GB/s; per piece size: output GB/s / with D2H / output over bus (x)
     return 0;
 }
 
@@ -208,18 +208,35 @@ static int t_ra(int argc, char** argv) {
     const bool gpu = strcmp(argv[1], "ra-cpu") != 0;                      // ra-cpu: the CPU and samtools rows only (a host without a card)
     std::vector<double> tg, tgg, tc, ts; int bad_g = 0, bad_gg = 0, bad_c = 0, bad_s = 0, graph_upd = 0, graph_new = 0, graph_fail = 0;
     auto check = [&](const Q& x, const uint8_t* p) { return bases(p, x.len) == bases(f.data() + x.lo, x.len); };
+    char phase_row[128] = "-"; double plan_ms = 0;
     if (gpu) {
     // GPU: resident archive, pooled buffers
+    const double tp0 = now_s();
     aceapex_gpu_plan* pl = aceapex_gpu_plan_create(a.data(), a.size(), 0); if (!pl) { printf("plan_create: %d\n", aceapex_gpu_last_error()); return 3; }
+    plan_ms = (now_s() - tp0) * 1e3;
     uint8_t *d_in, *d_out, *d_tmp, *h_out; int *d_st, *h_st; cudaStream_t s; CK(cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking));
     CK(cudaMalloc(&d_in, a.size())); CK(cudaMemcpy(d_in, a.data(), a.size(), cudaMemcpyHostToDevice));
     const size_t rt = aceapex_gpu_range_temp_bytes(pl, maxlen); CK(cudaMalloc(&d_out, maxlen + 256)); CK(cudaMalloc(&d_tmp, rt)); CK(cudaMalloc(&d_st, 4));
     CK(cudaHostAlloc(&h_out, maxlen + 256, cudaHostAllocDefault)); CK(cudaHostAlloc(&h_st, 4, cudaHostAllocDefault));
     for (int i = 0; i < std::min(N, 200); i++) { aceapex_gpu_decompress_range_async(pl, d_in, q[i].lo, q[i].len, d_out, d_tmp, d_st, s); } CK(cudaStreamSynchronize(s));   // warm-up
+    // phases of one region (archive resident, plan made once, buffers pooled - no H2D, no allocation per call):
+    // launch = host time of the range call (job selection + kernel launches), kernels = GPU time between events
+    // around the call, D2H = the copy of the region and the status, wait = the rest of the host's wait in the sync
+    std::vector<double> ph_launch, ph_kern, ph_d2h, ph_wait; cudaEvent_t ea, eb, ec; CK(cudaEventCreate(&ea)); CK(cudaEventCreate(&eb)); CK(cudaEventCreate(&ec));
     for (int i = 0; i < N; i++) { const Q& x = q[i]; const double t0 = now_s();
+        CK(cudaEventRecord(ea, s));
         const int r = aceapex_gpu_decompress_range_async(pl, d_in, x.lo, x.len, d_out, d_tmp, d_st, s);
-        CK(cudaMemcpyAsync(h_out, d_out, x.len, cudaMemcpyDeviceToHost, s)); CK(cudaMemcpyAsync(h_st, d_st, 4, cudaMemcpyDeviceToHost, s)); CK(cudaStreamSynchronize(s));
-        tg.push_back(now_s() - t0); if (r || *h_st || !check(x, h_out)) bad_g++; }
+        const double t1 = now_s(); CK(cudaEventRecord(eb, s));
+        CK(cudaMemcpyAsync(h_out, d_out, x.len, cudaMemcpyDeviceToHost, s)); CK(cudaMemcpyAsync(h_st, d_st, 4, cudaMemcpyDeviceToHost, s)); CK(cudaEventRecord(ec, s));
+        const double t2 = now_s(); CK(cudaStreamSynchronize(s)); const double t3 = now_s();
+        float k_ms = 0, d_ms = 0; CK(cudaEventElapsedTime(&k_ms, ea, eb)); CK(cudaEventElapsedTime(&d_ms, eb, ec));
+        ph_launch.push_back(t1 - t0); ph_kern.push_back(k_ms / 1e3); ph_d2h.push_back(d_ms / 1e3); ph_wait.push_back(std::max(0.0, (t3 - t0) - (t1 - t0) - (t2 - t1) - k_ms / 1e3 - d_ms / 1e3));
+        tg.push_back(t3 - t0); if (r || *h_st || !check(x, h_out)) bad_g++; }
+    printf("[ra] GPU phases p50 / p99, us: H2D 0 (archive resident), plan 0 (once: %.1f ms), launch (host: selection + kernel launches) %.1f / %.1f, "
+           "kernels %.1f / %.1f, D2H %.1f / %.1f, other wait %.1f / %.1f; total %.1f / %.1f\n", plan_ms,
+           pct(ph_launch, .5) * 1e6, pct(ph_launch, .99) * 1e6, pct(ph_kern, .5) * 1e6, pct(ph_kern, .99) * 1e6, pct(ph_d2h, .5) * 1e6, pct(ph_d2h, .99) * 1e6,
+           pct(ph_wait, .5) * 1e6, pct(ph_wait, .99) * 1e6, pct(tg, .5) * 1e6, pct(tg, .99) * 1e6);
+    snprintf(phase_row, sizeof phase_row, "%.1f/%.1f/%.1f/%.1f", pct(ph_launch, .5) * 1e6, pct(ph_kern, .5) * 1e6, pct(ph_d2h, .5) * 1e6, pct(ph_wait, .5) * 1e6);
     // CUDA Graph: the range call captured; the executable graph updated in place when the topology allows, else rebuilt
     cudaGraphExec_t ex = nullptr;
     for (int i = 0; i < N; i++) { const Q& x = q[i]; const double t0 = now_s(); cudaGraph_t gr;
@@ -256,8 +273,8 @@ static int t_ra(int argc, char** argv) {
     line("samtools faidx bgzip, process per region", ts, bad_s);
     if (sam_all >= 0) printf("[ra] samtools faidx bgzip, %d regions in one call (-r): %.2f s = %.1f us per region\n", N, sam_all, sam_all / N * 1e6);
     const bool ok = !bad_g && !bad_gg && !graph_fail && !bad_c && !bad_s && (!gpu || (!tg.empty() && !tgg.empty()));
-    printf("H3ROW\t%s\t%d\t%llu\t%.1f/%.1f\t%.1f/%.1f\t%.1f/%.1f\t%.1f/%.1f\t%.1f\t%s\n", base(argv[2]), N, (unsigned long long)LEN, pct(tg, .5) * 1e6, pct(tg, .99) * 1e6,
-           pct(tgg, .5) * 1e6, pct(tgg, .99) * 1e6, pct(tc, .5) * 1e6, pct(tc, .99) * 1e6, pct(ts, .5) * 1e6, pct(ts, .99) * 1e6, sam_all >= 0 ? sam_all / N * 1e6 : -1.0, ok ? "ok" : "FAILED");
+    printf("H3ROW\t%s\t%d\t%llu\t%.1f/%.1f\t%.1f/%.1f\t%.1f/%.1f\t%.1f/%.1f\t%.1f\t%s\t%s\n", base(argv[2]), N, (unsigned long long)LEN, pct(tg, .5) * 1e6, pct(tg, .99) * 1e6,
+           pct(tgg, .5) * 1e6, pct(tgg, .99) * 1e6, pct(tc, .5) * 1e6, pct(tc, .99) * 1e6, pct(ts, .5) * 1e6, pct(ts, .99) * 1e6, sam_all >= 0 ? sam_all / N * 1e6 : -1.0, ok ? "ok" : "FAILED", phase_row);
     return ok ? 0 : 5;
 }
 
