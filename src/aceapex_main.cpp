@@ -1490,7 +1490,10 @@ static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
     const size_t CH = LIT_CHUNK;
     if (CH == 0) return lit_compress_legacy(src, sz, out_sz);
     const int NW = (int)((sz + CH - 1) / CH);
-    if (NW < 1 || NW > 65535) return lit_compress_legacy(src, sz, out_sz);
+    // no cap on the chunk count below 2^30 (64 TiB of literals): until 2.3 the encoder fell back to the legacy layout
+    // above 65535 chunks (~4 GiB of literals: no DNA transform, no streaming); every decoder derives the count from the
+    // stream size (results/litcap-2026-10-02.log: archives above the old cap read by the 2.2.2 decoders)
+    if (NW < 1 || NW > (1 << 30)) return lit_compress_legacy(src, sz, out_sz);
     size_t csz = CH;
     struct ZW{const uint8_t*in;size_t isz;uint8_t*out;size_t osz;size_t cap;};
     std::vector<ZW> zws(NW);
