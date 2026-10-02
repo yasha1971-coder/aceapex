@@ -31,19 +31,34 @@ elif [ -d /workspace ]; then PLATFORM=runpod; W=${WORK:-/workspace/work}; STORE=
 else PLATFORM=host; W=${WORK:-$HOME/aceapex_work}; STORE=${STORE:-$HOME/aceapex_store}; fi
 mkdir -p $W $STORE/cache $STORE/logs
 DRV=$STORE; HAVE_DRIVE=1                                   # (names kept from colab_gpu_open.sh: the store plays the Drive's part)
-L=results/$PLATFORM-$D-$TAG-gpu.log
+# The run's log is written on the local disk and copied to results/ and the store at the end (and by the exit trap):
+# on RunPod /workspace is a network volume, and the many appending writers of one log there left a hole of NUL bytes
+# (H100 02.10: the AGC/MBGC lines and the first table lines lost; grep then saw a binary file, "bit-perfect 3 of 0").
+LF=results/$PLATFORM-$D-$TAG-gpu.log; LOC=$(mktemp -d /tmp/aceapex_run.XXXXXX); : > $LOC/.start; L=$LOC/$(basename $LF)
 ONE=${ONE:-0}; FULL=${FULL:-0}; [ "$ONE" = 1 ] && FULL=1
 [ "$FULL" = 1 ] && MODE=FULL || MODE=QUICK; [ "$ONE" = 1 ] && MODE=ONE
 TO=${STEP_TIMEOUT:-600}; ETO=${ENC_TIMEOUT:-1800}; exec 3>&1
 # RunPod: on any exit (done, failed, interrupted) the logs go to /workspace (persistent volume) and the pod stops, so an
 # unattended run does not keep billing; KEEP=1 leaves the pod running. Needs RUNPOD_POD_ID (set by RunPod) and runpodctl.
-runpod_stop(){ local rc=$?
-  if [ -n "${RUNPOD_POD_ID:-}" ] && [ "${KEEP:-0}" != 1 ]; then
-    mkdir -p /workspace/aceapex_logs && cp -f results/*.log /workspace/aceapex_logs/ 2>/dev/null
-    echo "auto-stop: logs in /workspace/aceapex_logs, stopping pod $RUNPOD_POD_ID (KEEP=1 keeps it)" >&3
-    if command -v runpodctl >/dev/null; then runpodctl stop pod "$RUNPOD_POD_ID"; else echo "auto-stop: runpodctl not found - stop the pod by hand" >&3; fi
-  fi; return $rc; }
-trap runpod_stop EXIT
+# On any exit: the log goes to results/ and the store, the SUMMARY (or why there is none) and the verdict to the console;
+# on RunPod the logs also go to /workspace/aceapex_logs, everything is synced to the volume (a stop right after a copy
+# lost it on 02.10) and checked, then the pod stops; KEEP=1 keeps it.
+finish(){ local rc=$?; trap - EXIT
+  if [ -s $LOC/summary.txt ]; then cat $LOC/summary.txt >&3
+  else local last; last=$(tail -n 15 $L 2>/dev/null)
+    { echo "== SUMMARY == $(date -u +%FT%TZ) - none: the run stopped early (exit $rc); last lines of the log:"; echo "$last"; echo "verdict FAILED (stopped early, exit $rc)"; } | tee -a $L >&3; fi
+  mkdir -p results $STORE/logs; cp -f $L $LF; cp -f $L $STORE/logs/$(basename $LF .log)-$(git rev-parse --short HEAD).log 2>/dev/null
+  if [ -n "${RUNPOD_POD_ID:-}" ]; then mkdir -p /workspace/aceapex_logs
+    cp -f $L /workspace/aceapex_logs/; find results -name "*.log" -newer $LOC/.start -exec cp -f -t /workspace/aceapex_logs/ {} + 2>/dev/null; [ -s $LOC/summary.txt ] && cp -f $LOC/summary.txt /workspace/aceapex_logs/summary-$D.txt
+    for f in $W/*.log; do [ -f "$f" ] && cp -f "$f" /workspace/aceapex_logs/; done
+    sync; sleep 5; sync
+    if cmp -s $L /workspace/aceapex_logs/$(basename $LF); then echo "logs: /workspace/aceapex_logs ($(ls /workspace/aceapex_logs | wc -l) files, $(du -sh /workspace/aceapex_logs | cut -f1)), checked" >&3
+    else echo "logs: the copy in /workspace/aceapex_logs does not match - pod kept running" >&3; KEEP=1; fi
+    if [ "${KEEP:-0}" != 1 ]; then echo "auto-stop: stopping pod $RUNPOD_POD_ID (KEEP=1 keeps it)" >&3
+      if command -v runpodctl >/dev/null; then runpodctl stop pod "$RUNPOD_POD_ID"; else echo "auto-stop: runpodctl not found - stop the pod by hand" >&3; fi; fi
+  else sync; fi
+  return $rc; }
+trap finish EXIT
 # to <seconds> <step name> <command...>: the command under timeout; on expiry the TIMEOUT line goes to the log and
 # to the cell (fd 3, not into the caller's pipe), exit status 124
 to(){ local lim=$1 nm=$2; shift 2; timeout -k 20 $lim "$@"; local rc=$?
@@ -352,14 +367,14 @@ done; done
 # verdict: each archive run is valid on its own (the GPU output is hashed against the original);
 # the run as a whole needs both emulators, the 5 fixtures, the chr1 open row, and no failure line.
 # Estimate and reference rows (dense, dense2, chain) do not enter it: they have their own check columns / rule line.
-RUN=$(grep '^exit [0-9]* ' $L | grep -vc '\.chain$'); OK=$(grep '^exit 0 ' $L | grep -vc '\.chain$'); N=$(awk -F'\t' '$1=="ROW" && $13=="bit-perfect" && $2 !~ /\.chain\.aet$/' $L | wc -l)
-E=$(grep -c $'^head_\(rans\|open\)_warp_emu\tpass' $L); F=$(grep -c '^fixture .*: exit 0, [1-9][0-9]* MATCHES OK, 0 DIFFERS$' $L)   # any number of passes, none differing
+RUN=$(grep -a '^exit [0-9]* ' $L | grep -vc '\.chain$'); OK=$(grep -a '^exit 0 ' $L | grep -vc '\.chain$'); N=$(awk -F'\t' '$1=="ROW" && $13=="bit-perfect" && $2 !~ /\.chain\.aet$/' $L | wc -l)
+E=$(grep -ac $'^head_\(rans\|open\)_warp_emu\tpass' $L); F=$(grep -ac '^fixture .*: exit 0, [1-9][0-9]* MATCHES OK, 0 DIFFERS$' $L)   # any number of passes, none differing
 echo "archives on the GPU: bit-perfect $N of $RUN (exit 0: $OK); emulators $E/2, fixtures $F/5" | tee -a $L
 grep '^exit [1-9]' $L | sed 's/^/  FAILED: /; s/\.chain$/.chain (reference row, not in the verdict)/' | tee -a $L
-AR=$(grep -c '^exitapi ' $L); AOK=$(grep -c '^exitapi 0 ' $L); PE=$(grep -c $'^head_gpu_plan_emu\tpass' $L)
+AR=$(grep -ac '^exitapi ' $L); AOK=$(grep -ac '^exitapi 0 ' $L); PE=$(grep -ac $'^head_gpu_plan_emu\tpass' $L)
 echo "C ABI: $AOK of $AR archives bit-perfect with every range; plan emulator $PE/1" | tee -a $L
 grep '^exitapi [1-9]' $L | sed 's/^/  FAILED: /' | tee -a $L
-NTO=$(grep -c '^TIMEOUT ' $L); echo "steps over the time limit: $NTO" | tee -a $L
+NTO=$(grep -ac '^TIMEOUT ' $L); echo "steps over the time limit: $NTO" | tee -a $L
 # speed gate against the baseline of this card (results/baseline_h100.tsv for H100, baseline_blackwell.tsv for the RTX PRO
 # 6000 Blackwell; rows of the same GPU name only): library and tool on-device ms per archive, a
 # row more than 5 % slower fails the verdict; faster rows are reported for a baseline update (a commit of its own)
@@ -368,13 +383,18 @@ awk -F'\t' -v w="$W/" -v g="$GPU" 'FNR==NR{ if($1==g){ k=$2" "$3; base[k]=$4 } n
   $1=="ROW"{ k=$2; sub(w,"",k); sub(/\.aet$/,"",k); now[k" tool"]=$10 }
   END{ for(k in base){ if(!(k in now) || now[k]+0<=0) continue; c=100*(now[k]/base[k]-1); v=(c>5?"SLOWER":(c<-5?"FASTER":"OK"))
          split(k,a," "); line[a[1]]=line[a[1]] sprintf("%s%s %.3f/%.3f ms (%+.1f %%) %s", (line[a[1]]==""?"":", "), a[2], now[k], base[k], c, v) }
-       for(x in line) print "gate " x ": " line[x] }' $BASEF $L | sort > $W/gate.txt
-[ -s $W/gate.txt ] || echo "gate: no baseline rows for $GPU ($BASEF) - this run can seed it" > $W/gate.txt
-cat $W/gate.txt | tee -a $L
-VERDICT=FAILED
-[ "$N" = "$RUN" ] && [ "$E" = 2 ] && [ "$F" = 5 ] && [ "$AOK" = "$AR" ] && [ "$PE" = 1 ] && grep -q "^ROW	$W/chr1.open" $L \
-  && ! grep -q 'archive rejected\|ROUND-TRIP FAILED\|^example .*FAILED\|shared library build FAILED' $L && [ "$NTO" = 0 ] \
-  && ! grep -q SLOWER $W/gate.txt && ! grep -qE $'^H([1-4]|3B)ROW\t.*\tFAILED(\t|$)' $L && VERDICT=PASSED
+       for(x in line) print "gate " x ": " line[x] }' $BASEF $L | sort > $LOC/gate.txt
+[ -s $LOC/gate.txt ] || echo "gate: no baseline rows for $GPU ($BASEF) - this run can seed it" > $LOC/gate.txt
+cat $LOC/gate.txt | tee -a $L
+VERDICT=FAILED; WHY=""                                   # every failed condition named in the verdict
+[ "$N" = "$RUN" ] || WHY="$WHY; archives bit-perfect $N of $RUN"; [ "$E" = 2 ] || WHY="$WHY; emulators $E/2"; [ "$F" = 5 ] || WHY="$WHY; fixtures $F/5"
+[ "$AOK" = "$AR" ] || WHY="$WHY; C ABI $AOK of $AR"; [ "$PE" = 1 ] || WHY="$WHY; plan emulator"; grep -aq "^ROW	$W/chr1.open" $L || WHY="$WHY; no chr1.open row"
+grep -aq 'archive rejected\|ROUND-TRIP FAILED\|^example .*FAILED\|shared library build FAILED' $L && WHY="$WHY; a failure line in the log"
+[ "$NTO" = 0 ] || WHY="$WHY; $NTO steps over the time limit"; grep -q SLOWER $LOC/gate.txt && WHY="$WHY; speed gate: slower than $BASEF by > 5 %"
+grep -aqE $'^H([1-4]|3B)ROW\t.*\tFAILED(\t|$)' $L && WHY="$WHY; a card test (T-H) failed"
+[ "$N" = "$RUN" ] && [ "$E" = 2 ] && [ "$F" = 5 ] && [ "$AOK" = "$AR" ] && [ "$PE" = 1 ] && grep -aq "^ROW	$W/chr1.open" $L \
+  && ! grep -aq 'archive rejected\|ROUND-TRIP FAILED\|^example .*FAILED\|shared library build FAILED' $L && [ "$NTO" = 0 ] \
+  && ! grep -q SLOWER $LOC/gate.txt && ! grep -aqE $'^H([1-4]|3B)ROW\t.*\tFAILED(\t|$)' $L && VERDICT=PASSED
 [ $VERDICT = PASSED ] && echo "RESULT: all passes bit-perfect on $GPU" | tee -a $L \
   || echo "!!! NOT PASSED on $GPU - valid figures only in bit-perfect rows" | tee -a $L
 # == SUMMARY == (<= 15 lines): commit, mode, GPU; per archive library / tool on-device ms, stages, [open variants]; verdict.
@@ -395,12 +415,12 @@ SIZES=""; for X in $CORP; do [ -s $W/$X.fa ] && SIZES="$SIZES $X=$(stat -c%s $W/
   awk -F'\t' '$1=="STREAMROW"||$1=="STREAMROW_CAP"{ k=$2; sub(/.*\//,"",k); printf "stream %s%s: %s batches of %s blocks (slot %s MB), %.2f GB/s with D2H + host XXH3, hash %s, batches %s\n", k, ($1=="STREAMROW_CAP"?" (capped)":""), $5, $6, $7, $10, $11, $12 }' $L
   awk -F'\t' '$1=="H1ROW"{ printf "T-H1 saturation %s: peak %.1f GB/s with %s decodes at once (K: GB/s %s), XXH3 %s\n", $2, $5, $6, $7, $8 }
     $1=="H2ROW"{ printf "T-H2 PCIe: H2D %.1f GB/s; pieces: output GB/s / with D2H / output over bus %s; %s\n", $3, $4, $5 }
-    $1=="H3ROW"||$1=="H3BROW"{ printf "T-H3%s %s regions x %s b, p50/p99 us: GPU %s (launch/kernels/D2H/wait %s), GPU graph %s, CPU %s, samtools bgzip %s (one call: %.1f us/region); %s\n", ($1=="H3BROW"?"b (16 KiB token chunks)":""), $3, $4, $5, $12, $6, $7, $8, $9, $10 }
+    $1=="H3ROW"||$1=="H3BROW"{ printf "T-H3%s %s regions x %s b, p50/p99 us: GPU %s (p50 launch/kernels/D2H/wait %s), GPU graph %s, CPU %s, samtools bgzip %s (one call: %s); %s\n", ($1=="H3BROW"?"b (16 KiB token chunks)":""), $3, $4, $5, $11, $6, $7, ($8=="0.0/0.0"?"-":$8), ($9<0?"-":sprintf("%.1f us/region",$9)), $10 }
     $1=="H4ROW"{ printf "T-H4 %s corrupt archives: refused %s, caught %s, harmless %s, silent %s (no hash) / %s (XXH3), hangs %s; %s\n", $3, $4, $5, $6, $7, $8, $9, $10 }' $L
   case "$GPU" in *H100*) echo "paper rows (README, H100 SXM, June 2026, not re-measured): FASTQ ERR194147 5 GB 168.9 GB/s ratio 3.31; 50 GB range decode 165.7 GB/s ratio 3.99; 5 GB genome full decode 29.71 ms";; esac
-  cat $W/gate.txt
-  echo "verdict $VERDICT$(grep -q SLOWER $W/gate.txt && echo " (speed gate: slower than $BASEF by > 5 %)")"; } > $W/summary.txt
-cat $W/summary.txt | tee -a $L
+  cat $LOC/gate.txt
+  echo "verdict $VERDICT${WHY:+ (${WHY#; })}"; } > $LOC/summary.txt
+cat $LOC/summary.txt >> $L                               # the console gets it from the exit trap (finish)
 # the summary appended and the whole log copied to Drive: the runtime may be released right after (runtime.unassign)
-mkdir -p $STORE/logs && cat $W/summary.txt >> $STORE/logs/summary.txt && cp $L $STORE/logs/$(basename $L .log)-$(git rev-parse --short HEAD).log
+mkdir -p $STORE/logs && cat $LOC/summary.txt >> $STORE/logs/summary.txt     # the log itself: copied by finish
 [ $VERDICT = PASSED ] || exit 1
