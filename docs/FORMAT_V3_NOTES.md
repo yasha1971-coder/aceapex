@@ -4,6 +4,17 @@ Measured candidates, each with its bits, what it breaks, coordinate access and t
 `results/reality-2026-10-02.log` and `results/pangenome-2026-10-02.log` (ace-core, 2026-10-02). Nothing here is
 implemented in the format; the prototypes are tuning-build tools with their own containers.
 
+## Recommended order
+
+1. **R0 line model** - the largest gain for the least change, measured as a working prototype (AX_LINEMODEL): open
+   profile -6.6..-6.8 % (chr1, T2T, GRCh38), default -3.8..-4.7 %; the GPU exception work goes to ~0.
+2. **R3 block table** - superblocks: 16 KiB blocks cost +0.69 % instead of +2.02 % (T2T), lookup 0.15-0.6 us.
+3. **R1 reference blocks** - the pangenome: HPRC x 3 2141 -> 968 MB; needs the container of members and the
+   dependency order on the GPU.
+4. **R2 match with substitutions** - +1.2..3 % by a model only; worth it mainly together with R1 (SNPs against a
+   reference end every exact match).
+R4 (literal chunk cap) needs no version: the 2.2.2 decoders read such archives (branch `litcap`, waiting for the word).
+
 ## R1. Reference blocks (pangenome)
 
 **What.** A block may copy from a *reference segment*: a few blocks of an earlier member of the same archive (another
@@ -53,14 +64,30 @@ is one more stream in the plan (its chunks decoded like the token streams).
 
 ## Measured alongside (smaller changes, same version bump)
 
-- **R0 line model.** FASTA line ends break matches at a different line phase. One line per record + a line model
-  (a few bytes per record): T2T -4.72 %, chr1 -3.78 % with today's encoder; with a 12-byte head table (AX_HASH12)
-  -5.50 % / -4.36 %. HPRC: 2 141 -> 2 063 MB. Access by coordinate: the line model maps FASTA offsets to sequence
-  offsets (per record: header length, line width, sequence length).
+- **R0 line model.** FASTA line ends break matches at a different line phase. Prototype AX_LINEMODEL (tuning builds,
+  container AXLINE01; `results/linemodel-2026-10-02.log`): headers as text, sequence lines as runs (length, count) -
+  any other length is a run of its own (the exceptions) - zstd-19 in front of the sequence image; decode puts every
+  block and its line ends in place while it is in cache; regions map to one sequence range.
+
+  | corpus | default profile | + line model | open profile | + line model | decode 16 threads (open) |
+  |---|---|---|---|---|---|
+  | chr1 | 59 429 097 | 57 193 613 (-3.76 %) | 63 083 287 | 58 914 632 (-6.61 %) | 0.0145 -> 0.0166 s |
+  | T2T | 806 458 861 | 768 385 090 (-4.72 %) | 853 264 869 | 795 603 395 (-6.76 %) | 0.1818 -> 0.1868 s |
+  | GRCh38 | 780 638 535 | 750 079 828 (-3.91 %) | 831 221 278 | 775 237 611 (-6.74 %) | 0.1796 -> 0.1897 s |
+
+  With a 12-byte head table as well (AX_HASH12): default -4.37 / -5.50 / -4.63 %. HPRC (refseg line model): 2 141 ->
+  2 063 MB. GPU: the open DNA pack's exceptions (every byte not ACGT/acgt) fall from T2T 38.6 M / GRCh38 61.0 M to
+  0 / 31 160 (gap + val pieces 16.4 MB -> 0): the exception pieces and their scatter go away; the line ends come back
+  in the output store (one division per 16-byte store) or one expansion pass (~2 ms of ~20 ms on an H100, estimate).
+  Bits: the line model costs 1.5-1.7 KB per human assembly. Access by coordinate: unchanged in cost (the model maps
+  FASTA offsets to sequence offsets per record).
 - **R3 block table.** 64 B per block is 1.53 % of T2T at 16 KiB blocks (76 % of what 16 KiB blocks cost against
-  256 MiB). Sizes only (offsets are prefix sums): superblocks of 64 blocks with 4 x u16 sizes per block 8.5 B/block
-  (-1.30 %, O(1) access); by column + zstd 0.84 B/block (-1.48 %).
-- **R4 literal chunks.** The encoder caps the chunked literal layout at 65 535 chunks (~4 GiB of literals); above it
-  the pre-2.1 layout is used (three human assemblies in one file: ratio 3.36 instead of 4.24) and the stream decoder
-  cannot take it. The decoders read the chunk count from the sizes; lifting the cap changes archive bytes for such
-  inputs only (decision pending, ROADMAP).
+  256 MiB). Prototype `scripts/superblock.cpp` (`results/superblock-2026-10-02.log`; both forms rebuild the table byte
+  for byte): superblocks of 64 blocks (4 x u64 offsets + 4 x u16 sizes per block) 1 640 507 B = 8.52 B/block, lookup
+  569 ns (superblocks of 16: 10.1 B/block, 150 ns) -> T2T at 16 KiB blocks 811 411 171 B = +0.69 % against 256 MiB
+  instead of +2.02 %; the size columns + zstd 161 378 B = 0.84 B/block -> +0.51 %, decoded once per open.
+- **R4 literal chunks.** The encoder capped the chunked literal layout at 65 535 chunks (~4 GiB of literals); above
+  it the pre-2.1 layout was used (three human assemblies in one file: ratio 3.36 instead of 4.24). The decoders never
+  had the cap: an archive of the lifted encoder (branch `litcap`, 136 008 chunks) decodes byte for byte with the 2.2.2
+  C++ CLI and the 2.2.2 C99 `axdec` (full and regions past 4.5 and 8 GB) and with the 2.3 GPU plan emulator
+  (`results/litcap-2026-10-02.log`). Not a v3 item: no version needed, waiting for the word to merge.

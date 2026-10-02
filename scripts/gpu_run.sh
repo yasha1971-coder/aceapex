@@ -4,11 +4,17 @@
 #   git clone -q https://github.com/yasha1971-coder/aceapex && ONE=1 bash aceapex/scripts/gpu_run.sh
 # Modes: QUICK (default): builds, emulators, fixtures, chr1.open + t2t.open (tool with [open variants] / [tile variants],
 #   library); FULL=1 or ONE=1: every profile, dense, flips, repro and the corpus ladder below in one go (one stay on the
-#   card), SUMMARY at the end. HPRC=1 adds the pangenome rung (downloads ~30 GB; AGC and MBGC on the same inputs).
+#   card), SUMMARY at the end; ONE also runs the card tests T-H1..T-H4 (HTESTS=1 runs them in QUICK). HPRC=1 adds the
+#   pangenome rung (downloads ~8.5 GB of .fa.gz, 30 GB unpacked; AGC and MBGC on the same inputs).
+# Time and downloads (estimates; the store keeps corpora and archives for the next run):
+#   QUICK            ~20-30 min (Colab G4 / Blackwell)  ~1.1 GB: chr1 0.07 + T2T 0.9 GB gz + nvCOMP wheel 0.1
+#   QUICK HTESTS=1   +10 min                            + samtools / tabix packages (~30 MB)
+#   ONE              ~70-100 min (H100)                 ~2.1 GB: + GRCh38 0.95 GB gz; disk ~45 GB in the work dir
+#   ONE HPRC=1       +45-70 min                         + ~8.5 GB: 10 assemblies (.fa.gz; 30 GB unpacked), AGC / MBGC
 # Corpus ladder (md5 / sha256 pinned; from the store, else downloaded and kept in the store):
 #   chr1    hg38 chr1 (the canon of the papers)          UCSC chromosomes/chr1.fa.gz            md5 9465e0f0... (fa)
 #   t2t     T2T-CHM13 v2.0                                NCBI GCA_009914755.4 genomic.fna.gz    md5 cd1e52ce... (fa)
-#   grch38  GRCh38 whole (UCSC hg38.fa.gz)                ONE=1                                  md5 1c9dcadd... (gz)
+#   grch38  GRCh38 whole (UCSC hg38.fa.gz)                ONE=1                                  md5 b2aee9f8... (fa)
 #   hprc    HPRC year-1 assemblies, first HPRC_N (10)      HPRC=1, index of HPP_Year1_Assemblies  sha256 per file (gz)
 # Store: Colab with Drive: MyDrive/aceapex_corpus (corpora) + cache/ (archives); RunPod: /workspace/aceapex_store;
 # elsewhere $HOME/aceapex_store (STORE=... overrides). Speed gate: results/baseline_<card>.tsv for this card only.
@@ -58,6 +64,8 @@ bld aceapex_gpu nvcc -O3 $ARCH $NVL -o $W/aceapex_gpu aceapex_gpu.cu
 bld gpu_api_test nvcc -std=c++17 -O3 $ARCH -DACEAPEX_ENV_TUNING -Isrc -DACEAPEX_GPU_NVCOMP $NVL -o $W/gpu_api_test scripts/gpu_api_test.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp -lzstd
 bld gpu_decode nvcc -std=c++17 -O3 $ARCH -Isrc -o $W/gpu_decode examples/gpu_decode.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp
 bld gpu_stream nvcc -std=c++17 -O3 $ARCH -Isrc -DACEAPEX_GPU_NVCOMP $NVL -o $W/gpu_stream scripts/gpu_stream.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp -lzstd
+HT=0; { [ $MODE = ONE ] || [ "${HTESTS:-0}" = 1 ]; } && HT=1      # the four card tests T-H1..T-H4 (scripts/gpu_h100_tests.cu)
+[ $HT = 1 ] && bld gpu_h100_tests nvcc -std=c++17 -O3 $ARCH -Isrc -DACEAPEX_GPU_NVCOMP $NVL -o $W/gpu_h100_tests scripts/gpu_h100_tests.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp src/aceapex_api.cpp -lzstd -lpthread
 bld gpu_lib sh -c "make -s gpu-lib NVCOMP=$NV GPU_ARCH='$ARCH' && nvcc -std=c++17 -O3 $ARCH -Isrc -o $W/gpu_decode_so examples/gpu_decode.cu -L. -laceapex_gpu -Xlinker -rpath=$(pwd) -Xlinker -rpath-link=$NV/lib64"
 if [ $MODE = FULL ]; then
   # the same tool with AX_VEC=0 (byte stores in the match kernel and k_unpack, as before 01.10): chr1 before/after
@@ -138,7 +146,7 @@ pinned(){ case $1.$2 in
 T=$(nproc); CORP=""
 get_corpus chr1.fa 9465e0f0df6e2c6eb39729c39cee5465 https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr1.fa.gz && CORP="chr1"
 get_corpus t2t.fa cd1e52ce400c027ed0b7ab4b9d613f5a https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/009/914/755/GCA_009914755.4_T2T-CHM13v2.0/GCA_009914755.4_T2T-CHM13v2.0_genomic.fna.gz 9280657210e4161147cbe13b022225b9 && CORP="$CORP t2t"
-[ $MODE = ONE ] && get_corpus grch38.fa "" https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz 1c9dcaddfa41027f17cd8f7a82c7293b && CORP="$CORP grch38"
+[ $MODE = ONE ] && get_corpus grch38.fa b2aee9f885accc00531e59c4736bee63 https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz 1c9dcaddfa41027f17cd8f7a82c7293b && CORP="$CORP grch38"
 for X in $CORP; do
   C=$W/$X.fa
   PROFS="open"; [ $MODE = FULL ] && PROFS="zstd rans open chain"
@@ -223,6 +231,28 @@ if [ $MODE = ONE ] && [ -x $W/gpu_stream ]; then
     to $TO "gpu_stream $X.open" $W/gpu_stream $W/$X.open.aet $W/$X.fa 2>&1 | tee -a $L; break; done
   if [ -s $W/t2t.open.aet ]; then echo "== gpu_stream t2t.open (slots capped at 256 MB: many batches)" | tee -a $L
     AX_STREAM_MAX_MB=256 to $TO "gpu_stream t2t.open capped" $W/gpu_stream $W/t2t.open.aet $W/t2t.fa 2>&1 | sed 's/^STREAMROW/STREAMROW_CAP/' | tee -a $L; fi
+fi
+# the four card tests (ONE, or HTESTS=1 in any mode; scripts/gpu_h100_tests.cu), on t2t.open:
+#   T-H1 saturation: K decodes of t2t at once (25-50 GB of output on 80 GB), peak GB/s; each copy XXH3-checked
+#   T-H2 PCIe pipeline: pinned archive -> pieces of 4 / 8 MB (tables, token streams first) -> block batches decode as
+#        their literal chunks arrive, outputs in a ring of 4 slots;
+#        against H2D alone and the resident decode; every batch compared with the original
+#   T-H3 random access: 10 000 regions of 5 000 bases by coordinate - GPU (resident, pooled, direct and CUDA Graph),
+#        CPU region call, samtools faidx on bgzip (process per region and -r); p50 / p99, every result == FASTA
+#        (tabix indexes tab-separated files, not FASTA: bgzip + samtools faidx is the htslib way for sequence)
+#   T-H4 stress: 10 000 corrupt copies of a 16 MB chr1 slice (open profile): 0 hangs, 0 silent with XXH3
+if [ $HT = 1 ] && [ -x $W/gpu_h100_tests ] && [ -s $W/t2t.open.aet ]; then
+  echo "== T-H1 saturation" | tee -a $L; to $TO "T-H1" $W/gpu_h100_tests sat $W/t2t.open.aet 2>&1 | tee -a $L
+  echo "== T-H2 PCIe pipeline" | tee -a $L; to $TO "T-H2" $W/gpu_h100_tests pcie $W/t2t.open.aet $W/t2t.fa 2>&1 | tee -a $L
+  command -v samtools >/dev/null && command -v bgzip >/dev/null || { apt-get -qq update && apt-get -qq install -y samtools tabix >/dev/null 2>&1; }
+  SAMV=$(samtools --version 2>/dev/null | head -n 1); echo "== T-H3 random access (${SAMV:-no samtools})" | tee -a $L
+  if [ -n "$SAMV" ] && [ ! -s $W/t2t.fa.bgz.gzi ]; then bgzip -@ $T -c $W/t2t.fa > $W/t2t.fa.bgz && samtools faidx $W/t2t.fa.bgz && echo "bgzip t2t: $(stat -c%s $W/t2t.fa.bgz) B" | tee -a $L; fi
+  if [ -n "$SAMV" ]; then to $((TO*2)) "T-H3" $W/gpu_h100_tests ra $W/t2t.open.aet $W/t2t.fa 10000 5000 samtools $W/t2t.fa.bgz 2>&1 | tee -a $L
+  else to $TO "T-H3" $W/gpu_h100_tests ra $W/t2t.open.aet $W/t2t.fa 10000 5000 2>&1 | tee -a $L; fi
+  if [ -s $W/chr1.fa ]; then tail -c +100000001 $W/chr1.fa | head -c 16777216 > $W/stress.fa
+    env -i PATH=$PATH ACEAPEX_BS=16384 LIT_CHUNK=65536 AX_PROFILE=open ./aceapex c --in $W/stress.fa --out $W/stress.open.aet >/dev/null 2>&1
+    echo "== T-H4 stress ($(stat -c%s $W/stress.open.aet 2>/dev/null) B archive of a 16 MB chr1 slice)" | tee -a $L
+    to $((TO*2)) "T-H4" $W/gpu_h100_tests stress $W/stress.open.aet $W/stress.fa 10000 2>&1 | tee -a $L; fi
 fi
 # HPRC rung (HPRC=1): the first HPRC_N (10) haplotype assemblies of the HPRC year-1 index (sha256 per file), each encoded
 # in the open profile (peak RSS and time), decoded on the GPU through the library (full + 20 ranges), against AGC and MBGC
@@ -329,7 +359,7 @@ cat $W/gate.txt | tee -a $L
 VERDICT=FAILED
 [ "$N" = "$RUN" ] && [ "$E" = 2 ] && [ "$F" = 5 ] && [ "$AOK" = "$AR" ] && [ "$PE" = 1 ] && grep -q "^ROW	$W/chr1.open" $L \
   && ! grep -q 'archive rejected\|ROUND-TRIP FAILED\|^example .*FAILED\|shared library build FAILED' $L && [ "$NTO" = 0 ] \
-  && ! grep -q SLOWER $W/gate.txt && VERDICT=PASSED
+  && ! grep -q SLOWER $W/gate.txt && ! grep -q $'^H[1-4]ROW\t.*\tFAILED$' $L && VERDICT=PASSED
 [ $VERDICT = PASSED ] && echo "RESULT: all passes bit-perfect on $GPU" | tee -a $L \
   || echo "!!! NOT PASSED on $GPU - valid figures only in bit-perfect rows" | tee -a $L
 # == SUMMARY == (<= 15 lines): commit, mode, GPU; per archive library / tool on-device ms, stages, [open variants]; verdict.
@@ -348,6 +378,10 @@ SIZES=""; for X in $CORP; do [ -s $W/$X.fa ] && SIZES="$SIZES $X=$(stat -c%s $W/
            printf "%s: %stool %.3f ms; seq %s, unpack %.3f, match %.3f ms; %s%s%s\n", k, lib, t[k], sq[k], un[k], ma[k], ck[k], var[k], tv[k] } }' $L
   grep -h '^HPRC GPU library\|^HPRC ACEAPEX open\|^HPRC AGC\|^HPRC MBGC' $L | head -n 4
   awk -F'\t' '$1=="STREAMROW"||$1=="STREAMROW_CAP"{ k=$2; sub(/.*\//,"",k); printf "stream %s%s: %s batches of %s blocks (slot %s MB), %.2f GB/s with D2H + host XXH3, hash %s, batches %s\n", k, ($1=="STREAMROW_CAP"?" (capped)":""), $5, $6, $7, $10, $11, $12 }' $L
+  awk -F'\t' '$1=="H1ROW"{ printf "T-H1 saturation %s: peak %.1f GB/s with %s decodes at once (K: GB/s %s), XXH3 %s\n", $2, $5, $6, $7, $8 }
+    $1=="H2ROW"{ printf "T-H2 PCIe: H2D %.1f GB/s; ring slot: output GB/s / with D2H / share of the bus %s; %s\n", $3, $4, $5 }
+    $1=="H3ROW"{ printf "T-H3 %s regions x %s b, p50/p99 us: GPU %s, GPU graph %s, CPU %s, samtools bgzip %s (one call: %.1f us/region); %s\n", $3, $4, $5, $6, $7, $8, $9, $10 }
+    $1=="H4ROW"{ printf "T-H4 %s corrupt archives: refused %s, caught %s, harmless %s, silent %s (no hash) / %s (XXH3), hangs %s; %s\n", $3, $4, $5, $6, $7, $8, $9, $10 }' $L
   case "$GPU" in *H100*) echo "paper rows (README, H100 SXM, June 2026, not re-measured): FASTQ ERR194147 5 GB 168.9 GB/s ratio 3.31; 50 GB range decode 165.7 GB/s ratio 3.99; 5 GB genome full decode 29.71 ms";; esac
   cat $W/gate.txt
   echo "verdict $VERDICT$(grep -q SLOWER $W/gate.txt && echo " (speed gate: slower than $BASEF by > 5 %)")"; } > $W/summary.txt
