@@ -243,13 +243,14 @@ int main(int argc, char** argv) {
                     std::lock_guard<std::mutex> lk(mu); all.insert(all.end(), loc.begin(), loc.end()); vis += v; cov += c; });
                 for (auto& x : th) x.join(); }
             visited = vis; covered = cov; std::sort(all.begin(), all.end()); all.erase(std::unique(all.begin(), all.end()), all.end()); return all; };
-        uint64_t v0, c0, v1, c1, mb = 0; for (auto& m : MA) for (const KMatch& x : m) mb += x.e - x.s;
+        uint64_t v0, c0, v1, c1, mb = 0, nm = 0, nm31 = 0; for (auto& m : MA) for (const KMatch& x : m) { mb += x.e - x.s; nm++; nm31 += x.e - x.s >= (uint64_t)KK; }
         double t0 = now(); const std::vector<uint64_t> naive = count(false, v0, c0); const double tn = now() - t0;
         t0 = now(); const std::vector<uint64_t> tok = count(true, v1, c1); const double tt = now() - t0;
         const bool same = naive == tok;
         fprintf(stderr, "[pg] k-mers (31, canonical, sampled 1/64): match bytes %.2f %% of the sequence; naive %llu windows in %.2f s (+ decode %.1f s), tokens %llu windows (%llu skipped) in %.2f s; sets %s (%zu sampled distinct)\n",
                 100.0 * mb / seq_tot, (unsigned long long)v0, tn, t_dec, (unsigned long long)v1, (unsigned long long)c1, tt, same ? "identical" : "DIFFER", naive.size());
-        printf("\t%.3f\t%.2f\t%.2f\t%llu\t%llu\t%s", 100.0 * mb / seq_tot, tn, tt, (unsigned long long)v0, (unsigned long long)v1, same ? "identical" : "DIFFER");
+        printf("\t%.3f\t%.2f\t%.2f\t%llu\t%llu\t%s\t%llu\t%llu\t%llu\t%llu", 100.0 * mb / seq_tot, tn, tt, (unsigned long long)v0, (unsigned long long)v1, same ? "identical" : "DIFFER",
+               (unsigned long long)seq_tot, (unsigned long long)mb, (unsigned long long)nm, (unsigned long long)nm31);   // + sequence bytes, match bytes, matches, matches >= k
     }
     printf("\n");
     return ok ? 0 : 4;
