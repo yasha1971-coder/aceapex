@@ -1502,7 +1502,10 @@ static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
     const size_t CH = LIT_CHUNK;
     if (CH == 0) return lit_compress_legacy(src, sz, out_sz);
     const int NW = (int)((sz + CH - 1) / CH);
-    if (NW < 1 || NW > 65535) return lit_compress_legacy(src, sz, out_sz);
+    // no cap on the chunk count below 2^30 (64 TiB of literals): until 2.3 the encoder fell back to the legacy layout
+    // above 65535 chunks (~4 GiB of literals: no DNA transform, no streaming); every decoder derives the count from the
+    // stream size (results/litcap-2026-10-02.log: archives above the old cap read by the 2.2.2 decoders)
+    if (NW < 1 || NW > (1 << 30)) return lit_compress_legacy(src, sz, out_sz);
     size_t csz = CH;
     struct ZW{const uint8_t*in;size_t isz;uint8_t*out;size_t osz;size_t cap;};
     std::vector<ZW> zws(NW);
@@ -1937,8 +1940,8 @@ static int do_decompress_stream(const char* in_path, int threads) {
 #ifdef ACEAPEX_ENV_TUNING
     { char m[8] = {0}; if (pread(fd, m, 8, 0) == 8 && !memcmp(m, "AXLINE01", 8)) { close(fd); return ax_cli_lm_decompress(in_path, "-", threads); } }
 #endif
-    {   // a literal stream without the chunked layout (text before 2.1, or a literal stream of more than 65535 chunks:
-        // DNA inputs above ~4 GiB of literals, lit_compress) is not streamed: the whole-file decoder writes to stdout
+    {   // a literal stream without the chunked layout (text in the default profile; DNA archives above ~4 GiB of
+        // literals written before 2.3) is not streamed: the whole-file decoder writes to stdout
         AetHeader h; uint64_t w = 0;
         if (pread(fd, &h, sizeof h, 0) == (ssize_t)sizeof h && !memcmp(h.magic, "ACEPX2\0\0", 8) && h.num_blocks && h.zlit_sz >= 8 &&
             pread(fd, &w, 8, (off_t)(sizeof h + (uint64_t)h.num_blocks * sizeof(BlockOffsets))) == 8 && !(((w >> 62) & 1) && ((w >> 61) & 1))) {

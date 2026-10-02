@@ -37,6 +37,4 @@ The archive carries an XXH3 hash of the original; decompression checks it and pr
 
 - The bytes of default-profile archives depend on the zstd version the tool was built with (here @ZSTD@); every
   ACEAPEX build decodes them. The open profile does not use zstd.
-- Several genomes in one input file (more than ~4 GiB of literals) compress at a lower ratio in this build: compress
-  one genome per archive.
 - `--threads N` sets the threads; decompression defaults to the physical cores.

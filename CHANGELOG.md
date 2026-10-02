@@ -40,6 +40,9 @@ Version macros are bumped at tag time, not in this draft.
   `aceapex_gpu_plan_input_window` (ABI additions): streams restricted to the blocks' chunks, temp and output sized
   for the batch; `scripts/gpu_stream.cu` decodes batches sized from the free memory, two in flight (decode / D2H),
   XXH3 on the host. CPU judge: 121 batches through the plan emulator == original [H100: speed].
+- **Literal chunk cap lifted** (65 535 -> 2^30 chunks): a DNA input above ~4 GiB of literals keeps the chunked layout
+  and the DNA transform - HPRC x 3 in one file 2 705 974 278 -> 2 140 557 191 B (ratio 3.36 -> 4.24) - and streams.
+  Archive bytes change only for such inputs; the 2.2.2 C++ and C99 decoders read them (`results/litcap-2026-10-02.log`).
 - **Measurement tools** (no format change; `results/dep-range-2026-10-01.log`, `results/reality-2026-10-02.log`,
   `results/pangenome-2026-10-02.log`): match reach, bits by region class, approximate-repeat estimate, block cost
   and thread tail (`AX_BLOCK_TIMES`, `AX_SCHED_COST`), and the AX_REFSEG pangenome prototype (`scripts/refseg.cpp`,
