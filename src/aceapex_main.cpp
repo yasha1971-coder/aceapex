@@ -1766,8 +1766,11 @@ static void entropy_encode(
         EA*e=(EA*)a;
         const bool rans=ax_tok_rans();
         // rANS profile: 64 KiB chunks unless FSE_CHUNK says otherwise (4 KiB chunks
-        // carry a 32-lane state block and a table each: +5-6 % on chr1 tokens)
-        const size_t CHUNK=(rans && !ax_getenv("FSE_CHUNK")) ? (size_t)65536 : fse_chunk_size();
+        // carry a 32-lane state block and a table each: +5-6 % on chr1 tokens). The open profile: 16 KiB
+        // (02.10, the user's decision): a region decodes 3 token chunks, one rANS chunk is sequential (32 lanes,
+        // one warp on the GPU) - 16 KiB chunks cut the region path 4x for +452 B on T2T
+        // (results/th3-phases-2026-10-02.log); archives with 64 KiB chunks decode as before (the size is in the stream)
+        const size_t CHUNK=ax_getenv("FSE_CHUNK") ? fse_chunk_size() : ax_profile_open() ? (size_t)16384 : rans ? (size_t)65536 : fse_chunk_size();
         size_t nc=(e->isz+CHUNK-1)/CHUNK;
         size_t hdrsz=8+nc*8;
         size_t cap=hdrsz+e->isz+nc*(64+axr_bound(0));

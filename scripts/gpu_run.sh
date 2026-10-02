@@ -164,10 +164,10 @@ ZV=$(grep -h '#define ZSTD_VERSION_\(MAJOR\|MINOR\|RELEASE\)' /usr/include/zstd.
 pinned(){ case $1.$2 in
   chr1.zstd) case $ZV in 1.4.8) echo 60449427;; 1.5.5) echo 60442704;; esac;;
   chr1.rans) case $ZV in 1.4.8) echo 60431000;; 1.5.5) echo 60424124;; esac;;
-  chr1.open) echo 63083287;; chr1.chain) echo 67975888;;
+  chr1.open) echo 63091473;; chr1.chain) echo 68178789;;   # open: 16 KiB token chunks since 02.10 (63083287 / 67975888 before)
   t2t.zstd) case $ZV in 1.4.8) echo 822680738;; 1.5.5) echo 822393156;; esac;;
   t2t.rans) case $ZV in 1.4.8) echo 822818235;; 1.5.5) echo 822531418;; esac;;
-  t2t.open) echo 853264869;; t2t.chain) echo 887641942;; esac; }
+  t2t.open) echo 853265321;; t2t.chain) echo 890229151;; esac; }   # (853264869 / 887641942 before)
 T=$(nproc); CORP=""
 get_corpus chr1.fa 9465e0f0df6e2c6eb39729c39cee5465 https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr1.fa.gz && CORP="chr1"
 get_corpus t2t.fa cd1e52ce400c027ed0b7ab4b9d613f5a https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/009/914/755/GCA_009914755.4_T2T-CHM13v2.0/GCA_009914755.4_T2T-CHM13v2.0_genomic.fna.gz 9280657210e4161147cbe13b022225b9 && CORP="$CORP t2t"
@@ -274,10 +274,10 @@ if [ $HT = 1 ] && [ -x $W/gpu_h100_tests ] && [ -s $W/t2t.open.aet ]; then
   if [ -n "$SAMV" ] && [ ! -s $W/t2t.fa.bgz.gzi ]; then bgzip -@ $T -c $W/t2t.fa > $W/t2t.fa.bgz && samtools faidx $W/t2t.fa.bgz && echo "bgzip t2t: $(stat -c%s $W/t2t.fa.bgz) B" | tee -a $L; fi
   if [ -n "$SAMV" ]; then to $((TO*2)) "T-H3" $W/gpu_h100_tests ra $W/t2t.open.aet $W/t2t.fa 10000 5000 samtools $W/t2t.fa.bgz 2>&1 | tee -a $L
   else to $TO "T-H3" $W/gpu_h100_tests ra $W/t2t.open.aet $W/t2t.fa 10000 5000 2>&1 | tee -a $L; fi
-  # the same regions on an archive with 16 KiB token chunks (FSE_CHUNK=16384; +452 B on T2T): a region decodes 3 token
-  # chunks with one warp each, 64 KiB chunks are 2048 sequential warp steps - the bulk of the GPU region time
-  env -i PATH=$PATH ACEAPEX_BS=16384 LIT_CHUNK=65536 AX_PROFILE=open FSE_CHUNK=16384 ./aceapex c --in $W/t2t.fa --out $W/t2t.ra16.aet >/dev/null 2>&1 \
-    && echo "== T-H3b random access, 16 KiB token chunks ($(stat -c%s $W/t2t.ra16.aet) B)" | tee -a $L \
+  # the same regions on an archive with the token chunks of 64 KiB the open profile wrote before 02.10 (FSE_CHUNK=65536;
+  # since 02.10 it writes 16 KiB: a region decodes 3 token chunks with one warp each, 2048 against 512 sequential steps)
+  env -i PATH=$PATH ACEAPEX_BS=16384 LIT_CHUNK=65536 AX_PROFILE=open FSE_CHUNK=65536 ./aceapex c --in $W/t2t.fa --out $W/t2t.ra16.aet >/dev/null 2>&1 \
+    && echo "== T-H3b random access, 64 KiB token chunks as before 02.10 ($(stat -c%s $W/t2t.ra16.aet) B)" | tee -a $L \
     && to $TO "T-H3b" $W/gpu_h100_tests ra $W/t2t.ra16.aet $W/t2t.fa 10000 5000 2>&1 | sed 's/^H3ROW/H3BROW/' | tee -a $L; rm -f $W/t2t.ra16.aet
   if [ -s $W/chr1.fa ]; then tail -c +100000001 $W/chr1.fa | head -c 16777216 > $W/stress.fa
     env -i PATH=$PATH ACEAPEX_BS=16384 LIT_CHUNK=65536 AX_PROFILE=open ./aceapex c --in $W/stress.fa --out $W/stress.open.aet >/dev/null 2>&1
@@ -378,7 +378,7 @@ NTO=$(grep -ac '^TIMEOUT ' $L); echo "steps over the time limit: $NTO" | tee -a 
 # speed gate against the baseline of this card (results/baseline_h100.tsv for H100, baseline_blackwell.tsv for the RTX PRO
 # 6000 Blackwell; rows of the same GPU name only): library and tool on-device ms per archive, a
 # row more than 5 % slower fails the verdict; faster rows are reported for a baseline update (a commit of its own)
-awk -F'\t' -v w="$W/" -v g="$GPU" 'FNR==NR{ if($1==g){ k=$2" "$3; base[k]=$4 } next }
+awk -F'\t' -v w="$W/" -v g="$GPU" 'FNR==NR{ if($1==g && $7 !~ /re-measure/){ k=$2" "$3; base[k]=$4 } next }
   $1=="APIROW"{ k=$2; sub(w,"",k); sub(/\.aet$/,"",k); now[k" library"]=$4 }
   $1=="ROW"{ k=$2; sub(w,"",k); sub(/\.aet$/,"",k); now[k" tool"]=$10 }
   END{ for(k in base){ if(!(k in now) || now[k]+0<=0) continue; c=100*(now[k]/base[k]-1); v=(c>5?"SLOWER":(c<-5?"FASTER":"OK"))
@@ -415,7 +415,7 @@ SIZES=""; for X in $CORP; do [ -s $W/$X.fa ] && SIZES="$SIZES $X=$(stat -c%s $W/
   awk -F'\t' '$1=="STREAMROW"||$1=="STREAMROW_CAP"{ k=$2; sub(/.*\//,"",k); printf "stream %s%s: %s batches of %s blocks (slot %s MB), %.2f GB/s with D2H + host XXH3, hash %s, batches %s\n", k, ($1=="STREAMROW_CAP"?" (capped)":""), $5, $6, $7, $10, $11, $12 }' $L
   awk -F'\t' '$1=="H1ROW"{ printf "T-H1 saturation %s: peak %.1f GB/s with %s decodes at once (K: GB/s %s), XXH3 %s\n", $2, $5, $6, $7, $8 }
     $1=="H2ROW"{ printf "T-H2 PCIe: H2D %.1f GB/s; pieces: output GB/s / with D2H / output over bus %s; %s\n", $3, $4, $5 }
-    $1=="H3ROW"||$1=="H3BROW"{ printf "T-H3%s %s regions x %s b, p50/p99 us: GPU %s (p50 launch/kernels/D2H/wait %s), GPU graph %s, CPU %s, samtools bgzip %s (one call: %s); %s\n", ($1=="H3BROW"?"b (16 KiB token chunks)":""), $3, $4, $5, $11, $6, $7, ($8=="0.0/0.0"?"-":$8), ($9<0?"-":sprintf("%.1f us/region",$9)), $10 }
+    $1=="H3ROW"||$1=="H3BROW"{ printf "T-H3%s %s regions x %s b, p50/p99 us: GPU %s (p50 launch/kernels/D2H/wait %s), GPU graph %s, CPU %s, samtools bgzip %s (one call: %s); %s\n", ($1=="H3BROW"?"b (64 KiB token chunks, before 02.10)":""), $3, $4, $5, $11, $6, $7, ($8=="0.0/0.0"?"-":$8), ($9<0?"-":sprintf("%.1f us/region",$9)), $10 }
     $1=="H4ROW"{ printf "T-H4 %s corrupt archives: refused %s, caught %s, harmless %s, silent %s (no hash) / %s (XXH3), hangs %s; %s\n", $3, $4, $5, $6, $7, $8, $9, $10 }' $L
   case "$GPU" in *H100*) echo "paper rows (README, H100 SXM, June 2026, not re-measured): FASTQ ERR194147 5 GB 168.9 GB/s ratio 3.31; 50 GB range decode 165.7 GB/s ratio 3.99; 5 GB genome full decode 29.71 ms";; esac
   cat $LOC/gate.txt

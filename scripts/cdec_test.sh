@@ -106,11 +106,27 @@ else printf 'head_stream\tfail\tbuild failed: %s\n' "$(head -c 150 $T/stt.err | 
 # by the plan, and the first 1000 of the 10 000 copies (918 among them) through plan + executor: 0 hangs, 0 silent with XXH3
 if [ -s $HOME/golden/genome/chr1.fa ] && [ -x ./aceapex ] && ${CXX:-g++} -std=c++17 -O2 -Isrc -Iscripts -o $T/semu scripts/gpu_stress_emu.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/semu.err; then
   tail -c +100000001 $HOME/golden/genome/chr1.fa | head -c 16777216 > $T/stress.fa
-  env -i PATH=$PATH ACEAPEX_BS=16384 LIT_CHUNK=65536 AX_PROFILE=open ./aceapex c --in $T/stress.fa --out $T/stress.aet >/dev/null 2>&1
+  env -i PATH=$PATH ACEAPEX_BS=16384 LIT_CHUNK=65536 AX_PROFILE=open FSE_CHUNK=65536 ./aceapex c --in $T/stress.fa --out $T/stress.aet >/dev/null 2>&1   # the archive of the Colab run: 64 KiB token chunks
   rp=$($T/semu --check verify/repro/gpu_hang/th4_copy00918.aet); se=$($T/semu $T/stress.aet $T/stress.fa 1000 | grep '^STRESSEMU')
   if [ "$rp" = refused ] && [ "$(md5sum < $T/stress.aet | cut -c1-32)" = 84eba8783bbb5f91508308429c4c9d1c ] && [ "$(echo "$se" | cut -f9)" = ok ]; then
     printf 'head_gpu_stress_emu\tpass\tT-H4 copy 918 (ncse 2 986 345 694 for raw 65 536) refused by the plan; 1000 corrupt copies through plan + executor: refused %s, hangs %s, silent with XXH3 %s\n' "$(echo "$se" | cut -f3)" "$(echo "$se" | cut -f8)" "$(echo "$se" | cut -f7)"
   else printf 'head_gpu_stress_emu\tfail\trepro: %s; run: %s\n' "$rp" "$se"; fi
+fi
+# open archives written before 02.10 (64 KiB token chunks; the open profile writes 16 KiB since): chr1 in the old open
+# profile (FSE_CHUNK=65536 gives its bytes, md5 pinned) decodes byte for byte with the C++ CLI, the C99 axdec, the Python
+# reader (ctypes over the C99 library) and the GPU plan + executor
+if [ -s $HOME/golden/genome/chr1.fa ] && [ -x ./aceapex ] && [ -x $T/semu ]; then
+  env -i PATH=$PATH ACEAPEX_BS=16384 LIT_CHUNK=65536 AX_PROFILE=open FSE_CHUNK=65536 ./aceapex c --in $HOME/golden/genome/chr1.fa --out $T/old.aet >/dev/null 2>&1
+  want=$(md5sum < $HOME/golden/genome/chr1.fa | cut -c1-32); am=$(md5sum < $T/old.aet | cut -c1-32)
+  m1=$(./aceapex d --in $T/old.aet -c 2>/dev/null | md5sum | cut -c1-32)
+  m2=$($T/axdec $T/old.aet $T/old.c99 >/dev/null 2>&1 && md5sum < $T/old.c99 | cut -c1-32); rm -f $T/old.c99
+  [ -s $T/libaceapex_decode.so ] || ${CC:-gcc} -std=c99 -O2 -fPIC -shared -DACEAPEX_ENV_TUNING -Ic -o $T/libaceapex_decode.so c/aceapex_decode.c -lzstd 2>/dev/null
+  m3=$(ACEAPEX_DECODE_SO=$T/libaceapex_decode.so PYTHONPATH=python python3 -c "import aceapex,hashlib,sys; a=aceapex.open(sys.argv[1]); print(hashlib.md5(a.decompress()).hexdigest())" $T/old.aet 2>/dev/null)
+  m4=$($T/semu --decode $T/old.aet $HOME/golden/genome/chr1.fa)
+  if [ "$am" = 347ccd8b950cfb4e499249302bb809f8 ] && [ "$m1" = "$want" ] && [ "$m2" = "$want" ] && [ "$m3" = "$want" ] && [ "$m4" = bit-perfect ]; then
+    printf 'head_open_compat\tpass\told open archive of chr1 (64 KiB token chunks, md5 %s) byte for byte with the C++ CLI, C99 axdec, Python reader and the GPU plan + executor\n' "${am:0:12}"
+  else printf 'head_open_compat\tfail\tarchive %s, cli %s, c99 %s, python %s, gpu-emu %s\n' "${am:0:12}" "${m1:0:12}" "${m2:0:12}" "${m3:0:12}" "$m4"; fi
+  rm -f $T/old.aet
 fi
 # aceapex faidx against samtools faidx (1000 regions, exit codes, -r, .fai)
 [ -x ./aceapex ] && bash scripts/faidx_test.sh ./aceapex 2>/dev/null

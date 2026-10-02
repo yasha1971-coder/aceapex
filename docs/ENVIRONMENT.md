@@ -20,7 +20,7 @@ nothing: the defaults below apply, the archive bytes and the threads depend only
 | `AX_SKIP` | 4 (l1) | l1: skip step over literal runs |
 | `AX_ATT` | per level | chain: match attempts |
 | `AX_NOFLAT` | 1 (l1) / 0 | 1: no offset flattening |
-| `FSE_CHUNK` | 524288 (65536 rANS) | token stream chunk; also the reader's chunk for LEGACY archives without the field |
+| `FSE_CHUNK` | 524288 (65536 rANS tokens, 16384 the open profile since 02.10) | token stream chunk; also the reader's chunk for LEGACY archives without the field |
 | `LIT_CHUNK` | unset | literal stream in chunks of this many bytes (>= 65536) |
 | `LIT_LANES` | CPU count | literal lanes of the encoder |
 | `LIT_LEVEL` | per level | zstd level of the literal frames |
