@@ -5,12 +5,11 @@
 //                                          K streams each with its own temp and output: 25-50 GB of output on an
 //                                          80 GB card), K = 1, 2, 4, ... up to what fits; aggregate GB/s per K, the
 //                                          peak; every copy checked once with ACEAPEX_GPU_VERIFY_XXH3 (status 0).
-//   pcie   <archive> <original> [slot_MB]  T-H2: the archive in pinned host memory goes to the device through a ring
-//                                          of 4 slots of slot_MB (4 and 8 by default) as block batches whose archive
-//                                          slice fits a slot; H2D of one slot overlaps the decode of another
-//                                          (block-range plans). Against: H2D alone (pinned, whole archive and in
-//                                          slot-sized copies) and the decode alone with the archive resident. Every
-//                                          batch checked against the original in an untimed pass.
+//   pcie   <archive> <original> [slot_MB]  T-H2: the archive in pinned host memory goes to the device in pieces of
+//                                          slot_MB (4 and 8 by default; tables and token streams first), block batches
+//                                          decode as their literal chunks arrive (block-range plans), outputs in a
+//                                          ring of 4 slots. Against: H2D alone (whole, and in the same pieces) and the
+//                                          decode alone with the archive resident. Every batch checked, untimed.
 //   ra     <archive> <fasta> [n] [len] [samtools] [bgz]
 //                                          T-H3: n (10 000) regions of len (5 000) bases at random coordinates
 //                                          (contig by length, start uniform; offsets from the FASTA's line layout);
@@ -52,6 +51,7 @@ static std::vector<uint8_t> slurp(const char* p) { std::vector<uint8_t> v; FILE*
     fseek(f, 0, SEEK_END); v.resize((size_t)ftell(f)); fseek(f, 0, SEEK_SET); if (fread(v.data(), 1, v.size(), f) != v.size()) exit(1); fclose(f); return v; }
 static double pct(std::vector<double> v, double p) { if (v.empty()) return 0; std::sort(v.begin(), v.end()); return v[std::min(v.size() - 1, (size_t)(p * v.size()))]; }
 static const char* base(const char* p) { const char* s = strrchr(p, '/'); return s ? s + 1 : p; }
+struct BOEnt { uint64_t lit_off, off_off, len_off, cmd_off, lit_sz, off_sz, len_sz, cmd_sz; };   // a block-table entry (64 B)
 // wait for an event with a deadline; false = the deadline passed (a hang: the context is not usable any more)
 static bool wait_ev(cudaEvent_t e, double sec) { const double t = now_s(); for (;;) { const cudaError_t r = cudaEventQuery(e);
     if (r == cudaSuccess) return true; if (r != cudaErrorNotReady) { printf("CUDA event: %s\n", cudaGetErrorString(r)); exit(2); }
@@ -92,70 +92,81 @@ static int t_sat(int argc, char** argv) {
 }
 
 // ---------------------------------------------------------------- T-H2 PCIe pipeline
+// The archive goes to the device in file order in pieces of slot_MB, but the header, the block table and the token
+// streams (the tail of the file: tens of MB) first: a block batch can decode once the piece holding the end of its
+// literal chunks has arrived. A batch's jobs read the archive slice [in_lo, in_hi) of its plan, which reaches from its
+// literal chunks to the token streams at the end - so the archive has one device buffer, filled piece by piece, and the
+// outputs go to a ring of 4 slots. Piece copies on one copy stream (events per piece), batches on 4 compute streams.
 static int t_pcie(int argc, char** argv) {
     const std::vector<uint8_t> av = slurp(argv[2]); const std::vector<uint8_t> orig = slurp(argv[3]);
     std::vector<int> slots_mb; if (argc > 4) slots_mb.push_back(atoi(argv[4])); else slots_mb = {4, 8};
     uint8_t* h_a; CK(cudaHostAlloc(&h_a, av.size(), cudaHostAllocDefault)); memcpy(h_a, av.data(), av.size());
-    uint32_t nb, bs; uint64_t n; memcpy(&nb, h_a + 24, 4); memcpy(&bs, h_a + 20, 4); memcpy(&n, h_a + 12, 8);
-    uint8_t* d_a; CK(cudaMalloc(&d_a, av.size()));
+    uint32_t nb, bs; uint64_t n, z[4]; memcpy(&nb, h_a + 24, 4); memcpy(&bs, h_a + 20, 4); memcpy(&n, h_a + 12, 8); memcpy(z, h_a + 36, 32);
+    const uint64_t lit0 = 68 + 64ull * nb, lit1 = lit0 + z[0];
+    // literal chunk table: file offset of the end of every chunk (chunked layout only)
+    uint64_t lw; memcpy(&lw, h_a + lit0, 8);
+    if (!(((lw >> 62) & 1) && ((lw >> 61) & 1))) { printf("[pcie] literal stream not chunked: test skipped\n"); printf("H2ROW\t%s\t-\t-\tskipped\n", base(argv[2])); return 0; }
+    uint64_t CH; memcpy(&CH, h_a + lit0 + 8, 8); const uint64_t lsz = lw & ~((7ull) << 60), NW = (lsz + CH - 1) / CH;
+    std::vector<uint64_t> cend(NW); { uint64_t q = lit0 + 16 + 8 * NW; for (uint64_t t = 0; t < NW; t++) { uint64_t c; memcpy(&c, h_a + lit0 + 16 + 8 * t, 8); q += c; cend[t] = q; } }
+    uint8_t* d_a; CK(cudaMalloc(&d_a, av.size() + 256));
     cudaEvent_t x0, x1; CK(cudaEventCreate(&x0)); CK(cudaEventCreate(&x1)); float ms = 0;
-    // H2D alone: whole archive, pinned
     std::vector<double> hw; for (int r = 0; r < 3; r++) { CK(cudaEventRecord(x0)); CK(cudaMemcpyAsync(d_a, h_a, av.size(), cudaMemcpyHostToDevice)); CK(cudaEventRecord(x1)); CK(cudaEventSynchronize(x1)); CK(cudaEventElapsedTime(&ms, x0, x1)); hw.push_back(ms / 1e3); }
     const double h2d = av.size() / pct(hw, 0.5) / 1e9;
-    // decode alone, archive resident
     aceapex_gpu_plan* full = aceapex_gpu_plan_create(h_a, av.size(), 0); if (!full) { printf("plan_create: %d\n", aceapex_gpu_last_error()); return 3; }
+    double dec = 0;
     { uint8_t *o, *t; int* st; CK(cudaMalloc(&o, aceapex_gpu_output_bytes(full))); CK(cudaMalloc(&t, aceapex_gpu_temp_bytes(full))); CK(cudaMalloc(&st, 4));
       std::vector<double> dw; for (int r = 0; r < 4; r++) { CK(cudaEventRecord(x0)); aceapex_gpu_decompress_async(full, d_a, o, t, st, 0, 0); CK(cudaEventRecord(x1)); CK(cudaEventSynchronize(x1)); CK(cudaEventElapsedTime(&ms, x0, x1)); if (r) dw.push_back(ms / 1e3); }
-      const double dec = pct(dw, 0.5);
-      printf("[pcie] %s: archive %.1f MB -> %.2f GB; H2D pinned whole archive %.1f GB/s (%.1f ms); decode resident %.2f ms = %.1f GB/s of output, %.1f GB/s of archive\n",
-             base(argv[2]), av.size() / 1e6, n / 1e9, h2d, av.size() / h2d / 1e6, dec * 1e3, n / dec / 1e9, av.size() / dec / 1e9);
-      printf("[pcie] the decode eats archive bytes %.1fx faster than the bus brings them\n", av.size() / dec / 1e9 / h2d);
-      CK(cudaFree(o)); CK(cudaFree(t)); CK(cudaFree(st)); }
-    aceapex_gpu_plan_destroy(full); CK(cudaFree(d_a));
+      dec = pct(dw, 0.5); CK(cudaFree(o)); CK(cudaFree(t)); CK(cudaFree(st)); }
+    aceapex_gpu_plan_destroy(full);
+    printf("[pcie] %s: archive %.1f MB (literal stream %.1f MB, the rest %.1f MB) -> %.2f GB; H2D pinned %.1f GB/s (%.1f ms); decode resident %.2f ms = %.1f GB/s of output\n",
+           base(argv[2]), av.size() / 1e6, z[0] / 1e6, (av.size() - z[0]) / 1e6, n / 1e9, h2d, av.size() / h2d / 1e6, dec * 1e3, n / dec / 1e9);
+    printf("[pcie] the decode takes archive bytes %.1fx faster than the bus brings them: the bus bounds the pipeline at %.1f GB/s of output\n", av.size() / dec / 1e9 / h2d, h2d * n / av.size());
     std::string row;
     for (int smb : slots_mb) {
-        const size_t SLOT = (size_t)smb << 20; const int NS = 4;
-        // batches: as many blocks as keep the archive slice within a slot (grown block by block with the plan's window)
-        std::vector<aceapex_gpu_plan*> pl; std::vector<uint64_t> lo, hi;
-        { uint32_t b0 = 0; uint32_t step = std::max<uint32_t>(1, (uint32_t)((double)SLOT / ((double)av.size() / nb) * 0.9));
-          while (b0 < nb) { uint32_t b1 = std::min(nb, b0 + step); aceapex_gpu_plan* p = nullptr; uint64_t l = 0, h = 0;
-              for (;;) { p = aceapex_gpu_plan_create_blocks(h_a, av.size(), b0, b1, 0); if (!p) { printf("plan_create_blocks: %d\n", aceapex_gpu_last_error()); return 3; }
-                  aceapex_gpu_plan_input_window(p, &l, &h); if (h - l <= SLOT || b1 == b0 + 1) break;
-                  aceapex_gpu_plan_destroy(p); b1 = b0 + std::max<uint32_t>(1, (b1 - b0) * 3 / 4); }
-              pl.push_back(p); lo.push_back(l); hi.push_back(h); b0 = b1; } }
-        size_t mo = 0, mt = 0; for (auto p : pl) { mo = std::max(mo, aceapex_gpu_output_bytes(p)); mt = std::max(mt, aceapex_gpu_temp_bytes(p)); }
-        uint8_t *d_in[NS], *d_o[NS], *d_t[NS], *h_o[NS]; int* d_s[NS]; cudaStream_t s[NS]; cudaEvent_t done[NS];
-        for (int k = 0; k < NS; k++) { CK(cudaMalloc(&d_in[k], SLOT + 256)); CK(cudaMalloc(&d_o[k], mo + 256)); CK(cudaMalloc(&d_t[k], mt + 256)); CK(cudaMalloc(&d_s[k], 4));
-            CK(cudaHostAlloc(&h_o[k], mo + 256, cudaHostAllocDefault)); CK(cudaStreamCreateWithFlags(&s[k], cudaStreamNonBlocking)); CK(cudaEventCreate(&done[k])); }
-        // H2D alone in slot-sized copies (the same pieces the pipeline sends)
-        std::vector<double> sw; for (int r = 0; r < 3; r++) { CK(cudaDeviceSynchronize()); const double t0 = now_s();
-            for (size_t i = 0; i < pl.size(); i++) CK(cudaMemcpyAsync(d_in[i % NS], h_a + lo[i], hi[i] - lo[i], cudaMemcpyHostToDevice, s[i % NS]));
-            CK(cudaDeviceSynchronize()); sw.push_back(now_s() - t0); }
-        const double h2d_slots = av.size() / pct(sw, 0.5) / 1e9;
-        // pipeline: H2D -> decode per slot, slots in turn (result stays on the device), then with D2H too
-        auto run = [&](bool d2h) { std::vector<double> w; for (int r = 0; r < 3; r++) { CK(cudaDeviceSynchronize()); const double t0 = now_s();
-                for (size_t i = 0; i < pl.size(); i++) { const int k = (int)(i % NS);
-                    CK(cudaMemcpyAsync(d_in[k], h_a + lo[i], hi[i] - lo[i], cudaMemcpyHostToDevice, s[k]));
-                    aceapex_gpu_decompress_async(pl[i], d_in[k], d_o[k], d_t[k], d_s[k], 0, s[k]);
-                    if (d2h) CK(cudaMemcpyAsync(h_o[k], d_o[k], aceapex_gpu_output_bytes(pl[i]), cudaMemcpyDeviceToHost, s[k])); }
+        const uint64_t P = (uint64_t)smb << 20; const int NS = 4;
+        // pieces: [0, lit0+16+8NW) and [lit1, end) first, then the literal chunks in pieces of ~P
+        struct Piece { uint64_t lo, hi; }; std::vector<Piece> pc; pc.push_back({0, lit0 + 16 + 8 * NW}); pc.push_back({lit1, av.size()});
+        { uint64_t lo = lit0 + 16 + 8 * NW; while (lo < lit1) { const uint64_t hi = std::min(lit1, lo + P); pc.push_back({lo, hi}); lo = hi; } }
+        auto piece_of = [&](uint64_t off) { size_t a = 2, b = pc.size() - 1; while (a < b) { const size_t m = (a + b) / 2; if (pc[m].hi < off) a = m + 1; else b = m; } return a; };
+        // batches: blocks whose literal chunks end within ~one piece of the previous batch's end
+        struct Batch { aceapex_gpu_plan* p; uint64_t lo; size_t need; size_t out; };
+        std::vector<Batch> B; { uint32_t b0 = 0; const BOEnt* bo = (const BOEnt*)(h_a + 68);
+            while (b0 < nb) { uint32_t b1 = b0 + 1; const uint64_t start = bo[b0].lit_off;
+                while (b1 < nb && bo[b1].lit_off + bo[b1].lit_sz - start < P * 3) b1++;     // literal bytes ~3.5x the compressed piece
+                aceapex_gpu_plan* p = aceapex_gpu_plan_create_blocks(h_a, av.size(), b0, b1, 0); if (!p) { printf("plan_create_blocks: %d\n", aceapex_gpu_last_error()); return 3; }
+                uint64_t l, h; aceapex_gpu_plan_input_window(p, &l, &h);
+                const uint64_t le = bo[b1 - 1].lit_off + bo[b1 - 1].lit_sz, ck = le ? std::min<uint64_t>(NW - 1, (le - 1) / CH) : 0;
+                B.push_back({p, l, piece_of(cend[ck]), aceapex_gpu_output_bytes(p)}); b0 = b1; } }
+        size_t mo = 0, mt = 0; for (auto& b : B) { mo = std::max(mo, b.out); mt = std::max(mt, aceapex_gpu_temp_bytes(b.p)); }
+        uint8_t *d_o[NS], *d_t[NS], *h_o[NS]; int* d_s[NS]; cudaStream_t s[NS], cs; std::vector<cudaEvent_t> pe(pc.size()); cudaEvent_t used[NS];
+        CK(cudaStreamCreateWithFlags(&cs, cudaStreamNonBlocking)); for (auto& e : pe) CK(cudaEventCreateWithFlags(&e, cudaEventDisableTiming));
+        for (int k = 0; k < NS; k++) { CK(cudaMalloc(&d_o[k], mo + 256)); CK(cudaMalloc(&d_t[k], mt + 256)); CK(cudaMalloc(&d_s[k], 4)); CK(cudaHostAlloc(&h_o[k], mo + 256, cudaHostAllocDefault));
+            CK(cudaStreamCreateWithFlags(&s[k], cudaStreamNonBlocking)); CK(cudaEventCreateWithFlags(&used[k], cudaEventDisableTiming)); }
+        std::vector<double> pw; for (int r = 0; r < 3; r++) { CK(cudaDeviceSynchronize()); const double t0 = now_s();
+            for (auto& q : pc) CK(cudaMemcpyAsync(d_a + q.lo, h_a + q.lo, q.hi - q.lo, cudaMemcpyHostToDevice, cs)); CK(cudaStreamSynchronize(cs)); pw.push_back(now_s() - t0); }
+        const double h2d_p = av.size() / pct(pw, 0.5) / 1e9;
+        auto run = [&](bool d2h) { std::vector<double> w; for (int r = 0; r < 3; r++) { CK(cudaMemset(d_a, 0, av.size())); CK(cudaDeviceSynchronize()); const double t0 = now_s();
+                for (size_t i = 0; i < pc.size(); i++) { CK(cudaMemcpyAsync(d_a + pc[i].lo, h_a + pc[i].lo, pc[i].hi - pc[i].lo, cudaMemcpyHostToDevice, cs)); CK(cudaEventRecord(pe[i], cs)); }
+                for (size_t i = 0; i < B.size(); i++) { const int k = (int)(i % NS);
+                    CK(cudaStreamWaitEvent(s[k], pe[0], 0)); CK(cudaStreamWaitEvent(s[k], pe[1], 0)); CK(cudaStreamWaitEvent(s[k], pe[B[i].need], 0));
+                    aceapex_gpu_decompress_async(B[i].p, d_a + B[i].lo, d_o[k], d_t[k], d_s[k], 0, s[k]);
+                    if (d2h) CK(cudaMemcpyAsync(h_o[k], d_o[k], B[i].out, cudaMemcpyDeviceToHost, s[k])); }
                 CK(cudaDeviceSynchronize()); w.push_back(now_s() - t0); } return pct(w, 0.5); };
         const double tp = run(false), tpd = run(true);
-        // check (untimed): every batch back and compared
-        size_t bad = 0; uint64_t pos = 0;
-        for (size_t i = 0; i < pl.size(); i++) { const int k = 0; const size_t len = aceapex_gpu_output_bytes(pl[i]);
-            CK(cudaMemcpy(d_in[k], h_a + lo[i], hi[i] - lo[i], cudaMemcpyHostToDevice)); aceapex_gpu_decompress_async(pl[i], d_in[k], d_o[k], d_t[k], d_s[k], 0, s[k]);
-            CK(cudaStreamSynchronize(s[k])); int st = -1; CK(cudaMemcpy(&st, d_s[k], 4, cudaMemcpyDeviceToHost)); CK(cudaMemcpy(h_o[k], d_o[k], len, cudaMemcpyDeviceToHost));
-            if (st || pos + len > orig.size() || memcmp(h_o[k], orig.data() + pos, len)) bad++; pos += len; }
+        size_t bad = 0; uint64_t pos = 0;                                       // check, untimed: every batch back
+        for (size_t i = 0; i < B.size(); i++) { aceapex_gpu_decompress_async(B[i].p, d_a + B[i].lo, d_o[0], d_t[0], d_s[0], 0, s[0]); CK(cudaStreamSynchronize(s[0]));
+            int st = -1; CK(cudaMemcpy(&st, d_s[0], 4, cudaMemcpyDeviceToHost)); CK(cudaMemcpy(h_o[0], d_o[0], B[i].out, cudaMemcpyDeviceToHost));
+            if (st || pos + B[i].out > orig.size() || memcmp(h_o[0], orig.data() + pos, B[i].out)) bad++; pos += B[i].out; }
         if (pos != orig.size()) bad++;
-        printf("[pcie] ring %d x %d MB: %zu batches (<= %.1f MB of archive, %.1f MB of output each); H2D in these pieces %.1f GB/s; "
-               "H2D -> decode %.3f s = %.1f GB/s of output (archive at %.1f GB/s = %.0f %% of the bus); + D2H %.3f s = %.1f GB/s; batches %s\n",
-               NS, smb, pl.size(), SLOT / 1e6, mo / 1e6, h2d_slots, tp, n / tp / 1e9, av.size() / tp / 1e9, 100.0 * av.size() / tp / 1e9 / h2d, tpd, n / tpd / 1e9, bad ? "DIFFER" : "== original");
-        char b[160]; snprintf(b, sizeof b, "%s%dMB:%.1f/%.1f/%.0f%%", row.empty() ? "" : ",", smb, n / tp / 1e9, n / tpd / 1e9, 100.0 * av.size() / tp / 1e9 / h2d); row += b;
-        for (int k = 0; k < NS; k++) { cudaFree(d_in[k]); cudaFree(d_o[k]); cudaFree(d_t[k]); cudaFree(d_s[k]); cudaFreeHost(h_o[k]); cudaStreamDestroy(s[k]); }
-        for (auto p : pl) aceapex_gpu_plan_destroy(p);
+        printf("[pcie] pieces of %d MB (tables + token streams first, %.1f MB), %zu batches (<= %.1f MB of output), outputs in a ring of %d: H2D in these pieces %.1f GB/s; "
+               "H2D -> decode %.3f s = %.1f GB/s of output (%.0f %% of the bus bound); + D2H %.3f s = %.1f GB/s; batches %s\n",
+               smb, (pc[0].hi + pc[1].hi - pc[1].lo) / 1e6, B.size(), mo / 1e6, NS, h2d_p, tp, n / tp / 1e9, 100.0 * (n / tp) / (h2d * n / av.size()), tpd, n / tpd / 1e9, bad ? "DIFFER" : "== original");
+        char b[160]; snprintf(b, sizeof b, "%s%dMB:%.1f/%.1f/%.0f%%", row.empty() ? "" : ",", smb, n / tp / 1e9, n / tpd / 1e9, 100.0 * (n / tp) / (h2d * n / av.size())); row += b;
+        for (int k = 0; k < NS; k++) { cudaFree(d_o[k]); cudaFree(d_t[k]); cudaFree(d_s[k]); cudaFreeHost(h_o[k]); cudaStreamDestroy(s[k]); }
+        for (auto& b : B) aceapex_gpu_plan_destroy(b.p);
         if (bad) { printf("H2ROW\t%s\t%.1f\t%s\tFAILED\n", base(argv[2]), h2d, row.c_str()); return 5; }
     }
-    printf("H2ROW\t%s\t%.1f\t%s\tok\n", base(argv[2]), h2d, row.c_str());   // bus GB/s, per slot size: out GB/s / with D2H / bus share
+    printf("H2ROW\t%s\t%.1f\t%s\tok\n", base(argv[2]), h2d, row.c_str());   // bus GB/s; per piece size: output GB/s / with D2H / share of the bus bound
     return 0;
 }
 

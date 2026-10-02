@@ -234,7 +234,8 @@ if [ $MODE = ONE ] && [ -x $W/gpu_stream ]; then
 fi
 # the four card tests (ONE, or HTESTS=1 in any mode; scripts/gpu_h100_tests.cu), on t2t.open:
 #   T-H1 saturation: K decodes of t2t at once (25-50 GB of output on 80 GB), peak GB/s; each copy XXH3-checked
-#   T-H2 PCIe pipeline: pinned archive -> ring of 4 slots of 4 / 8 MB -> H2D overlapping the decode of block batches,
+#   T-H2 PCIe pipeline: pinned archive -> pieces of 4 / 8 MB (tables, token streams first) -> block batches decode as
+#        their literal chunks arrive, outputs in a ring of 4 slots;
 #        against H2D alone and the resident decode; every batch compared with the original
 #   T-H3 random access: 10 000 regions of 5 000 bases by coordinate - GPU (resident, pooled, direct and CUDA Graph),
 #        CPU region call, samtools faidx on bgzip (process per region and -r); p50 / p99, every result == FASTA
