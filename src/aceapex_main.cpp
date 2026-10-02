@@ -1391,7 +1391,9 @@ static uint8_t* dna_compress(const uint8_t* s, size_t n, size_t& out_sz){
     return buf;
 }
 
-static void dna_decompress(const uint8_t* src, size_t src_sz, uint8_t* dst, size_t n){
+// Aligned to 64 B: its unpack loops are sensitive to where the function lands; an unrelated 300-byte change elsewhere in
+// this file moved it and cost +17 % on the default chr1 decode, 1 thread (perf gate, 03.10); aligned, 0.137 s either way.
+__attribute__((aligned(64))) static void dna_decompress(const uint8_t* src, size_t src_sz, uint8_t* dst, size_t n){
     // framing checked before any read: 20-byte header, sub-frames inside the chunk, nexc <= n
     if(src_sz<20){ g_dec_err=1; return; }
     uint32_t h[5]; memcpy(h,src,20);
@@ -1567,8 +1569,17 @@ static long long lit_table_check(const uint8_t* src, size_t src_sz, bool chunked
     else csz=(size_t)((orig_sz+3)/4);
     const uint64_t NW = chunked ? (csz ? (orig_sz+csz-1)/csz : 0) : 4;
     if(NW > (src_sz-hdr)/8) return -1;
-    uint64_t rest = src_sz-hdr-8*NW;
-    for(uint64_t t=0;t<NW;t++){ uint64_t z; memcpy(&z,src+hdr+8*t,8); if(z>rest) return -1; rest-=z; }
+    const uint64_t rest = src_sz-hdr-8*NW;
+    // Every prefix of the chunk sizes must fit in `rest` <=> their sum does (no wrap): sizes checked <= rest and summed
+    // in runs of 4096 (4096 * 2^48 < 2^64), the run total added to a checked running sum. A region call walks this table
+    // every time (T2T: 12 800 literal chunks); the old one-by-one subtraction was a serial chain, ~1/5 of a region read.
+    if(rest >= (uint64_t(1)<<48)){                                                      // huge streams: the serial check
+        uint64_t r=rest; for(uint64_t t=0;t<NW;t++){ uint64_t z; memcpy(&z,src+hdr+8*t,8); if(z>r) return -1; r-=z; }
+        return (long long)NW; }
+    uint64_t sum=0;
+    for(uint64_t t0=0;t0<NW;t0+=4096){ const uint64_t t1=std::min<uint64_t>(NW,t0+4096); uint64_t mx=0, s=0;
+        for(uint64_t t=t0;t<t1;t++){ uint64_t z; memcpy(&z,src+hdr+8*t,8); mx=z>mx?z:mx; s+=z; }
+        if(mx>rest || s>rest-sum) return -1; sum+=s; }
     return (long long)NW;
 }
 // Decode-side buffers of 64 MiB and more: 2 MiB aligned and marked for transparent huge pages (AX_HUGE, default 1),
@@ -1732,8 +1743,13 @@ static uint8_t* lit_range(const uint8_t* src, size_t src_sz, size_t& orig_sz,
     // было самой дорогой операцией профиля (memset_avx512, 9.75%).
     uint8_t* out=(uint8_t*)malloc(win_hi>win_lo?win_hi-win_lo:1);
     if(!out) return nullptr;
-    for(int t=0;t<NW;t++){
+    // Only the chunks of [from,to) are visited: the body of the first one starts at the sum of the sizes before it
+    // (a straight sum, vectorised; the table was checked above, so it stays inside the stream).
+    const int t_lo=(int)std::min<size_t>((size_t)NW,from/csz);
+    { uint64_t s=0; for(int t=0;t<t_lo;t++) s+=zsz[t]; p+=s; }
+    for(int t=t_lo;t<NW;t++){
         size_t off=(size_t)t*csz; if(off>orig_sz) off=orig_sz;
+        if(off>=to) break;
         // Правило то же, что в кодере и в lit_decompress: кусок равен csz,
         // кроме последнего. Старая формула с (t<NW-1) на чанках расходилась.
         size_t raw=(off+csz<=orig_sz)?csz:(orig_sz-off);
@@ -2256,9 +2272,15 @@ static int do_faidx(int argc, char** argv) {
         const uint64_t lo = bo(s - 1), hi = bo(e - 1) + 1; buf.resize(hi - lo + 64);
         const int64_t got = aceapex_decompress_region(z, zn, buf.data(), buf.size(), lo, hi - lo);
         if (got != (int64_t)(hi - lo)) { fprintf(stderr, "[faidx] region decode failed (%lld) for %s\n", (long long)got, r.c_str()); rc = 1; continue; }
-        uint64_t col_n = 0;
-        for (uint64_t i = 0; i < hi - lo; i++) { const uint8_t c = buf[i]; if (c == '\n' || c == '\r') continue; out += (char)c; if (++col_n == (uint64_t)W) { out += '\n'; col_n = 0; } }
-        if (col_n) out += '\n';
+        // bases without line ends, then cut at W: runs copied whole (a char at a time was ~1/16 of a region read)
+        uint64_t nb = 0; const uint8_t* q = buf.data(); const uint8_t* const qe = q + (hi - lo);
+        while (q < qe) { const uint8_t* nl = (const uint8_t*)memchr(q, '\n', (size_t)(qe - q)); const uint8_t* le = nl ? nl : qe;
+            if (memchr(q, '\r', (size_t)(le - q))) { for (const uint8_t* x = q; x < le; x++) if (*x != '\r') buf[nb++] = *x; }   // CR dropped as before
+            else { memmove(buf.data() + nb, q, (size_t)(le - q)); nb += (uint64_t)(le - q); }
+            q = nl ? nl + 1 : qe; }
+        const size_t o0 = out.size(); out.resize(o0 + nb + nb / (uint64_t)W + 1); char* w = &out[o0];
+        for (uint64_t i = 0; i < nb; i += (uint64_t)W) { const size_t k = (size_t)std::min<uint64_t>((uint64_t)W, nb - i); memcpy(w, buf.data() + i, k); w += k; *w++ = '\n'; }
+        out.resize((size_t)(w - out.data()));
         if (out.size() > ((size_t)8 << 20)) { fwrite(out.data(), 1, out.size(), stdout); out.clear(); }
     }
     fwrite(out.data(), 1, out.size(), stdout); munmap((void*)z, zn); close(fd);

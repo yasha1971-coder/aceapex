@@ -42,6 +42,10 @@ Version macros are bumped at tag time, not in this draft.
   XXH3 on the host. CPU judge: 121 batches through the plan emulator == original [H100: speed].
 - open: token chunk 16 KiB by default; region decode CPU p50 -21 % (T2T) / -37 % (chr1), p99 -35 % / -26 %; +452 B on T2T
   (+8 186 B on chr1); full decode unchanged within 2.3 %; old archives decode unchanged (`results/open-tok16-2026-10-02.log`).
+- Region decode: the literal chunk table is no longer walked one entry at a time per call (check summed in runs, the
+  first chunk's body found by a straight sum, only the region's chunks visited); `aceapex faidx` copies bases in runs.
+  T2T 5000-base regions, 1 thread, p50: in process 92 -> 50 us (htslib `faidx_fetch_seq64` 102-104 us), `faidx -r`
+  119 -> 71 us per region (samtools -r 103-108 us). Decoder change only (`results/faidx-2026-10-03.log`).
 - **Literal chunk cap lifted** (65 535 -> 2^30 chunks): a DNA input above ~4 GiB of literals keeps the chunked layout
   and the DNA transform - HPRC x 3 in one file 2 705 974 278 -> 2 140 557 191 B (ratio 3.36 -> 4.24) - and streams.
   Archive bytes change only for such inputs; the 2.2.2 C++ and C99 decoders read them (`results/litcap-2026-10-02.log`).
