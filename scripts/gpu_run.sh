@@ -30,6 +30,9 @@ if [ -d /content ] && python3 -c "import google.colab" >/dev/null 2>&1; then PLA
 elif [ -d /workspace ]; then PLATFORM=runpod; W=${WORK:-/workspace/work}; STORE=${STORE:-/workspace/aceapex_store}
 else PLATFORM=host; W=${WORK:-$HOME/aceapex_work}; STORE=${STORE:-$HOME/aceapex_store}; fi
 mkdir -p $W $STORE/cache $STORE/logs
+# files a run leaves in the work dir (on RunPod /workspace persists between pods): the 834d5d1 H100 run found ~30 GB of
+# unpacked HPRC FASTA from the run before and ran out of space - a 3 GB round-trip file and one HPRC assembly were cut
+rm -f $W/rt.bin $W/ex.out $W/d.fa $W/h.fa $W/agc_one.fa $W/hprc_*.fa $W/hprc.agc $W/hprc.mbgc; rm -rf $W/mbgc_out
 DRV=$STORE; HAVE_DRIVE=1                                   # (names kept from colab_gpu_open.sh: the store plays the Drive's part)
 # The run's log is written on the local disk and copied to results/ and the store at the end (and by the exit trap):
 # on RunPod /workspace is a network volume, and the many appending writers of one log there left a hole of NUL bytes
@@ -191,11 +194,12 @@ for X in $CORP; do
       [ $HAVE_DRIVE = 1 ] && [ -n "$PIN" ] && [ "$(stat -c%s $A)" = "$PIN" ] && mkdir -p $DRV/cache && cp $A $DRV/cache/ && SRC="encoded, cached on Drive"
     fi
     [ -s $A ] || { echo "$X.$P: no archive - skipped" | tee -a $L; continue; }
-    to $TO "CPU decode $X.$P" env -i PATH=$PATH ./aceapex d --in $A --out $W/rt.bin >/dev/null 2>&1
+    # streamed to cmp: no output file in the work dir (a 3 GB file there failed on a full volume, H100 834d5d1)
     S=$(stat -c%s $A); if [ -z "$PIN" ]; then PS="no pin for libzstd $ZV"; elif [ "$S" = "$PIN" ]; then PS="== pinned"; else PS="!= pinned $PIN"; fi
-    cmp -s $W/rt.bin $C && echo "$X.$P ($E): archive $S B ($PS), $SRC, CPU round-trip bit-perfect" | tee -a $L \
-      || { [ $P = chain ] && echo "$X.$P: estimate row, CPU round-trip failed" | tee -a $L || echo "$X.$P: CPU ROUND-TRIP FAILED" | tee -a $L; }
-    rm -f $W/rt.bin
+    if to $TO "CPU decode $X.$P" sh -c "env -i PATH=\"$PATH\" ./aceapex d --in $A -c 2>/dev/null | cmp -s - $C"; then
+      echo "$X.$P ($E): archive $S B ($PS), $SRC, CPU round-trip bit-perfect" | tee -a $L
+    else [ $P = chain ] && echo "$X.$P: estimate row, CPU round-trip failed" | tee -a $L \
+      || echo "$X.$P: CPU ROUND-TRIP FAILED (work dir free: $(df -h --output=avail $W | tail -n 1 | tr -d ' '))" | tee -a $L; fi
   done
   # dense-open (measurement, not the format): the literal stream of the open archive coded by
   # components/rans1_v4.c (order-1 rANS, 4 lines, checkpoints every 4096), decoded on the GPU by k_r1
@@ -229,10 +233,10 @@ PY
       AX_WATCHDOG=$((TO/2)) AX_REPRO=verify/repro/run to $TO "gpu_api_test $X.$P" $W/gpu_api_test $W/$X.$P.aet $C ${REPS:-3} $NRG $NFL 2>&1 | tee -a $L; echo "exitapi ${PIPESTATUS[0]} $X.$P" | tee -a $L
       # the flipped frames (original and flipped) kept on Drive for a repro
       [ $HAVE_DRIVE = 1 ] && ls verify/repro/run/*.zst >/dev/null 2>&1 && mkdir -p $DRV/repro && cp verify/repro/run/*.zst $DRV/repro/ && echo "flipped frames copied to $DRV/repro ($(ls verify/repro/run/*.zst | wc -l) files)" | tee -a $L
-      if [ $P = open ]; then to $TO "gpu_decode $X.$P" $W/gpu_decode $W/$X.$P.aet $W/ex.out >/dev/null 2>&1 && cmp -s $W/ex.out $C && echo "example gpu_decode $X.$P (no nvCOMP): bit-perfect" | tee -a $L \
-        || echo "example gpu_decode $X.$P: FAILED" | tee -a $L; rm -f $W/ex.out
-        if [ -x $W/gpu_decode_so ]; then to $TO "gpu_decode (shared) $X.$P" $W/gpu_decode_so $W/$X.$P.aet $W/ex.out >/dev/null 2>&1 && cmp -s $W/ex.out $C \
-          && echo "example gpu_decode $X.$P via libaceapex_gpu.so.1 (nvCOMP inside): bit-perfect" | tee -a $L || echo "example gpu_decode $X.$P via libaceapex_gpu.so.1: FAILED" | tee -a $L; rm -f $W/ex.out; fi; fi
+      if [ $P = open ]; then to $TO "gpu_decode $X.$P" $W/gpu_decode $W/$X.$P.aet $LOC/ex.out >/dev/null 2>&1 && cmp -s $LOC/ex.out $C && echo "example gpu_decode $X.$P (no nvCOMP): bit-perfect" | tee -a $L \
+        || echo "example gpu_decode $X.$P: FAILED" | tee -a $L; rm -f $LOC/ex.out
+        if [ -x $W/gpu_decode_so ]; then to $TO "gpu_decode (shared) $X.$P" $W/gpu_decode_so $W/$X.$P.aet $LOC/ex.out >/dev/null 2>&1 && cmp -s $LOC/ex.out $C \
+          && echo "example gpu_decode $X.$P via libaceapex_gpu.so.1 (nvCOMP inside): bit-perfect" | tee -a $L || echo "example gpu_decode $X.$P via libaceapex_gpu.so.1: FAILED" | tee -a $L; rm -f $LOC/ex.out; fi; fi
     fi
     echo "== aceapex_gpu $X.$P" | tee -a $L
     to $TO "aceapex_gpu $X.$P" $W/aceapex_gpu $W/$X.$P.aet $C auto $R 4 --pipeline=${PIPE:-auto} $DL 2>&1 | tee -a $L; echo "exit ${PIPESTATUS[0]} $X.$P" | tee -a $L
@@ -269,7 +273,9 @@ fi
 if [ $HT = 1 ] && [ -x $W/gpu_h100_tests ] && [ -s $W/t2t.open.aet ]; then
   echo "== T-H1 saturation" | tee -a $L; to $TO "T-H1" $W/gpu_h100_tests sat $W/t2t.open.aet 2>&1 | tee -a $L
   echo "== T-H2 PCIe pipeline" | tee -a $L; to $TO "T-H2" $W/gpu_h100_tests pcie $W/t2t.open.aet $W/t2t.fa 2>&1 | tee -a $L
-  command -v samtools >/dev/null && command -v bgzip >/dev/null || { apt-get -qq update && apt-get -qq install -y samtools tabix >/dev/null 2>&1; }
+  # samtools / bgzip for T-H3's comparison rows (not part of the verdict: without them the rows read "-")
+  command -v samtools >/dev/null && command -v bgzip >/dev/null || { apt-get -qq update >/dev/null 2>&1; DEBIAN_FRONTEND=noninteractive apt-get -qq install -y samtools tabix >/dev/null 2>&1 \
+    || echo "samtools: apt install failed - T-H3 without the samtools rows" | tee -a $L; }
   SAMV=$(samtools --version 2>/dev/null | head -n 1); echo "== T-H3 random access (${SAMV:-no samtools})" | tee -a $L
   if [ -n "$SAMV" ] && [ ! -s $W/t2t.fa.bgz.gzi ]; then bgzip -@ $T -c $W/t2t.fa > $W/t2t.fa.bgz && samtools faidx $W/t2t.fa.bgz && echo "bgzip t2t: $(stat -c%s $W/t2t.fa.bgz) B" | tee -a $L; fi
   if [ -n "$SAMV" ]; then to $((TO*2)) "T-H3" $W/gpu_h100_tests ra $W/t2t.open.aet $W/t2t.fa 10000 5000 samtools $W/t2t.fa.bgz 2>&1 | tee -a $L
@@ -305,9 +311,10 @@ if [ "${HPRC:-0}" = 1 ]; then
     HLIST="$HLIST $nm"
   done < $HD/list.tsv
   echo "HPRC: $(echo $HLIST | wc -w) of $HN assemblies (sha256 OK)" | tee -a $L
-  HRAW=0; HAET=0; HENC=0; HLIB=0
+  HRAW=0; HAET=0; HENC=0; HLIB=0; HMISS=""
   for nm in $HLIST; do
-    gunzip -c $HD/$nm.fa.gz > $W/h.fa; A=$HD/$nm.open.aet
+    gunzip -c $HD/$nm.fa.gz > $W/h.fa || { echo "HPRC $nm: unpack failed (work dir free: $(df -h --output=avail $W | tail -n 1 | tr -d ' ')) - skipped" | tee -a $L; HMISS="$HMISS $nm"; continue; }
+    A=$HD/$nm.open.aet
     if [ ! -s $A ]; then t0=$(date +%s.%N); TM=""; [ -x /usr/bin/time ] && TM="/usr/bin/time -f %M -o $W/enc.rss"
       to $ETO "encode $nm" $TM env -i PATH=$PATH ACEAPEX_BS=16384 LIT_CHUNK=65536 AX_PROFILE=open ./aceapex c --in $W/h.fa --out $A --threads $T >/dev/null 2>&1 || rm -f $A
       echo "HPRC $nm encode: $(awk -v a=$t0 -v b=$(date +%s.%N) 'BEGIN{printf "%.1f", b-a}') s$( [ -s $W/enc.rss ] && echo ", peak RSS $(awk '{printf "%.1f", $1/1048576}' $W/enc.rss) GB")" | tee -a $L; rm -f $W/enc.rss; fi
@@ -315,22 +322,29 @@ if [ "${HPRC:-0}" = 1 ]; then
     HRAW=$((HRAW + $(stat -c%s $W/h.fa))); HAET=$((HAET + $(stat -c%s $A)))
     AX_WATCHDOG=$((TO/2)) to $TO "gpu_api_test $nm" $W/gpu_api_test $A $W/h.fa 3 20 0 2>&1 | grep '^APIROW\|DIFFERS\|TIMEOUT' | sed "s#^APIROW#APIROW_HPRC#" | tee -a $L
   done
-  awk -F'\t' '$1=="APIROW_HPRC"{n++; ms+=$4; ok+=($5=="bit-perfect")} END{ if(n) printf "HPRC GPU library: %d assemblies, %.3f ms total full decode, %d bit-perfect\n", n, ms, ok }' $L | tee -a $L
+  awk -F'\t' -v miss="$HMISS" -v hn="$(echo $HLIST | wc -w)" '$1=="APIROW_HPRC"{n++; ms+=$4; ok+=($5=="bit-perfect")} END{ if(n) printf "HPRC GPU library: %d of %d assemblies, %.3f ms total full decode, %d bit-perfect%s\n", n, hn, ms, ok, (miss==""?"":"; not decoded:" miss) }' $L | tee -a $L
   [ $HAET -gt 0 ] && echo "HPRC ACEAPEX open: $HRAW B -> $HAET B (ratio $(awk -v a=$HRAW -v b=$HAET 'BEGIN{printf "%.2f", a/b}')), one archive per assembly" | tee -a $L
   # AGC and MBGC: release binaries for Linux x64 (latest release asset), the same assemblies (plain FASTA)
   rel(){ curl -fsSL https://api.github.com/repos/$1/releases | grep -o '"browser_download_url": *"[^"]*'"$2"'[^"]*"' | head -n 1 | sed 's/.*"\(http[^"]*\)"/\1/'; }
   mkdir -p $W/tools; FAS=""
-  for nm in $HLIST; do [ -s $W/hprc_$nm.fa ] || gunzip -c $HD/$nm.fa.gz > $W/hprc_$nm.fa; FAS="$FAS $W/hprc_$nm.fa"; done
+  for nm in $HLIST; do gunzip -c $HD/$nm.fa.gz > $W/hprc_$nm.fa && FAS="$FAS $W/hprc_$nm.fa" || { echo "HPRC $nm: unpack for AGC/MBGC failed" | tee -a $L; rm -f $W/hprc_$nm.fa; }; done
   if [ -n "$FAS" ]; then
-    u=$(rel refresh-bio/agc 'x64_linux'); [ -n "$u" ] && curl -fsSL -o $W/tools/agc.tgz "$u" && tar -xzf $W/tools/agc.tgz -C $W/tools 2>/dev/null
+    # AGC 3.2.4 and MBGC 2.1.6 pinned (the GitHub API answered nothing on the pod, 834d5d1): AGC's release binary by its
+    # URL, else built from the tag; MBGC built from the tag (cmake)
+    curl -fsSL -o $W/tools/agc.tgz https://github.com/refresh-bio/agc/releases/download/v3.2.4/agc-v3.2.4-x64_linux.tar.gz && tar -xzf $W/tools/agc.tgz -C $W/tools 2>/dev/null
     AGC=$(find $W/tools -type f -name agc -perm -u+x | head -n 1)
+    if [ -z "$AGC" ] && git clone -q --depth 1 --branch v3.2.4 --recursive https://github.com/refresh-bio/agc.git $W/tools/agc-src 2>/dev/null; then
+      ( cd $W/tools/agc-src && make -j$T >/dev/null 2>&1 ); AGC=$(find $W/tools/agc-src/bin -type f -name agc -perm -u+x 2>/dev/null | head -n 1); fi
     if [ -n "$AGC" ]; then t0=$(date +%s.%N); to $ETO "agc create" $AGC create -t $T -o $W/hprc.agc $FAS >/dev/null 2>&1
       t1=$(date +%s.%N); f1=$(basename $(echo $FAS | cut -d' ' -f2) .fa); to $TO "agc getset" $AGC getset $W/hprc.agc $f1 > $W/agc_one.fa 2>/dev/null; t2=$(date +%s.%N)
       [ -s $W/hprc.agc ] || echo "HPRC AGC: create failed" | tee -a $L
       [ -s $W/hprc.agc ] && echo "HPRC AGC $($AGC 2>&1 | head -n 1 | tr -d '\r'): $(stat -c%s $W/hprc.agc 2>/dev/null) B, create $(awk -v a=$t0 -v b=$t1 'BEGIN{printf "%.1f", b-a}') s ($T threads), one assembly back $(awk -v a=$t1 -v b=$t2 'BEGIN{printf "%.1f", b-a}') s" | tee -a $L
     else echo "HPRC AGC: no Linux x64 release binary found - skipped" | tee -a $L; fi
-    u=$(rel kowallus/mbgc '_x64-linux'); [ -n "$u" ] && curl -fsSL -o $W/tools/mbgc.tgz "$u" && tar -xzf $W/tools/mbgc.tgz -C $W/tools 2>/dev/null
     MB=$(find $W/tools -type f -name mbgc -perm -u+x | head -n 1)
+    if [ -z "$MB" ]; then command -v cmake >/dev/null || apt-get -qq install -y cmake >/dev/null 2>&1
+      git clone -q --depth 1 --branch v2.1.6 --recursive https://github.com/kowallus/mbgc.git $W/tools/mbgc-src 2>/dev/null \
+        && ( mkdir -p $W/tools/mbgc-src/build && cd $W/tools/mbgc-src/build && cmake .. -DCMAKE_BUILD_TYPE=Release >/dev/null 2>&1 && make -j$T mbgc >/dev/null 2>&1 )
+      MB=$(find $W/tools/mbgc-src/build -maxdepth 1 -type f -name mbgc -perm -u+x 2>/dev/null | head -n 1); fi
     if [ -n "$MB" ]; then ls $FAS > $W/mbgc_list.txt; t0=$(date +%s.%N); to $ETO "mbgc compress" $MB c $W/mbgc_list.txt $W/hprc.mbgc >/dev/null 2>&1
       t1=$(date +%s.%N); mkdir -p $W/mbgc_out; to $ETO "mbgc decompress" $MB d $W/hprc.mbgc $W/mbgc_out >/dev/null 2>&1; t2=$(date +%s.%N)
       [ -s $W/hprc.mbgc ] || echo "HPRC MBGC: compress failed (command line: mbgc c <list> <archive>)" | tee -a $L
@@ -339,7 +353,7 @@ if [ "${HPRC:-0}" = 1 ]; then
     # ACEAPEX on the CPU of this host: every archive back, and one assembly
     t0=$(date +%s.%N); for nm in $HLIST; do [ -s $HD/$nm.open.aet ] && ./aceapex d --in $HD/$nm.open.aet --out $W/d.fa >/dev/null 2>&1; done; t1=$(date +%s.%N)
     echo "HPRC ACEAPEX CPU decompress all: $(awk -v a=$t0 -v b=$t1 'BEGIN{printf "%.1f", b-a}') s ($T threads, one archive per assembly = one assembly back in 1/$HN of it)" | tee -a $L
-    rm -f $W/d.fa $W/agc_one.fa; rm -rf $W/mbgc_out
+    rm -f $W/d.fa $W/agc_one.fa $FAS $W/hprc.agc $W/hprc.mbgc; rm -rf $W/mbgc_out          # 30 GB of FASTA do not stay for the next run
   fi
   rm -f $W/h.fa
 fi
@@ -390,15 +404,14 @@ awk -F'\t' -v w="$W/" -v g="$GPU" 'FNR==NR{ if($1==g && $7 !~ /re-measure/){ k=$
        for(x in line) print "gate " x ": " line[x] }' $BASEF $L | sort > $LOC/gate.txt
 [ -s $LOC/gate.txt ] || echo "gate: no baseline rows for $GPU ($BASEF) - this run can seed it" > $LOC/gate.txt
 cat $LOC/gate.txt | tee -a $L
-VERDICT=FAILED; WHY=""                                   # every failed condition named in the verdict
+VERDICT=FAILED; WHY=""                                   # one evaluation: every failed condition named, with its count
+FL=$(grep -a 'archive rejected\|ROUND-TRIP FAILED\|^example .*FAILED\|shared library build FAILED' $L | head -n 3 | tr '\n' '|')
+NSLOW=$(grep -c SLOWER $LOC/gate.txt); NTH=$(grep -acE $'^H([1-5]|3B)ROW\t.*\tFAILED(\t|$)' $L)
 [ "$N" = "$RUN" ] || WHY="$WHY; archives bit-perfect $N of $RUN"; [ "$E" = 2 ] || WHY="$WHY; emulators $E/2"; [ "$F" = 5 ] || WHY="$WHY; fixtures $F/5"
 [ "$AOK" = "$AR" ] || WHY="$WHY; C ABI $AOK of $AR"; [ "$PE" = 1 ] || WHY="$WHY; plan emulator"; grep -aq "^ROW	$W/chr1.open" $L || WHY="$WHY; no chr1.open row"
-grep -aq 'archive rejected\|ROUND-TRIP FAILED\|^example .*FAILED\|shared library build FAILED' $L && WHY="$WHY; a failure line in the log"
-[ "$NTO" = 0 ] || WHY="$WHY; $NTO steps over the time limit"; grep -q SLOWER $LOC/gate.txt && WHY="$WHY; speed gate: slower than $BASEF by > 5 %"
-grep -aqE $'^H([1-5]|3B)ROW\t.*\tFAILED(\t|$)' $L && WHY="$WHY; a card test (T-H) failed"
-[ "$N" = "$RUN" ] && [ "$E" = 2 ] && [ "$F" = 5 ] && [ "$AOK" = "$AR" ] && [ "$PE" = 1 ] && grep -aq "^ROW	$W/chr1.open" $L \
-  && ! grep -aq 'archive rejected\|ROUND-TRIP FAILED\|^example .*FAILED\|shared library build FAILED' $L && [ "$NTO" = 0 ] \
-  && ! grep -q SLOWER $LOC/gate.txt && ! grep -aqE $'^H([1-5]|3B)ROW\t.*\tFAILED(\t|$)' $L && VERDICT=PASSED
+[ -z "$FL" ] || WHY="$WHY; failure lines: ${FL%|}"; [ "$NTO" = 0 ] || WHY="$WHY; $NTO steps over the time limit"
+[ "$NSLOW" = 0 ] || WHY="$WHY; speed gate: $NSLOW rows slower than $BASEF by > 5 %"; [ "$NTH" = 0 ] || WHY="$WHY; $NTH card test rows FAILED"
+[ -z "$WHY" ] && VERDICT=PASSED
 [ $VERDICT = PASSED ] && echo "RESULT: all passes bit-perfect on $GPU" | tee -a $L \
   || echo "!!! NOT PASSED on $GPU - valid figures only in bit-perfect rows" | tee -a $L
 # == SUMMARY == (<= 15 lines): commit, mode, GPU; per archive library / tool on-device ms, stages, [open variants]; verdict.
