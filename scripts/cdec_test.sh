@@ -102,6 +102,12 @@ else printf 'head_env_ignored\tfail\tbuild failed: %s\n' "$(head -c 150 $T/env.e
 if ${CXX:-g++} -std=c++17 -O2 -DACEAPEX_ENV_TUNING -Isrc -o $T/stream_test scripts/stream_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/stt.err; then
   $T/stream_test 2>/dev/null || true
 else printf 'head_stream\tfail\tbuild failed: %s\n' "$(head -c 150 $T/stt.err | tr '\n\t' '  ')"; fi
+# AX_LINEMODEL (tuning builds): bit-perfect on 4 kinds of input, full and regions, fused and two-pass decode
+if ${CXX:-g++} -std=c++17 -O2 -DACEAPEX_ENV_TUNING -Isrc -o $T/lmtest scripts/linemodel_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/lmt.err; then
+  l1=$($T/lmtest 2>/dev/null); l2=$(AX_LIT_TILE=0 $T/lmtest 2>/dev/null)
+  if echo "$l1" | grep -q $'^head_linemodel\tpass' && echo "$l2" | grep -q $'^head_linemodel\tpass'; then echo "$l1" | sed 's/$/; also with AX_LIT_TILE=0 (two-pass)/'
+  else printf 'head_linemodel\tfail\t%s | AX_LIT_TILE=0: %s\n' "$(echo "$l1" | cut -f2- | cut -c1-200)" "$(echo "$l2" | cut -f2- | cut -c1-200)"; fi
+else printf 'head_linemodel\tfail\tbuild failed: %s\n' "$(head -c 150 $T/lmt.err | tr '\n\t' '  ')"; fi
 # AX_REFSEG prototype (tuning build, own container): assembly B = A with 1/1000 substitutions, its third MiB
 # reverse-complemented and 70 columns; both FASTA files back byte for byte from the container, B under 10 % of A with references,
 # and the default encoder bytes untouched by the hook (A's part identical with and without AX_REFSEG)

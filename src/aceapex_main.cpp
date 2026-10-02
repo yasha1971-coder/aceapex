@@ -996,8 +996,19 @@ static inline void ax_nt_fence() {
 // whether a decode with this budget and output size streams its literal blocks (AX_NT)
 static inline bool ax_nt_for(int budget, size_t dst_size) { const AxNt& nt = ax_nt(); return nt.on && budget >= nt.threads && dst_size >= nt.min; }
 // one block into dst (bstart, bsize): directly, or through the thread's buffer with a non-temporal copy (ntok: AX_NT)
+#ifdef ACEAPEX_ENV_TUNING
+// AX_LINEMODEL (src/ax_linemodel.h, tuning builds): a decoded block goes to this sink instead of dst + bstart (the sink
+// puts the line ends back while the block is in cache); null = as always
+typedef void (*AxOutSink)(void* ctx, size_t bstart, const uint8_t* p, size_t n);
+static AxOutSink g_ax_out_sink = nullptr; static void* g_ax_out_ctx = nullptr;
+#endif
 static inline void ax_block_out(uint8_t* dst, size_t bstart, size_t bsize, const BlockOffsets& bo, const uint8_t* lit,
                                 const uint8_t* off, const uint8_t* len, const uint8_t* cmd, std::vector<uint8_t>& nbuf, bool ntok) {
+#ifdef ACEAPEX_ENV_TUNING
+    if (g_ax_out_sink) { if (nbuf.size() < bsize + 64) nbuf.resize(bsize + 64);
+        decompress_streams(nbuf.data(), bsize, lit, bo.lit_sz, off + bo.off_off, bo.off_sz, len + bo.len_off, bo.len_sz, cmd + bo.cmd_off, bo.cmd_sz);
+        g_ax_out_sink(g_ax_out_ctx, bstart, nbuf.data(), bsize); return; }
+#endif
     if (ntok && (double)bo.lit_sz >= ax_nt().lit * (double)bsize) {
         if (nbuf.size() < bsize + 64) nbuf.resize(bsize + 64);
         decompress_streams(nbuf.data(), bsize, lit, bo.lit_sz, off + bo.off_off, bo.off_sz, len + bo.len_off, bo.len_sz, cmd + bo.cmd_off, bo.cmd_sz);
@@ -1793,7 +1804,30 @@ static void entropy_encode(
         return nullptr; },&ep);
 }
  
+#ifdef ACEAPEX_ENV_TUNING
+// AX_LINEMODEL (experiment, src/ax_linemodel.h): the CLI goes through the library calls, which write / read AXLINE01
+static std::vector<uint8_t> ax_cli_slurp(const char* p, bool& ok) { std::vector<uint8_t> v; ok = false; FILE* f = fopen(p, "rb"); if (!f) return v;
+    fseek(f, 0, SEEK_END); v.resize((size_t)ftell(f)); fseek(f, 0, SEEK_SET); ok = fread(v.data(), 1, v.size(), f) == v.size(); fclose(f); return v; }
+static int ax_cli_lm_compress(const char* in, const char* out, int threads, int level) {
+    bool ok; std::vector<uint8_t> s = ax_cli_slurp(in, ok); if (!ok) { fprintf(stderr, "Cannot read: %s\n", in); return 1; }
+    std::vector<uint8_t> z(aceapex_compress_bound(s.size()) + 4096); const double t0 = now_sec();
+    const int64_t n = aceapex_compress(s.data(), s.size(), z.data(), z.size(), level, threads);
+    if (n <= 0) { fprintf(stderr, "compress failed (%lld)\n", (long long)n); return 1; }
+    FILE* f = fopen(out, "wb"); if (!f || fwrite(z.data(), 1, (size_t)n, f) != (size_t)n) { fprintf(stderr, "Cannot write: %s\n", out); return 1; } fclose(f);
+    fprintf(stderr, "  AX_LINEMODEL: %zu -> %lld bytes (ratio %.4f) in %.2f s\n", s.size(), (long long)n, (double)s.size() / n, now_sec() - t0); return 0; }
+static int ax_cli_lm_decompress(const char* in, const char* out, int threads) {
+    bool ok; std::vector<uint8_t> z = ax_cli_slurp(in, ok); if (!ok || z.size() < 16) { fprintf(stderr, "Cannot read: %s\n", in); return 1; }
+    uint64_t orig; memcpy(&orig, z.data() + 8, 8); std::vector<uint8_t> o(orig + 64); const double t0 = now_sec();
+    const int64_t n = aceapex_decompress_mt(z.data(), z.size(), o.data(), o.size(), threads);
+    if (n != (int64_t)orig) { fprintf(stderr, "decode failed (%lld)\n", (long long)n); return 1; }
+    uint64_t want; memcpy(&want, z.data() + 16, 8); const bool h = XXH3_64bits(o.data(), orig) == want;
+    FILE* f = strcmp(out, "-") ? fopen(out, "wb") : stdout; if (!f || fwrite(o.data(), 1, orig, f) != orig) { fprintf(stderr, "Cannot write: %s\n", out); return 1; } if (f != stdout) fclose(f);
+    fprintf(stderr, "  AX_LINEMODEL: %llu bytes in %.2f s, hash %s\n", (unsigned long long)orig, now_sec() - t0, h ? "OK" : "MISMATCH"); return h ? 0 : 1; }
+#endif
 static int do_compress(const char* in_path, const char* out_path, int threads, int level=2) {
+#ifdef ACEAPEX_ENV_TUNING
+    if (ax_getenv("AX_LINEMODEL") && atoi(ax_getenv("AX_LINEMODEL"))) return ax_cli_lm_compress(in_path, out_path, threads, level);
+#endif
     double t_fread=now_sec();
 #ifdef _WIN32
     FILE* fin_w=fopen(in_path,"rb");
@@ -1899,6 +1933,9 @@ static int ax_cli_write(void* c, const void* b, size_t n) { const uint8_t* p = (
 static int do_decompress(const char* in_path, const char* out_path, int threads);
 static int do_decompress_stream(const char* in_path, int threads) {
     int fd = open(in_path, O_RDONLY); if (fd < 0) { fprintf(stderr, "Cannot open: %s\n", in_path); return 1; }
+#ifdef ACEAPEX_ENV_TUNING
+    { char m[8] = {0}; if (pread(fd, m, 8, 0) == 8 && !memcmp(m, "AXLINE01", 8)) { close(fd); return ax_cli_lm_decompress(in_path, "-", threads); } }
+#endif
     {   // a literal stream without the chunked layout (text before 2.1, or a literal stream of more than 65535 chunks:
         // DNA inputs above ~4 GiB of literals, lit_compress) is not streamed: the whole-file decoder writes to stdout
         AetHeader h; uint64_t w = 0;
@@ -1920,6 +1957,9 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
     if (!fin) { fprintf(stderr,"Cannot open: %s\n",in_path); return 1; }
     AetHeader hdr;
     fread(&hdr,sizeof(hdr),1,fin);
+#ifdef ACEAPEX_ENV_TUNING
+    if (!memcmp(hdr.magic, "AXLINE01", 8)) { fclose(fin); return ax_cli_lm_decompress(in_path, out_path, threads); }
+#endif
     if (memcmp(hdr.magic,"ACEPX2\0\0",8)!=0) { fprintf(stderr,"Bad magic\n"); return 1; }
     // Версия писалась с первого дня и не проверялась ни разу. Архив, созданный
     // более новым кодером, старый декодер читал как валидный и выдавал мусор:

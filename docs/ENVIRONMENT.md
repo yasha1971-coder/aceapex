@@ -32,6 +32,8 @@ nothing: the defaults below apply, the archive bytes and the threads depend only
 | `AX_SCHED_COST` | unset (0) | CPU tile decode: 1 = thread runs of equal estimated cost, 2 = LPT (T2: within noise / 3-8 % slower) |
 | `AX_COST_CMD` | 4 | weight of a command byte against a literal byte in `AX_SCHED_COST` |
 | `AX_REFSEG` | unset (0) | `scripts/refseg.cpp` only: reference segments between assemblies (prototype, own container) |
+| `AX_LINEMODEL` | unset (0) | experiment: FASTA line ends out before LZ, container AXLINE01 read only by tuning builds (results/linemodel-2026-10-02.log) |
+| `AX_LINEMODEL_VERIFY` | unset (0) | AXLINE01 decode: check the XXH3 of the whole original (the CLI always checks) |
 
 ## Decoder knobs (2.3) — only in builds with ACEAPEX_ENV_TUNING
 
