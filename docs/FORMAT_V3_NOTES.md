@@ -13,6 +13,8 @@ implemented in the format; the prototypes are tuning-build tools with their own 
    dependency order on the GPU.
 4. **R2 match with substitutions** - +1.2..3 % by a model only; worth it mainly together with R1 (SNPs against a
    reference end every exact match).
+R5 (hash per block, +0.18-0.20 % at 16 KiB blocks) can ride with R3: it makes every block self-checking (regions,
+repair: 1000 of 1000 single flips located and repaired).
 R4 (literal chunk cap) needed no version: the 2.2.2 decoders read such archives; lifted in main 02.10 (2.3).
 
 ## R1. Reference blocks (pangenome)
@@ -61,6 +63,30 @@ by the model, ~1.2 / 1.7 % after calibrating the model's exact matches against t
 
 **GPU.** The block decoder applies a token's edits after its copy: n scattered byte stores per token, the edit stream
 is one more stream in the plan (its chunks decoded like the token streams).
+
+## R5. Hash per block
+
+**What.** XXH3 of every decoded block (8 B, or 4 B truncated) next to the block table; today only the whole output has
+one. Measured as a research sidecar (`research/selfheal.cpp --sidecar`), not in the format.
+
+**Bits.** Open profile, 16 KiB blocks: chr1 15 499 blocks x 8 B = 123 992 B (+0.20 % of 63 091 473), T2T 192 643 x 8 B =
+1 541 144 B (+0.18 % of 853 265 321); 4 B: half (+0.10 / +0.09 %). Default profile, 1 MiB blocks: chr1 243 x 8 = 1 944 B.
+
+**What it buys (I2, `research/results-2026-10-02.md`, the 16 MiB chr1 slice of T-H4, 64 KiB token chunks):**
+
+| case | without block hashes | with block hashes |
+|---|---|---|
+| 1 flip, 1000 copies: repaired | 990 (10 have no locator: bytes stored raw, only the whole-output hash fails) | 1000 |
+| 3 flips, 100 copies: repaired | 84 | 94 |
+| probes per copy (1 flip) | 72 142 | 73 018 (the 10 more copies searched; not fewer per copy) |
+| what judges a probe | XXH3 of the whole 16 MiB output | XXH3 of the blocks the probe touched |
+
+A region read can check its blocks (today a region has no check at all, ROADMAP item 9), and a decoder can name a corrupt
+block instead of a corrupt file. The GPU path of the repair: probes batched 4096 per launch, 17.5 launches per copy;
+at the H100 decode rate of open chunks (47 212 in 19.06 ms) about 29 ms per repaired copy against 1.3 s on one CPU core.
+
+**Compatibility.** A table field or a section after the streams with a flag: version 3, or ACEPX2 with a feature bit
+older decoders ignore (they read the streams by the sizes in the header). Access by coordinate unchanged.
 
 ## Measured alongside (smaller changes, same version bump)
 
