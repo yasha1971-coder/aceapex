@@ -138,7 +138,7 @@ static inline int axr_decode_scalar(const uint8_t* src, size_t sz, uint8_t* out,
 #ifdef AXR_SIMD
 /* lane i -> rank of i among the set bits of an 8-bit mask (the words a vector takes, in lane order); a constant
  * table so that C and C++ share it without a static constructor */
-static const uint8_t AXR_PERM[256][8] = {
+static const uint32_t AXR_PERM[256][8] = {
     {0,0,0,0,0,0,0,0},{0,0,0,0,0,0,0,0},{0,0,0,0,0,0,0,0},{0,1,0,0,0,0,0,0},{0,0,0,0,0,0,0,0},{0,0,1,0,0,0,0,0},{0,0,1,0,0,0,0,0},{0,1,2,0,0,0,0,0},
     {0,0,0,0,0,0,0,0},{0,0,0,1,0,0,0,0},{0,0,0,1,0,0,0,0},{0,1,0,2,0,0,0,0},{0,0,0,1,0,0,0,0},{0,0,1,2,0,0,0,0},{0,0,1,2,0,0,0,0},{0,1,2,3,0,0,0,0},
     {0,0,0,0,0,0,0,0},{0,0,0,0,1,0,0,0},{0,0,0,0,1,0,0,0},{0,1,0,0,2,0,0,0},{0,0,0,0,1,0,0,0},{0,0,1,0,2,0,0,0},{0,0,1,0,2,0,0,0},{0,1,2,0,3,0,0,0},
@@ -227,7 +227,7 @@ __attribute__((target("avx2,popcnt"))) static int axr_decode_avx2(const uint8_t*
                 __m128i w8;
                 if (W - wi >= 8) w8 = _mm_loadu_si128((const __m128i*)(wp + 2 * (size_t)wi));
                 else { uint16_t tmp[8] = {0}; memcpy(tmp, wp + 2 * (size_t)wi, 2 * (size_t)(W - wi)); w8 = _mm_loadu_si128((const __m128i*)tmp); }
-                const __m256i wv = _mm256_permutevar8x32_epi32(_mm256_cvtepu16_epi32(w8), _mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i*)AXR_PERM[m])));
+                const __m256i wv = _mm256_permutevar8x32_epi32(_mm256_cvtepu16_epi32(w8), _mm256_loadu_si256((const __m256i*)AXR_PERM[m]));
                 nx = _mm256_blendv_epi8(nx, _mm256_or_si256(_mm256_slli_epi32(nx, 16), wv), need);
                 wi += k;
             }
