@@ -1,0 +1,25 @@
+# excerpt of MyDrive/aceapex_logs/loader_reality_2026-10-03.txt (significant lines as sent by the user)
+# loader_reality 2026-10-03T14:03:17Z | NVIDIA RTX PRO 6000 Blackwell Server Edition | 95.0 GiB | torch 2.11.0+cu130 | CUDA 13.0
+# archive t2t.open.aet 853265321 B, FASTA t2t.fa 3156259565 B; window 8192 tokens (1 token = 1 byte); 10 timed steps after 3 warm-up
+## 1. model
+| batch | params, M | checkpointing | step, ms | tokens/s | peak VRAM, GiB |
+| 8 | 98.4 | no | 319.4 | 205,176 | 24.13 |
+| 32 | 98.4 | no | 1215.0 | 215,764 | 92.03 |
+## 2. window sources
+(a) raw bytes resident: 2.94 GiB; (b) archive resident: 0.79 GiB + temp 4.42 GiB (batch 32), host plan 0.02 s
+(a) == (b) byte for byte: 20 of 20 batches of 32 windows
+| 8 | (a) raw in VRAM | 320.0 | 0.059 | 0.02 % | 204,770 |
+| 8 | (b) aceapex in VRAM | 320.8 | 0.655 | 0.20 % | 204,315 |
+| 8 | (c) pyfaidx 2w | 320.2 | 0.070 | 0.02 % | 204,676 |
+| 8 | (c) pyfaidx 4w | 320.4 | 0.064 | 0.02 % | 204,550 |
+| 8 | (c) pyfaidx 8w | 320.5 | 0.059 | 0.02 % | 204,477 |
+| 32 | (a) raw in VRAM | 1531.7 | 0.112 | 0.01 % | 171,149 |
+| 32 | (b) aceapex in VRAM | 1534.1 | 0.821 | 0.05 % | 170,877 |
+| 32 | (c) pyfaidx 2w | 1534.4 | 0.134 | 0.01 % | 170,844 |
+| 32 | (c) pyfaidx 4w | 1533.0 | 0.121 | 0.01 % | 170,999 |
+| 32 | (c) pyfaidx 8w | 1533.9 | 0.124 | 0.01 % | 170,898 |
+## 3. capacity (HG00438.1/.2 open): per assembly FASTA 3.068 GB, 2-bit 0.767 GB, ACEAPEX 0.776 GB
+| 80 GiB | 8 | 24.13 | 55.87 | raw 19 | 2-bit 78 | ACEAPEX 71 |
+| 80 GiB | 32 | 92.03 | -12.03 | -5 | -17 | -23 |
+| 96 GiB | 8 | 24.13 | 71.87 | 25 | 100 | 93 |
+| 96 GiB | 32 | 92.03 | 3.97 | 1 | 5 | -1 |
