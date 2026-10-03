@@ -24,7 +24,9 @@
 #define RR_HD
 #endif
 
-#define RR_BS 16384u
+#ifndef RR_BS
+#define RR_BS 16384u                                          // block (and entropy unit) size; -DRR_BS=... for the S4 model
+#endif
 #define RR_MINL 12u
 #define RR_MAXOPS 4096u
 
