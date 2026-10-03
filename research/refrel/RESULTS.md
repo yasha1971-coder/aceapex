@@ -87,8 +87,32 @@ Profile before the copy fix: 40 % in byte-wise op execution; memcpy + a compleme
 2.30 GB/s on 1 thread. Tried: 4 KiB blocks for the two streams - 255 windows/s (regions decode far more; to be
 understood separately, not pursued here).
 
-GPU (refrel kernel on the card, ncu L2 hit rate, curves on the same card): `run_colab.sh`, not run yet - section 3b
-is filled from `MyDrive/aceapex_logs/refrel_<date>.txt`.
+### 3b. GPU (Colab, RTX PRO 6000 Blackwell Server Edition, 95.0 GiB; commit 6ea4fff)
+
+`research/refrel/run_colab.sh`, compiled and run on the first attempt; excerpt of the log in
+`logs/colab-blackwell-2026-10-03-excerpt.txt`, plot `curves_gpu.png`. HG00438.1; T2T resident decoded (3.12 GB); refrel
+archives 16.97 + 1.41 MB + block spans 1.48 MB; open archive 775.02 MB. 10 batches per W back to back; 64 windows of
+the last batch per W compared with the FASTA - all ok. On the VM (48 threads): T2T index 4.0 s, parse 0.65-0.69 s per
+assembly, refrel full decode 3.6 s (1 thread); token and literal archive sizes equal to ace-core's, meta.zst
+1.5-18.0 KB larger (another libzstd).
+
+| W, bases | windows per batch | refrel windows/s | refrel GB/s | open windows/s | open GB/s | refrel / open | host us per batch (refrel) |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 256 | 65 536 | 4 182 820 | 1.071 | 5 721 709 | 1.465 | 0.73 | 568.8 |
+| 1 Ki | 65 536 | 4 073 932 | 4.172 | 5 646 117 | 5.782 | 0.72 | 578.8 |
+| 4 Ki | 65 536 | 3 495 918 | 14.319 | 5 335 537 | 21.854 | 0.66 | 612.3 |
+| 16 Ki | 32 768 | 2 179 053 | 35.702 | 3 171 030 | 51.954 | 0.69 | 415.9 |
+| 64 Ki | 8 192 | 820 377 | 53.764 | 1 326 425 | 86.929 | 0.62 | 210.1 |
+| 256 Ki | 2 048 | 234 972 | 61.597 | 425 642 | 111.580 | 0.55 | 161.5 |
+| 1 Mi | 512 | 61 962 | 64.972 | 98 965 | 103.772 | 0.63 | 149.4 |
+
+Last column (6th field of an `RGWIN refrel` line after the kind): host time per batch in microseconds - the selection
+done on the CPU for refrel (blocks of each window, token / literal spans, the list of (window, block) pairs); open does
+its selection on the card. It falls with W because a batch holds fewer windows (65 536 -> 512).
+
+refrel on the card is 0.62-0.73 of open in windows/s at every W (open = FASTA bytes through the library's windows
+call; refrel = bases, two windows calls for the streams plus the copy kernel). Peak 65.0 GB/s (refrel, W = 1 MiB)
+against 111.6 GB/s (open, W = 256 KiB). Not in the excerpt: the ncu metrics (L2 hit rate) - section left open.
 
 ## 4. Capacity on one card (arithmetic on measured sizes; GPU check in `run_colab.sh capacity`)
 
@@ -101,6 +125,17 @@ of the four). 2 GiB kept for decode buffers in every column; the other columns n
 | 96 GiB | 3.12 GB | 97.81 GB | 4 911 | 131 | 134 | 33 |
 
 The HPRC year-1 release (47 samples, 94 haplotype assemblies) would take ~1.9 GB beside the reference.
+
+**Measured on the card** (Blackwell, `refrel_gpu capacity`): the four assemblies take 19.86 / 19.59 / 19.41 / 19.26 MB
+(archives + block spans), mean 19.532 MB; reference 3.117 GB; free 94.43 -> 91.52 -> 91.44 GiB. Rows of the tool
+(cap x GiB - reference - 2 GiB, divided by the mean): **4 128** assemblies on 80 GiB, **5 008** on 96 GiB.
+
+**Beside a model** (loader_reality, same card: ~98.4 M parameters, bf16, context 8192, batch 8, peak 24.13 GiB ->
+55.87 GiB left on an 80 GiB card): (55.87 GiB - 3.117 GB reference) / 19.532 MB per assembly
+= (55.87 - 2.903) GiB / 0.01819 GiB = **2 912** assemblies (2 802 if 2 GiB more are kept for window decoding).
+The formula as sent, (55.87 - 3.117 x 0.931) / 0.0195, gives 2 716: it divides GiB by the per-assembly size in GB
+(0.0195 GB = 0.0182 GiB). Same row from loader_reality: open 71, 2 bits 78, raw FASTA 19 assemblies. At batch 32
+(peak 92.03 GiB) nothing fits on 80 GiB.
 
 ## 5. Literature (checked references)
 
