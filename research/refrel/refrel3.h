@@ -103,14 +103,18 @@ RR_HD static inline int r3_refbase(const uint8_t* ref, uint64_t ref_n, R3Diag g,
     if (q < 0 || (uint64_t)q >= ref_n) return 4;
     const uint8_t b = g.dir ? rr_comp(ref[q]) : ref[q]; const int k = r3_b2(b); return k < 4 ? k : 4;
 }
-RR_HD static inline int r3_decode_block(const uint8_t* src, uint32_t n, const R3Tab* T, const uint8_t* ref, uint64_t ref_n, uint32_t blen,
-                                        R3Diag start, RrOp* ops, uint32_t maxops, uint8_t* lit, uint32_t litcap) {
+// The block decoder, streaming: literals go to sink.lit(o, li, byte) as they are decoded, every op (kind 0 literal run,
+// 1 reference, 2 self, 3 reverse complement) to sink.op(kind, src, dst, len) in order; a sink returns false to stop
+// (capacity). Returns the op count or -1. r3_decode_block (CPU and the classic kernel) is the array sink; the queue kernel
+// writes literals into the block buffer and hands copies to the other lanes as they come.
+template <class Sink>
+RR_HD static inline int r3_decode_stream(const uint8_t* src, uint32_t n, const R3Tab* T, const uint8_t* ref, uint64_t ref_n, uint32_t blen, R3Diag start, Sink& sk) {
     R3Dec d; r3_dinit(&d, src, n); if (d.bad) return -1;
     R3Diag cache[4]; int nc = 1; cache[0] = start; int prevk = -1; uint32_t o = 0, k = 0, li = 0;
     const uint8_t B[6] = {'A', 'C', 'G', 'T', 'N', 0};
     while (o < blen) {
         const uint64_t ll = r3_dval(&d, T, R3_LL + r3_kclass(prevk));
-        if (d.bad || ll > blen - o || ll > litcap - li) return -1;
+        if (d.bad || ll > blen - o) return -1;
         if (ll) {
             uint32_t p1 = 16, p2 = 16;
             for (uint32_t j = 0; j < ll; j++) {
@@ -118,11 +122,11 @@ RR_HD static inline int r3_decode_block(const uint8_t* src, uint32_t n, const R3
                 if (ll <= 8) c = R3_LITR + r3_refbase(ref, ref_n, cache[0], o + j) * 2 + (j == 0 ? 1 : 0);
                 else c = R3_LIT2 + (p1 == 16 ? 16 : (int)(p2 == 16 ? p1 : p2 * 4 + p1) % 16);
                 const uint32_t s = r3_dsym(&d, T, c);
-                lit[li + j] = s < 5 ? B[s] : (uint8_t)r3_draw(&d, 8);
+                if (!sk.lit(o + j, li + j, s < 5 ? B[s] : (uint8_t)r3_draw(&d, 8))) return -1;
                 p2 = p1; p1 = s < 4 ? s : 0;
             }
-            if (k >= maxops) return -1;
-            ops[k].kind = 0; ops[k].src = li; ops[k].dst = o; ops[k].len = (uint32_t)ll; k++; li += (uint32_t)ll; o += (uint32_t)ll;
+            if (!sk.op(0, li, o, (uint32_t)ll)) return -1;
+            k++; li += (uint32_t)ll; o += (uint32_t)ll;
         }
         if (o == blen) break;
         const int kind = (int)r3_dsym(&d, T, R3_KIND + r3_llc(ll) * 4 + r3_kclass(prevk));
@@ -134,16 +138,26 @@ RR_HD static inline int r3_decode_block(const uint8_t* src, uint32_t n, const R3
         else if (kind == K_FLIP) { ki = (int)r3_dsym(&d, T, R3_FLIPK); const uint64_t z = r3_dval(&d, T, R3_FLIPD); dd = (int64_t)(z >> 1) ^ -(int64_t)(z & 1); if (ki >= nc) return -1; }
         else return -1;
         const uint64_t L = r3_dval(&d, T, R3_LEN + kind) + RR_MINL;
-        if (d.bad || L > blen - o || k >= maxops) return -1;
-        if (kind == K_SELF) { if (dist == 0 || dist > o) return -1; ops[k].kind = 2; ops[k].src = o - dist; }
+        if (d.bad || L > blen - o) return -1;
+        uint32_t okind; uint64_t osrc;
+        if (kind == K_SELF) { if (dist == 0 || dist > o) return -1; okind = 2; osrc = o - dist; }
         else {
             if (kind == K_FLIP) { const R3Diag g = cache[ki]; dir = g.dir ^ 1; const int64_t e = r3_locus(g, o) + dd; if (e < 0) return -1; p = (uint64_t)e; }
             else if (kind != K_ABS) { const R3Diag g = cache[kind == K_REP ? ki : 0]; dir = g.dir; const int64_t e = r3_exp(g, o, L) + dd; if (e < 0) return -1; p = (uint64_t)e; }
             if (p > ref_n || L > ref_n - p) return -1;
-            ops[k].kind = dir ? 3 : 1; ops[k].src = p; r3_push(cache, &nc, r3_diag(dir, p, o, L));
+            okind = dir ? 3 : 1; osrc = p; r3_push(cache, &nc, r3_diag(dir, p, o, L));
         }
-        ops[k].dst = o; ops[k].len = (uint32_t)L; k++; o += (uint32_t)L; prevk = kind;
+        if (!sk.op(okind, osrc, o, (uint32_t)L)) return -1;
+        k++; o += (uint32_t)L; prevk = kind;
     }
     if (d.x != R3_L || d.p != d.e) return -1;                             // the encoder starts from L: all used
     return (int)k;
+}
+struct R3ArraySink { RrOp* ops; uint32_t maxops, k; uint8_t* lbuf; uint32_t litcap;
+    RR_HD bool lit(uint32_t, uint32_t li, uint8_t b) { if (li >= litcap) return false; lbuf[li] = b; return true; }
+    RR_HD bool op(uint32_t kind, uint64_t src, uint32_t dst, uint32_t len) { if (k >= maxops) return false; ops[k].kind = kind; ops[k].src = src; ops[k].dst = dst; ops[k].len = len; k++; return true; } };
+RR_HD static inline int r3_decode_block(const uint8_t* src, uint32_t n, const R3Tab* T, const uint8_t* ref, uint64_t ref_n, uint32_t blen,
+                                        R3Diag start, RrOp* ops, uint32_t maxops, uint8_t* lit, uint32_t litcap) {
+    R3ArraySink sk; sk.ops = ops; sk.maxops = maxops; sk.k = 0; sk.lbuf = lit; sk.litcap = litcap;
+    return r3_decode_stream(src, n, T, ref, ref_n, blen, start, sk);
 }
