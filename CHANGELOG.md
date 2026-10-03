@@ -46,6 +46,9 @@ Version macros are bumped at tag time, not in this draft.
   first chunk's body found by a straight sum, only the region's chunks visited); `aceapex faidx` copies bases in runs.
   T2T 5000-base regions, 1 thread, p50: in process 92 -> 50 us (htslib `faidx_fetch_seq64` 102-104 us), `faidx -r`
   119 -> 71 us per region (samtools -r 103-108 us). Decoder change only (`results/faidx-2026-10-03.log`).
+- C99 decoder and Python reader: rANS token chunks through the AVX2 decoder (`ax_rans.h` builds its SIMD paths in C
+  too) and the region-table change above; T2T region p50 C99 one-shot 123 -> 49 us, handle 104 -> 42 us, Python
+  111 -> 50 us; C99 full decode chr1 open 1 thread 0.313 -> 0.119 s (`results/region-c99-2026-10-03.log`).
 - **Literal chunk cap lifted** (65 535 -> 2^30 chunks): a DNA input above ~4 GiB of literals keeps the chunked layout
   and the DNA transform - HPRC x 3 in one file 2 705 974 278 -> 2 140 557 191 B (ratio 3.36 -> 4.24) - and streams.
   Archive bytes change only for such inputs; the 2.2.2 C++ and C99 decoders read them (`results/litcap-2026-10-02.log`).
