@@ -18,26 +18,34 @@
 #include "refrel_format.h"
 
 // ---------------------------------------------------------------- contexts and buckets
-enum { R3_LL = 0, R3_LITR = 4, R3_LIT2 = 14, R3_KIND = 31, R3_DELTA = 47, R3_REPK = 49, R3_REPD = 50, R3_DIR = 51, R3_SELF = 52, R3_LEN = 53, R3_NCTX = 58 };
-enum { K_CONT = 0, K_DELTA = 1, K_REP = 2, K_ABS = 3, K_SELF = 4 };
-#define R3_AB 96                                       // bucket alphabet: 16 small values + 4 per octave
+enum { R3_LL = 0, R3_LITR = 4, R3_LIT2 = 14, R3_KIND = 31, R3_DELTA = 47, R3_REPK = 49, R3_REPD = 50, R3_DIR = 51, R3_SELF = 52, R3_LEN = 53, R3_FLIPK = 59, R3_FLIPD = 60, R3_NCTX = 61 };
+// FLIP: the other strand at the locus a cached diagonal is at (inversions), position = locus + delta
+enum { K_CONT = 0, K_DELTA = 1, K_REP = 2, K_ABS = 3, K_SELF = 4, K_FLIP = 5 };
+#define R3_DLIM (1ll << 24)                                   // delta / rep / flip range; beyond it ABS
+#define R3_AB 104                                      // bucket alphabet: 16 small values + 4 per octave, values < 2^26
 static const int R3_ALPHA[R3_NCTX] = {
     R3_AB, R3_AB, R3_AB, R3_AB,                                  // LL x prevk
     6, 6, 6, 6, 6, 6, 6, 6, 6, 6,                    // LITR (ref base 0..4 x first)
     6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, // LIT2 (16 order-2 + run start)
-    5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,  // KIND (llc x prevk)
+    6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,  // KIND (llc x prevk)
     R3_AB, R3_AB,                                    // DELTA (ll == 0, else)
     3,                                               // REPK
     R3_AB,                                           // REP delta
     2,                                               // DIR
     R3_AB,                                           // SELF distance
-    R3_AB, R3_AB, R3_AB, R3_AB, R3_AB };             // LEN x kind
+    R3_AB, R3_AB, R3_AB, R3_AB, R3_AB, R3_AB,        // LEN x kind
+    4,                                               // FLIP: which cached diagonal
+    R3_AB };                                         // FLIP delta
 #define R3_PB 12u
 #define R3_M (1u << R3_PB)
 
 RR_HD static inline uint32_t r3_bucket(uint64_t v, uint32_t* nb, uint64_t* extra) {
     if (v < 16) { *nb = 0; *extra = 0; return (uint32_t)v; }
+#ifdef __CUDA_ARCH__
+    uint32_t e = 63 - __clzll((long long)v);
+#else
     uint32_t e = 63 - __builtin_clzll(v);                                 // >= 4; the two bits under the top one are in the symbol
+#endif
     *nb = e - 2; *extra = v & ((1ull << (e - 2)) - 1);
     return 16 + (e - 4) * 4 + (uint32_t)((v >> (e - 2)) & 3);
 }
@@ -48,7 +56,7 @@ RR_HD static inline uint64_t r3_unbucket(uint32_t s, uint64_t extra) {
 }
 RR_HD static inline uint32_t r3_nbits(uint32_t s) { return s < 16 ? 0 : (s - 16) / 4 + 2; }
 RR_HD static inline int r3_llc(uint64_t ll) { return ll == 0 ? 0 : ll == 1 ? 1 : ll <= 8 ? 2 : 3; }
-RR_HD static inline int r3_kclass(int k) { return k < 0 ? 0 : k == K_CONT ? 1 : (k == K_DELTA || k == K_REP) ? 2 : 3; }
+RR_HD static inline int r3_kclass(int k) { return k < 0 ? 0 : k == K_CONT ? 1 : (k == K_DELTA || k == K_REP || k == K_FLIP) ? 2 : 3; }
 RR_HD static inline int r3_b2(uint8_t c) { switch (c) { case 'A': return 0; case 'C': return 1; case 'G': return 2; case 'T': return 3; case 'N': return 4; default: return 5; } }
 
 // ---------------------------------------------------------------- static tables (decoder side)
@@ -82,6 +90,7 @@ RR_HD static inline uint64_t r3_dval(R3Dec* d, const R3Tab* T, int c) { const ui
 // ---------------------------------------------------------------- block decode -> ops (+ literal bytes)
 struct R3Diag { uint64_t c; uint32_t dir; };                                // c as two's complement (may be "negative")
 RR_HD static inline int64_t r3_exp(R3Diag g, uint32_t o, uint64_t L) { return g.dir ? (int64_t)g.c - (int64_t)o - (int64_t)L + 1 : (int64_t)g.c + (int64_t)o; }
+RR_HD static inline int64_t r3_locus(R3Diag g, uint32_t o) { return g.dir ? (int64_t)g.c - (int64_t)o : (int64_t)g.c + (int64_t)o; }
 RR_HD static inline R3Diag r3_diag(uint32_t dir, uint64_t p, uint32_t o, uint64_t L) { R3Diag g; g.dir = dir; g.c = dir ? (uint64_t)((int64_t)p + (int64_t)L - 1 + (int64_t)o) : (uint64_t)((int64_t)p - (int64_t)o); return g; }
 RR_HD static inline void r3_push(R3Diag* cache, int* nc, R3Diag g) {
     int j = 0; while (j < *nc && !(cache[j].c == g.c && cache[j].dir == g.dir)) j++;
@@ -122,12 +131,14 @@ RR_HD static inline int r3_decode_block(const uint8_t* src, uint32_t n, const R3
         else if (kind == K_REP) { ki = 1 + (int)r3_dsym(&d, T, R3_REPK); const uint64_t z = r3_dval(&d, T, R3_REPD); dd = (int64_t)(z >> 1) ^ -(int64_t)(z & 1); if (ki >= nc) return -1; }
         else if (kind == K_ABS) { dir = r3_dsym(&d, T, R3_DIR); p = r3_draw(&d, 32); }
         else if (kind == K_SELF) dist = r3_dval(&d, T, R3_SELF);
+        else if (kind == K_FLIP) { ki = (int)r3_dsym(&d, T, R3_FLIPK); const uint64_t z = r3_dval(&d, T, R3_FLIPD); dd = (int64_t)(z >> 1) ^ -(int64_t)(z & 1); if (ki >= nc) return -1; }
         else return -1;
         const uint64_t L = r3_dval(&d, T, R3_LEN + kind) + RR_MINL;
         if (d.bad || L > blen - o || k >= maxops) return -1;
         if (kind == K_SELF) { if (dist == 0 || dist > o) return -1; ops[k].kind = 2; ops[k].src = o - dist; }
         else {
-            if (kind != K_ABS) { const R3Diag g = cache[kind == K_REP ? ki : 0]; dir = g.dir; const int64_t e = r3_exp(g, o, L) + dd; if (e < 0) return -1; p = (uint64_t)e; }
+            if (kind == K_FLIP) { const R3Diag g = cache[ki]; dir = g.dir ^ 1; const int64_t e = r3_locus(g, o) + dd; if (e < 0) return -1; p = (uint64_t)e; }
+            else if (kind != K_ABS) { const R3Diag g = cache[kind == K_REP ? ki : 0]; dir = g.dir; const int64_t e = r3_exp(g, o, L) + dd; if (e < 0) return -1; p = (uint64_t)e; }
             if (p > ref_n || L > ref_n - p) return -1;
             ops[k].kind = dir ? 3 : 1; ops[k].src = p; r3_push(cache, &nc, r3_diag(dir, p, o, L));
         }

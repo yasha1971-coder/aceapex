@@ -22,10 +22,11 @@ static R3Diag parse_block(const uint8_t* A, uint64_t bs, uint64_t be, const std:
     // approximate cost in bytes of a reference copy (dir, p, L) at block offset o (the coder's kinds)
     auto rcost = [&](uint32_t o, uint32_t dir, uint64_t p, uint64_t L) -> double {
         double best = 4.6;                                                   // ABS: kind + strand + 32 bits
-        for (int k = 0; k < S.nc; k++) { if (S.cache[k].dir != dir) continue; const int64_t d = (int64_t)p - r3_exp(S.cache[k], o, L);
-            if (k == 0 && d == 0) { best = std::min(best, 0.35); continue; }
-            const uint64_t a = (uint64_t)std::llabs(d); if (a >= (1u << 20)) continue;
-            const double bits = 2.0 * (a ? 64 - __builtin_clzll(a) : 0) + 2.0 + (k ? 2.0 : 0.0); best = std::min(best, bits / 8.0); }
+        for (int k = 0; k < S.nc; k++) { int64_t d;
+            if (S.cache[k].dir == dir) { d = (int64_t)p - r3_exp(S.cache[k], o, L); if (k == 0 && d == 0) { best = std::min(best, 0.35); continue; } }
+            else d = (int64_t)p - r3_locus(S.cache[k], o);
+            const uint64_t a = (uint64_t)std::llabs(d); if ((int64_t)a >= R3_DLIM) continue;
+            const double bits = (a ? 64 - __builtin_clzll(a) : 0) + 6.0 + (k || S.cache[k].dir != dir ? 2.0 : 0.0); best = std::min(best, bits / 8.0); }
         return best + 1.0;                                                   // + length
     };
     while (i < be) {
@@ -61,6 +62,7 @@ static R3Diag parse_block(const uint8_t* A, uint64_t bs, uint64_t be, const std:
 
 // ---------------------------------------------------------------- events -> symbols (the decoder's order and contexts)
 static void put_val(std::vector<Sym>& out, int ctx, uint64_t v) { uint32_t nb; uint64_t ex; const uint32_t s = r3_bucket(v, &nb, &ex); out.push_back({(uint16_t)ctx, (uint16_t)s, 0, 0}); if (nb) out.push_back({0xFFFF, 0, nb, ex}); }
+static uint64_t g_absstat[5][65];
 static void symbols(const uint8_t* A, uint64_t bs, uint32_t blen, const std::vector<Ev>& ev, const std::vector<uint8_t>& R, R3Diag start, std::vector<Sym>& out) {
     R3Diag cache[4]; int nc = 1; cache[0] = start; int prevk = -1; uint32_t o = 0; size_t e = 0;
     while (o < blen) {
@@ -76,15 +78,23 @@ static void symbols(const uint8_t* A, uint64_t bs, uint32_t blen, const std::vec
         const Ev& v = ev[e++]; int kind; int ki = 0; uint64_t z = 0;
         if (v.kind == 1) kind = K_SELF;
         else { kind = K_ABS; double best = 1e9;
-            for (int k = 0; k < nc; k++) { if (cache[k].dir != v.dir) continue; const int64_t d = (int64_t)v.p - r3_exp(cache[k], o, v.L);
-                const uint64_t a = (uint64_t)std::llabs(d); if (a >= (1u << 20)) continue;
-                const double cost = (k == 0 && d == 0) ? 0 : 2.0 * (a ? 64 - __builtin_clzll(a) : 0) + 2.0 + (k ? 2.0 : 0.0);
-                if (cost < best) { best = cost; kind = k == 0 ? (d == 0 ? K_CONT : K_DELTA) : K_REP; ki = k; z = zz(d); } } }
+            for (int k = 0; k < nc; k++) { const bool same = cache[k].dir == v.dir;
+                const int64_t d = same ? (int64_t)v.p - r3_exp(cache[k], o, v.L) : (int64_t)v.p - r3_locus(cache[k], o);
+                const uint64_t a = (uint64_t)std::llabs(d); if ((int64_t)a >= R3_DLIM) continue;
+                const double cost = (same && k == 0 && d == 0) ? 0 : (a ? 64 - __builtin_clzll(a) : 0) + 6.0 + (k || !same ? 2.0 : 0.0);
+                if (cost < best) { best = cost; kind = !same ? K_FLIP : k == 0 ? (d == 0 ? K_CONT : K_DELTA) : K_REP; ki = k; z = zz(d); } } }
+        if (kind == K_ABS && getenv("RR3_ABSSTAT")) {                   // where do absolute jumps land, relative to the cached diagonals
+            uint64_t best = ~0ull; int how = 0;
+            for (int k = 0; k < nc; k++) { const int64_t q = cache[k].dir ? (int64_t)cache[k].c - (int64_t)o : (int64_t)cache[k].c + (int64_t)o;   // the locus the diagonal is at
+                const uint64_t a1 = (uint64_t)std::llabs((int64_t)v.p - q), a2 = (uint64_t)std::llabs((int64_t)(v.p + v.L) - q); const uint64_t a = std::min(a1, a2);
+                if (a < best) { best = a; how = (cache[k].dir == v.dir ? 1 : 2) + (k ? 2 : 0); } }
+            const int lg = best ? 64 - __builtin_clzll(best) : 0; __atomic_fetch_add(&g_absstat[how][lg], 1, __ATOMIC_RELAXED); }
         out.push_back({(uint16_t)(R3_KIND + r3_llc(ll) * 4 + r3_kclass(prevk)), (uint16_t)kind, 0, 0});
         if (kind == K_DELTA) put_val(out, R3_DELTA + (ll == 0 ? 0 : 1), z);
         else if (kind == K_REP) { out.push_back({R3_REPK, (uint16_t)(ki - 1), 0, 0}); put_val(out, R3_REPD, z); }
         else if (kind == K_ABS) { out.push_back({R3_DIR, (uint16_t)v.dir, 0, 0}); out.push_back({0xFFFF, 0, 32, v.p}); }
         else if (kind == K_SELF) put_val(out, R3_SELF, v.p);
+        else if (kind == K_FLIP) { out.push_back({R3_FLIPK, (uint16_t)ki, 0, 0}); put_val(out, R3_FLIPD, z); }
         put_val(out, R3_LEN + kind, v.L - RR_MINL);
         if (kind != K_SELF) r3_push(cache, &nc, r3_diag(v.dir, v.p, o, v.L));
         o += v.L; prevk = kind;
@@ -146,6 +156,8 @@ static void encode3_one(const std::vector<uint8_t>& R, const Index& I, int T, co
         std::vector<std::vector<Sym>> sy(nb);
         { std::atomic<uint64_t> next{0}; std::vector<std::thread> th; for (int t = 0; t < T; t++) th.emplace_back([&] { for (;;) { const uint64_t b = next.fetch_add(1); if (b >= nb) break;
             symbols(A.data(), b * RR_BS, (uint32_t)std::min<uint64_t>(RR_BS, A.size() - b * RR_BS), ev[b], R, st[b], sy[b]); } }); for (auto& x : th) x.join(); }
+        if (getenv("RR3_ABSSTAT")) { const char* nmw[5] = {"-", "same strand, current", "other strand, current", "same strand, older", "other strand, older"};
+            for (int h = 1; h < 5; h++) { printf("ABSSTAT %s:", nmw[h]); for (int l = 0; l < 65; l++) if (g_absstat[h][l]) printf(" 2^%d:%llu", l, (unsigned long long)g_absstat[h][l]); printf("\n"); } memset(g_absstat, 0, sizeof g_absstat); }
         static uint64_t cnt[R3_NCTX][R3_AB]; memset(cnt, 0, sizeof cnt); uint64_t raw_bits = 0, nsym = 0;
         for (auto& v : sy) for (auto& s : v) { if (s.ctx == 0xFFFF) raw_bits += s.nb; else { cnt[s.ctx][s.s]++; nsym++; } }
         static R3Tab TB; memset(&TB, 0, sizeof TB); for (int c = 0; c < R3_NCTX; c++) norm_table(cnt[c], R3_ALPHA[c], TB.freq[c]); build_tab(TB);
@@ -168,12 +180,12 @@ static void encode3_one(const std::vector<uint8_t>& R, const Index& I, int T, co
         const size_t mblk = M.size() - mb0;
         std::vector<uint8_t> Z(ZSTD_compressBound(M.size())); const size_t zn = ZSTD_compress(Z.data(), Z.size(), M.data(), M.size(), 19);
         const std::string nm = dir + "/" + base(fa); spit(nm + ".r3", P.data(), P.size()); spit(nm + ".meta3.zst", Z.data(), zn);
-        uint64_t kinds[5] = {0}, lits = 0; for (auto& v : ev) for (auto& e : v) { (void)e; } for (auto& v : sy) for (auto& s : v) { if (s.ctx >= R3_KIND && s.ctx < R3_KIND + 16) kinds[s.s]++; if (s.ctx >= R3_LITR && s.ctx < R3_KIND) lits++; }
+        uint64_t kinds[6] = {0}, lits = 0; for (auto& v : ev) for (auto& e : v) { (void)e; } for (auto& v : sy) for (auto& s : v) { if (s.ctx >= R3_KIND && s.ctx < R3_KIND + 16) kinds[s.s]++; if (s.ctx >= R3_LITR && s.ctx < R3_KIND) lits++; }
         auto grp = [&](int a0, int a1) { double t = 0; for (int c = a0; c < a1; c++) t += cbits[c]; return t / 8e6; };
-        printf("RR3BUILD\t%s\tparse %.2f s\tcode %.2f s\tblocks %llu\tpayload %zu\tmeta raw %zu (tables %zu, blocks %zu) zst %zu\ttotal %zu\tkinds cont %llu delta %llu rep %llu abs %llu self %llu\tliterals %llu\t"
+        printf("RR3BUILD\t%s\tparse %.2f s\tcode %.2f s\tblocks %llu\tpayload %zu\tmeta raw %zu (tables %zu, blocks %zu) zst %zu\ttotal %zu\tkinds cont %llu delta %llu rep %llu abs %llu self %llu flip %llu\tliterals %llu\t"
                "MB: LL %.2f LIT %.2f KIND %.2f DELTA %.2f REP %.2f DIR %.2f SELF %.2f LEN %.2f raw-bits %.2f\n",
                base(fa).c_str(), s2 - s1, s3 - s2, (unsigned long long)nb, P.size(), M.size(), mtab, mblk, zn, P.size() + zn,
-               (unsigned long long)kinds[0], (unsigned long long)kinds[1], (unsigned long long)kinds[2], (unsigned long long)kinds[3], (unsigned long long)kinds[4], (unsigned long long)lits,
+               (unsigned long long)kinds[0], (unsigned long long)kinds[1], (unsigned long long)kinds[2], (unsigned long long)kinds[3], (unsigned long long)kinds[4], (unsigned long long)kinds[5], (unsigned long long)lits,
                grp(R3_LL, R3_LITR), grp(R3_LITR, R3_KIND), grp(R3_KIND, R3_DELTA), grp(R3_DELTA, R3_REPK), grp(R3_REPK, R3_DIR), grp(R3_DIR, R3_SELF), grp(R3_SELF, R3_LEN), grp(R3_LEN, R3_NCTX), raw_bits / 8e6);
         fflush(stdout);
     }
@@ -259,6 +271,7 @@ static int cmd_windows3(int argc, char** argv) {
     }
     return 0;
 }
+#ifndef RR3_NO_MAIN
 int main(int argc, char** argv) {
     for (int c = 0; c < 256; c++) COMP[c] = rr_comp((uint8_t)c);
     if (argc >= 6 && !strcmp(argv[1], "build")) return cmd_build3(argc, argv);
@@ -268,3 +281,4 @@ int main(int argc, char** argv) {
     fprintf(stderr, "usage: refrel3 build <ref.fa> <dir> <threads> <asm.fa>... | full <ref.fa> <dir/name> <out.fa> | windows <ref.fa> <dir/name> <asm.fa> <threads> [seed]\n");
     return 1;
 }
+#endif
