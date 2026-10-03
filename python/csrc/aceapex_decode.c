@@ -74,7 +74,26 @@ static uint64_t fse_default_chunk(void){
     if(v>=4096){ v&=~(uint64_t)4095; if(v>((uint64_t)16<<20)) v=(uint64_t)16<<20; return v; }
     return 512*1024;
 }
-static int cur_open(Cur* c, const uint8_t* z, size_t zsz, int is_lit){
+/* compressed size of chunk i (the table was checked by cur_open) */
+static size_t cur_csize(const Cur* c, size_t i){
+    uint64_t e=rd64(c->tab+8*i);
+    if(c->kind){ return (size_t)(e&~((uint64_t)1<<63)); }
+    if(e>>63){ uint64_t o=(uint64_t)i*c->chunk, raw=c->chunk; if(o>=c->size) raw=0; else if(o+raw>c->size) raw=c->size-o; return (size_t)raw; }
+    return (size_t)(e&(((uint64_t)1<<48)-1));
+}
+/* compressed offset of chunk i: from the index when there is one, else a straight sum of the sizes before it */
+static size_t cur_coff(const Cur* c, size_t i){
+    if(c->coff) return c->coff[i];
+    uint64_t p=0;
+    if(c->kind){ for(size_t k=0;k<i;k++) p+=rd64(c->tab+8*k)&~((uint64_t)1<<63); return (size_t)p; }   /* vectorised */
+    /* FSE layout: chunks before i are full (raw size = chunk) */
+    for(size_t k=0;k<i;k++){ uint64_t e=rd64(c->tab+8*k); p+=(e>>63)?c->chunk:(e&(((uint64_t)1<<48)-1)); }
+    return (size_t)p;
+}
+/* index = 1: prefix sums of the chunk offsets (a decoder that serves many chunks: full decode, a handle, a range
+ * batch); 0: none, a chunk's offset is summed when it is needed (one region per call reads 1-3 chunks of a table that
+ * has 12 800 entries on T2T - building the index was a fifth of such a call). The table check is the same either way. */
+static int cur_open(Cur* c, const uint8_t* z, size_t zsz, int is_lit, int index){
     memset(c,0,sizeof *c); c->z=z; c->zsz=zsz; for(int k=0;k<4;k++) c->cc[k].idx=(size_t)-1;
     if(zsz<8){ c->size=0; c->nc=0; return ACEAPEX_OK; }   /* empty stream (tiny inputs) */
     uint64_t h=rd64(z);
@@ -90,27 +109,33 @@ static int cur_open(Cur* c, const uint8_t* z, size_t zsz, int is_lit){
         c->chunk=f?f<<12:fse_default_chunk(); c->tab=z+8;
         c->nc=(size_t)((c->size+c->chunk-1)/c->chunk);
     }
-    if((size_t)(c->tab-z)+c->nc*8>zsz) return ACEAPEX_ERR_DATA;
+    if(c->nc>(zsz-(size_t)(c->tab-z))/8) return ACEAPEX_ERR_DATA;
     c->data=c->tab+c->nc*8;
-    c->coff=(size_t*)malloc((c->nc+1)*sizeof(size_t)); if(!c->coff) return ACEAPEX_ERR_MEMORY;
-    size_t p=0;
-    for(size_t i=0;i<c->nc;i++){
-        uint64_t e=rd64(c->tab+8*i); c->coff[i]=p;
-        uint64_t raw=c->chunk; uint64_t o=(uint64_t)i*c->chunk;
-        if(o>=c->size) raw=0; else if(o+raw>c->size) raw=c->size-o;
-        if(c->kind==0){
-            /* bits 48..61 reserved; raw (63) and rANS (62) exclusive */
-            if(((e>>48)&0x3FFF) || ((e>>63) && ((e>>62)&1))){ free(c->coff); c->coff=0; return ACEAPEX_ERR_DATA; }
-            p+= (e>>63) ? (size_t)raw : (size_t)(e&(((uint64_t)1<<48)-1));
-        } else {
-            uint64_t n=e&~((uint64_t)1<<63);
-            if(n>zsz){ free(c->coff); c->coff=0; return ACEAPEX_ERR_DATA; }
-            p+=(size_t)n;
-        }
-        if(p>zsz){ free(c->coff); c->coff=0; return ACEAPEX_ERR_DATA; }
+    const size_t room=zsz-(size_t)(c->data-z);             /* bytes the chunk bodies may use */
+    /* check: every entry well-formed and the sum of the sizes inside the stream. Sizes are checked <= room and
+     * summed in runs of 4096 (4096 x 2^48 < 2^64), each run added to a checked total; a stream of 2^48 bytes or
+     * more takes the entry-by-entry path. Same verdict as summing one by one with a bound after each entry. */
+    if(zsz>=((size_t)1<<48)){
+        size_t p=0;
+        for(size_t i=0;i<c->nc;i++){ uint64_t e=rd64(c->tab+8*i);
+            if(!c->kind && (((e>>48)&0x3FFF) || ((e>>63) && ((e>>62)&1)))) return ACEAPEX_ERR_DATA;
+            size_t n=cur_csize(c,i); if(n>room-p) return ACEAPEX_ERR_DATA; p+=n; }
+    } else {
+        uint64_t sum=0;
+        for(size_t t0=0;t0<c->nc;t0+=4096){ const size_t t1=c->nc-t0<4096?c->nc:t0+4096; uint64_t mx=0, s=0, bad=0;
+            if(c->kind) for(size_t i=t0;i<t1;i++){ uint64_t n=rd64(c->tab+8*i)&~((uint64_t)1<<63); mx=n>mx?n:mx; s+=n; }
+            else for(size_t i=t0;i<t1;i++){ uint64_t e=rd64(c->tab+8*i);
+                /* bits 48..61 reserved; raw (63) and rANS (62) exclusive */
+                bad|=((e>>48)&0x3FFF)|((e>>63)&(e>>62)&1);
+                uint64_t o=(uint64_t)i*c->chunk, raw=o>=c->size?0:(o+c->chunk>c->size?c->size-o:c->chunk);
+                uint64_t n=(e>>63)?raw:(e&(((uint64_t)1<<48)-1)); mx=n>mx?n:mx; s+=n; }
+            if(bad || mx>room || s>room-sum) return ACEAPEX_ERR_DATA;
+            sum+=s; }
     }
-    c->coff[c->nc]=p;
-    if((size_t)(c->data-z)+p>zsz) { free(c->coff); c->coff=0; return ACEAPEX_ERR_DATA; }
+    if(index && c->nc){
+        c->coff=(size_t*)malloc((c->nc+1)*sizeof(size_t)); if(!c->coff) return ACEAPEX_ERR_MEMORY;
+        size_t p=0; for(size_t i=0;i<c->nc;i++){ c->coff[i]=p; p+=cur_csize(c,i); } c->coff[c->nc]=p;
+    }
     return ACEAPEX_OK;
 }
 static void cur_close(Cur* c){ free(c->coff); free(c->win); c->coff=0; c->win=0;
@@ -149,7 +174,7 @@ out:
 /* decode chunk i into dst (raw bytes) */
 static int cur_chunk(Cur* c, size_t i, uint8_t* dst, size_t raw){
     if(!c->dctx) c->dctx=ZSTD_createDCtx();   /* NULL -> fall back to one-shot decompress */
-    uint64_t e=rd64(c->tab+8*i); const uint8_t* p=c->data+c->coff[i]; size_t n=c->coff[i+1]-c->coff[i];
+    uint64_t e=rd64(c->tab+8*i); const uint8_t* p=c->data+cur_coff(c,i); size_t n=cur_csize(c,i);
     if(c->kind==0){ if(e>>63){ memcpy(dst,p,raw); return 1; }
         if((e>>62)&1) return axr_decode(p,n,dst,raw)==0;
         return zdec(c->dctx,dst,raw,p,n); }
@@ -226,13 +251,13 @@ static int decode_block(uint8_t* dst, size_t dsz, const uint8_t* lit, size_t ls,
 
 /* ---- a decoder over the four cursors -------------------------------------------- */
 typedef struct { Arc a; Cur l,o,n,c; } Dec;
-static int dec_open(Dec* d, const void* src, size_t n){
+static int dec_open(Dec* d, const void* src, size_t n, int index){
     int r=open_arc(src,n,&d->a); if(r) return r;
     memset(&d->l,0,sizeof(Cur)); memset(&d->o,0,sizeof(Cur)); memset(&d->n,0,sizeof(Cur)); memset(&d->c,0,sizeof(Cur));
-    if((r=cur_open(&d->l,d->a.zl,(size_t)d->a.zls,1))) return r;
-    if((r=cur_open(&d->o,d->a.zo,(size_t)d->a.zos,0))) return r;
-    if((r=cur_open(&d->n,d->a.zn,(size_t)d->a.zns,0))) return r;
-    if((r=cur_open(&d->c,d->a.zc,(size_t)d->a.zcs,0))) return r;
+    if((r=cur_open(&d->l,d->a.zl,(size_t)d->a.zls,1,index))) return r;
+    if((r=cur_open(&d->o,d->a.zo,(size_t)d->a.zos,0,index))) return r;
+    if((r=cur_open(&d->n,d->a.zn,(size_t)d->a.zns,0,index))) return r;
+    if((r=cur_open(&d->c,d->a.zc,(size_t)d->a.zcs,0,index))) return r;
     return ACEAPEX_OK;
 }
 static void dec_close(Dec* d){ cur_close(&d->l); cur_close(&d->o); cur_close(&d->n); cur_close(&d->c); }
@@ -253,7 +278,7 @@ static int dec_block(Dec* d, size_t b, uint8_t* dst){
 int64_t aceapex_decoded_size(const void* src, size_t n){ Arc a; int r=open_arc(src,n,&a); return r?r:(int64_t)a.orig; }
 
 int64_t aceapex_decompress(const void* src, size_t n, void* dst, size_t cap){
-    Dec d; int r=dec_open(&d,src,n); if(r){ dec_close(&d); return r; }
+    Dec d; int r=dec_open(&d,src,n,1); if(r){ dec_close(&d); return r; }
     if(cap<d.a.orig){ dec_close(&d); return ACEAPEX_ERR_BUFFER; }
     for(size_t b=0;b<d.a.nb && !r;b++) r=dec_block(&d,b,(uint8_t*)dst+(size_t)b*d.a.bs);
     dec_close(&d); return r?r:(int64_t)d.a.orig;
@@ -294,14 +319,14 @@ static int64_t serve(Dec* d, aceapex_range_t* rg, size_t count){
 int64_t aceapex_decompress_region(const void* src, size_t n, void* dst, size_t cap, uint64_t off, uint64_t len){
     if(len==0) return 0;
     if(cap<len) return ACEAPEX_ERR_BUFFER;
-    Dec d; int r=dec_open(&d,src,n); if(r){ dec_close(&d); return r; }
+    Dec d; int r=dec_open(&d,src,n,0); if(r){ dec_close(&d); return r; }   /* one region: no chunk index */
     aceapex_range_t rg={off,len,dst,0}; int64_t k=serve(&d,&rg,1); dec_close(&d);
     if(k<0) return k;
     return rg.written;
 }
 int64_t aceapex_decompress_ranges(const void* src, size_t n, aceapex_range_t* rg, size_t count, int threads){
     (void)threads;
-    Dec d; int r=dec_open(&d,src,n); if(r){ dec_close(&d); return r; }
+    Dec d; int r=dec_open(&d,src,n,count>1); if(r){ dec_close(&d); return r; }
     int64_t k=serve(&d,rg,count); dec_close(&d); return k;
 }
 
@@ -309,7 +334,7 @@ int64_t aceapex_decompress_ranges(const void* src, size_t n, aceapex_range_t* rg
 struct aceapex_dec { Dec d; uint8_t* blk; size_t cur; };
 aceapex_dec_t* aceapex_dec_open(const void* src, size_t n){
     aceapex_dec_t* h=(aceapex_dec_t*)calloc(1,sizeof *h); if(!h) return 0;
-    if(dec_open(&h->d,src,n)){ dec_close(&h->d); free(h); return 0; }
+    if(dec_open(&h->d,src,n,1)){ dec_close(&h->d); free(h); return 0; }
     h->blk=(uint8_t*)malloc((size_t)h->d.a.bs+64); h->cur=(size_t)-1;
     if(!h->blk){ dec_close(&h->d); free(h); return 0; }
     return h;

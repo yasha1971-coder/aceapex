@@ -45,10 +45,10 @@ clean:
 src/aceapex_api.o: src/aceapex_main.cpp src/aceapex.h src/ax_align.h
 
 # Standalone C99 decoder (no C++, no threads): CLI and a shared library for bindings.
-axdec: c/axdec.c c/aceapex_decode.c c/aceapex_decode.h
+axdec: c/axdec.c c/aceapex_decode.c c/aceapex_decode.h c/ax_rans.h c/ax_lit_open.h c/ax_env.h
 	$(CC) -std=c99 -O2 -Wall -DACEAPEX_ENV_TUNING -Ic $(ZSTD_CFLAGS) -o $@ c/axdec.c c/aceapex_decode.c $(ZSTD_LIBS)
 
-libaceapex_decode.so: c/aceapex_decode.c c/aceapex_decode.h
+libaceapex_decode.so: c/aceapex_decode.c c/aceapex_decode.h c/ax_rans.h c/ax_lit_open.h c/ax_env.h
 	$(CC) -std=c99 -O2 -Wall -fPIC -shared -Ic $(ZSTD_CFLAGS) -o $@ c/aceapex_decode.c $(ZSTD_LIBS)
 
 # GPU library (C ABI src/aceapex_gpu.h), shared: libaceapex_gpu.so.1 (SONAME) + libaceapex_gpu.so -> .so.1.
