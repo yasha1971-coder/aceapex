@@ -114,6 +114,50 @@ refrel on the card is 0.62-0.73 of open in windows/s at every W (open = FASTA by
 call; refrel = bases, two windows calls for the streams plus the copy kernel). Peak 65.0 GB/s (refrel, W = 1 MiB)
 against 111.6 GB/s (open, W = 256 KiB). Not in the excerpt: the ncu metrics (L2 hit rate) - section left open.
 
+## 2b. Token model, step A (refrel2.cpp, refrel_v2.h; v1 format and GPU path unchanged)
+
+Ideas 1 and 2 of `PLAN_NEXT.md` on the same four assemblies (`logs/v2-*.log`). **split**: the token fields in six
+streams (heads, literal escapes, lengths - 12, deltas, absolute positions, self distances), each compressed alone by the
+CLI (open profile). **carry**: every block starts from a stored state (reference pointer + strand, delta-coded against
+the previous block's state moved by 16 KiB, in the meta) instead of (0, forward); encoded in two passes (the second
+starts every block where the first pass's previous block ended). The meta of v2 stores spans as LEB128, which alone
+makes it 40-50 KB smaller than v1's.
+
+| variant | HG00438.1 | HG00438.2 | HG00621.1 | HG00621.2 | mean | vs v1 |
+|---|---:|---:|---:|---:|---:|---:|
+| v1 (one stream, no state; v2 meta) | 18 736 061 | 18 463 609 | 18 335 164 | 18 135 876 | 18 417 678 | - |
+| split | 17 681 239 | 17 473 251 | 17 344 063 | 17 146 063 | 17 411 154 | -5.5 % |
+| carry | 17 920 514 | 17 635 576 | 17 557 461 | 17 313 983 | 17 606 884 | -4.4 % |
+| **split + carry** | **16 967 727** | **16 750 515** | **16 664 038** | **16 431 535** | **16 703 454** | **-9.3 %** |
+
+split + carry, HG00438.1, bytes after the CLI: lengths 6 670 291, absolute positions 4 314 612, deltas 1 713 074, heads
+1 656 878, literals 1 384 586, meta 926 202 (spans of seven streams 1.32 MB raw; block states 0.25 MB raw), self
+distances 298 379, escapes 3 705. Carry turns 214 k absolute copies into continuations (1 252 043 -> 1 037 848
+absolute) and doubles the parse (1.7 -> 3.4 s, two passes). Full decode == FASTA for all four (split + carry,
+4.6-4.9 s on 1 thread, `logs/v2-full-2026-10-03.log`).
+
+**CPU windows** (HG00438.1, windows/s, quiet machine after the HPRC download; `logs/v2-windows-cpu-2026-10-03.log`), all == FASTA:
+
+| W | v1, 1 thread | split + carry, 1 thread | ratio | v1, 16 threads | split + carry, 16 threads | ratio |
+|---:|---:|---:|---:|---:|---:|---:|
+| 256 | 10 024 | 2 946 | 0.29 | 74 169 | 24 504 | 0.33 |
+| 1 Ki | 9 809 | 2 988 | 0.30 | 89 868 | 28 302 | 0.31 |
+| 4 Ki | 9 853 | 2 981 | 0.30 | 98 013 | 30 125 | 0.31 |
+| 16 Ki | 9 347 | 2 750 | 0.29 | 92 925 | 27 942 | 0.30 |
+| 64 Ki | 7 963 | 2 423 | 0.30 | 78 880 | 24 123 | 0.31 |
+| 256 Ki | 5 196 | 1 891 | 0.36 | 48 715 | 19 161 | 0.39 |
+| 1 Mi | 2 176 | 1 222 | 0.56 | 16 664 | 11 478 | 0.69 |
+
+The 9.3 % costs 2.5-3.4x in windows/s: a window now makes seven region calls (six token streams + literals) instead of
+two, and each decodes a 64 KiB chunk of its stream. With streams as separate ACEPX2 archives the split does not pay
+for random access; it would need one container in which a block range's pieces of all fields sit together (or
+per-stream chunks far smaller than 64 KiB, which on 03.10 behaved badly, see section 3). Not adopted.
+
+Reading: the fields have different statistics, but the gain is modest; what is left is the **lengths** (4.66 M of them,
+~1.4 B each after rANS) and the **absolute positions** (~4.2 B each). Both are the alignment itself: the distance to
+the next difference and where a jump goes. Idea 3 (edits with a context model) targets exactly these two; AGC's
+13.4 MB per further assembly at N = 4 is below this (16.4-17.0 MB) because it also uses the other assemblies.
+
 ## 4. Capacity on one card (arithmetic on measured sizes; GPU check in `run_colab.sh capacity`)
 
 Per assembly on the card: the two archives (18.2-18.8 MB) + block spans (2 x 4 B per block, 1.5 MB) = 19.91 MB (mean
