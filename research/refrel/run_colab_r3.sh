@@ -11,6 +11,8 @@
 #   curves: per W the speed of light (windows cut from the raw bases resident), the classic kernel (128 threads, decode
 #      then copies) and the queue kernel (one warp: lane 0 decodes, lanes 1..31 copy as ops come), share of the ceiling;
 #      occupancy; queue kernel over windows per batch 1k..256k
+#   D_Q: full decode rate per block size (both kernels, best of 3); window_law.py: windows/s ~ D_Q / (W + Q - 1) against
+#      the measured, and Q* = argmax subject to r(Q) <= r_target (size relative to Q = 16384)
 #   once: S2 D2D memcpy GB/s; S3 classic kernel grid (threads per block) + clock64 decode/copy split; ncu sections of both
 #      kernels (RR_BS 16384 and 4096, W 4 KiB) if ncu runs here
 # Result: MyDrive/aceapex_logs/refrel3_gpu_<date>.txt; any failure: ..._FAILED.txt with the stage, line and command.
@@ -115,7 +117,9 @@ STAGE=report
   echo; echo "## size per assembly (r3 + meta3, bytes) by RR_BS"; for bs in "${BSS[@]}"; do grep -h "^R3SIZE" $W/build_$bs.txt; done
   echo; echo "## S1 correctness"; for bs in "${BSS[@]}"; do echo "RR_BS=$bs:"; grep -E "^S1" $W/s1_$bs.txt; done
   echo; echo "## curves: speed of light / classic / queue, occupancy"; for bs in "${BSS[@]}"; do grep -hE "^OCC|^CURVE" $W/curves_$bs.txt; done
+  echo; echo "## D_Q full decode per block size"; for bs in "${BSS[@]}"; do grep -h "^FULLQ" $W/curves_$bs.txt; done
   echo; echo "## queue kernel by windows per batch"; for bs in "${BSS[@]}"; do grep -h "^QGRID" $W/curves_$bs.txt; done
+  echo; echo "## window law and the block-size choice (window_law.py)"; python3 $SRC/research/refrel/window_law.py $W
   echo; echo "## S2 (RR_BS 16384)"; grep -E "^S2" $W/s2.txt
   echo; echo "## S3 classic kernel (RR_BS 16384)"; grep -E "^S3|^\[s3\]" $W/s3.txt
   echo; echo "## ncu (W 4 KiB, 65 536 windows; 128 = classic, 0 = queue)"; for f in $W/ncu_*.txt; do echo "--- $(basename $f)"; grep -E "Duration|Throughput|Occupancy|Achieved|Registers|Shared Memory|Stall|stall|Warp Cycles|Issue|ERR|Error|not found|exit" $f | head -40; done

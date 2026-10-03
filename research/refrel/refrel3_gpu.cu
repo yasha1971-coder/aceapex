@@ -237,6 +237,13 @@ static int cmd_curves(char** argv) {
     cudaDeviceProp pr; CK(cudaGetDeviceProperties(&pr, 0));
     printf("OCC\t%u\tclassic: smem %zu B, %d blocks x 4 warps per SM\tqueue: smem %zu B, %d blocks x 1 warp per SM\t(%d SMs, %zu B smem per SM)\n", (unsigned)RR_BS, (size_t)SMEM, ob, (size_t)QSMEM, oq, pr.multiProcessorCount, (size_t)pr.sharedMemPerMultiprocessor);
     printf("[curves] RR_BS %u, payload %zu B, on the card %.2f MB\n", (unsigned)RR_BS, X.P.size(), D.bytes / 1e6);
+    // D_Q: full decode of the assembly (1 MiB windows covering it), best of 3, per kernel - the window law's numerator
+    { const uint32_t Wf = 1u << 20; const uint32_t nf = (uint32_t)((D.n + Wf - 1) / Wf); std::vector<uint64_t> o(nf); for (uint32_t i = 0; i < nf; i++) o[i] = std::min<uint64_t>((uint64_t)i * Wf, D.n - Wf);
+      uint64_t* dw = upload(o); uint8_t* out; CK(cudaMalloc(&out, (size_t)nf * Wf));
+      for (uint32_t kern : {128u, 0u}) { double best = 1e30; int sf = 0;
+          for (int r = 0; r < 3; r++) { CK(cudaMemset(C.d_st, 0, 4)); const double t0 = now_s(); launch(C, D, dw, nf, Wf, kern, out); sf |= status(C); best = std::min(best, now_s() - t0); }
+          bad |= sf; printf("FULLQ\t%u\t%s\t%.2f GB/s\t(%.1f ms for %llu bases, best of 3)\t%s\n", (unsigned)RR_BS, kern ? "classic" : "queue", D.n / best / 1e9, best * 1e3, (unsigned long long)D.n, sf ? "FAILED" : "ok"); }
+      cudaFree(dw); cudaFree(out); fflush(stdout); }
     for (uint32_t W : WS) { const uint32_t n = default_n(W); const int NB = 10; std::vector<uint64_t*> d(NB); for (int k = 0; k < NB; k++) d[k] = upload(rand_offs(D.n, W, n, 500 + k));
         uint8_t* out; CK(cudaMalloc(&out, (size_t)n * W)); raw_kernel<<<n, 256, 0, C.s>>>(raw, d[0], W, out); CK(cudaStreamSynchronize(C.s));
         double t0 = now_s(); for (int k = 0; k < NB; k++) raw_kernel<<<n, 256, 0, C.s>>>(raw, d[k], W, out); CK(cudaStreamSynchronize(C.s)); const double rr = n * NB / (now_s() - t0);
