@@ -163,6 +163,63 @@ Reading: the fields have different statistics, but the gain is modest; what is l
 the next difference and where a jump goes. Idea 3 (edits with a context model) targets exactly these two; AGC's
 13.4 MB per further assembly at N = 4 is below this (16.4-17.0 MB) because it also uses the other assemblies.
 
+## 2c. Idea 3: edits against the reference with context models (refrel3.h / refrel3.cpp)
+
+A block is coded as events against the current diagonal: literal count, literal bases (for short runs in the context
+of the reference base the diagonal predicts there - a SNP is "not this base"; order-2 in long runs), kind (continue /
+delta / one of 3 recent diagonals / absolute / self), its parameter, length; buckets with 2 mantissa bits + raw bits;
+static per-assembly frequency tables (59 contexts, in the meta); one rANS stream per 16 KiB block, nothing else -
+no ACEPX2 container around the tokens, so a window decodes its blocks straight from the payload. Carried block state as
+in v2. Literature: phrases ending in a mismatch (Deorowicz & Grabowski), relative pointers + run-length (Ferrada et
+al.), indels / multi-character substitutions (RLZAP, SPIRE 2016), variants then a second level across the collection
+(GDC 2, doi:10.1038/srep11565), segments + LZ-diff to a group reference + zstd (AGC). Edits-against-reference is known;
+what is measured here is the cost of keeping every 16 KiB block independent.
+
+| assembly | v1+carry | refrel3, first version | **refrel3** | vs v1+carry |
+|---|---:|---:|---:|---:|
+| HG00438.1 | 17 920 514 | 12 953 348 | **12 753 647** | -28.8 % |
+| HG00438.2 | 17 635 576 | 12 522 923 | **12 323 119** | -30.1 % |
+| HG00621.1 | 17 557 461 | 12 572 849 | **12 380 607** | -29.5 % |
+| HG00621.2 | 17 313 983 | 12 139 793 | **11 940 396** | -31.0 % |
+| mean | 17 606 884 | 12 547 228 (-28.7 %) | **12 349 442** | **-29.86 %** |
+
+First version -> final: rANS state bound 2^16 instead of 2^23 (3 bytes flushed per block instead of 4: -185 KB) and
+two mantissa bits in the bucket symbol (-15 KB). Where the bytes are (HG00438.1, ideal bits per group): lengths 2.92 MB
++ their raw bits, raw bits in all 5.71 MB (of which absolute positions 541 557 x 32 bits = 2.17 MB), literals 0.96,
+literal counts 0.71, kinds 0.60, deltas 0.43, recent-diagonal jumps 0.39, self 0.12; rANS flush 0.55 MB. Kinds:
+continue 2 396 853, delta 764 698, recent diagonal 759 890, absolute 541 557 (v1+carry: 1 037 848), self 174 400.
+A copy length is the distance to the next difference (~11 bits for a mean of ~640): close to its entropy already.
+
+Full decode == FASTA for all four, 3.9-4.1 s on 1 thread (`logs/v3-full-2026-10-03.log`). Parse 3.0-3.2 s (two passes),
+coding 0.13-0.26 s (16 threads).
+
+**CPU windows** (HG00438.1, windows/s, all == FASTA; `logs/v3-windows-cpu-2026-10-03.log`):
+
+| W | refrel3, 1 thread | v1+carry, 1 thread | ratio | refrel3, 16 threads | v1+carry, 16 threads | ratio |
+|---:|---:|---:|---:|---:|---:|---:|
+| 256 | 133 856 | 10 199 | 13.1 | 1 262 947 | 101 159 | 12.5 |
+| 1 Ki | 129 266 | 10 092 | 12.8 | 1 321 581 | 100 445 | 13.2 |
+| 4 Ki | 106 938 | 9 953 | 10.7 | 1 085 979 | 98 604 | 11.0 |
+| 16 Ki | 67 585 | 9 356 | 7.2 | 640 707 | 93 579 | 6.8 |
+| 64 Ki | 26 941 | 7 903 | 3.4 | 244 698 | 79 577 | 3.1 |
+| 256 Ki | 8 190 | 5 120 | 1.6 | 70 171 | 48 931 | 1.4 |
+| 1 Mi | 2 147 | 2 138 | 1.0 | 17 266 | 16 473 | 1.05 |
+
+Small windows are 10-13x faster: a window decodes ~200 rANS symbols of its block instead of two 64 KiB chunks of
+the token / literal streams (v1 decoded 64 KiB to use ~150 B). Also faster than the open archive itself at small W
+(open: 22 186 / 215 477 windows/s at W = 256).
+
+**Threshold** (-30 % and windows >= 0.8x): windows pass by far (1.0-13x); size is -29.86 % on the mean (-28.8 ... -31.0 %
+per assembly) - 0.14 points short of the bar. Decision is the user's (asked).
+
+**3b, secondary reference from the cohort**: literal runs >= 64 bases of three assemblies (2.86 Mb, 3 059 791 B of
+FASTA) appended to T2T as extra records; the fourth (HG00621.2) against T2T + that: 11 940 396 -> 11 749 304 B
+(-1.6 %), full decode == FASTA (`logs/v3b-2026-10-03.log`). An assembly then needs the secondary sequence resident
+with T2T, but no other assembly's archive: independence between assemblies holds as long as the secondary
+reference is frozen (a new version means re-encoding). Small, because novel sequence per haplotype is ~0.9 Mb; the
+bulk is the variants. Not tried: a major-allele consensus of T2T from the cohort (common variants where T2T carries
+the minor allele would stop costing an edit in every assembly).
+
 ## 4. Capacity on one card (arithmetic on measured sizes; GPU check in `run_colab.sh capacity`)
 
 Per assembly on the card: the two archives (18.2-18.8 MB) + block spans (2 x 4 B per block, 1.5 MB) = 19.91 MB (mean

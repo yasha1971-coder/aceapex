@@ -69,11 +69,16 @@ static BlockEnd encode_block2(const uint8_t* A, uint64_t bs, uint64_t be, const 
 static inline void next_state(const BlockEnd& e, uint64_t blen, uint64_t* ptr, int* rc) {
     *rc = e.rc; const int64_t g = (int64_t)(blen - e.a_end); const int64_t p = e.rc ? (int64_t)e.ptr - g : (int64_t)e.ptr + g; *ptr = p < 0 ? 0 : (uint64_t)p; }
 
+static void encode2_one(const std::vector<uint8_t>& R, const Index& I, int T, bool split, bool carry, const char* fa, const std::string& dir);
 static int cmd_build2(int argc, char** argv) {
     const std::string dir = argv[3]; const int T = atoi(argv[4]); const bool split = atoi(argv[5]) != 0, carry = atoi(argv[6]) != 0;
     Fasta RF = read_fasta(argv[2]); std::vector<uint8_t> R = upper(RF.b); RF.b.clear(); RF.b.shrink_to_fit(); Index I = build_index(R, T);
-    for (int a = 7; a < argc; a++) {
-        Fasta F = read_fasta(argv[a]); const std::vector<uint8_t> A = upper(F.b); const double s1 = now_s();
+    for (int a = 7; a < argc; a++) encode2_one(R, I, T, split, carry, argv[a], dir);
+    return 0;
+}
+static void encode2_one(const std::vector<uint8_t>& R, const Index& I, int T, bool split, bool carry, const char* fa, const std::string& dir) {
+    {
+        Fasta F = read_fasta(fa); const std::vector<uint8_t> A = upper(F.b); const double s1 = now_s();
         const uint64_t nb = (A.size() + RR_BS - 1) / RR_BS;
         std::vector<Tok6> tk(nb); std::vector<std::vector<uint8_t>> lt(nb); std::vector<BlockEnd> be(nb); std::vector<uint64_t> p0(nb, 0); std::vector<int> r0(nb, 0);
         auto pass = [&](std::vector<Stats>& st) { std::atomic<uint64_t> next{0}; std::vector<std::thread> th;
@@ -102,15 +107,14 @@ static int cmd_build2(int argc, char** argv) {
             if (carry) { const int64_t pred = b == 0 ? 0 : (prc ? (int64_t)prev - (int64_t)RR_BS : (int64_t)prev + (int64_t)RR_BS);
                 put_leb(M, zz((int64_t)p0[b] - pred) * 2 + (uint64_t)r0[b]); prev = p0[b]; prc = r0[b]; mstate += M.size() - m1; } }
         std::vector<uint8_t> Z(ZSTD_compressBound(M.size())); const size_t zn = ZSTD_compress(Z.data(), Z.size(), M.data(), M.size(), 19);
-        const std::string nm = dir + "/" + base(argv[a]);
+        const std::string nm = dir + "/" + base(fa);
         for (int k = 0; k < NS; k++) spit(nm + ".t" + std::to_string(k), TS[k].data(), TS[k].size());
         spit(nm + ".lit", LIT.data(), LIT.size()); spit(nm + ".meta2.zst", Z.data(), zn);
-        printf("RR2BUILD\t%s\tsplit %d carry %d\tparse %.2f s\ttags %llu/%llu/%llu/%llu\tstreams", base(argv[a]).c_str(), split, carry, s2 - s1,
+        printf("RR2BUILD\t%s\tsplit %d carry %d\tparse %.2f s\ttags %llu/%llu/%llu/%llu\tstreams", base(fa).c_str(), split, carry, s2 - s1,
                (unsigned long long)S.tag[0], (unsigned long long)S.tag[1], (unsigned long long)S.tag[2], (unsigned long long)S.tag[3]);
         size_t tot = 0; for (int k = 0; k < NS; k++) { printf(" %zu", TS[k].size()); tot += TS[k].size(); }
         printf("\traw tokens %zu\tlit %zu\tmeta raw %zu (spans %zu, states %zu) zst %zu\n", tot, LIT.size(), M.size(), mspan, mstate, zn); fflush(stdout);
     }
-    return 0;
 }
 
 struct Arch2 { Meta M; int NS = 1; bool carry = false; std::vector<std::vector<uint8_t>> ts; std::vector<std::vector<uint64_t>> off; std::vector<uint64_t> p0; std::vector<uint8_t> r0; std::vector<uint8_t> lit; };
@@ -153,6 +157,13 @@ static bool rr2_window(const Arch2& X, const std::vector<uint8_t>& R, uint64_t s
         for (; it != X.M.low.end() && it->first < s + W; ++it) { const uint64_t a = std::max(s, it->first), e = std::min(s + W, it->first + it->second); for (uint64_t x = a; x < e; x++) out[x - s] |= 0x20; } }
     return true;
 }
+static bool full2_string(const std::vector<uint8_t>& R, const std::string& nm, std::string& o) {
+    Arch2 X = load2(nm); std::vector<uint8_t> A(X.M.n + 64), blk(RR_BS); std::vector<std::vector<uint8_t>> buf; std::vector<RrOp> ops(RR_MAXOPS);
+    for (uint64_t s = 0; s < X.M.n; s += 1u << 20) { const uint64_t W = std::min<uint64_t>(1u << 20, X.M.n - s); if (!rr2_window(X, R, s, W, &A[s], buf, ops, blk.data())) return false; }
+    o.clear(); o.reserve(X.M.n + X.M.n / 60 + 1024);
+    for (auto& r : X.M.rec) { o += '>'; o += r.hdr; o += '\n'; for (uint64_t x = 0; x < r.len; x += r.lw) { o.append((const char*)&A[r.boff + x], std::min<uint64_t>(r.lw, r.len - x)); o += '\n'; } }
+    return true;
+}
 static int cmd_full2(char** argv) {
     Fasta RF = read_fasta(argv[2]); std::vector<uint8_t> R = upper(RF.b); RF.b.clear();
     const double t0 = now_s(); Arch2 X = load2(argv[3]); std::vector<uint8_t> A(X.M.n + 64), blk(RR_BS); std::vector<std::vector<uint8_t>> buf; std::vector<RrOp> ops(RR_MAXOPS);
@@ -174,6 +185,7 @@ static int cmd_windows2(int argc, char** argv) {
     }
     return 0;
 }
+#ifndef RR2_NO_MAIN
 int main(int argc, char** argv) {
     for (int c = 0; c < 256; c++) COMP[c] = rr_comp((uint8_t)c);
     if (argc >= 8 && !strcmp(argv[1], "build")) return cmd_build2(argc, argv);
@@ -182,3 +194,4 @@ int main(int argc, char** argv) {
     fprintf(stderr, "usage: refrel2 build <ref.fa> <dir> <threads> <split 0|1> <carry 0|1> <asm.fa>... | full <ref.fa> <dir/name> <out.fa> | windows <ref.fa> <dir/name> <asm.fa> <threads> [seed]\n");
     return 1;
 }
+#endif
