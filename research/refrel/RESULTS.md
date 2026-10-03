@@ -153,6 +153,11 @@ two, and each decodes a 64 KiB chunk of its stream. With streams as separate ACE
 for random access; it would need one container in which a block range's pieces of all fields sit together (or
 per-stream chunks far smaller than 64 KiB, which on 03.10 behaved badly, see section 3). Not adopted.
 
+**carry alone** keeps one token stream (two region calls per window) and costs nothing in speed: HG00438.1 windows/s
+1 thread 10 286 / 10 055 / 2 183 (W = 256 / 4 Ki / 1 Mi; v1 10 024 / 9 853 / 2 176), 16 threads 101 349 / 98 772 /
+16 337 (v1 74 169 - 101 k across runs / 98 013 / 16 664); full decode == FASTA (`logs/v2-carry-windows-cpu-2026-10-03.log`).
+**-4.4 % (18.42 -> 17.61 MB) for free: adopt carry; keep split out.** Encode: two passes (3.4 s instead of 1.7 s).
+
 Reading: the fields have different statistics, but the gain is modest; what is left is the **lengths** (4.66 M of them,
 ~1.4 B each after rANS) and the **absolute positions** (~4.2 B each). Both are the alignment itself: the distance to
 the next difference and where a jump goes. Idea 3 (edits with a context model) targets exactly these two; AGC's
