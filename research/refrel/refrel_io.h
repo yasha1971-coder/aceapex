@@ -18,8 +18,10 @@ static std::string base(const std::string& p) { size_t s = p.find_last_of('/'); 
 // ---------------------------------------------------------------- FASTA: bases (case kept) + record layout
 struct Rec { std::string hdr; uint64_t len, boff, foff; uint32_t lw; };     // boff: in the base stream; foff: first base byte in the file
 struct Fasta { std::vector<Rec> rec; std::vector<uint8_t> b; };
-static Fasta read_fasta(const std::string& path) {
-    std::vector<uint8_t> f = slurp(path); Fasta F; F.b.reserve(f.size());
+static Fasta parse_fasta(const std::vector<uint8_t>& f, const std::string& path);
+static Fasta read_fasta(const std::string& path) { std::vector<uint8_t> f = slurp(path); return parse_fasta(f, path); }
+static Fasta parse_fasta(const std::vector<uint8_t>& f, const std::string& path) {
+    Fasta F; F.b.reserve(f.size());
     size_t i = 0;
     while (i < f.size()) {
         if (f[i] != '>') { fprintf(stderr, "%s: no header at byte %zu\n", path.c_str(), i); exit(2); }

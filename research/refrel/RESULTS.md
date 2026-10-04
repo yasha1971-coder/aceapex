@@ -256,6 +256,13 @@ assembly at N = 50), so at cohort scale AGC is about half the size of refrel3 - 
 decodable alone and every 16 KiB block alone. The two references in the year-1 index (CHM13 v1.1, GRCh38) went
 through the same pipeline and are listed apart (CHM13 v1.1 against T2T: 783 150 B).
 
+## 3c. Window law and its limit (GPU, Colab Blackwell, user's run of run_colab_r3.sh)
+
+Law: windows/s ~ D_Q / (W + Q - 1), D_Q = full-decode rate at block size Q. Reported by the user from the Colab run
+(the log is not in this repository): with a small batch the card is not saturated and the law overestimates; at
+n = 262 144 windows per batch the error is -16 ... +7 %. The law is a saturation model - it holds only when the batch
+fills the card; Q* from it is valid for large batches only.
+
 ## 4. Capacity on one card (arithmetic on measured sizes; GPU check in `run_colab.sh capacity`)
 
 Per assembly on the card: the two archives (18.2-18.8 MB) + block spans (2 x 4 B per block, 1.5 MB) = 19.91 MB (mean
