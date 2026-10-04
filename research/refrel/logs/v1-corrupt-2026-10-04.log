@@ -1,0 +1,32 @@
+CORRUPT	corr/s.q4096.rr3	verify 1	10000 per kind
+CKIND	bit_flip	refused 3501	caught 6499	harmless 0	SILENT 0	hang 0	crash 0
+CKIND	random_bytes	refused 3610	caught 6390	harmless 0	SILENT 0	hang 0	crash 0
+CKIND	zeroed_run	refused 3638	caught 6362	harmless 0	SILENT 0	hang 0	crash 0
+CKIND	truncation	refused 10000	caught 0	harmless 0	SILENT 0	hang 0	crash 0
+CKIND	header	refused 10000	caught 0	harmless 0	SILENT 0	hang 0	crash 0
+CKIND	payload	refused 3480	caught 6520	harmless 0	SILENT 0	hang 0	crash 0
+CTOTAL	refused 34229	caught 25771	harmless 0	SILENT 0	hang 0	crash 0	no hang, no crash
+CORRUPT	corr/s.q4096.nohash.rr3	verify 0	10000 per kind
+CKIND	bit_flip	refused 839	caught 8263	harmless 0	SILENT 898	hang 0	crash 0
+CKIND	random_bytes	refused 814	caught 9084	harmless 5	SILENT 97	hang 0	crash 0
+CKIND	zeroed_run	refused 813	caught 9187	harmless 0	SILENT 0	hang 0	crash 0
+CKIND	truncation	refused 10000	caught 0	harmless 0	SILENT 0	hang 0	crash 0
+CKIND	header	refused 10000	caught 0	harmless 0	SILENT 0	hang 0	crash 0
+CKIND	payload	refused 732	caught 8464	harmless 1	SILENT 803	hang 0	crash 0
+CTOTAL	refused 23198	caught 34998	harmless 6	SILENT 1798	hang 0	crash 0	no hang, no crash
+CORRUPT	corr/s.q16384.rr3	verify 1	10000 per kind
+CKIND	bit_flip	refused 1632	caught 8368	harmless 0	SILENT 0	hang 0	crash 0
+CKIND	random_bytes	refused 1613	caught 8386	harmless 1	SILENT 0	hang 0	crash 0
+CKIND	zeroed_run	refused 1626	caught 8374	harmless 0	SILENT 0	hang 0	crash 0
+CKIND	truncation	refused 10000	caught 0	harmless 0	SILENT 0	hang 0	crash 0
+CKIND	header	refused 10000	caught 0	harmless 0	SILENT 0	hang 0	crash 0
+CKIND	payload	refused 1486	caught 8514	harmless 0	SILENT 0	hang 0	crash 0
+CTOTAL	refused 26357	caught 33642	harmless 1	SILENT 0	hang 0	crash 0	no hang, no crash
+CORRUPT	corr/s.q16384.nohash.rr3	verify 0	10000 per kind
+CKIND	bit_flip	refused 534	caught 8429	harmless 0	SILENT 1037	hang 0	crash 0
+CKIND	random_bytes	refused 502	caught 9415	harmless 2	SILENT 81	hang 0	crash 0
+CKIND	zeroed_run	refused 493	caught 9507	harmless 0	SILENT 0	hang 0	crash 0
+CKIND	truncation	refused 10000	caught 0	harmless 0	SILENT 0	hang 0	crash 0
+CKIND	header	refused 10000	caught 0	harmless 0	SILENT 0	hang 0	crash 0
+CKIND	payload	refused 367	caught 8606	harmless 0	SILENT 1027	hang 0	crash 0
+CTOTAL	refused 21896	caught 35957	harmless 2	SILENT 2145	hang 0	crash 0	no hang, no crash

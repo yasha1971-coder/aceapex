@@ -67,3 +67,12 @@ and the XXH3 of the rebuilt FASTA against the header.
 
 A reader accepts version 1 only. Any change of the layout, the model contexts or the entropy coder is a new version;
 v1 archives stay decodable by a v1 reader.
+
+## 7. Archive bytes and the encoder build
+
+The format fixes what a reader accepts, not one encoding: the encoder chooses copies by double-precision scores, so
+the archive bytes depend on the compiler and its floating-point contraction. The cohort's archives
+(`logs/cohort-v1-manifest-2026-10-04.tsv`) were made with gcc 11.4.0 `-O3 -march=native -funroll-loops`; the same bytes
+come from `-O3 -march=x86-64-v3 -funroll-loops` (FMA contraction on). Without FMA (`-march=x86-64-v2` or
+`-ffp-contract=off`) the bytes differ (y1_HG00438.1 q4k: 21 765 975 B against 21 765 741 B) and decode to the same
+FASTA. Details: `logs/cohort-v1-BUILD.md`.

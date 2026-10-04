@@ -256,6 +256,37 @@ assembly at N = 50), so at cohort scale AGC is about half the size of refrel3 - 
 decodable alone and every 16 KiB block alone. The two references in the year-1 index (CHM13 v1.1, GRCh38) went
 through the same pipeline and are listed apart (CHM13 v1.1 against T2T: 783 150 B).
 
+## 2e. refrel3 v1 container: the cohort re-encoded, corruption (ace-core, 04.10)
+
+`refrel3v1 recode` (FORMAT.md; 16 threads): every cohort archive decoded to FASTA in memory, encoded q4k and q16k
+with block XXH3, each written, read back, opened with every check, decoded in full and compared with the source's
+XXH3. `logs/cohort-v1-manifest-2026-10-04.tsv` (URL, source hash, FASTA bytes and XXH3, sha256 and bytes of both
+archives), build and byte reproducibility `logs/cohort-v1-BUILD.md` (gcc 11.4 -O3 -march=x86-64-v3 reproduces the bytes;
+without FMA contraction other bytes, same FASTA).
+
+```
+558 / 558 ok (decoded back == source), 1.707 TB FASTA, 4.7 h
+q4k  (Q 4096,  block XXH3): mean 22 097 437 B per assembly, total 12.330 GB
+q16k (Q 16384, block XXH3): mean 14 512 521 B per assembly, total  8.098 GB
+```
+
+Corruption (`refrel3v1 corrupt`, 16 Mb slice of HG00438.1, 6 kinds x 10 000 cases, a process per case, 10 s watchdog,
+seed 20261004; with hashes: verify on = block XXH3 + FASTA XXH3; without: the archive has no block hashes and the
+decode is not verified - what the decoder alone catches). `logs/v1-corrupt-2026-10-04.log`.
+
+| archive | refused at open | caught in decode | harmless (== original) | silent (differs) | hang | crash |
+|---|---:|---:|---:|---:|---:|---:|
+| q4k, block XXH3, verify | 34 229 | 25 771 | 0 | **0** | 0 | 0 |
+| q16k, block XXH3, verify | 26 357 | 33 642 | 1 | **0** | 0 | 0 |
+| q4k, no hashes, no verify | 23 198 | 34 998 | 6 | 1 798 | 0 | 0 |
+| q16k, no hashes, no verify | 21 896 | 35 957 | 2 | 2 145 | 0 | 0 |
+
+Per kind (every kind 10 000 cases, sums checked): truncation and header 10 000 / 10 000 refused at open in all four
+(header XXH3 mandatory, section sizes); with hashes bit flip / random bytes / zeroed run / payload split between refused
+(the flip falls in meta or the hash section) and caught; without hashes the silent cases are bit flip (898 q4k / 1 037
+q16k), random bytes (97 / 81) and payload flips (803 / 1 027) - a flipped payload bit that still decodes to a valid
+block; zeroed runs are always caught. 240 000 cases: 0 hang, 0 crash.
+
 ## 3c. Window law and its limit (GPU, Colab Blackwell, user's run of run_colab_r3.sh)
 
 Law: windows/s ~ D_Q / (W + Q - 1), D_Q = full-decode rate at block size Q. Reported by the user from the Colab run
