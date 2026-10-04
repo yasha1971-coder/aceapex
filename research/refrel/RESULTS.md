@@ -220,6 +220,42 @@ reference is frozen (a new version means re-encoding). Small, because novel sequ
 bulk is the variants. Not tried: a major-allele consensus of T2T from the cohort (common variants where T2T carries
 the minor allele would stop costing an edit in every assembly).
 
+## 2d. Cohort: every available HPRC assembly (ace-core, 03-04.10)
+
+`cohort_pipeline.sh` / `cohort_pipeline2.sh`: HPRC year-1 index (sha256) and release 2 index
+(`hprc_intermediate_assembly/data_tables/assemblies_release2_v1.0.index.csv`, md5 per file); per assembly: download ->
+hash check -> AGC append -> refrel3 both (v1+carry and refrel3, each decoded back in full and compared with the FASTA)
+-> FASTA deleted -> manifest line (URL, source hash, sha256 of every archive file, sizes, time). The first 16
+assemblies were encoded by refrel3 before the FLIP kind and re-encoded with it (`logs/cohort-flip-redo-2026-10-04.log`;
+the table uses the FLIP sizes). From N = 88 on (03.10 ~19:40 UTC) AGC only with T2T, appended in batches of 10.
+Logs: `logs/cohort-manifest-2026-10-04.tsv`, `cohort-agc-2026-10-04.tsv`, `cohort-table-2026-10-04.txt`.
+
+```
+cohort: 558 HPRC haplotype assemblies (year-1 94, release 2 464), 1.71 TB of FASTA; every one: v1+carry and refrel3 decoded back in full == FASTA
+| N | FASTA, GB | v1+carry total, MB (per assembly) | refrel3 total, MB (per assembly) | refrel3 vs v1+carry |
+| 4 | 12.1 | 70.4 (17.61) | 49.2 (12.31) | -30.1 % |
+| 50 | 152.5 | 940.1 (18.80) | 657.2 (13.14) | -30.1 % |
+| 94 | 287.0 | 1833.2 (19.50) | 1278.8 (13.60) | -30.2 % |
+| 558 | 1707.3 | 10406.2 (18.65) | 7277.4 (13.04) | -30.1 % |
+AGC 3.2.4 (archive bytes; per assembly = (archive - T2T alone 707 323 301) / N with T2T):
+  chain N=4: with T2T 841065173 B (33.44 MB per assembly); without reference 811173052
+  chain N=50: with T2T 1348467609 B (12.82 MB per assembly); without reference 1335294906
+  chain N=88: with T2T 1804080062 B (12.46 MB per assembly); without reference 1793898050
+  chain N=98: with T2T 1912422040 B (12.30 MB per assembly) [N=98: 94 year-1 + CHM13 v1.1 + GRCh38 + 2 release 2]; without reference -
+  chain N=560: with T2T 4559638761 B (6.88 MB per assembly) [incl. CHM13 v1.1 and GRCh38]; without reference -
+  create at once: T2T+4 787 595 850 B (20.07 MB/asm), T2T+50 1 139 665 987 B (8.65 MB/asm); no reference 4: 767 622 696, 50: 1 134 975 025 B
+refrel3 per assembly: min 10.58 median 12.39 max 16.02 MB; year-1 mean 13.60, release 2 mean 12.93
+wall time per assembly (both formats + full checks + waiting for the prefetched download): median 57 s; AGC append chain at N=560: 105.7 s for the last batch of 10
+references in the year-1 index, same pipeline: CHM13 v1.1 refrel3 783150 B, GRCh38 no-alt refrel3 10867115 B
+```
+
+Reading: refrel3 is -30.1 % against v1+carry at every N (per assembly independent of N: 12.3-13.6 MB on the means;
+release-2 assemblies 12.93 MB, year-1 13.60). AGC improves with N because it also uses the other assemblies: with T2T
+6.88 MB per assembly over the chain at N = 560 (its append chain is worse than one `create`: 12.82 against 8.65 MB per
+assembly at N = 50), so at cohort scale AGC is about half the size of refrel3 - and refrel3 keeps every assembly
+decodable alone and every 16 KiB block alone. The two references in the year-1 index (CHM13 v1.1, GRCh38) went
+through the same pipeline and are listed apart (CHM13 v1.1 against T2T: 783 150 B).
+
 ## 4. Capacity on one card (arithmetic on measured sizes; GPU check in `run_colab.sh capacity`)
 
 Per assembly on the card: the two archives (18.2-18.8 MB) + block spans (2 x 4 B per block, 1.5 MB) = 19.91 MB (mean
