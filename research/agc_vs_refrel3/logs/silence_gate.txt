@@ -1,0 +1,23 @@
+# silence gate 2026-10-05T20:35:18Z
+loadavg: 0.46 1.64 1.13 1/1112 2345600
+df: 40G free of 878G
+top processes by CPU:
+    PID USER     %CPU %MEM COMMAND
+2310730 aeterna   0.8  0.2 2.1.284
+3585607 root      0.7  0.3 uvicorn
+2343617 aeterna   0.5  0.1 2.1.284
+3277404 root      0.2  0.0 cloudflared
+ 554052 aeterna   0.1  0.0 claude
+2212880 aeterna   0.1  0.0 copilot-runtime
+      1 root      0.0  0.0 systemd
+background (not stopped):
+      1 glyph 0.0 0.0 (sd-pam)
+      2 glyph 0.0 0.0 bash
+      1 glyph 0.0 0.0 code-07f806f999
+      2 glyph 0.0 0.0 python3
+      1 glyph 0.0 0.0 screen
+      1 glyph 0.0 0.0 systemd
+      2 glyph 0.0 0.0 tmux:
+      1 glyph 0.0 1.2 query_fm_binary
+      1 root 0.0 0.0 entrypoint.sh
+      1 root 0.7 0.3 uvicorn

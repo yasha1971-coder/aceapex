@@ -1,0 +1,15 @@
+# agc_noref_50_sample4_t16 start 2026-10-05T21:18:39Z loadavg 1.29 2.17 2.01 1/1093 2355384
+OPEN	agc_noref_50_sample4_t16	16 handles (prefetching=1)	6.701 s
+RUN	agc_noref_50_sample4_t16	0	warmup	14.547682	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_noref_50_sample4_t16	1	warmup	10.956217	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_noref_50_sample4_t16	2	warmup	10.763834	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_noref_50_sample4_t16	3	timed	10.898778	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_noref_50_sample4_t16	4	timed	11.049299	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_noref_50_sample4_t16	5	timed	10.684396	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_noref_50_sample4_t16	6	timed	10.927557	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_noref_50_sample4_t16	7	timed	11.406313	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_noref_50_sample4_t16	8	timed	11.256215	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_noref_50_sample4_t16	9	timed	11.180451	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_noref_50_sample4_t16	10	timed	11.402287	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_noref_50_sample4_t16	11	timed	11.111548	4 items	11989829249 bytes	sha256 4/4
+# exit 0 end 2026-10-05T21:23:01Z loadavg 2.57 2.53 2.20 1/1109 2356637

@@ -1,0 +1,15 @@
+# agc_t2t_50_regions_t1 start 2026-10-05T20:45:06Z loadavg 1.13 1.22 1.13 1/1100 2347004
+OPEN	agc_t2t_50_regions_t1	1 handles (prefetching=1)	0.425 s
+RUN	agc_t2t_50_regions_t1	0	warmup	1.010659	1000 items	70446818 bytes	sha256 1000/1000
+RUN	agc_t2t_50_regions_t1	1	warmup	0.928009	1000 items	70446818 bytes	sha256 1000/1000
+RUN	agc_t2t_50_regions_t1	2	warmup	0.927074	1000 items	70446818 bytes	sha256 1000/1000
+RUN	agc_t2t_50_regions_t1	3	timed	0.930211	1000 items	70446818 bytes	sha256 1000/1000
+RUN	agc_t2t_50_regions_t1	4	timed	0.929214	1000 items	70446818 bytes	sha256 1000/1000
+RUN	agc_t2t_50_regions_t1	5	timed	0.930349	1000 items	70446818 bytes	sha256 1000/1000
+RUN	agc_t2t_50_regions_t1	6	timed	0.931392	1000 items	70446818 bytes	sha256 1000/1000
+RUN	agc_t2t_50_regions_t1	7	timed	0.931729	1000 items	70446818 bytes	sha256 1000/1000
+RUN	agc_t2t_50_regions_t1	8	timed	0.932494	1000 items	70446818 bytes	sha256 1000/1000
+RUN	agc_t2t_50_regions_t1	9	timed	0.932058	1000 items	70446818 bytes	sha256 1000/1000
+RUN	agc_t2t_50_regions_t1	10	timed	0.930929	1000 items	70446818 bytes	sha256 1000/1000
+RUN	agc_t2t_50_regions_t1	11	timed	0.931621	1000 items	70446818 bytes	sha256 1000/1000
+# exit 0 end 2026-10-05T20:45:18Z loadavg 1.18 1.22 1.14 1/1112 2347047

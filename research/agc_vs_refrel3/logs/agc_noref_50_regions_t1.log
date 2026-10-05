@@ -1,0 +1,15 @@
+# agc_noref_50_regions_t1 start 2026-10-05T20:56:08Z loadavg 1.20 1.12 1.10 2/1094 2348406
+OPEN	agc_noref_50_regions_t1	1 handles (prefetching=1)	0.475 s
+RUN	agc_noref_50_regions_t1	0	warmup	0.272191	1000 items	70446818 bytes	sha256 1000/1000
+RUN	agc_noref_50_regions_t1	1	warmup	0.187748	1000 items	70446818 bytes	sha256 1000/1000
+RUN	agc_noref_50_regions_t1	2	warmup	0.187138	1000 items	70446818 bytes	sha256 1000/1000
+RUN	agc_noref_50_regions_t1	3	timed	0.187201	1000 items	70446818 bytes	sha256 1000/1000
+RUN	agc_noref_50_regions_t1	4	timed	0.187310	1000 items	70446818 bytes	sha256 1000/1000
+RUN	agc_noref_50_regions_t1	5	timed	0.187140	1000 items	70446818 bytes	sha256 1000/1000
+RUN	agc_noref_50_regions_t1	6	timed	0.187160	1000 items	70446818 bytes	sha256 1000/1000
+RUN	agc_noref_50_regions_t1	7	timed	0.188392	1000 items	70446818 bytes	sha256 1000/1000
+RUN	agc_noref_50_regions_t1	8	timed	0.188201	1000 items	70446818 bytes	sha256 1000/1000
+RUN	agc_noref_50_regions_t1	9	timed	0.187283	1000 items	70446818 bytes	sha256 1000/1000
+RUN	agc_noref_50_regions_t1	10	timed	0.187534	1000 items	70446818 bytes	sha256 1000/1000
+RUN	agc_noref_50_regions_t1	11	timed	0.187449	1000 items	70446818 bytes	sha256 1000/1000
+# exit 0 end 2026-10-05T20:56:12Z loadavg 1.20 1.12 1.10 3/1094 2348421

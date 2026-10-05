@@ -1,0 +1,4 @@
+# agc_t2t_50_sample50_t1 start 2026-10-05T21:33:28Z loadavg 1.60 3.03 2.91 1/1098 2360642
+OPEN	agc_t2t_50_sample50_t1	1 handles (prefetching=1)	0.746 s
+run_all.sh: line 15: 2360643 Killed                  "${pin[@]}" "$@"
+# exit 137 end 2026-10-05T21:39:25Z loadavg 1.38 2.12 2.53 2/1112 2361487

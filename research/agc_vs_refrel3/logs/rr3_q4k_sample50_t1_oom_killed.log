@@ -1,0 +1,4 @@
+# rr3_q4k_sample50_t1 start 2026-10-05T21:30:00Z loadavg 4.26 4.70 3.30 1/1107 2360184
+OPEN	rr3_q4k_sample50_t1	reference + 50 archives (q4k)	17.851 s
+run_all.sh: line 15: 2360185 Killed                  "${pin[@]}" "$@"
+# exit 137 end 2026-10-05T21:31:44Z loadavg 1.69 3.66 3.07 1/1099 2360410

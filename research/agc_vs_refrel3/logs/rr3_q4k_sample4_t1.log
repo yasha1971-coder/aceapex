@@ -1,0 +1,15 @@
+# rr3_q4k_sample4_t1 start 2026-10-05T20:35:54Z loadavg 0.86 1.60 1.14 3/1115 2345826
+OPEN	rr3_q4k_sample4_t1	reference + 50 archives (q4k)	16.498 s
+RUN	rr3_q4k_sample4_t1	0	warmup	8.805499	4 items	11989829249 bytes	sha256 4/4
+RUN	rr3_q4k_sample4_t1	1	warmup	5.228042	4 items	11989829249 bytes	sha256 4/4
+RUN	rr3_q4k_sample4_t1	2	warmup	5.230055	4 items	11989829249 bytes	sha256 4/4
+RUN	rr3_q4k_sample4_t1	3	timed	5.233002	4 items	11989829249 bytes	sha256 4/4
+RUN	rr3_q4k_sample4_t1	4	timed	5.232667	4 items	11989829249 bytes	sha256 4/4
+RUN	rr3_q4k_sample4_t1	5	timed	5.231880	4 items	11989829249 bytes	sha256 4/4
+RUN	rr3_q4k_sample4_t1	6	timed	5.237547	4 items	11989829249 bytes	sha256 4/4
+RUN	rr3_q4k_sample4_t1	7	timed	5.234122	4 items	11989829249 bytes	sha256 4/4
+RUN	rr3_q4k_sample4_t1	8	timed	5.234484	4 items	11989829249 bytes	sha256 4/4
+RUN	rr3_q4k_sample4_t1	9	timed	5.233574	4 items	11989829249 bytes	sha256 4/4
+RUN	rr3_q4k_sample4_t1	10	timed	5.235221	4 items	11989829249 bytes	sha256 4/4
+RUN	rr3_q4k_sample4_t1	11	timed	5.233254	4 items	11989829249 bytes	sha256 4/4
+# exit 0 end 2026-10-05T20:39:12Z loadavg 1.12 1.36 1.12 2/1095 2346233

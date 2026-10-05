@@ -1,0 +1,15 @@
+# agc_noref_50_windows_t1 start 2026-10-05T20:55:57Z loadavg 1.17 1.11 1.10 1/1101 2348378
+OPEN	agc_noref_50_windows_t1	1 handles (prefetching=1)	0.805 s
+RUN	agc_noref_50_windows_t1	0	warmup	0.878574	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_noref_50_windows_t1	1	warmup	0.792849	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_noref_50_windows_t1	2	warmup	0.792805	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_noref_50_windows_t1	3	timed	0.792009	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_noref_50_windows_t1	4	timed	0.793171	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_noref_50_windows_t1	5	timed	0.793428	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_noref_50_windows_t1	6	timed	0.792002	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_noref_50_windows_t1	7	timed	0.793056	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_noref_50_windows_t1	8	timed	0.792591	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_noref_50_windows_t1	9	timed	0.793968	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_noref_50_windows_t1	10	timed	0.797840	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_noref_50_windows_t1	11	timed	0.797731	10000 items	81920000 bytes	sha256 10000/10000
+# exit 0 end 2026-10-05T20:56:08Z loadavg 1.20 1.12 1.10 1/1094 2348404

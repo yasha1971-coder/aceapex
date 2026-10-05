@@ -1,0 +1,15 @@
+# agc_t2t_50_windows_t1 start 2026-10-05T20:43:03Z loadavg 1.12 1.26 1.14 1/1105 2346760
+OPEN	agc_t2t_50_windows_t1	1 handles (prefetching=1)	0.424 s
+RUN	agc_t2t_50_windows_t1	0	warmup	10.171869	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_t2t_50_windows_t1	1	warmup	10.106098	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_t2t_50_windows_t1	2	warmup	10.097698	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_t2t_50_windows_t1	3	timed	10.100126	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_t2t_50_windows_t1	4	timed	10.117023	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_t2t_50_windows_t1	5	timed	10.105696	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_t2t_50_windows_t1	6	timed	10.160420	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_t2t_50_windows_t1	7	timed	10.173757	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_t2t_50_windows_t1	8	timed	10.216867	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_t2t_50_windows_t1	9	timed	10.151439	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_t2t_50_windows_t1	10	timed	10.124283	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_t2t_50_windows_t1	11	timed	10.117008	10000 items	81920000 bytes	sha256 10000/10000
+# exit 0 end 2026-10-05T20:45:06Z loadavg 1.13 1.22 1.13 1/1099 2347001

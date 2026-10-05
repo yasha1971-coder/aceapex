@@ -1,0 +1,14 @@
+# agccli_noref_50_windows_t1 start 2026-10-05T21:04:08Z loadavg 1.91 1.40 1.20 2/1103 2349359
+RUN	agccli_noref_50_windows_t1	0	warmup	1.651328	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_noref_50_windows_t1	1	warmup	1.682628	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_noref_50_windows_t1	2	warmup	1.687223	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_noref_50_windows_t1	3	timed	1.659120	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_noref_50_windows_t1	4	timed	1.668263	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_noref_50_windows_t1	5	timed	1.669493	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_noref_50_windows_t1	6	timed	1.655514	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_noref_50_windows_t1	7	timed	1.679492	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_noref_50_windows_t1	8	timed	1.756379	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_noref_50_windows_t1	9	timed	1.774558	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_noref_50_windows_t1	10	timed	1.710086	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_noref_50_windows_t1	11	timed	1.694629	10000 items	81920000 bytes	sha256 10000/10000
+# exit 0 end 2026-10-05T21:04:33Z loadavg 2.21 1.51 1.25 3/1111 2349453

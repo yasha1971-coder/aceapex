@@ -1,0 +1,15 @@
+# agc_t2t_50_sample4_t1 start 2026-10-05T20:45:18Z loadavg 1.18 1.22 1.14 1/1112 2347049
+OPEN	agc_t2t_50_sample4_t1	1 handles (prefetching=1)	0.425 s
+RUN	agc_t2t_50_sample4_t1	0	warmup	34.439642	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_t2t_50_sample4_t1	1	warmup	30.811775	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_t2t_50_sample4_t1	2	warmup	30.956280	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_t2t_50_sample4_t1	3	timed	31.008568	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_t2t_50_sample4_t1	4	timed	30.966013	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_t2t_50_sample4_t1	5	timed	30.991840	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_t2t_50_sample4_t1	6	timed	31.082546	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_t2t_50_sample4_t1	7	timed	31.063828	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_t2t_50_sample4_t1	8	timed	31.046914	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_t2t_50_sample4_t1	9	timed	31.017244	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_t2t_50_sample4_t1	10	timed	31.045759	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_t2t_50_sample4_t1	11	timed	31.083827	4 items	11989829249 bytes	sha256 4/4
+# exit 0 end 2026-10-05T20:53:32Z loadavg 1.13 1.10 1.10 1/1101 2348015

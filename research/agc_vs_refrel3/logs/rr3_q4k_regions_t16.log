@@ -1,0 +1,15 @@
+# rr3_q4k_regions_t16 start 2026-10-05T21:05:04Z loadavg 2.50 1.68 1.31 2/1105 2349751
+OPEN	rr3_q4k_regions_t16	reference + 50 archives (q4k)	16.833 s
+RUN	rr3_q4k_regions_t16	0	warmup	0.008122	1000 items	70446818 bytes	sha256 1000/1000
+RUN	rr3_q4k_regions_t16	1	warmup	0.007104	1000 items	70446818 bytes	sha256 1000/1000
+RUN	rr3_q4k_regions_t16	2	warmup	0.006830	1000 items	70446818 bytes	sha256 1000/1000
+RUN	rr3_q4k_regions_t16	3	timed	0.006722	1000 items	70446818 bytes	sha256 1000/1000
+RUN	rr3_q4k_regions_t16	4	timed	0.006717	1000 items	70446818 bytes	sha256 1000/1000
+RUN	rr3_q4k_regions_t16	5	timed	0.007101	1000 items	70446818 bytes	sha256 1000/1000
+RUN	rr3_q4k_regions_t16	6	timed	0.006972	1000 items	70446818 bytes	sha256 1000/1000
+RUN	rr3_q4k_regions_t16	7	timed	0.006560	1000 items	70446818 bytes	sha256 1000/1000
+RUN	rr3_q4k_regions_t16	8	timed	0.007018	1000 items	70446818 bytes	sha256 1000/1000
+RUN	rr3_q4k_regions_t16	9	timed	0.006891	1000 items	70446818 bytes	sha256 1000/1000
+RUN	rr3_q4k_regions_t16	10	timed	0.006711	1000 items	70446818 bytes	sha256 1000/1000
+RUN	rr3_q4k_regions_t16	11	timed	0.006638	1000 items	70446818 bytes	sha256 1000/1000
+# exit 0 end 2026-10-05T21:05:21Z loadavg 2.47 1.71 1.33 2/1110 2349983

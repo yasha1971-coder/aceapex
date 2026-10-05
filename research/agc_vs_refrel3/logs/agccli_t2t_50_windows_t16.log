@@ -1,0 +1,14 @@
+# agccli_t2t_50_windows_t16 start 2026-10-05T21:16:07Z loadavg 2.44 2.85 2.17 1/1097 2354268
+RUN	agccli_t2t_50_windows_t16	0	warmup	9.093379	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_t2t_50_windows_t16	1	warmup	9.120706	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_t2t_50_windows_t16	2	warmup	9.145516	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_t2t_50_windows_t16	3	timed	9.133216	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_t2t_50_windows_t16	4	timed	9.144715	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_t2t_50_windows_t16	5	timed	9.138278	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_t2t_50_windows_t16	6	timed	9.060762	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_t2t_50_windows_t16	7	timed	9.156787	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_t2t_50_windows_t16	8	timed	9.129348	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_t2t_50_windows_t16	9	timed	9.155714	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_t2t_50_windows_t16	10	timed	9.157063	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_t2t_50_windows_t16	11	timed	9.073668	10000 items	81920000 bytes	sha256 10000/10000
+# exit 0 end 2026-10-05T21:18:01Z loadavg 1.27 2.28 2.04 1/1101 2354698
