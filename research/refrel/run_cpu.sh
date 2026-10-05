@@ -4,6 +4,7 @@
 # curves (refrel and open, 1 and 16 threads), AGC with T2T as the first sample. Logs: research/refrel/logs/.
 # Usage: research/refrel/run_cpu.sh <t2t.fa> <work_dir> <asm.fa>...      (run from the repository root, CLI built: make)
 set -Eeuo pipefail
+ulimit -c 0   # no core dumps from test runs
 REFFA=$1; WD=$2; shift 2; ASMS=("$@"); T=$(nproc)
 mkdir -p $WD
 g++ -std=c++17 -O3 -march=native -funroll-loops -Isrc -o $WD/refrel research/refrel/refrel.cpp src/aceapex_api.cpp -lzstd -lpthread

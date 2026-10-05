@@ -3,6 +3,7 @@
 # (load < 0.5, > 20 GB free; background recorded), then every configuration one after another; 3 warm-ups + 9 timed
 # runs (ONLY50=1: only the all-50 pass, own gate file; all-50 whole samples: 1 timed run, one sample in memory at a time - mode each); threads 1 (taskset -c 3) and 16. Logs: logs/<label>.log.
 set -uo pipefail
+ulimit -c 0   # no core dumps from test runs
 A=${A:?work dir}; L=$(cd "$(dirname "$0")" && pwd)/logs; mkdir -p $L
 REF=$HOME/golden/genome/t2t.fa; V1=$HOME/pubrepo/.wk/hprc_cohort/v1; AGCD=$HOME/pubrepo/.wk/refrel/agc; AGCBIN=$HOME/pubrepo/.wk/tl/agc
 TR=$A/truth_all.tsv; WIN=$A/req/windows_8192.tsv; REG=$A/req/regions.tsv
