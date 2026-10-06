@@ -29,3 +29,18 @@ v1 archives (every check on), names and order of `agc listset t2t_50.agc`:
 - `integrity.sh` (`integrity.out`, `integrity558.tsv`): listset == t2t + 558; listctg == the FASTA's contigs in order
   558 / 558; getset -l 80 (year-1) / 60 (release 2) -> XXH3 == manifest fasta_xxh3 558 / 558 (every assembly comes back
   byte for byte as its source file).
+
+## Section 4. Measurement - done (2026-10-06 15:29 - 20:27 UTC)
+
+`measure558.sh`, logs `logs/` (silence gate 15:29:57 UTC, load 0.49, 62 GB free). 16 configurations x 12 runs (3 warm-ups
++ 9 timed) = 192 runs; every answer of every run SHA-256 == truth, every process exit 0. Requests: 10 000 windows of
+8 192 bases, 1 000 regions, the first 4 manifest assemblies whole. Medians (all 9 raw times in the logs):
+
+| task | threads | refrel3 q4k | refrel3 q16k | AGC in process | AGC CLI (one process) |
+|---|---:|---:|---:|---:|---:|
+| windows, windows/s | 1 | 94 324 | 58 344 | 26.6 | 27.7 |
+| | 16 | 840 831 | 552 517 | 94.8 | 26.9 |
+| regions, regions/s | 1 | 21 590 | 18 761 | 26.1 | 26.5 |
+| | 16 | 136 780 | 125 818 | 93.6 | 26.5 |
+| whole sample, s per sample | 1 | 1.312 | 1.284 | 7.608 | - |
+| | 16 | 0.233 | 0.233 | 2.869 | - |

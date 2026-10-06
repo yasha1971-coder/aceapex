@@ -34,7 +34,21 @@ Evidence: `research/agc_vs_refrel3/README.md` (N = 50), `research/agc_vs_refrel3
 
 Evidence: `research/agc_vs_refrel3/SUMMARY_runs.md`, `logs/`.
 
-## 3. CPU random access, N = 558 (in process) - pending (M1 running under PROTOCOL_AGC558)
+## 3. CPU random access, N = 558 (in process; AGC CLI separately)
+
+- Protocol: `research/agc_vs_refrel3/PROTOCOL_AGC558.md` (frozen); AGC archive = one create, integrity PASS; truth from
+  the v1 decode with source XXH3 checks; same host; 3 + 9; every answer SHA-256 == truth (192 runs).
+
+| task | threads | refrel3 q4k | refrel3 q16k | AGC in process | AGC CLI |
+|---|---:|---:|---:|---:|---:|
+| 10 000 windows x 8 192, windows/s | 1 | 94 324 | 58 344 | 26.6 | 27.7 |
+| | 16 | 840 831 | 552 517 | 94.8 | 26.9 |
+| 1 000 regions, regions/s | 1 | 21 590 | 18 761 | 26.1 | 26.5 |
+| | 16 | 136 780 | 125 818 | 93.6 | 26.5 |
+| whole sample, s per sample (first 4) | 1 | 1.312 | 1.284 | 7.608 | - |
+| | 16 | 0.233 | 0.233 | 2.869 | - |
+
+Evidence: `research/agc_vs_refrel3/agc558/RUN.md`, `logs/`.
 
 ## 4. One-thread full decode D_Q (window law), HPRC N = 4
 

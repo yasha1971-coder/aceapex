@@ -1,0 +1,15 @@
+# agc_windows_t16 start 2026-10-06T18:37:08Z loadavg 3.27 2.32 1.62 1/970 2813172
+OPEN	agc_windows_t16	16 handles (prefetching=1)	18.113 s
+RUN	agc_windows_t16	0	warmup	105.051111	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_windows_t16	1	warmup	104.829885	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_windows_t16	2	warmup	104.986728	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_windows_t16	3	timed	105.116592	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_windows_t16	4	timed	105.502495	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_windows_t16	5	timed	105.674610	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_windows_t16	6	timed	105.219570	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_windows_t16	7	timed	105.570427	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_windows_t16	8	timed	105.427712	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_windows_t16	9	timed	105.453234	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_windows_t16	10	timed	105.276400	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agc_windows_t16	11	timed	105.612104	10000 items	81920000 bytes	sha256 10000/10000
+# exit 0 end 2026-10-06T18:58:33Z loadavg 15.58 16.31 12.76 1/971 2816129

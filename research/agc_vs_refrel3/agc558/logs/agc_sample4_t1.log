@@ -1,0 +1,15 @@
+# agc_sample4_t1 start 2026-10-06T17:02:10Z loadavg 1.03 1.08 1.08 1/963 2799466
+OPEN	agc_sample4_t1	1 handles (prefetching=1)	1.253 s
+RUN	agc_sample4_t1	0	warmup	41.868422	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_sample4_t1	1	warmup	32.625437	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_sample4_t1	2	warmup	30.355461	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_sample4_t1	3	timed	30.371865	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_sample4_t1	4	timed	30.392948	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_sample4_t1	5	timed	30.404054	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_sample4_t1	6	timed	30.432409	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_sample4_t1	7	timed	30.475086	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_sample4_t1	8	timed	30.658155	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_sample4_t1	9	timed	31.210764	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_sample4_t1	10	timed	30.506603	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_sample4_t1	11	timed	30.370499	4 items	11989829249 bytes	sha256 4/4
+# exit 0 end 2026-10-06T17:10:31Z loadavg 1.36 1.39 1.25 1/975 2800663

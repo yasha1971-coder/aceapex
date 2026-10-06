@@ -1,0 +1,14 @@
+# agccli_windows_t16 start 2026-10-06T19:05:42Z loadavg 2.13 7.72 10.35 1/962 2818036
+RUN	agccli_windows_t16	0	warmup	376.064353	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_windows_t16	1	warmup	371.014060	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_windows_t16	2	warmup	372.304437	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_windows_t16	3	timed	372.412991	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_windows_t16	4	timed	371.774516	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_windows_t16	5	timed	372.364570	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_windows_t16	6	timed	370.994659	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_windows_t16	7	timed	372.711947	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_windows_t16	8	timed	373.830706	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_windows_t16	9	timed	375.689666	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_windows_t16	10	timed	372.413299	10000 items	81920000 bytes	sha256 10000/10000
+RUN	agccli_windows_t16	11	timed	370.581381	10000 items	81920000 bytes	sha256 10000/10000
+# exit 0 end 2026-10-06T20:20:18Z loadavg 1.66 1.54 1.56 3/977 2827034

@@ -1,0 +1,14 @@
+# agccli_regions_t16 start 2026-10-06T20:20:18Z loadavg 1.66 1.54 1.56 4/977 2827036
+RUN	agccli_regions_t16	0	warmup	38.439319	1000 items	72874336 bytes	sha256 1000/1000
+RUN	agccli_regions_t16	1	warmup	38.194521	1000 items	72874336 bytes	sha256 1000/1000
+RUN	agccli_regions_t16	2	warmup	38.287019	1000 items	72874336 bytes	sha256 1000/1000
+RUN	agccli_regions_t16	3	timed	37.976583	1000 items	72874336 bytes	sha256 1000/1000
+RUN	agccli_regions_t16	4	timed	37.206031	1000 items	72874336 bytes	sha256 1000/1000
+RUN	agccli_regions_t16	5	timed	37.532706	1000 items	72874336 bytes	sha256 1000/1000
+RUN	agccli_regions_t16	6	timed	37.522245	1000 items	72874336 bytes	sha256 1000/1000
+RUN	agccli_regions_t16	7	timed	37.713014	1000 items	72874336 bytes	sha256 1000/1000
+RUN	agccli_regions_t16	8	timed	37.803950	1000 items	72874336 bytes	sha256 1000/1000
+RUN	agccli_regions_t16	9	timed	37.606264	1000 items	72874336 bytes	sha256 1000/1000
+RUN	agccli_regions_t16	10	timed	38.101027	1000 items	72874336 bytes	sha256 1000/1000
+RUN	agccli_regions_t16	11	timed	37.865403	1000 items	72874336 bytes	sha256 1000/1000
+# exit 0 end 2026-10-06T20:27:56Z loadavg 1.15 1.44 1.56 1/967 2828127
