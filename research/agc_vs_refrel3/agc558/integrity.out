@@ -1,0 +1,3 @@
+LISTSET ok: t2t + 558
+SETS 558, listctg+getset failures: 0
+exit 0

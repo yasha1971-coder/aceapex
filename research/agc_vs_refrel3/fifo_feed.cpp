@@ -4,8 +4,10 @@
 // (refrel3v1 full_v1 verify: block XXH3 + rebuilt FASTA XXH3 == the header's = the source's) and writes the FASTA;
 // a failed check writes nothing (the reader sees an empty file) and is reported. At most <max decodes> decodes hold
 // memory at a time. The decoded T2T is loaded once. Exit code 0 only if every pipe was served in full.
+// A name may be given as <fifo name>=<archive name> (pipe <fifo name>.fa fed from <archive name>.<dataset>.rr3).
 #include "refrel3v1_nomain.cpp"
 #include <condition_variable>
+#include <map>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -15,6 +17,7 @@ int main(int argc, char** argv) {
     for (int c = 0; c < 256; c++) COMP[c] = rr_comp((uint8_t)c);
     Ref ref = load_ref(argv[1], 1, false); const std::string adir = argv[2], ds = argv[3], fdir = argv[4]; const int MAXD = atoi(argv[5]);
     std::vector<std::string> names(argv + 6, argv + argc);
+    std::map<std::string, std::string> arc; for (auto& n : names) { const size_t e = n.find('='); if (e != std::string::npos) { arc[n.substr(0, e)] = n.substr(e + 1); n = n.substr(0, e); } else arc[n] = n; }
     for (auto& n : names) { const std::string p = fdir + "/" + n + ".fa"; unlink(p.c_str()); if (mkfifo(p.c_str(), 0600)) { perror(p.c_str()); return 2; } }
     fprintf(stderr, "fifo_feed: reference loaded, %zu pipes ready\n", names.size());
     std::mutex mu; std::condition_variable cv; int active = 0; std::atomic<int> bad{0};
@@ -25,7 +28,7 @@ int main(int argc, char** argv) {
         if (fd < 0) { perror(p.c_str()); bad++; return; }
         { std::unique_lock<std::mutex> lk(mu); cv.wait(lk, [&] { return active < MAXD; }); active++; }
         std::string fa; bool ok = false;
-        { const std::vector<uint8_t> a = slurp(adir + "/" + n + "." + ds + ".rr3"); V1 X; std::string why;
+        { const std::vector<uint8_t> a = slurp(adir + "/" + arc.at(n) + "." + ds + ".rr3"); V1 X; std::string why;
           if (open_v1(a.data(), a.size(), ref, X, why)) fprintf(stderr, "%s refused: %s\n", n.c_str(), why.c_str());
           else { const int e = full_v1(X, ref, fa, true, 4); if (e) fprintf(stderr, "%s: decode check %d failed\n", n.c_str(), e); else ok = true; } }
         size_t off = 0;
