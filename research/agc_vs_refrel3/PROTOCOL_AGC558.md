@@ -1,6 +1,7 @@
 # PROTOCOL_AGC558 - AGC 3.2.4 vs refrel3 v1 on all 558 HPRC assemblies (written before any measurement)
 
-Status: draft for approval. After approval this file is not changed; any deviation is reported as a deviation.
+Status: approved by the author 2026-10-06 with the two additions below (sections 3a, 6); frozen - its SHA-256 is in
+`agc558/PROTOCOL_AGC558.sha256`; no change after that; any deviation is reported as a deviation.
 
 ## 1. Corpus
 
@@ -36,6 +37,15 @@ The first 5 manifest assemblies (sources on disk, `.fa.gz` SHA-256 == the year-1
 2. the same `agc create` with the same paths replaced by FIFOs fed by `fifo_feed` from the q16k v1 archives:
    archive byte-identical to 1, else STOP and report (e.g. AGC reading an input twice) - no workaround.
 
+## 3a. Dress rehearsal (after section 3, before section 2's create on 558)
+
+`agc create` through FIFOs (fifo_feed from the q16k v1 archives) on the same 50 assemblies as `t2t_50.agc`, in its set
+order and with its set names, with the parameters of section 2. Criterion: SHA-256 == `t2t_50.agc`. If `t2t_50.agc`
+was built differently (e.g. without `-d`, so it stores its command line, or by the release binary) and the bytes differ
+only for that reason, compare archives built the same way (FIFO vs regular files, same build and options) and record
+it. Peak RSS of the call measured. Report the RAM of ace-core (`free -g`) and the forecast peak for 558; if the
+forecast is above 80 % of the RAM: stop and report - the parameters are not changed.
+
 ## 4. Measurement
 
 - Host ace-core (AMD EPYC 4344P, 8 cores / 16 threads, 125 GB); silence gate before the runs: load < 0.5, > 20 GB
@@ -62,3 +72,8 @@ The first 5 manifest assemblies (sources on disk, `.fa.gz` SHA-256 == the year-1
 - The whole measurement is not started if section 3 or the integrity checks of section 2 fail, or the silence gate
   does not pass.
 - Runs are not repeated selectively; a rerun repeats the whole configuration and both results are kept.
+
+## 6. Evidence
+
+Recorded with the results: hardware, OS, compiler and AGC build flags, git hashes (aceapex, AGC), the SHA-256 of this
+protocol, the create parameters, wall time and peak memory of every create, the integrity results of section 2.
