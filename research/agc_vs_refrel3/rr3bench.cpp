@@ -7,7 +7,8 @@
 //        whole samples one after another; each: every block decoded, blocks spread over the threads, into one array
 //   rr3bench each ... (as sample) - one sample in memory at a time: time = sum of per-sample decode times, SHA-256 checked
 //        and the array freed after each sample (outside timing); EACH line per sample (all-50 pass)
-// Archives: <dir>/y1_<sample>.<dataset>.rr3. Output upper case (lower-case runs not applied: the truth is upper case).
+// Archives: <dir>/y1_<sample>.<dataset>.rr3, or <dir>/<manifest name>.<dataset>.rr3 by the map in env AVR_NAMES
+// (manifest name <tab> AGC set name = request sample). Output upper case (lower-case runs not applied: the truth is upper case).
 #include "refrel3v1_nomain.cpp"
 #include "bench_common.h"
 int main(int argc, char** argv) {
@@ -18,7 +19,8 @@ int main(int argc, char** argv) {
     std::vector<std::string> names; for (auto& kv : tr.bases) names.push_back(kv.first);
     std::map<std::string, size_t> idx; std::vector<std::vector<uint8_t>> bytes(names.size()); std::vector<std::unique_ptr<V1>> X(names.size());
     std::vector<std::map<std::string, uint64_t>> boff(names.size());
-    for (size_t i = 0; i < names.size(); i++) { idx[names[i]] = i; bytes[i] = slurp(dir + "/y1_" + names[i] + "." + ds + ".rr3"); X[i].reset(new V1()); std::string why;
+    std::map<std::string, std::string> man; if (getenv("AVR_NAMES")) for (auto& v : read_tsv(getenv("AVR_NAMES"))) man[v[1]] = v[0];
+    for (size_t i = 0; i < names.size(); i++) { idx[names[i]] = i; bytes[i] = slurp(dir + "/" + (man.count(names[i]) ? man[names[i]] : "y1_" + names[i]) + "." + ds + ".rr3"); X[i].reset(new V1()); std::string why;
         if (open_v1(bytes[i].data(), bytes[i].size(), ref, *X[i], why)) { fprintf(stderr, "%s refused: %s\n", names[i].c_str(), why.c_str()); return 2; }
         for (auto& r : X[i]->rec) boff[i][r.hdr.substr(0, r.hdr.find_first_of(" \t"))] = r.boff; }
     printf("OPEN\t%s\treference + %zu archives (%s)\t%.3f s\n", label, names.size(), ds.c_str(), now_s_() - t0); fflush(stdout);

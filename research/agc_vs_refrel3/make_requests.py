@@ -4,7 +4,8 @@ comparison, from the contig tables of the archives (names = FASTA header up to t
                     (a window never crosses contigs), random.Random(20261003)
   regions.tsv       1 000 regions: sample uniform, contig weighted by length, length 1 + floor(2^(20 u)) capped at the
                     contig, start uniform, random.Random(20261005)
-Columns: id sample contig start(0-based) length. Sample = manifest name without the y1_ prefix (AGC set name)."""
+Columns: id sample contig start(0-based) length. Sample = the AGC set name: manifest name without the y1_ prefix, or
+by the optional map file (third argument: manifest name <tab> AGC set name)."""
 import bisect
 import os
 import random
@@ -13,8 +14,9 @@ import sys
 import panvram  # noqa: E402  (CPU path: contig tables only)
 
 src, out = sys.argv[1], sys.argv[2]
+amap = dict(l.rstrip("\n").split("\t") for l in open(sys.argv[3])) if len(sys.argv) > 3 else None   # manifest name -> AGC set name
 c = panvram.Cohort.open(src, device="cpu", dataset="q4k")
-samples = [n[3:] if n.startswith("y1_") else n for n in c.names]
+samples = [amap[n] for n in c.names] if amap else [n[3:] if n.startswith("y1_") else n for n in c.names]
 ctgs = [(samples[a], name, length) for a in range(len(c)) for (name, _, length, _, _) in c.contigs(a)]
 W = 8192
 valid = [max(0, L - W + 1) for (_, _, L) in ctgs]

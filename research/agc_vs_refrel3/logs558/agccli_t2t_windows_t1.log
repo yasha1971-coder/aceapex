@@ -1,0 +1,14 @@
+# agccli_t2t_windows_t1 start 2026-10-06T02:36:55Z loadavg 1.09 1.14 1.11 1/1081 2427232
+RUN	agccli_t2t_windows_t1	0	warmup	1.482716	10000 items	81920000 bytes	sha256 0/10000
+RUN	agccli_t2t_windows_t1	1	warmup	1.471047	10000 items	81920000 bytes	sha256 0/10000
+RUN	agccli_t2t_windows_t1	2	warmup	1.466147	10000 items	81920000 bytes	sha256 0/10000
+RUN	agccli_t2t_windows_t1	3	timed	1.479986	10000 items	81920000 bytes	sha256 0/10000
+RUN	agccli_t2t_windows_t1	4	timed	1.469425	10000 items	81920000 bytes	sha256 0/10000
+RUN	agccli_t2t_windows_t1	5	timed	1.467907	10000 items	81920000 bytes	sha256 0/10000
+RUN	agccli_t2t_windows_t1	6	timed	1.466885	10000 items	81920000 bytes	sha256 0/10000
+RUN	agccli_t2t_windows_t1	7	timed	1.468029	10000 items	81920000 bytes	sha256 0/10000
+RUN	agccli_t2t_windows_t1	8	timed	1.481667	10000 items	81920000 bytes	sha256 0/10000
+RUN	agccli_t2t_windows_t1	9	timed	1.466990	10000 items	81920000 bytes	sha256 0/10000
+RUN	agccli_t2t_windows_t1	10	timed	1.466131	10000 items	81920000 bytes	sha256 0/10000
+RUN	agccli_t2t_windows_t1	11	timed	1.466139	10000 items	81920000 bytes	sha256 0/10000
+# exit 4 end 2026-10-06T02:37:13Z loadavg 1.07 1.14 1.11 1/1081 2427281

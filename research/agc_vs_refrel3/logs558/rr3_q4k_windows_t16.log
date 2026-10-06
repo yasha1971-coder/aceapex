@@ -1,0 +1,15 @@
+# rr3_q4k_windows_t16 start 2026-10-06T02:37:29Z loadavg 1.05 1.13 1.10 1/1081 2427334
+OPEN	rr3_q4k_windows_t16	reference + 558 archives (q4k)	25.244 s
+RUN	rr3_q4k_windows_t16	0	warmup	0.012712	10000 items	81920000 bytes	sha256 10000/10000
+RUN	rr3_q4k_windows_t16	1	warmup	0.011917	10000 items	81920000 bytes	sha256 10000/10000
+RUN	rr3_q4k_windows_t16	2	warmup	0.011900	10000 items	81920000 bytes	sha256 10000/10000
+RUN	rr3_q4k_windows_t16	3	timed	0.012088	10000 items	81920000 bytes	sha256 10000/10000
+RUN	rr3_q4k_windows_t16	4	timed	0.011769	10000 items	81920000 bytes	sha256 10000/10000
+RUN	rr3_q4k_windows_t16	5	timed	0.011775	10000 items	81920000 bytes	sha256 10000/10000
+RUN	rr3_q4k_windows_t16	6	timed	0.011674	10000 items	81920000 bytes	sha256 10000/10000
+RUN	rr3_q4k_windows_t16	7	timed	0.011817	10000 items	81920000 bytes	sha256 10000/10000
+RUN	rr3_q4k_windows_t16	8	timed	0.011829	10000 items	81920000 bytes	sha256 10000/10000
+RUN	rr3_q4k_windows_t16	9	timed	0.011849	10000 items	81920000 bytes	sha256 10000/10000
+RUN	rr3_q4k_windows_t16	10	timed	0.011800	10000 items	81920000 bytes	sha256 10000/10000
+RUN	rr3_q4k_windows_t16	11	timed	0.011900	10000 items	81920000 bytes	sha256 10000/10000
+# exit 0 end 2026-10-06T02:37:56Z loadavg 1.10 1.13 1.10 1/1083 2427587
