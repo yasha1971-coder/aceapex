@@ -1,0 +1,277 @@
+{
+ "format": "refrel3 v1 (FORMAT.md)",
+ "coordinates": "fetch: contig = record name (header up to the first space or tab), start 0-based, length in bases; answer = those bases, case as in the FASTA",
+ "references": {
+  "reference.fa": "ad1cd0be61ea684b4ab5bf882ee1c5f306973618d3ac080e103c5965bc2dc8a6",
+  "reference_wrong.fa": "15fcf2ab1e4bfc1a26c322f4c0864fc232abc6e595a425802320d85a3807740b"
+ },
+ "archives": [
+  {
+   "archive": "archives/asmA.q16k.hash.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "decode",
+   "fasta_sha256": "5dc6cbe1a1d4478dfab1537f30174770ad15270a48e9561862a87eb7a4e8d6e8",
+   "fasta_bytes": 854096,
+   "fetch": "fetch/asmA.q16k.hash.rr3.fetch.tsv"
+  },
+  {
+   "archive": "archives/asmA.q16k.nohash.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "decode",
+   "fasta_sha256": "5dc6cbe1a1d4478dfab1537f30174770ad15270a48e9561862a87eb7a4e8d6e8",
+   "fasta_bytes": 854096,
+   "fetch": "fetch/asmA.q16k.nohash.rr3.fetch.tsv"
+  },
+  {
+   "archive": "archives/asmA.q4k.hash.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "decode",
+   "fasta_sha256": "5dc6cbe1a1d4478dfab1537f30174770ad15270a48e9561862a87eb7a4e8d6e8",
+   "fasta_bytes": 854096,
+   "fetch": "fetch/asmA.q4k.hash.rr3.fetch.tsv"
+  },
+  {
+   "archive": "archives/asmA.q4k.nohash.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "decode",
+   "fasta_sha256": "5dc6cbe1a1d4478dfab1537f30174770ad15270a48e9561862a87eb7a4e8d6e8",
+   "fasta_bytes": 854096,
+   "fetch": "fetch/asmA.q4k.nohash.rr3.fetch.tsv"
+  },
+  {
+   "archive": "archives/asmB.q16k.hash.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "decode",
+   "fasta_sha256": "5d75c95f7a9bc562e16a33f1b6eaace68e9a2495e75169ed1c5e6e89b5250aa1",
+   "fasta_bytes": 455602,
+   "fetch": "fetch/asmB.q16k.hash.rr3.fetch.tsv"
+  },
+  {
+   "archive": "archives/asmB.q16k.nohash.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "decode",
+   "fasta_sha256": "5d75c95f7a9bc562e16a33f1b6eaace68e9a2495e75169ed1c5e6e89b5250aa1",
+   "fasta_bytes": 455602,
+   "fetch": "fetch/asmB.q16k.nohash.rr3.fetch.tsv"
+  },
+  {
+   "archive": "archives/asmB.q4k.hash.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "decode",
+   "fasta_sha256": "5d75c95f7a9bc562e16a33f1b6eaace68e9a2495e75169ed1c5e6e89b5250aa1",
+   "fasta_bytes": 455602,
+   "fetch": "fetch/asmB.q4k.hash.rr3.fetch.tsv"
+  },
+  {
+   "archive": "archives/asmB.q4k.nohash.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "decode",
+   "fasta_sha256": "5d75c95f7a9bc562e16a33f1b6eaace68e9a2495e75169ed1c5e6e89b5250aa1",
+   "fasta_bytes": 455602,
+   "fetch": "fetch/asmB.q4k.nohash.rr3.fetch.tsv"
+  },
+  {
+   "archive": "archives/asmC.q16k.hash.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "decode",
+   "fasta_sha256": "8c3f85e23513a4fea6741d2da357008232a95200df4c2aa8d7e9b75ff1811646",
+   "fasta_bytes": 301289,
+   "fetch": "fetch/asmC.q16k.hash.rr3.fetch.tsv"
+  },
+  {
+   "archive": "archives/asmC.q16k.nohash.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "decode",
+   "fasta_sha256": "8c3f85e23513a4fea6741d2da357008232a95200df4c2aa8d7e9b75ff1811646",
+   "fasta_bytes": 301289,
+   "fetch": "fetch/asmC.q16k.nohash.rr3.fetch.tsv"
+  },
+  {
+   "archive": "archives/asmC.q4k.hash.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "decode",
+   "fasta_sha256": "8c3f85e23513a4fea6741d2da357008232a95200df4c2aa8d7e9b75ff1811646",
+   "fasta_bytes": 301289,
+   "fetch": "fetch/asmC.q4k.hash.rr3.fetch.tsv"
+  },
+  {
+   "archive": "archives/asmC.q4k.nohash.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "decode",
+   "fasta_sha256": "8c3f85e23513a4fea6741d2da357008232a95200df4c2aa8d7e9b75ff1811646",
+   "fasta_bytes": 301289,
+   "fetch": "fetch/asmC.q4k.nohash.rr3.fetch.tsv"
+  },
+  {
+   "archive": "archives/asmD.q16k.hash.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "decode",
+   "fasta_sha256": "6555b54be358e6baa9e0af08178fcc14d95007c9d302b4fbbd98c0dccdb1f60a",
+   "fasta_bytes": 146378,
+   "fetch": "fetch/asmD.q16k.hash.rr3.fetch.tsv"
+  },
+  {
+   "archive": "archives/asmD.q16k.nohash.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "decode",
+   "fasta_sha256": "6555b54be358e6baa9e0af08178fcc14d95007c9d302b4fbbd98c0dccdb1f60a",
+   "fasta_bytes": 146378,
+   "fetch": "fetch/asmD.q16k.nohash.rr3.fetch.tsv"
+  },
+  {
+   "archive": "archives/asmD.q4k.hash.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "decode",
+   "fasta_sha256": "6555b54be358e6baa9e0af08178fcc14d95007c9d302b4fbbd98c0dccdb1f60a",
+   "fasta_bytes": 146378,
+   "fetch": "fetch/asmD.q4k.hash.rr3.fetch.tsv"
+  },
+  {
+   "archive": "archives/asmD.q4k.nohash.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "decode",
+   "fasta_sha256": "6555b54be358e6baa9e0af08178fcc14d95007c9d302b4fbbd98c0dccdb1f60a",
+   "fasta_bytes": 146378,
+   "fetch": "fetch/asmD.q4k.nohash.rr3.fetch.tsv"
+  },
+  {
+   "archive": "archives/asmE.q16k.hash.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "decode",
+   "fasta_sha256": "053196a1215b0a333a2b8f0591212379bff9edfe401d699af8d41b82ac1c4ecc",
+   "fasta_bytes": 274584,
+   "fetch": "fetch/asmE.q16k.hash.rr3.fetch.tsv"
+  },
+  {
+   "archive": "archives/asmE.q16k.nohash.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "decode",
+   "fasta_sha256": "053196a1215b0a333a2b8f0591212379bff9edfe401d699af8d41b82ac1c4ecc",
+   "fasta_bytes": 274584,
+   "fetch": "fetch/asmE.q16k.nohash.rr3.fetch.tsv"
+  },
+  {
+   "archive": "archives/asmE.q4k.hash.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "decode",
+   "fasta_sha256": "053196a1215b0a333a2b8f0591212379bff9edfe401d699af8d41b82ac1c4ecc",
+   "fasta_bytes": 274584,
+   "fetch": "fetch/asmE.q4k.hash.rr3.fetch.tsv"
+  },
+  {
+   "archive": "archives/asmE.q4k.nohash.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "decode",
+   "fasta_sha256": "053196a1215b0a333a2b8f0591212379bff9edfe401d699af8d41b82ac1c4ecc",
+   "fasta_bytes": 274584,
+   "fetch": "fetch/asmE.q4k.nohash.rr3.fetch.tsv"
+  },
+  {
+   "archive": "archives/asmF.q16k.hash.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "decode",
+   "fasta_sha256": "c6f9fe0a879581fc3592137db5d9cdfff52483479fd6794cf6fc11eb49ff499a",
+   "fasta_bytes": 731862,
+   "fetch": "fetch/asmF.q16k.hash.rr3.fetch.tsv"
+  },
+  {
+   "archive": "archives/asmF.q16k.nohash.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "decode",
+   "fasta_sha256": "c6f9fe0a879581fc3592137db5d9cdfff52483479fd6794cf6fc11eb49ff499a",
+   "fasta_bytes": 731862,
+   "fetch": "fetch/asmF.q16k.nohash.rr3.fetch.tsv"
+  },
+  {
+   "archive": "archives/asmF.q4k.hash.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "decode",
+   "fasta_sha256": "c6f9fe0a879581fc3592137db5d9cdfff52483479fd6794cf6fc11eb49ff499a",
+   "fasta_bytes": 731862,
+   "fetch": "fetch/asmF.q4k.hash.rr3.fetch.tsv"
+  },
+  {
+   "archive": "archives/asmF.q4k.nohash.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "decode",
+   "fasta_sha256": "c6f9fe0a879581fc3592137db5d9cdfff52483479fd6794cf6fc11eb49ff499a",
+   "fasta_bytes": 731862,
+   "fetch": "fetch/asmF.q4k.nohash.rr3.fetch.tsv"
+  }
+ ],
+ "corrupt": [
+  {
+   "archive": "corrupt/truncated.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "refuse",
+   "tool_response": {
+    "exit": 2,
+    "message": "refused: section sizes",
+    "output_written": false
+   }
+  },
+  {
+   "archive": "corrupt/header_byte.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "refuse",
+   "tool_response": {
+    "exit": 2,
+    "message": "refused: block count",
+    "output_written": false
+   }
+  },
+  {
+   "archive": "corrupt/block_with_hash.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "refuse",
+   "tool_response": {
+    "exit": 3,
+    "message": "decode failed (block)",
+    "output_written": false
+   }
+  },
+  {
+   "archive": "corrupt/valid_for_wrong_reference.rr3",
+   "reference": "reference/reference_wrong.fa",
+   "expect": "refuse",
+   "tool_response": {
+    "exit": 2,
+    "message": "refused: reference SHA-256 / size differs",
+    "output_written": false
+   }
+  },
+  {
+   "archive": "corrupt/block_hash_byte.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "refuse",
+   "how": "asmC.q4k.hash.rr3: byte 3 of the stored XXH3 of block 5 changed; payload intact; header XXH3 recomputed",
+   "tool_response": {
+    "exit": 3,
+    "message": "decode failed (block XXH3)",
+    "output_written": false
+   }
+  },
+  {
+   "archive": "corrupt/fasta_xxh3_field.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "refuse",
+   "how": "asmD.q16k.hash.rr3: byte 0 of the header's source-FASTA XXH3 field (offset 80) changed; header XXH3 recomputed",
+   "tool_response": {
+    "exit": 3,
+    "message": "decode failed (FASTA XXH3)",
+    "output_written": false
+   }
+  },
+  {
+   "archive": "corrupt/blocks_swapped.rr3",
+   "reference": "reference/reference.fa",
+   "expect": "refuse",
+   "how": "asmC.q4k.hash.rr3: payload blocks 64 and 67 (both 5 B) swapped; block table and header untouched; both rANS streams decode",
+   "tool_response": {
+    "exit": 3,
+    "message": "decode failed (block XXH3)",
+    "output_written": false
+   }
+  }
+ ]
+}
