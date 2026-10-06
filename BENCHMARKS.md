@@ -86,3 +86,5 @@ Evidence: `research/agc_vs_refrel3/agc558/RUN.md`, `logs/`.
   same hosts, C-103); the GPU pays off only in batches.
 - **Training:** no speed-up of a training step measured (C-086: batch fetch 0.20 % of the step for this path, 0.02 % for
   raw sequence in VRAM).
+- **Coordinates:** translation of reference coordinates to haplotype coordinates is not implemented; fetch works only in
+  the coordinates of each assembly.
