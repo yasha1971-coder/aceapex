@@ -12,7 +12,7 @@
 set -Eeuo pipefail
 ulimit -c 0
 DRIVE=${DRIVE:-/content/drive/MyDrive}; STORE=$DRIVE/aceapex_corpus; LOGS=$DRIVE/aceapex_logs
-W=${W:-/content/gpu_d2d}; SRC=$W/aceapex; TAG=${TAG:-v2.2.2}
+W=${W:-/content/gpu_d2d}; SRC=$W/aceapex; TAG=${TAG:-v2.2.2}; HERE=$(cd "$(dirname "$0")" && pwd)
 [ -d $DRIVE ] || { echo "Drive not mounted"; echo "DONE — выключи runtime"; exit 1; }
 mkdir -p $W $LOGS; DAY=$(date -u +%Y-%m-%d); RUNLOG=$W/run.log; OUT=$LOGS/gpu_d2d_$DAY.txt; STAGE=setup
 exec > >(tee -a $RUNLOG) 2>&1
@@ -36,7 +36,7 @@ f_get(){ local name=$1 url=$2; if [ -s $STORE/$name ]; then cp $STORE/$name $W/$
 STAGE=build
 [ -d $SRC/.git ] || git clone -q https://github.com/yasha1971-coder/aceapex.git $SRC
 git -C $SRC checkout -q $TAG; echo "aceapex $TAG $(git -C $SRC rev-parse HEAD)" | tee -a $W/env.txt
-pip -q install nvidia-nvcomp-cu12 cupy-cuda12x 2>&1 | grep -v 'requires\|incompatible' | tail -1 || true
+pip -q install nvidia-nvcomp-cu12 2>&1 | grep -v 'requires\|incompatible' | tail -1 || true
 NV=$(dirname "$(dirname "$(find / -name libnvcomp.so.5 -path '*libnvcomp/lib64*' 2>/dev/null | head -n 1)")")
 pip show nvidia-nvcomp-cu12 | grep -i '^version' | sed 's/^/nvcomp /' | tee -a $W/env.txt
 export LD_LIBRARY_PATH=$NV/lib64:${LD_LIBRARY_PATH:-}
@@ -70,34 +70,10 @@ for X in silesia.tar enwik9; do
 done
 
 STAGE=nvcomp
-cat > $W/nvc.py <<'EOF'
-# nvCOMP batched codecs on the device: size, ratio, decode time by CUDA events (median of 9 after 3 warm-ups), output ==
-# original (SHA-256), H2D of the compressed buffer from pinned host memory (CUDA events, median of 9).
-import hashlib, sys, cupy as cp, numpy as np
-from nvidia import nvcomp
-f = sys.argv[1]; data = open(f, "rb").read(); n = len(data); want = hashlib.sha256(data).hexdigest()
-d_in = nvcomp.as_array(cp.asarray(np.frombuffer(data, dtype=np.uint8)))
-def ev_ms(fn, reps=9, warm=3):
-    t = []
-    for i in range(warm + reps):
-        a, b = cp.cuda.Event(), cp.cuda.Event(); a.record(); fn(); b.record(); b.synchronize()
-        if i >= warm: t.append(cp.cuda.get_elapsed_time(a, b))
-    return sorted(t)[len(t) // 2]
-for algo in ("LZ4", "Zstd", "GDeflate", "ANS"):
-    try:
-        codec = nvcomp.Codec(algorithm=algo, uncomp_chunk_size=65536)
-        comp = codec.encode(d_in); cp.cuda.Device().synchronize(); csz = comp.buffer_size
-        out = codec.decode(comp); cp.cuda.Device().synchronize()
-        ok = hashlib.sha256(cp.asnumpy(cp.asarray(out)).tobytes()).hexdigest() == want
-        ms = ev_ms(lambda: codec.decode(comp))
-        hbuf = cp.cuda.alloc_pinned_memory(csz); hv = np.frombuffer(hbuf, dtype=np.uint8, count=csz)
-        hv[:] = cp.asnumpy(cp.asarray(comp)).view(np.uint8)[:csz]; dbuf = cp.empty(csz, dtype=cp.uint8)
-        h2d = ev_ms(lambda: dbuf.set(hv))
-        print(f"NVCOMP\t{f}\t{algo}\tchunk 64K\t{csz}\t{n / csz:.4f}\t{ms:.3f} ms\t{n / ms / 1e6:.2f} GB/s\tH2D {h2d:.3f} ms\tpath {n / (ms + h2d) / 1e6:.2f} GB/s\tsha {'ok' if ok else 'DIFFERS'}")
-    except Exception as e:
-        print(f"NVCOMP\t{f}\t{algo}\tchunk 64K\tnot run: {type(e).__name__}: {e}")
-EOF
-for X in silesia.tar enwik9; do python3 $W/nvc.py $W/$X; done | tee $W/nvcomp.txt
+# nvCOMP through its C++ batched API only (no Python wrapper in the timed path): nvc_bench.cu next to this script
+nvcc -std=c++17 -O3 -arch=sm_$SM -I$NV/include -L$NV/lib64 -l:libnvcomp.so.5 -o $W/nvc_bench "$HERE/nvc_bench.cu"
+for X in silesia.tar enwik9; do for a in lz4 zstd gdeflate ans; do
+  $W/nvc_bench $W/$X $a 65536 || echo "NVROW	$W/$X	$a	not run or failed (exit $?)"; done; done | tee $W/nvcomp.txt
 
 STAGE=streamlz
 SLZ=$(ls $STORE/streamlz/* 2>/dev/null | head -1 || true)

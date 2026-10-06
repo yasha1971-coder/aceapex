@@ -65,7 +65,8 @@ Evidence: `research/agc_vs_refrel3/SUMMARY_runs.md`, `logs/`.
 ## Where we lose
 
 - **Size against AGC:** at N = 558 AGC with T2T needs 5.40 MB per assembly, refrel3 13.04 (q16k) - 16.22 (q4k) MB
-  without block hashes: 2.4 - 3.0 x larger (section 1). AGC also compresses against the other assemblies.
+  without block hashes: 2.4 - 3.0 x larger (section 1). At N = 50 the gap was 1.5 - 1.9 x (8.65 against 13.14 - 16.33
+  MB): with a larger cohort AGC wins by more (two measurements; the cause is not stated here).
 - **One-thread full decode:** lz4 frame 1.925 GB/s against refrel3 0.876 - 0.915 GB/s; BGZF equals refrel3 q4k (section 4).
 - **One region on the GPU:** slower than one CPU core (537.2 µs H100, 490.9 µs Blackwell against 137.3 / 107.2 µs on the
   same hosts, C-103); the GPU pays off only in batches.
