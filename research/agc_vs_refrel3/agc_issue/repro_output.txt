@@ -1,0 +1,33 @@
+AGC (Assembled Genomes Compressor) v. 3.2.4 [build 20260722.1]
+archive: t2t.agc 4559638761 B, sets: 561
+== set r2_NA19682_hap2_hprc_r2_v1.0.1
+AGC listctg:
+r2_NA19682_hap2_hprc_r2_v1.0.1
+   NA19682#2#CM094161.1
+   NA19682#2#CM094162.1
+   NA19682#2#CM094163.1
+   NA19682#2#CM094164.1
+source FASTA contigs: 72
+getctg present contig NA19682#2#CM094161.1@r2_NA19682_hap2_hprc_r2_v1.0.1:0-59
+>NA19682#2#CM094161.1:0-59
+AACCCTGGGGGGAACTACCTAACCCTAACCCTAACCTACCTAACCCAAACCCTACCAACC
+getctg missing contig NA19682#2#CM094165.1@r2_NA19682_hap2_hprc_r2_v1.0.1:0-59 (exit code follows)
+There is no sample:contig pair: r2_NA19682_hap2_hprc_r2_v1.0.1 : NA19682#2#CM094165.1
+exit 0
+== set r2_HG01175_mat_hprc_r2_v1.0.1
+AGC listctg:
+r2_HG01175_mat_hprc_r2_v1.0.1
+   HG01175#2#CM087936.1
+   HG01175#2#CM087937.1
+   HG01175#2#CM087938.1
+source FASTA contigs: 59
+getctg present contig HG01175#2#CM087936.1@r2_HG01175_mat_hprc_r2_v1.0.1:0-59
+>HG01175#2#CM087936.1:0-59
+AACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCT
+getctg missing contig HG01175#2#CM087939.1@r2_HG01175_mat_hprc_r2_v1.0.1:0-59 (exit code follows)
+There is no sample:contig pair: r2_HG01175_mat_hprc_r2_v1.0.1 : HG01175#2#CM087939.1
+exit 0
+== libagc (repro_lib.c)
+set r2_HG01175_mat_hprc_r2_v1.0.1: agc_n_ctg = 3
+present contig HG01175#2#CM087936.1: agc_get_ctg_len = 242682641, agc_get_ctg_seq(0, 59) = 60 AACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCT
+missing contig HG01175#2#CM087939.1: agc_get_ctg_len = -1, agc_get_ctg_seq(0, 59) = -1
