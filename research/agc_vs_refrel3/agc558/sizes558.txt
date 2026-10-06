@@ -1,0 +1,5 @@
+# refrel3 v1 sizes of the 558 cohort archives, read from the archive headers (block-hash section size at offset 112),
+# ace-core 2026-10-06; archives = .wk/hprc_cohort/v1 (SHA-256 == the manifest)
+q4k  558 archives: total 12 330 370 123 B, block hashes 3 282 107 128 B, without block hashes 9 048 262 995 B = 16.22 MB per assembly
+q16k 558 archives: total  8 097 986 851 B, block hashes   820 528 488 B, without block hashes 7 277 458 363 B = 13.04 MB per assembly
+AGC 3.2.4 one create (agc558.agc, RUN.md): 3 721 635 360 B - T2T alone 707 323 301 B = 3 014 312 059 B = 5.40 MB per assembly
