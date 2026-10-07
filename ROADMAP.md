@@ -125,6 +125,10 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+07.10-А (ветка refrel): G1 - пакет clean-room v1 воспроизводится с нуля research/cleanroom/repro.sh (zip 75ff3f60..., 30 с;
+шаг swap-фикстуры был вне коммита -> add_swap_fixture.py). F - варианты ref->hap координат (f_liftover/): RLZ-цепочки на
+2 архивах 99.2 % оснований в цепочках, N50 32-37 кб, ~32 МБ/гаплотип; рекомендация PAF release-2 как карта и истина.
+A (FORMAT_V1_SPEC по 25 пунктам SPEC_GAPS.md) и B (samtools, координаты «протокола v1.1») ждут входов: этих файлов на ace-core нет.
 03.10-Б: C99-декодер и Python: rANS через AVX2 (ax_rans.h собирает SIMD и в C) + проход таблицы чанков 03.10-А.
 T2T регион p50: C99 разовый 123 -> 49 мкс, хендл 104 -> 42, Python 111 -> 50 (C++ 50). Полный C99 chr1 open 1 нить
 0.313 -> 0.119 с. Таблица перестановок uint32 (байтовая стоила C++ open +6-8 %, ворота). Судья 66/0, ворота PASS.
@@ -399,6 +403,7 @@ match 30.3, bases 7.4, seq 5.1. Архивы zstd/rans T2T зависят от l
 898 263 414; 1.4.8: 902 319 887 / 898 903 131), open одинаков.
 
 ## Дальше
+000000. [ждёт входа] A: SPEC_GAPS.md (25 пунктов) -> FORMAT_V1_SPEC.md, векторы, cleanroom_v2.zip; B: определение координат v1.1 -> samtools 8 x 1 000; затем C (rootless docker), D (M6).
 00000. [сделано 03.10-Б] C99/Python регион. Дальше: Python Archive.close() на mmap-файле - BufferError; регион 50 мкс:
    80 % - axr_decode + axo_dna_decode 64 КиБ-чанка (меньше литеральный чанк = формат/байты, по слову).
 0000. t2t: bases 8.28 мс (k_open_bases_x) — главный этап; XXH3-цепочка на t2t 66 мс — последовательная по 3M блоков,
