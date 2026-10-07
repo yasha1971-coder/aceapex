@@ -125,6 +125,8 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+07.10-Г: M6 идёт (протокол v1.1 ec0ce9f9, N=5 PASS; run_all с 10:32Z). EVIDENCE.md panvram e768115. Drive: v2-пакет и
+panvram-e768115.tar.gz в ACEAPEX-OVH/outgoing (check 0 differences). C1 Colab: GPU-гейт на ридере 087c638 — ждёт запуска.
 07.10-В: S1 + ci 82 запушены в PR #63 (HEAD 2e9dcae, CI 5/5 success, Ran 82). A5: пакет v2 291ae64d... (ABS, 9 отказов,
 без README_TASK) в ~/outgoing; ридер v1 panvram +2 проверки, check_full 1116/1116 (087c638). H0: ledger v1 на 50 (8af9848).
 I ждёт формулировки пяти заявлений; M6 ждёт ответа по диску.
@@ -410,6 +412,8 @@ match 30.3, bases 7.4, seq 5.1. Архивы zstd/rans T2T зависят от l
 898 263 414; 1.4.8: 902 319 887 / 898 903 131), open одинаков.
 
 ## Дальше
+0000000. После M6: H1 (компактная таблица) -> H2 (хеш суперблока) -> H3 -> H4 (когортный словарь, сначала N=5).
+C1 Colab: гейт GPU panvram 087c638+ (тарбол Drive ACEAPEX-OVH/outgoing/panvram-e768115.tar.gz, sha e348d9b7...).
 000000. [сделано 07.10-Б] A, B, R2. Дальше: push S1 после решения по счётчику CI; раунд 2 clean-room (пакет v2 у пользователя); D (M6) с гипотезами H1-H5 из G1.
 00000. [сделано 03.10-Б] C99/Python регион. Дальше: Python Archive.close() на mmap-файле - BufferError; регион 50 мкс:
    80 % - axr_decode + axo_dna_decode 64 КиБ-чанка (меньше литеральный чанк = формат/байты, по слову).
