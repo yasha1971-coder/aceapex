@@ -8,7 +8,7 @@ Every case is run through the frozen tool; its exit code and message go to EXPEC
 import json, os, struct, subprocess, sys
 
 W = os.path.dirname(os.path.abspath(__file__)); P = os.path.join(W, "pkg", "refrel3_cleanroom_v1"); A = os.path.join(W, "arch")
-TOOL = os.path.join(W, "refrel3v1"); BLK = os.path.join(W, "blocks"); X3 = os.path.expanduser("~/pubrepo/.wk/avr/xxh3_stdin")
+TOOL = os.path.join(W, "refrel3v1"); BLK = os.path.join(W, "blocks"); X3 = os.environ.get("X3", os.path.join(W, "xxh3_stdin"))
 REF = os.path.join(P, "reference", "reference.fa")
 
 

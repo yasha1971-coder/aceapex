@@ -11,3 +11,8 @@ EXPECTED.json and SHA256SUMS are here.
   self / rc - all present), `build_pkg.py` (package, fetch tables from the source FASTA), `add_hash_fixtures.py`
   (hash-targeted corrupt cases, block-swap search: 1 of 1 289 equal-length pairs decodes both streams), `blocks.cpp`
   (payload geometry), `verify_pkg.py` (frozen tool: 24/24 decodes, 1 200/1 200 fetches, 7/7 refusals).
+
+Reproduce (from nothing, ~30 s): `bash research/cleanroom/repro.sh <new dir>` - frozen tool from 5b6d5ce (binary SHA-256
+checked), data, 24 archives, package, hash fixtures, `add_swap_fixture.py` (blocks 64 / 67 of asmC.q4k), SHA256SUMS ==
+the committed copy, frozen-tool verification 24/24, 1 200/1 200, 7/7, then the ZIP with the entry order, mtimes and
+modes of `zip_entries_v1.tsv` (zip 3.0 -X, TZ=UTC). Run 2026-10-07: ZIP SHA-256 75ff3f60... 1 512 875 B - REPRODUCED.
