@@ -1,0 +1,17 @@
+decode 26/26
+fetch 1300/1300
+corrupt 9/9
+CORRUPT corrupt/truncated.rr3 open | refused: section sizes | expected: open refused: section sizes
+CORRUPT corrupt/header_byte.rr3 open | refused: block count | expected: open refused: block count
+CORRUPT corrupt/block_with_hash.rr3 decode | block decode failed (block 182: stream exhausted) | expected: decode block decode failed
+CORRUPT corrupt/valid_for_wrong_reference.rr3 open | refused: reference SHA-256 / size differs (wrong reference) | expected: open refused: reference SHA-256 / size differs (wrong reference)
+CORRUPT corrupt/block_hash_byte.rr3 decode | block XXH3 mismatch (block 5) | expected: decode block XXH3 mismatch
+CORRUPT corrupt/fasta_xxh3_field.rr3 decode | FASTA XXH3 differs from the header | expected: decode FASTA XXH3 differs from the header
+CORRUPT corrupt/blocks_swapped.rr3 decode | block XXH3 mismatch (block 64) | expected: decode block XXH3 mismatch
+CORRUPT corrupt/zero_context.rr3 decode | block decode failed (block 0: symbol with frequency 0 (context 59)) | expected: decode block decode failed
+CORRUPT corrupt/meta_two_frames.rr3 open | refused: meta frame (meta section is not exactly one zstd frame) | expected: open refused: meta frame count (exactly one zstd frame)
+VEC archives/asmB.q16k.hash.rr3 69 / 69 not compared: []
+VEC archives/asmC.q4k.hash.rr3 117 / 117 not compared: []
+VEC archives/asmD.q4k.hash.rr3 85 / 85 not compared: []
+VEC archives/asmG.q4k.hash.rr3 101 / 101 not compared: []
+seconds 1.71
