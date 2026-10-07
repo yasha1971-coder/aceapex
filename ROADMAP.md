@@ -125,6 +125,9 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+07.10-В: S1 + ci 82 запушены в PR #63 (HEAD 2e9dcae, CI 5/5 success, Ran 82). A5: пакет v2 291ae64d... (ABS, 9 отказов,
+без README_TASK) в ~/outgoing; ридер v1 panvram +2 проверки, check_full 1116/1116 (087c638). H0: ledger v1 на 50 (8af9848).
+I ждёт формулировки пяти заявлений; M6 ждёт ответа по диску.
 07.10-Б: S1 наложен локально на a9ef0e9 (hw-apex 6f573bb, 3 postimage sha ==, 82 теста OK), push ждёт решения: CI ждёт 'Ran 77'.
 B (panvram 0a5d8ff): samtools 1.24 по протоколу v1.1 на 8 исходниках, 8000/8000 q4k и q16k. A (a7cc401): FORMAT_V1_SPEC.md
 25/25, декодер по спецификации 24/24 · 1200/1200 · 7/7, ops и трасса rANS == замороженному коду; пакет v2 zip 3aad8134...
