@@ -125,6 +125,10 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+07.10-Б: S1 наложен локально на a9ef0e9 (hw-apex 6f573bb, 3 postimage sha ==, 82 теста OK), push ждёт решения: CI ждёт 'Ran 77'.
+B (panvram 0a5d8ff): samtools 1.24 по протоколу v1.1 на 8 исходниках, 8000/8000 q4k и q16k. A (a7cc401): FORMAT_V1_SPEC.md
+25/25, декодер по спецификации 24/24 · 1200/1200 · 7/7, ops и трасса rANS == замороженному коду; пакет v2 zip 3aad8134...
+R2 (panvram af2ec56): rootless dockerd, образ по digest + require-hashes, гейт --network none 16/16.
 07.10-А (ветка refrel): G1 - пакет clean-room v1 воспроизводится с нуля research/cleanroom/repro.sh (zip 75ff3f60..., 30 с;
 шаг swap-фикстуры был вне коммита -> add_swap_fixture.py). F - варианты ref->hap координат (f_liftover/): RLZ-цепочки на
 2 архивах 99.2 % оснований в цепочках, N50 32-37 кб, ~32 МБ/гаплотип; рекомендация PAF release-2 как карта и истина.
@@ -403,7 +407,7 @@ match 30.3, bases 7.4, seq 5.1. Архивы zstd/rans T2T зависят от l
 898 263 414; 1.4.8: 902 319 887 / 898 903 131), open одинаков.
 
 ## Дальше
-000000. [ждёт входа] A: SPEC_GAPS.md (25 пунктов) -> FORMAT_V1_SPEC.md, векторы, cleanroom_v2.zip; B: определение координат v1.1 -> samtools 8 x 1 000; затем C (rootless docker), D (M6).
+000000. [сделано 07.10-Б] A, B, R2. Дальше: push S1 после решения по счётчику CI; раунд 2 clean-room (пакет v2 у пользователя); D (M6) с гипотезами H1-H5 из G1.
 00000. [сделано 03.10-Б] C99/Python регион. Дальше: Python Archive.close() на mmap-файле - BufferError; регион 50 мкс:
    80 % - axr_decode + axo_dna_decode 64 КиБ-чанка (меньше литеральный чанк = формат/байты, по слову).
 0000. t2t: bases 8.28 мс (k_open_bases_x) — главный этап; XXH3-цепочка на t2t 66 мс — последовательная по 3M блоков,
