@@ -1,6 +1,9 @@
-# PROTOCOL_M6 v1 - AGC 3.2.4 against the cohort size N, refrel3 on the same N; counters for the hypotheses H1-H5
+# PROTOCOL_M6 v1.1 - AGC 3.2.4 against the cohort size N, refrel3 on the same N; counters for the hypotheses H1-H5
 
-Status: frozen before any M6 measurement (SHA-256 in `PROTOCOL_M6.sha256`, committed before the runs). Supersedes the
+Status: frozen before any M6 measurement (SHA-256 in `PROTOCOL_M6.sha256`, committed before the runs). v1.1 (before any
+run on N >= 50): section 7 changed after the method check on N = 5 showed the v1 profile of 100 windows dominated by the
+archive open and unresolved kernel samples (logs/N5/perf_*_v1.* kept); the perf part of the N = 5 check is repeated
+under v1.1 (the other parts are not changed by v1.1). Supersedes the
 draft `../PROTOCOL_AGC_SCALING.md` (approved): same archives, method and statistics; requests as the user's D2 (windows
 W = 4 096, 1 Mb regions, whole samples); counters and profile per G1 (H1-H5, source-only map of AGC e67e3fc, not in the
 repository). A change after freezing is a new version and a full rerun.
@@ -27,7 +30,7 @@ it. The report states numbers and counter values only; no cause is written beyon
 ## 3. Method check on N = 5 (before section 2 for N >= 50)
 
 The same create, integrity, request generation (5 assemblies), truth, one warm-up + one timed run of every row of
-section 5 at threads 1, the counters of section 6 on 100 windows, the H5 stack check and one perf record of 100 windows.
+section 5 at threads 1, the counters of section 6 on 100 windows, the H5 stack check and one perf record of 1 000 windows.
 Pass = create and integrity pass, every answer == truth, every counter file and perf report produced, H5 confirmed.
 If it fails, nothing of section 5 runs.
 
@@ -69,10 +72,12 @@ If it fails, nothing of section 5 runs.
 
 ## 7. Profile
 
-- `perf record -g --call-graph fp` (perf_event_paranoid = 1 on ace-core) of `agcbench req` over the first 1 000 windows,
-  one thread, one timed pass, on a profiling build (the same libagc sources and flags + -fno-omit-frame-pointer, not
-  patched); every N. Report: top 20 functions by self and by children time per N, from `perf report --stdio`; the raw
-  report is kept as evidence. If perf is refused, the row is "not run" with the setting recorded.
+- `perf record -e cycles:u -g --call-graph fp` (user space only; perf_event_paranoid = 1 on ace-core) of `agcbench req`
+  over all 10 000 windows of the N (method check: the first 1 000), one thread pinned, 0 warm-ups, 1 timed pass, on a
+  profiling build (the same libagc sources and flags + -fno-omit-frame-pointer -g, not patched); every N.
+- Report: top 20 functions by self and by children time per N, restricted to call chains under agc_get_ctg_seq
+  (`perf report --parent agc_get_ctg_seq -x`; open and truth reading excluded), plus the share of all samples that lie
+  under agc_get_ctg_seq; raw reports kept as evidence. If perf is refused, the row is "not run" with the setting recorded.
 
 ## 8. Evidence and report
 

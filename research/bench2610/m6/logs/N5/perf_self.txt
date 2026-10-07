@@ -1,0 +1,134 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 354  of event 'cycles:u'
+# Event count (approx.): 376599277
+#
+# Overhead  Symbol                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               IPC   [IPC Coverage]  Parent symbol  
+# ........  ...................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................  ....................  ...............
+#
+    22.58%  [.] CSegment::tuples2bytes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           -      -              agc_get_ctg_seq
+            |
+            ---CSegment::get
+               CAGCDecompressorLibrary::decompress_segment
+               CAGCDecompressorLibrary::decompress_contig
+               CAGCDecompressorLibrary::GetContigString
+               agc_get_ctg_seq
+               std::thread::_State_impl<std::thread::_Invoker<std::tuple<par_for<main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1}>(unsigned long, int, main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1})::{lambda()#1}> > >::_M_run
+               0x7f9cfb04c253
+     7.32%  [.] __memmove_avx512_unaligned_erms                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  -      -              agc_get_ctg_seq
+            |          
+            |--3.73%--CLZDiff_V2::Decode
+            |          CSegment::get
+            |          CAGCDecompressorLibrary::decompress_segment
+            |          CAGCDecompressorLibrary::decompress_contig
+            |          CAGCDecompressorLibrary::GetContigString
+            |          agc_get_ctg_seq
+            |          std::thread::_State_impl<std::thread::_Invoker<std::tuple<par_for<main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1}>(unsigned long, int, main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1})::{lambda()#1}> > >::_M_run
+            |          0x7f9cfb04c253
+            |          
+            |--2.02%--CAGCDecompressorLibrary::GetContigString
+            |          agc_get_ctg_seq
+            |          std::thread::_State_impl<std::thread::_Invoker<std::tuple<par_for<main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1}>(unsigned long, int, main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1})::{lambda()#1}> > >::_M_run
+            |          0x7f9cfb04c253
+            |          
+             --1.23%--CArchive::GetParts
+                       CSegment::get
+                       CAGCDecompressorLibrary::decompress_segment
+                       CAGCDecompressorLibrary::decompress_contig
+                       CAGCDecompressorLibrary::GetContigString
+                       agc_get_ctg_seq
+                       std::thread::_State_impl<std::thread::_Invoker<std::tuple<par_for<main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1}>(unsigned long, int, main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1})::{lambda()#1}> > >::_M_run
+                       0x7f9cfb04c253
+     5.91%  [.] CAGCDecompressorLibrary::GetContigString                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         -      -              agc_get_ctg_seq
+            |
+            ---agc_get_ctg_seq
+               std::thread::_State_impl<std::thread::_Invoker<std::tuple<par_for<main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1}>(unsigned long, int, main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1})::{lambda()#1}> > >::_M_run
+               0x7f9cfb04c253
+     3.50%  [.] CCollection_V3::deserialize_contig_details                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       -      -              agc_get_ctg_seq
+            |
+            ---CCollection_V3::load_batch_contig_details
+               CCollection_V3::get_contig_desc
+               CAGCDecompressorLibrary::GetContigString
+               agc_get_ctg_seq
+               std::thread::_State_impl<std::thread::_Invoker<std::tuple<par_for<main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1}>(unsigned long, int, main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1})::{lambda()#1}> > >::_M_run
+               0x7f9cfb04c253
+     3.43%  [.] CSegment::get                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    -      -              agc_get_ctg_seq
+            |
+            ---CAGCDecompressorLibrary::decompress_segment
+               CAGCDecompressorLibrary::decompress_contig
+               CAGCDecompressorLibrary::GetContigString
+               agc_get_ctg_seq
+               std::thread::_State_impl<std::thread::_Invoker<std::tuple<par_for<main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1}>(unsigned long, int, main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1})::{lambda()#1}> > >::_M_run
+               0x7f9cfb04c253
+     2.90%  [.] CLZDiff_V2::Decode                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               -      -              agc_get_ctg_seq
+            |
+            ---CSegment::get
+               CAGCDecompressorLibrary::decompress_segment
+               CAGCDecompressorLibrary::decompress_contig
+               CAGCDecompressorLibrary::GetContigString
+               agc_get_ctg_seq
+               std::thread::_State_impl<std::thread::_Invoker<std::tuple<par_for<main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1}>(unsigned long, int, main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1})::{lambda()#1}> > >::_M_run
+               0x7f9cfb04c253
+     2.10%  [.] std::__detail::_Map_base<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, unsigned long>, std::allocator<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, unsigned long> >, std::__detail::_Select1st, std::equal_to<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, MurMurStringsHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits<true, false, true>, true>::operator[]  -      -              agc_get_ctg_seq
+            |
+            ---CArchive::get_stream_id
+               CArchive::GetParts
+               CSegment::get
+               CAGCDecompressorLibrary::decompress_segment
+               CAGCDecompressorLibrary::decompress_contig
+               CAGCDecompressorLibrary::GetContigString
+               agc_get_ctg_seq
+               std::thread::_State_impl<std::thread::_Invoker<std::tuple<par_for<main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1}>(unsigned long, int, main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1})::{lambda()#1}> > >::_M_run
+               0x7f9cfb04c253
+     1.70%  [.] CAGCDecompressorLibrary::decompress_contig                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       -      -              agc_get_ctg_seq
+            |
+            ---CAGCDecompressorLibrary::GetContigString
+               agc_get_ctg_seq
+               std::thread::_State_impl<std::thread::_Invoker<std::tuple<par_for<main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1}>(unsigned long, int, main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1})::{lambda()#1}> > >::_M_run
+               0x7f9cfb04c253
+     1.55%  [.] __memcmp_evex_movbe                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              -      -              agc_get_ctg_seq
+            |
+            ---CAGCDecompressorLibrary::GetContigString
+               agc_get_ctg_seq
+               std::thread::_State_impl<std::thread::_Invoker<std::tuple<par_for<main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1}>(unsigned long, int, main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1})::{lambda()#1}> > >::_M_run
+               0x7f9cfb04c253
+     1.35%  [.] __memset_avx512_unaligned_erms                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   -      -              agc_get_ctg_seq
+            |
+            ---CSegment::get
+               CAGCDecompressorLibrary::decompress_segment
+               CAGCDecompressorLibrary::decompress_contig
+               CAGCDecompressorLibrary::GetContigString
+               agc_get_ctg_seq
+               std::thread::_State_impl<std::thread::_Invoker<std::tuple<par_for<main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1}>(unsigned long, int, main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1})::{lambda()#1}> > >::_M_run
+               0x7f9cfb04c253
+     0.98%  [.] std::vector<segment_desc_t, std::allocator<segment_desc_t> >::operator=                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          -      -              agc_get_ctg_seq
+            |
+            ---CCollection_V3::get_contig_desc
+               CAGCDecompressorLibrary::GetContigString
+               agc_get_ctg_seq
+               std::thread::_State_impl<std::thread::_Invoker<std::tuple<par_for<main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1}>(unsigned long, int, main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1})::{lambda()#1}> > >::_M_run
+               0x7f9cfb04c253
+     0.68%  [.] CLZDiff_V2::decode_match                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         -      -              agc_get_ctg_seq
+            |
+            ---CSegment::get
+               CAGCDecompressorLibrary::decompress_segment
+               CAGCDecompressorLibrary::decompress_contig
+               CAGCDecompressorLibrary::GetContigString
+               agc_get_ctg_seq
+               std::thread::_State_impl<std::thread::_Invoker<std::tuple<par_for<main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1}>(unsigned long, int, main::{lambda()#1}::operator()() const::{lambda(int, unsigned long)#1})::{lambda()#1}> > >::_M_run
+               0x7f9cfb04c253
+     0.46%  [.] std::vector<segment_desc_t, std::allocator<segment_desc_t> >::_M_default_append                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  -      -              agc_get_ctg_seq
+     0.34%  [.] CArchive::get_part                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               -      -              agc_get_ctg_seq
+     0.34%  [k] 0xffffffffb83d6cf5                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               -      -              agc_get_ctg_seq
+     0.34%  [.] std::vector<unsigned char, std::allocator<unsigned char> >::_M_range_insert<__gnu_cxx::__normal_iterator<unsigned char const*, std::vector<unsigned char, std::allocator<unsigned char> > > >                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    -      -              agc_get_ctg_seq
+     0.34%  [.] pthread_mutex_unlock@@GLIBC_2.2.5                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                -      -              agc_get_ctg_seq
+     0.33%  [.] CCollection::extract_contig_name                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 -      -              agc_get_ctg_seq
+     0.29%  [k] 0xffffffffb8400bf9                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               -      -              agc_get_ctg_seq
+     0.27%  [k] 0xffffffffb8400bf9                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               -      -              agc_get_ctg_seq
+     0.27%  [k] 0xffffffffb8400be0                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               -      -              agc_get_ctg_seq
+#
+# (Cannot load tips.txt file, please install perf!)
+#

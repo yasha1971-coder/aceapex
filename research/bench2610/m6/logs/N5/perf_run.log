@@ -1,0 +1,4 @@
+OPEN	perf_N5	1 handles (prefetching=1)	0.293 s
+RUN	perf_N5	0	timed	0.070978	1000 items	4096000 bytes	sha256 1000/1000
+[ perf record: Woken up 1 times to write data ]
+[ perf record: Captured and wrote 0.034 MB /home/aeterna/pubrepo/.wk/m6/N5/perf.data (354 samples) ]

@@ -1,0 +1,28 @@
+# rr3_q16k_reg_t1 start 2026-10-07T10:24:34Z loadavg 0.92 1.25 0.90 1/1065 3108118
+OPEN	rr3_q16k_reg_t1	reference + 5 archives (q16k)	14.927 s
+RUN	rr3_q16k_reg_t1	0	warmup	0.054572	100 items	100000000 bytes	sha256 100/100
+RUN	rr3_q16k_reg_t1	1	timed	0.053202	100 items	100000000 bytes	sha256 100/100
+	Command being timed: "taskset -c 3 /home/aeterna/pubrepo/.wk/avr/rr3bench req /home/aeterna/golden/genome/t2t.fa /home/aeterna/pubrepo/.wk/hprc_cohort/v1 q16k /home/aeterna/pubrepo/.wk/m6/N5/regions_1M.tsv /home/aeterna/pubrepo/.wk/m6/N5/truth.tsv 1 1 1 rr3_q16k_reg_t1"
+	User time (seconds): 11.99
+	System time (seconds): 3.36
+	Percent of CPU this job got: 99%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:15.35
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 6135380
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 2342167
+	Voluntary context switches: 3
+	Involuntary context switches: 66
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 8
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+# exit 0 end 2026-10-07T10:24:49Z loadavg 0.94 1.24 0.90 1/1057 3108150

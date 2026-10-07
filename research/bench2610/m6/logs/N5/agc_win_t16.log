@@ -1,0 +1,28 @@
+# agc_win_t16 start 2026-10-07T10:29:25Z loadavg 1.06 1.12 0.95 1/1064 3109165
+OPEN	agc_win_t16	16 handles (prefetching=1)	4.248 s
+RUN	agc_win_t16	0	warmup	0.131807	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t16	1	timed	0.058759	10000 items	40960000 bytes	sha256 10000/10000
+	Command being timed: "/home/aeterna/pubrepo/.wk/avr/agcbench req /home/aeterna/pubrepo/.wk/m6/N5/agc5.agc /home/aeterna/pubrepo/.wk/m6/N5/windows_4096.tsv /home/aeterna/pubrepo/.wk/m6/N5/truth.tsv 16 1 1 agc_win_t16"
+	User time (seconds): 2.35
+	System time (seconds): 5.38
+	Percent of CPU this job got: 150%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:05.15
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 13041468
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 3291964
+	Voluntary context switches: 17770
+	Involuntary context switches: 153
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 8
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+# exit 0 end 2026-10-07T10:29:30Z loadavg 1.05 1.12 0.95 1/1066 3109216

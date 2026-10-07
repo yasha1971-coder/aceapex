@@ -1,0 +1,18 @@
+WARNING: Kernel address maps (/proc/{kallsyms,modules}) are restricted,
+check /proc/sys/kernel/kptr_restrict and /proc/sys/kernel/perf_event_paranoid.
+
+Samples in kernel functions may not be resolved if a suitable vmlinux
+file is not found in the buildid cache or in the vmlinux path.
+
+Samples in kernel modules won't be resolved at all.
+
+If some relocation was applied (e.g. kexec) symbols may be misresolved
+even with a suitable vmlinux or kallsyms file.
+
+Couldn't record kernel reference relocation symbol
+Symbol resolution may be skewed if relocation was used (e.g. kexec).
+Check /proc/kallsyms permission or run as root.
+OPEN	perf_N5	1 handles (prefetching=1)	0.296 s
+RUN	perf_N5	0	timed	0.022585	100 items	409600 bytes	sha256 100/100
+[ perf record: Woken up 2 times to write data ]
+[ perf record: Captured and wrote 0.258 MB /home/aeterna/pubrepo/.wk/m6/N5/perf.data (1322 samples) ]

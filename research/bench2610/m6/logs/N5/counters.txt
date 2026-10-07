@@ -1,0 +1,3 @@
+AGCCOUNT	/home/aeterna/pubrepo/.wk/m6/N5/cnt_win.tsv	100 requests	sha256 100/100
+AGCCOUNT	/home/aeterna/pubrepo/.wk/m6/N5/cnt_win_sorted.tsv	100 requests	sha256 100/100
+AGCCOUNT	/home/aeterna/pubrepo/.wk/m6/N5/regions_1M.tsv	100 requests	sha256 100/100

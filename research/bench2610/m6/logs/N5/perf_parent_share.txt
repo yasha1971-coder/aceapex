@@ -1,0 +1,2 @@
+    56.97%  agc_get_ctg_seq
+    43.03%  [other]        

@@ -61,9 +61,11 @@ measure|all)
   done ;;&
 perf|all)
   gate perf
-  head -$((NC + 1)) $WIN > $W/perf_win.tsv
-  perf record -g --call-graph fp -o $W/perf.data -- taskset -c 3 $PROF req $ARC $W/perf_win.tsv $TR 1 0 1 perf_N$N > $L/perf_run.log 2>&1
-  perf report -i $W/perf.data --stdio --no-children --sort symbol 2>/dev/null | grep -v "^$" | head -400 > $L/perf_self.txt
-  perf report -i $W/perf.data --stdio --children --sort symbol 2>/dev/null | grep -v "^$" | head -400 > $L/perf_children.txt
-  grep -E "^RUN" $L/perf_run.log; grep -E "^ +[0-9.]+%" $L/perf_self.txt | head -5 ;;
+  PW=10000; [ "$CHK" = check ] && PW=1000
+  head -$((PW + 1)) $WIN > $W/perf_win.tsv
+  perf record -e cycles:u -g --call-graph fp -o $W/perf.data -- taskset -c 3 $PROF req $ARC $W/perf_win.tsv $TR 1 0 1 perf_N$N > $L/perf_run.log 2>&1
+  perf report -i $W/perf.data --stdio --no-children --sort symbol --parent agc_get_ctg_seq -x 2>/dev/null | grep -v "^$" | head -600 > $L/perf_self.txt
+  perf report -i $W/perf.data --stdio --children --sort symbol --parent agc_get_ctg_seq -x 2>/dev/null | grep -v "^$" | head -600 > $L/perf_children.txt
+  perf report -i $W/perf.data --stdio --no-children --sort parent --parent agc_get_ctg_seq 2>/dev/null | grep -E "^ +[0-9.]+%" > $L/perf_parent_share.txt
+  grep -E "^RUN" $L/perf_run.log; cat $L/perf_parent_share.txt; grep -E "^ +[0-9.]+%" $L/perf_self.txt | head -8 | cut -c1-120 ;;
 esac
