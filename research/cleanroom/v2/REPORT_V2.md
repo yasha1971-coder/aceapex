@@ -1,29 +1,36 @@
 # Clean-room package v2 - FORMAT_V1_SPEC.md against SPEC_GAPS.md (round 1)
 
-Package (not published): `refrel3_cleanroom_v2.zip`, SHA-256 3aad8134ab663ed6f51864b1532be61a60542cb4e8f5a30fb35f13cdc2477144,
-1 540 624 B, 62 files + 5 directory entries. Built twice from nothing to the same bytes (sorted entries, mtime
-2026-10-07 00:00:00 UTC, zip 3.0 -X). Input: SPEC_GAPS.md SHA-256 d991f3e8f7858115f324486a61bc9e4c43e0300530039f70c0872e134819cf25.
+Package (not published): `/home/aeterna/outgoing/refrel3_cleanroom_v2.zip`, SHA-256
+291ae64d1ca43745f4063b49d5c2b310dc34bae3e701ec2147b4737ffc87bfb6, 2 257 720 B, 68 files + 5 directory entries. Built twice
+from nothing to the same bytes (sorted entries, mtime 2026-10-07 00:00:00 UTC, zip 3.0 -X). Input: SPEC_GAPS.md SHA-256
+d991f3e8f7858115f324486a61bc9e4c43e0300530039f70c0872e134819cf25. (First build of the day without the A5 additions:
+3aad8134..., superseded.)
 
-Contents: FORMAT_V1_SPEC.md, TEST_VECTORS.json, README_TASK.md (the task text of v1, pointing to the specification and
-the vectors), EXPECTED.json (v1 expected hashes; "tool_response" renamed "reader_response"), reference/ archives/
-corrupt/ fetch/ byte-identical to package v1, SHA256SUMS. No sources, no source or internal names: grep of the
-unzipped package for 21 patterns (source file names, identifiers, paths, project names) = 0 matches; the same grep
-on the v1 FORMAT.md = 5 lines (control).
+Contents: FORMAT_V1_SPEC.md, TEST_VECTORS.json (4 fixtures), EXPECTED.json, SHA256SUMS; reference/ (reference.fa,
+reference_wrong.fa, reference_abs.fa), archives/ (26: the 24 of v1 + asmG.q4k hash / nohash with ABS copies), corrupt/
+(9: the 7 of v1 + zero_context, meta_two_frames), fetch/ (26 tables x 50). No task text (given separately). No sources,
+no source or internal names: grep of the unzipped package for 21 patterns = 0 matches (control on the v1 FORMAT.md: 5 lines).
+
+A5 additions:
+- ABS fixture: `gen_abs.py` - reference_abs.fa of 19 000 000 bases (r1 1 M random, r2 17 M N, r3 1 M random: r3 lies
+  > 2^24 from r1), asmG 200 000 bases copied alternately from r1 and r3; frozen encoder -> 45 ABS copies (also 112
+  reverse-complement, 3 FLIP, 4 REP); frozen decode == source; spec decoder == source; ops == frozen code (604 / 604).
+- Stricter checks, refusal fixtures (`make_strict.py`): zero_context.rr3 (asmB.q4k.hash, context 59 all zero; frozen
+  reader: decode failed (block); spec reader: zero frequency) and meta_two_frames.rr3 (asmD.q16k.nohash + empty zstd
+  frame of 9 B after the meta; frozen reader ACCEPTS and writes the FASTA; spec reader: refused, meta frame count).
+- The v1 reader (panvram) carries both checks now; EXPECTED.json "reader_response" (stage, message) of all 9 refusals
+  comes from it (`reader_responses.py`).
 
 ## Checks of the specification
 
 | check | result |
 |---|---|
-| decoder written from FORMAT_V1_SPEC.md only (`specdec.py`, Python) on the package | 24/24 full decodes, 1 200/1 200 fetches, 7/7 refusals, the same refusal step as the v1 reader in all 7 |
-| its ops (kind, source, offset, length) against the frozen v1 code, every block of the 24 archives (`opcmp.py`) | 92 938 ops, 0 differences |
-| rANS events (context, symbol, state, position after each symbol / raw-bit field) against a traced copy of the frozen code (`trace_check.sh`) | 10 blocks of 3 fixtures, 9 186 events, 0 differences; TEST_VECTORS.json == the trace |
+| decoder written from FORMAT_V1_SPEC.md only (`specdec.py`, Python) on the package | 26/26 full decodes, 1 300/1 300 fetches, 9/9 refusals |
+| its ops against the frozen v1 code, every block of the 24 + 2 archives (`opcmp.py`) | 92 938 + 1 208 ops, 0 differences |
+| rANS events against a traced copy of the frozen code (`trace_check.sh`) | 14 blocks of 4 fixtures, 9 358 events, 0 differences; TEST_VECTORS.json == the trace |
 
-TEST_VECTORS.json: asmB.q16k.hash (blocks 0, 1), asmC.q4k.hash (0, 2, 10, 14, 43), asmD.q4k.hash (0, 9, 20) - block 0 and
-the first block with SELF, FLIP, reverse-complement copy, escaped literal, DELTA, REP. Per fixture: header fields and
-recomputed header XXH3, contig table, case runs, 61 context sums, frequency SHA-256, block table (stream bytes, start
-diagonal), first block XXH3s, full-decode FASTA SHA-256 / XXH3; per block: first 8 stream bytes, init state, first 64
-rANS events, states after 1/2/4/8/16/32/64 symbols, first 32 events and first 16 copies with ref start, strand, diagonal
-and the cache after each, output head, output SHA-256 / XXH3.
+TEST_VECTORS.json: asmB.q16k.hash (blocks 0, 1), asmC.q4k.hash (0, 2, 10, 14, 43), asmD.q4k.hash (0, 9, 20), asmG.q4k.hash
+(0, 1, 3, 5; ABS) - block 0 and the first block with SELF, FLIP, reverse-complement copy, escaped literal, DELTA, REP, ABS.
 
 ## 25/25: every gap of SPEC_GAPS.md -> section of FORMAT_V1_SPEC.md
 
@@ -55,7 +62,7 @@ and the cache after each, output head, output SHA-256 / XXH3.
 | 24 | base-stream XXH3 | §12.4 |
 | 25 | external normative references | whole document self-contained: §6–§11, §17, §16; no file of the implementation named |
 
-## Where the specification is stricter than the v1 reader (crafted inputs only; no fixture and no valid archive affected)
+## Where the specification was stricter than the frozen v1 reader (now also checked by the panvram v1 reader)
 
 - A symbol from an all-zero context: §6.3 fails at once. The v1 reader marks the stream bad and fails later at the next
   count / length or at the final-state check; a stream reaching such a context only inside a final long literal run
@@ -63,17 +70,12 @@ and the cache after each, output head, output SHA-256 / XXH3.
 - Meta: §4 requires exactly one zstd frame; the v1 reader checks the first frame's content size and that decompressing
   all meta bytes yields meta_raw bytes.
 
-## Fixture coverage note
-
-No archive of the package contains an ABS copy (the encoder found every copy through CONT / DELTA / REP / FLIP from the
-start diagonal); ABS is specified (§10.3, §17) but not exercised by the fixtures.
-
 ## Reproduce
 
 ```
 bash research/cleanroom/repro.sh <W>                       # v1 package, tool, data (zip 75ff3f60...)
-XXH3_BIN=<W>/xxh3_stdin python3 research/cleanroom/v2/build_pkg_v2.py <W> <OUT>
-bash research/cleanroom/v2/trace_check.sh <W> <OUT>/refrel3_cleanroom_v2/TEST_VECTORS.json
+PANVRAM_PY=~/panvram/.venv/bin/python XXH3_BIN=<W>/xxh3_stdin python3 research/cleanroom/v2/build_pkg_v2.py <W> <OUT>
+bash research/cleanroom/v2/trace_check.sh <W> <OUT>/refrel3_cleanroom_v2/TEST_VECTORS.json <OUT>/work_abs
 g++ -std=c++17 -O2 -I<W>/src/src -I<W>/src/research/refrel research/cleanroom/v2/opdump.cpp <W>/src/src/aceapex_api.cpp -lzstd -lpthread -o <W>/opdump
 XXH3_BIN=<W>/xxh3_stdin python3 research/cleanroom/v2/opcmp.py            # W = ~/pubrepo/.wk/repro_g1c in opcmp.py
 ```

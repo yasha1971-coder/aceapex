@@ -1,14 +1,14 @@
-"""make_vectors.py <work dir> <out TEST_VECTORS.json> - intermediate values for three fixtures, computed by specdec.py
+"""make_vectors.py <work dir> <out TEST_VECTORS.json> <ABS fixture dir> - intermediate values for four fixtures, computed by specdec.py
 (the decoder written from FORMAT_V1_SPEC.md). Not shipped; its output is. Cross-checked by trace_check.sh against the
 frozen v1 code (rANS states and ops)."""
 import hashlib, json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import specdec as S
 
-W, OUT = sys.argv[1], sys.argv[2]
-FIX = ["asmB.q16k.hash.rr3", "asmC.q4k.hash.rr3", "asmD.q4k.hash.rr3"]
+W, OUT, AB = sys.argv[1], sys.argv[2], sys.argv[3]
+FIX = [(f, os.path.join(W, "arch"), os.path.join(W, "data", "reference.fa"), "reference/reference.fa") for f in ("asmB.q16k.hash.rr3", "asmC.q4k.hash.rr3", "asmD.q4k.hash.rr3")] + \
+      [("asmG.q4k.hash.rr3", AB, os.path.join(AB, "reference_abs.fa"), "reference/reference_abs.fa")]
 NEV, NCOPY = 64, 16
-R, rs = S.load_ref(os.path.join(W, "data", "reference.fa"))
 
 
 def block_vec(X, b):
@@ -43,12 +43,13 @@ def block_vec(X, b):
             "output_sha256": hashlib.sha256(out).hexdigest(), "output_xxh3": "%016x" % S.xxh3(out)}
 
 
-def fixture(f):
-    a = open(os.path.join(W, "arch", f), "rb").read(); X = S.open_archive(a, R, rs)
+def fixture(f, adir, rpath, rname):
+    R, rs = S.load_ref(rpath)
+    a = open(os.path.join(adir, f), "rb").read(); X = S.open_archive(a, R, rs)
     u64 = lambda o: int.from_bytes(a[o:o + 8], "little"); L = a[136] | a[137] << 8
     pstart = 138 + L + u64(96) + u64(112)
     h = bytearray(a[:pstart]); h[128:136] = bytes(8)
-    v = {"archive": "archives/" + f, "file_bytes": len(a), "file_sha256": hashlib.sha256(a).hexdigest(),
+    v = {"archive": "archives/" + f, "reference": rname, "file_bytes": len(a), "file_sha256": hashlib.sha256(a).hexdigest(),
          "header": {"magic_hex": a[:8].hex(), "version": int.from_bytes(a[8:12], "little"), "Q": X.Q, "flags": X.flags,
                     "reserved": int.from_bytes(a[20:24], "little"), "ref_sha256": a[24:56].hex(), "ref_bases": u64(56), "n": X.n,
                     "nblocks": X.nb, "fasta_xxh3": "%016x" % X.fasta_xxh3, "bases_xxh3": "%016x" % X.bases_xxh3, "meta_bytes": u64(96),
@@ -67,7 +68,7 @@ def fixture(f):
     fa = S.full(X)
     v["full_decode"] = {"fasta_bytes": len(fa), "fasta_sha256": hashlib.sha256(fa).hexdigest(), "fasta_xxh3": "%016x" % S.xxh3(fa)}
     # block 0 and the first block holding each of: SELF, FLIP, reverse-complement copy, escaped literal, DELTA, REP
-    want, picks = {"SELF", "FLIP", "rc", "escape", "DELTA", "REP"}, [0]
+    want, picks = {"SELF", "FLIP", "rc", "escape", "DELTA", "REP", "ABS"}, [0]
     for b in range(X.nb):
         tr, ops = [], []; S.decode_block(X, b, trace=tr, ops=ops)
         has = {o[0].upper() for o in ops} | ({"rc"} if any(len(o) == 5 and o[4] for o in ops) else set()) | \
@@ -75,14 +76,14 @@ def fixture(f):
         if has & want: picks.append(b); want -= has
         if not want: break
     v["blocks"] = [block_vec(X, b) for b in sorted(set(picks))]
-    v["blocks_why"] = "block 0, then the first block holding each of SELF, FLIP, reverse-complement copy, escaped literal, DELTA, REP (if any)"
+    v["blocks_why"] = "block 0, then the first block holding each of SELF, FLIP, reverse-complement copy, escaped literal, DELTA, REP, ABS (if any)"
     return v
 
 
-doc = {"about": "Intermediate values of three fixtures, for checking a decoder step by step against FORMAT_V1_SPEC.md. Section numbers refer to it. "
+doc = {"about": "Intermediate values of four fixtures (the fourth: ABS copies against reference_abs.fa), for checking a decoder step by step against FORMAT_V1_SPEC.md. Section numbers refer to it. "
                 "rans_events_first: 'init' = state after the 3 initial bytes; 'symbol' = context id, symbol, state x and stream position after the symbol "
                 "(after renormalisation); 'bits' = raw-bit field (n bits, value), state and position after it. Diagonal values are signed (int64). "
                 "events_first lists literal runs and copies in stream order; offsets are block offsets. Strings are latin-1.",
-       "fixtures": [fixture(f) for f in FIX]}
+       "fixtures": [fixture(*x) for x in FIX]}
 json.dump(doc, open(OUT, "w"), indent=1)
 print("fixtures", [f["archive"] for f in doc["fixtures"]], "blocks", [[b["block"] for b in f["blocks"]] for f in doc["fixtures"]])

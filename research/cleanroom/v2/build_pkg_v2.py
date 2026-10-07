@@ -1,55 +1,27 @@
 """build_pkg_v2.py <repro work dir> <out dir> - clean-room package v2 (not shipped from the repository): FORMAT_V1_SPEC.md,
-the v1 fixtures (reference, 24 archives, 7 corrupt cases, fetch tables - byte-identical to package v1), EXPECTED.json
-(expected hashes; format field pointing to the specification), TEST_VECTORS.json, README_TASK.md, SHA256SUMS.
+the v1 fixtures (reference, 24 archives, 7 corrupt cases, fetch tables - byte-identical to package v1), the ABS fixture
+(reference_abs.fa, asmG.q4k hash / nohash, fetch tables), two refusal fixtures for the stricter checks (zero_context,
+meta_two_frames), EXPECTED.json (expected hashes; reader_response = the v1 reader with the stricter checks, env
+PANVRAM_PY = its python), TEST_VECTORS.json (four fixtures), SHA256SUMS. No task text (given separately).
 Then: specdec.py check of the package, a grep of every file for source / internal names (must be 0), and a
 deterministic ZIP (sorted entries, fixed mtime 2026-10-07 00:00:00 UTC, modes 644 / 755, zip -X)."""
-import hashlib, json, os, re, shutil, subprocess, sys
+import hashlib, json, os, random, re, shutil, subprocess, sys
 
 H = os.path.dirname(os.path.abspath(__file__))
 W, OUT = os.path.abspath(sys.argv[1]), os.path.abspath(sys.argv[2])
 V1 = os.path.join(W, "pkg", "refrel3_cleanroom_v1"); NAME = "refrel3_cleanroom_v2"; P = os.path.join(OUT, NAME)
 sha = lambda b: hashlib.sha256(b).hexdigest()
 
-TASK = """# Task
 
-Write a decoder for the archive format specified in `FORMAT_V1_SPEC.md` (refrel3 v1), working only from that
-specification and the files of this package. Language and design are your choice.
-
-## Inputs
-
-- `FORMAT_V1_SPEC.md` - the complete byte-level specification (self-contained).
-- `TEST_VECTORS.json` - intermediate values for three fixtures (header and meta fields, model tables, block start
-  diagonals, rANS states after each symbol of selected blocks, the first copies with their diagonal cache, block and file
-  hashes) to check a decoder step by step.
-- `reference/reference.fa` - the reference FASTA every archive was encoded against.
-- `reference/reference_wrong.fa` - a reference that differs from it.
-- `archives/*.rr3` - 24 archives (6 assemblies x block size 4096 / 16384 x with / without per-block hashes).
-- `corrupt/*.rr3` - 7 damaged or mismatched cases (truncation, header byte, payload byte, wrong reference, stored block
-  hash changed, source-FASTA hash field changed, two blocks swapped).
-- `fetch/<archive>.fetch.tsv` - 50 region requests per archive: `contig`, `start`, `length`, `sha256`.
-- `EXPECTED.json` - every expected value; `SHA256SUMS` - the SHA-256 of every file of the package (relative paths).
-
-## What the decoder must do
-
-1. Full decode: given an archive and a reference, produce the original FASTA file (headers, line breaks, letter case),
-   byte for byte (specification section 13).
-2. Region fetch: given an archive, a reference, a contig name (the FASTA header up to the first space or tab), a 0-based
-   start and a length, produce exactly those bases of that contig, letter case as in the original, without line breaks
-   (section 14: the request is [start, start + length), zero-based half-open).
-3. Refusal: when the archive is damaged, truncated, does not belong to the given reference, or fails any check the
-   specification requires (sections 5 and 15), report an error and produce no output (no partial FASTA, no region bytes).
-
-## How it is checked
-
-- For every entry of `EXPECTED.json` "archives": SHA-256 of the full decoded FASTA == `fasta_sha256` (and the byte count ==
-  `fasta_bytes`); for every row of its fetch table: SHA-256 of the returned bases == `sha256`.
-- For every entry of "corrupt": a full decode with the listed reference reports an error and writes no output
-  ("reader_response" is what a reader following the check order of section 5 reports).
-- A run passes only if all 24 full decodes, all 1 200 fetch answers and all 7 refusals match. Any crash, hang (allow at
-  most 60 s per archive) or output on a refusal case is a failure.
-- First verify the package itself: `sha256sum -c SHA256SUMS` from the package root.
-- Report every place where the specification was insufficient or ambiguous, with the section number.
-"""
+def parse_fasta(b):
+    recs, name, seq = [], None, []
+    for line in b.split(b"\n"):
+        if line.startswith(b">"):
+            if name is not None: recs.append((name, b"".join(seq)))
+            name, seq = line[1:].split(b" ")[0].split(b"\t")[0], []
+        elif line: seq.append(line)
+    if name is not None: recs.append((name, b"".join(seq)))
+    return recs
 
 FORBIDDEN = [r"refrel3v1", r"refrel3\.h", r"refrel_format", r"refrel3_gpu", r"refrel_io", r"refrel2", r"\.cpp\b", r"\.cu\b",
              r"\.hpp\b", r"\br3_\w+", r"\bR3_\w+", r"\brr_\w+", r"\bRR_\w+", r"aceapex", r"panvram", r"pubrepo", r"research/",
@@ -60,16 +32,53 @@ FORBIDDEN = [r"refrel3v1", r"refrel3\.h", r"refrel_format", r"refrel3_gpu", r"re
 def main():
     if os.path.exists(P): sys.exit("exists: " + P)
     os.makedirs(P)
+    AB, SF = os.path.join(OUT, "work_abs"), os.path.join(OUT, "work_strict")
+    # ABS fixture: data, frozen encoder, frozen decode == source
+    subprocess.run([sys.executable, os.path.join(H, "gen_abs.py"), AB], check=True)
+    for h in ("hash", "nohash"):
+        subprocess.run([os.path.join(W, "refrel3v1"), "encode", "reference_abs.fa", "4096", "4", "asmG.fa", f"asmG.q4k.{h}.rr3"] + (["nohash"] if h == "nohash" else []), cwd=AB, check=True, capture_output=True)
+        subprocess.run([os.path.join(W, "refrel3v1"), "decode", "reference_abs.fa", f"asmG.q4k.{h}.rr3", "back.fa"], cwd=AB, check=True, capture_output=True)
+        assert open(os.path.join(AB, "back.fa"), "rb").read() == open(os.path.join(AB, "asmG.fa"), "rb").read()
+    subprocess.run([sys.executable, os.path.join(H, "make_strict.py"), W, SF], check=True)
     for d in ("reference", "archives", "corrupt", "fetch"): shutil.copytree(os.path.join(V1, d), os.path.join(P, d))
+    shutil.copy(os.path.join(AB, "reference_abs.fa"), os.path.join(P, "reference"))
+    for h in ("hash", "nohash"): shutil.copy(os.path.join(AB, f"asmG.q4k.{h}.rr3"), os.path.join(P, "archives"))
+    for f in ("zero_context.rr3", "meta_two_frames.rr3"): shutil.copy(os.path.join(SF, f), os.path.join(P, "corrupt"))
     shutil.copy(os.path.join(H, "FORMAT_V1_SPEC.md"), P)
-    open(os.path.join(P, "README_TASK.md"), "w").write(TASK)
     exp = json.load(open(os.path.join(V1, "EXPECTED.json")))
     exp["format"] = "refrel3 v1 (FORMAT_V1_SPEC.md)"
     exp["coordinates"] = "fetch: contig = record name (header up to the first space or tab), start 0-based, length in bases; answer = bases [start, start + length), case as in the FASTA (FORMAT_V1_SPEC.md section 14)"
+    exp["references"]["reference_abs.fa"] = sha(open(os.path.join(P, "reference", "reference_abs.fa"), "rb").read())
+    src = open(os.path.join(AB, "asmG.fa"), "rb").read(); recs = [(n, q) for n, q in parse_fasta(src) if q]
+    for h in ("hash", "nohash"):                                        # fetch tables as for the v1 archives
+        f = f"asmG.q4k.{h}.rr3"; rng = random.Random(int(sha(f.encode())[:8], 16)); rows = []
+        for i in range(50):
+            n, q = recs[rng.randrange(len(recs))]; kind = i % 5
+            if kind == 0: st, ln = 0, min(len(q), 1 + rng.randrange(5000))
+            elif kind == 1: ln = min(len(q), 1 + rng.randrange(5000)); st = len(q) - ln
+            elif kind == 2: ln = 1; st = rng.randrange(len(q))
+            else: ln = min(len(q), 1 + int(2 ** (rng.random() * 17))); st = rng.randrange(len(q) - ln + 1)
+            rows.append((n.decode(), st, ln, sha(q[st:st + ln])))
+        with open(os.path.join(P, "fetch", f + ".fetch.tsv"), "w") as o:
+            o.write("contig\tstart\tlength\tsha256\n")
+            for r in rows: o.write("%s\t%d\t%d\t%s\n" % r)
+        exp["archives"].append({"archive": "archives/" + f, "reference": "reference/reference_abs.fa", "expect": "decode",
+                                "fasta_sha256": sha(src), "fasta_bytes": len(src), "fetch": "fetch/" + f + ".fetch.tsv",
+                                "note": "ABS copies (reference longer than 2^24 bases)"})
+    exp["corrupt"] += [{"archive": "corrupt/zero_context.rr3", "reference": "reference/reference.fa", "expect": "refuse",
+                        "how": "asmB.q4k.hash.rr3 with every frequency of context 59 set to 0 (meta rebuilt, header XXH3 recomputed, payload untouched): a symbol is read from an all-zero context (sections 6.3, 15)"},
+                       {"archive": "corrupt/meta_two_frames.rr3", "reference": "reference/reference.fa", "expect": "refuse",
+                        "how": "asmD.q16k.nohash.rr3 with an empty zstd frame appended to the meta section (meta content identical; meta_bytes and header XXH3 updated): the meta must be exactly one frame (sections 4, 5)"}]
+    # responses of the v1 reader with the stricter checks
     for c in exp["corrupt"]:
-        r = c.pop("tool_response"); c["reader_response"] = {"exit": r["exit"], "message": r["message"], "output_written": r["output_written"]}
+        c.pop("tool_response", None)
+        out = subprocess.run([os.environ["PANVRAM_PY"], os.path.join(H, "reader_responses.py"), os.path.join(OUT, "work_reader", os.path.basename(c["archive"])),
+                              os.path.join(P, c["reference"]), os.path.join(P, c["archive"])], check=True, capture_output=True, text=True).stdout
+        r = json.loads(out.strip().split("\n")[-1])
+        assert r["refused"], c["archive"]
+        c["reader_response"] = {"stage": r["stage"], "message": r["message"].split(": ", 1)[1], "output_written": False}
     json.dump(exp, open(os.path.join(P, "EXPECTED.json"), "w"), indent=1)
-    subprocess.run([sys.executable, os.path.join(H, "make_vectors.py"), W, os.path.join(P, "TEST_VECTORS.json")], check=True)
+    subprocess.run([sys.executable, os.path.join(H, "make_vectors.py"), W, os.path.join(P, "TEST_VECTORS.json"), AB], check=True)
     files = sorted(os.path.relpath(os.path.join(dp, f), P) for dp, _, fs in os.walk(P) for f in fs)
     with open(os.path.join(P, "SHA256SUMS"), "w") as s:
         for f in files: s.write(f"{sha(open(os.path.join(P, f), 'rb').read())}  {f}\n")

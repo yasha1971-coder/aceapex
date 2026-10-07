@@ -94,8 +94,10 @@ def open_archive(a, R, rsha):
     try: fp = zstandard.get_frame_parameters(mzb)
     except zstandard.ZstdError: raise Refuse("meta frame")
     if mr > 1 << 32 or fp.content_size != mr: raise Refuse("meta frame")
-    try: M = zstandard.ZstdDecompressor().decompress(mzb, max_output_size=mr)
+    try:
+        dobj = zstandard.ZstdDecompressor().decompressobj(); M = dobj.decompress(mzb)
     except zstandard.ZstdError: raise Refuse("meta decompress")
+    if dobj.unused_data: raise Refuse("meta frame count")         # §4: exactly one frame filling meta_bytes
     if len(M) != mr: raise Refuse("meta decompress")
     i = 0
     def take(k):
