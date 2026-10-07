@@ -1,0 +1,11 @@
+archive /home/aeterna/pubrepo/.wk/hprc_cohort/v1/r2_HG00097_hap1_hprc_r2_v1.0.1.q16k.rr3
+Q 16384 blocks 185189 hap_bases 3034131346 hap_contigs 75 ref_chromosomes 25
+kind literal ops      2347751 bases        4652841 (0.0015 of hap)
+kind ref     ops      3806553 bases     2961668859 (0.9761 of hap)
+kind self    ops       143681 bases       28606225 (0.0094 of hap)
+kind rc      ops       338184 bases       39203421 (0.0129 of hap)
+copies(ref+rc) 4144737  length p10 36 p50 209 p90 1612 p99 9406 max 16384
+chains 1276607 (drift <= 64, gap <= 1000) N50 36825  hap bases in chains: total 0.9916, >=10kb 0.7914, >=100kb 0.2360, >=1Mb 0.0009
+copied bases on the dominant ref chromosome of their hap contig: 0.9862
+index bytes at 24 B per chain: 30638568; at 16 B per copy: 66315792
+15.83 s 6129392 KB
