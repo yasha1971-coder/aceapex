@@ -1,0 +1,38 @@
+# agc_win_t16 start 2026-10-07T11:15:48Z loadavg 1.52 1.64 1.65 1/1072 3136173
+OPEN	agc_win_t16	16 handles (prefetching=1)	5.916 s
+RUN	agc_win_t16	0	warmup	3.495183	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t16	1	warmup	2.955263	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t16	2	warmup	2.961916	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t16	3	timed	2.927681	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t16	4	timed	2.958049	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t16	5	timed	3.034412	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t16	6	timed	2.961625	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t16	7	timed	2.951395	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t16	8	timed	3.019740	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t16	9	timed	3.045748	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t16	10	timed	3.008168	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t16	11	timed	3.001841	10000 items	40960000 bytes	sha256 10000/10000
+	Command being timed: "/home/aeterna/pubrepo/.wk/avr/agcbench req /home/aeterna/pubrepo/.wk/m6/N50/agc50.agc /home/aeterna/pubrepo/.wk/m6/N50/windows_4096.tsv /home/aeterna/pubrepo/.wk/m6/N50/truth.tsv 16 3 9 agc_win_t16"
+	User time (seconds): 312.86
+	System time (seconds): 140.58
+	Percent of CPU this job got: 1041%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:43.54
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 19967268
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 33177928
+	Voluntary context switches: 4829164
+	Involuntary context switches: 14313
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 56
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+# exit 0 end 2026-10-07T11:16:32Z loadavg 7.71 3.15 2.15 1/1072 3136494

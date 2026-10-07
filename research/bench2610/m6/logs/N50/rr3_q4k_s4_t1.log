@@ -1,0 +1,38 @@
+# rr3_q4k_s4_t1 start 2026-10-07T10:52:06Z loadavg 0.71 2.30 2.56 1/1065 3128714
+OPEN	rr3_q4k_s4_t1	reference + 50 archives (q4k)	15.760 s
+RUN	rr3_q4k_s4_t1	0	warmup	8.627353	4 items	11989829249 bytes	sha256 4/4
+RUN	rr3_q4k_s4_t1	1	warmup	5.162986	4 items	11989829249 bytes	sha256 4/4
+RUN	rr3_q4k_s4_t1	2	warmup	5.164979	4 items	11989829249 bytes	sha256 4/4
+RUN	rr3_q4k_s4_t1	3	timed	5.162566	4 items	11989829249 bytes	sha256 4/4
+RUN	rr3_q4k_s4_t1	4	timed	5.171840	4 items	11989829249 bytes	sha256 4/4
+RUN	rr3_q4k_s4_t1	5	timed	5.170371	4 items	11989829249 bytes	sha256 4/4
+RUN	rr3_q4k_s4_t1	6	timed	5.166290	4 items	11989829249 bytes	sha256 4/4
+RUN	rr3_q4k_s4_t1	7	timed	5.169191	4 items	11989829249 bytes	sha256 4/4
+RUN	rr3_q4k_s4_t1	8	timed	5.163665	4 items	11989829249 bytes	sha256 4/4
+RUN	rr3_q4k_s4_t1	9	timed	5.169246	4 items	11989829249 bytes	sha256 4/4
+RUN	rr3_q4k_s4_t1	10	timed	5.165393	4 items	11989829249 bytes	sha256 4/4
+RUN	rr3_q4k_s4_t1	11	timed	5.164944	4 items	11989829249 bytes	sha256 4/4
+	Command being timed: "taskset -c 3 /home/aeterna/pubrepo/.wk/avr/rr3bench sample /home/aeterna/golden/genome/t2t.fa /home/aeterna/pubrepo/.wk/hprc_cohort/v1 q4k y1_HG00438.1,y1_HG00438.2,y1_HG00621.1,y1_HG00621.2 /home/aeterna/pubrepo/.wk/m6/N50/truth.tsv 1 3 9 rr3_q4k_s4_t1"
+	User time (seconds): 151.43
+	System time (seconds): 47.05
+	Percent of CPU this job got: 99%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 3:18.50
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 19704708
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 40852525
+	Voluntary context switches: 49
+	Involuntary context switches: 1179
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 104
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+# exit 0 end 2026-10-07T10:55:25Z loadavg 1.00 1.68 2.25 1/1075 3129439

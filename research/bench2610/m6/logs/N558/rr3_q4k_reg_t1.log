@@ -1,0 +1,38 @@
+# rr3_q4k_reg_t1 start 2026-10-07T17:14:20Z loadavg 0.65 1.23 1.62 1/1060 3256480
+OPEN	rr3_q4k_reg_t1	reference + 558 archives (q4k)	25.851 s
+RUN	rr3_q4k_reg_t1	0	warmup	0.043008	100 items	100000000 bytes	sha256 100/100
+RUN	rr3_q4k_reg_t1	1	warmup	0.041264	100 items	100000000 bytes	sha256 100/100
+RUN	rr3_q4k_reg_t1	2	warmup	0.040428	100 items	100000000 bytes	sha256 100/100
+RUN	rr3_q4k_reg_t1	3	timed	0.040456	100 items	100000000 bytes	sha256 100/100
+RUN	rr3_q4k_reg_t1	4	timed	0.041255	100 items	100000000 bytes	sha256 100/100
+RUN	rr3_q4k_reg_t1	5	timed	0.040572	100 items	100000000 bytes	sha256 100/100
+RUN	rr3_q4k_reg_t1	6	timed	0.040320	100 items	100000000 bytes	sha256 100/100
+RUN	rr3_q4k_reg_t1	7	timed	0.040546	100 items	100000000 bytes	sha256 100/100
+RUN	rr3_q4k_reg_t1	8	timed	0.041211	100 items	100000000 bytes	sha256 100/100
+RUN	rr3_q4k_reg_t1	9	timed	0.041345	100 items	100000000 bytes	sha256 100/100
+RUN	rr3_q4k_reg_t1	10	timed	0.040660	100 items	100000000 bytes	sha256 100/100
+RUN	rr3_q4k_reg_t1	11	timed	0.040918	100 items	100000000 bytes	sha256 100/100
+	Command being timed: "taskset -c 3 /home/aeterna/pubrepo/.wk/avr/rr3bench req /home/aeterna/golden/genome/t2t.fa /home/aeterna/pubrepo/.wk/hprc_cohort/v1 q4k /home/aeterna/pubrepo/.wk/m6/N558/regions_1M.tsv /home/aeterna/pubrepo/.wk/m6/N558/truth.tsv 1 3 9 rr3_q4k_reg_t1"
+	User time (seconds): 17.45
+	System time (seconds): 10.60
+	Percent of CPU this job got: 99%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:28.06
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 24999924
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 7799240
+	Voluntary context switches: 13
+	Involuntary context switches: 147
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 8
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+# exit 0 end 2026-10-07T17:14:48Z loadavg 0.94 1.24 1.61 1/1060 3256548

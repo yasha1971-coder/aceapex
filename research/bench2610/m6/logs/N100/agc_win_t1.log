@@ -1,0 +1,38 @@
+# agc_win_t1 start 2026-10-07T11:54:45Z loadavg 1.04 1.56 2.70 1/1070 3154375
+OPEN	agc_win_t1	1 handles (prefetching=1)	0.507 s
+RUN	agc_win_t1	0	warmup	261.621015	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t1	1	warmup	263.808946	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t1	2	warmup	263.372087	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t1	3	timed	262.695219	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t1	4	timed	263.522034	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t1	5	timed	263.326842	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t1	6	timed	263.511089	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t1	7	timed	263.204891	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t1	8	timed	263.800205	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t1	9	timed	263.659513	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t1	10	timed	263.392541	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t1	11	timed	264.634074	10000 items	40960000 bytes	sha256 10000/10000
+	Command being timed: "taskset -c 3 /home/aeterna/pubrepo/.wk/avr/agcbench req /home/aeterna/pubrepo/.wk/m6/N100/agc100.agc /home/aeterna/pubrepo/.wk/m6/N100/windows_4096.tsv /home/aeterna/pubrepo/.wk/m6/N100/truth.tsv 1 3 9 agc_win_t1"
+	User time (seconds): 2144.27
+	System time (seconds): 1016.78
+	Percent of CPU this job got: 99%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 52:41.44
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 1638564
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 751851752
+	Voluntary context switches: 13
+	Involuntary context switches: 21224
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 96
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+# exit 0 end 2026-10-07T12:47:27Z loadavg 1.05 1.03 1.07 1/1085 3162906

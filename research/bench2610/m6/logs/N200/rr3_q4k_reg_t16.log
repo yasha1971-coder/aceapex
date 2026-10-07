@@ -1,0 +1,38 @@
+# rr3_q4k_reg_t16 start 2026-10-07T15:43:47Z loadavg 2.23 1.26 1.08 1/1053 3228763
+OPEN	rr3_q4k_reg_t16	reference + 200 archives (q4k)	18.765 s
+RUN	rr3_q4k_reg_t16	0	warmup	0.014298	100 items	100000000 bytes	sha256 100/100
+RUN	rr3_q4k_reg_t16	1	warmup	0.013356	100 items	100000000 bytes	sha256 100/100
+RUN	rr3_q4k_reg_t16	2	warmup	0.011333	100 items	100000000 bytes	sha256 100/100
+RUN	rr3_q4k_reg_t16	3	timed	0.012121	100 items	100000000 bytes	sha256 100/100
+RUN	rr3_q4k_reg_t16	4	timed	0.011281	100 items	100000000 bytes	sha256 100/100
+RUN	rr3_q4k_reg_t16	5	timed	0.011393	100 items	100000000 bytes	sha256 100/100
+RUN	rr3_q4k_reg_t16	6	timed	0.011251	100 items	100000000 bytes	sha256 100/100
+RUN	rr3_q4k_reg_t16	7	timed	0.011152	100 items	100000000 bytes	sha256 100/100
+RUN	rr3_q4k_reg_t16	8	timed	0.011246	100 items	100000000 bytes	sha256 100/100
+RUN	rr3_q4k_reg_t16	9	timed	0.011329	100 items	100000000 bytes	sha256 100/100
+RUN	rr3_q4k_reg_t16	10	timed	0.011851	100 items	100000000 bytes	sha256 100/100
+RUN	rr3_q4k_reg_t16	11	timed	0.011991	100 items	100000000 bytes	sha256 100/100
+	Command being timed: "/home/aeterna/pubrepo/.wk/avr/rr3bench req /home/aeterna/golden/genome/t2t.fa /home/aeterna/pubrepo/.wk/hprc_cohort/v1 q4k /home/aeterna/pubrepo/.wk/m6/N200/regions_1M.tsv /home/aeterna/pubrepo/.wk/m6/N200/truth.tsv 16 3 9 rr3_q4k_reg_t16"
+	User time (seconds): 14.79
+	System time (seconds): 5.92
+	Percent of CPU this job got: 103%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:20.03
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 11006856
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 4298431
+	Voluntary context switches: 112
+	Involuntary context switches: 71
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 8
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+# exit 0 end 2026-10-07T15:44:07Z loadavg 1.88 1.24 1.08 1/1053 3228987

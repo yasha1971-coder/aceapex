@@ -1,0 +1,334 @@
+# run_all start 2026-10-07T10:32:31Z protocol ec0ce9f9d92fdc7eb448d72ba10932a8a5660f15d47038f5f6a6ada6522f0815 aceapex 0760d32
+## N 50 req start 2026-10-07T10:32:31Z
+N 50: 17386 contigs, 150584056169 valid window starts, 141701284287 valid 1 Mb starts
+truth exit 0
+abdc046053230fa1fdffdf051382db396615a1dfa0f59639d690a368648397d4  windows_4096.tsv
+af13f3e226332d9e026f52ac40db451a2ee3cda7ac805e3e58031779bd23fe74  regions_1M.tsv
+9df94ca15e8d66abd835c2777c204fe5dc4618049657c936d69be4b1fc069c6c  names.tsv
+f48e5aa307d6e601f5e043655e9e622b1a5bc74eb13084839845cae3f48e396b  samples4.txt
+938f0359bd3970c37b8e640e9fb93e65fe3749b4e460abc2d44ed4c5625bd76d  truth.tsv
+## N 50 req end 2026-10-07T10:36:30Z exit 0
+## N 50 create start 2026-10-07T10:36:30Z
+feed exit 0
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 6:48.99
+	Maximum resident set size (kbytes): 26464032
+	Exit status: 0
+1139665993 .wk/m6/N50/agc50.agc
+bde301b114551b4d2d30e95c237d1dc944b570b077bd54ef6cd96b37b016f4cc  .wk/m6/N50/agc50.agc
+## N 50 create end 2026-10-07T10:43:36Z exit 0
+## N 50 integrity start 2026-10-07T10:43:36Z
+SETS 50, listset ok, listctg failures: 0
+## N 50 integrity end 2026-10-07T10:43:37Z exit 0
+## N 50 h5 start 2026-10-07T10:43:37Z
+#0  CAGCDecompressorLibrary::decompress_contig (this=0x5555556c7fe0, contig_desc=..., zstd_ctx=0x0, ctg=std::vector of length 0, capacity 0, fast=false) at /home/aeterna/pubrepo/.wk/agccount/src/common/agc_decompressor_lib.cpp:175
+#1  0x000055555557a398 in CAGCDecompressorLibrary::GetContigString (this=0x5555556c7fe0, sample_name="y1_HG01952.1", contig_name="HG01952#1#JAHAME010000053.1", start=start@entry=12530597, end=end@entry=12534692, contig_data="") at /home/aeterna/pubrepo/.wk/agccount/src/common/agc_decompressor_lib.cpp:133
+#2  0x000055555556edc2 in CAGCFile::GetCtgSeq (this=this@entry=0x5555556c6a30, sample="y1_HG01952.1", name="HG01952#1#JAHAME010000053.1", start=start@entry=12530597, end=end@entry=12534692, buffer="") at /home/aeterna/pubrepo/.wk/agccount/src/lib-cxx/lib-cxx.cpp:69
+#3  0x000055555556f192 in agc_get_ctg_seq (agc=0x5555556c6a30, sample=0x5555556c8e30 "y1_HG01952.1", name=<optimized out>, start=12530597, end=12534692, buf=0x5555560a8910 "") at /home/aeterna/pubrepo/.wk/agccount/src/lib-cxx/lib-cxx.cpp:166
+#4  0x0000555555562dde in main (argc=<optimized out>, argv=<optimized out>) at /home/aeterna/pubrepo/research/bench2610/m6/counters/agccount.cpp:42
+fast = false
+## N 50 h5 end 2026-10-07T10:43:38Z exit 0
+## N 50 counters start 2026-10-07T10:43:38Z
+AGCCOUNT	/home/aeterna/pubrepo/.wk/m6/N50/cnt_win.tsv	1000 requests	sha256 1000/1000
+AGCCOUNT	/home/aeterna/pubrepo/.wk/m6/N50/cnt_win_sorted.tsv	1000 requests	sha256 1000/1000
+AGCCOUNT	/home/aeterna/pubrepo/.wk/m6/N50/regions_1M.tsv	100 requests	sha256 100/100
+## N 50 counters end 2026-10-07T10:43:42Z exit 0
+## N 50 measure start 2026-10-07T10:43:42Z
+rr3_q4k_win_t1: RUN	rr3_q4k_win_t1	11	timed	0.050741	10000 items	40960000 bytes	sha256 10000/10000
+rr3_q4k_win_t1: 	Maximum resident set size (kbytes): 6139864
+rr3_q4k_reg_t1: RUN	rr3_q4k_reg_t1	11	timed	0.051810	100 items	100000000 bytes	sha256 100/100
+rr3_q4k_reg_t1: 	Maximum resident set size (kbytes): 6139948
+rr3_q4k_s4_t1: RUN	rr3_q4k_s4_t1	11	timed	5.164944	4 items	11989829249 bytes	sha256 4/4
+rr3_q4k_s4_t1: 	Maximum resident set size (kbytes): 19704708
+rr3_q16k_win_t1: RUN	rr3_q16k_win_t1	11	timed	0.107906	10000 items	40960000 bytes	sha256 10000/10000
+rr3_q16k_win_t1: 	Maximum resident set size (kbytes): 6139928
+rr3_q16k_reg_t1: RUN	rr3_q16k_reg_t1	11	timed	0.053079	100 items	100000000 bytes	sha256 100/100
+rr3_q16k_reg_t1: 	Maximum resident set size (kbytes): 6139856
+rr3_q16k_s4_t1: RUN	rr3_q16k_s4_t1	11	timed	5.116921	4 items	11989829249 bytes	sha256 4/4
+rr3_q16k_s4_t1: 	Maximum resident set size (kbytes): 18676640
+agc_win_t1: RUN	agc_win_t1	11	timed	11.523745	10000 items	40960000 bytes	sha256 10000/10000
+agc_win_t1: 	Maximum resident set size (kbytes): 1297876
+agc_reg_t1: RUN	agc_reg_t1	11	timed	0.334977	100 items	100000000 bytes	sha256 100/100
+agc_reg_t1: 	Maximum resident set size (kbytes): 1354552
+agc_s4_t1: RUN	agc_s4_t1	11	timed	31.062035	4 items	11989829249 bytes	sha256 4/4
+agc_s4_t1: 	Maximum resident set size (kbytes): 15941876
+rr3_q4k_win_t16: RUN	rr3_q4k_win_t16	11	timed	0.006134	10000 items	40960000 bytes	sha256 10000/10000
+rr3_q4k_win_t16: 	Maximum resident set size (kbytes): 6139844
+rr3_q4k_reg_t16: RUN	rr3_q4k_reg_t16	11	timed	0.011802	100 items	100000000 bytes	sha256 100/100
+rr3_q4k_reg_t16: 	Maximum resident set size (kbytes): 6140040
+rr3_q4k_s4_t16: RUN	rr3_q4k_s4_t16	11	timed	0.936676	4 items	11989829249 bytes	sha256 4/4
+rr3_q4k_s4_t16: 	Maximum resident set size (kbytes): 19705096
+rr3_q16k_win_t16: RUN	rr3_q16k_win_t16	11	timed	0.011553	10000 items	40960000 bytes	sha256 10000/10000
+rr3_q16k_win_t16: 	Maximum resident set size (kbytes): 6140008
+rr3_q16k_reg_t16: RUN	rr3_q16k_reg_t16	11	timed	0.015312	100 items	100000000 bytes	sha256 100/100
+rr3_q16k_reg_t16: 	Maximum resident set size (kbytes): 6139880
+rr3_q16k_s4_t16: RUN	rr3_q16k_s4_t16	11	timed	0.929169	4 items	11989829249 bytes	sha256 4/4
+rr3_q16k_s4_t16: 	Maximum resident set size (kbytes): 18677828
+agc_win_t16: RUN	agc_win_t16	11	timed	3.001841	10000 items	40960000 bytes	sha256 10000/10000
+agc_win_t16: 	Maximum resident set size (kbytes): 19967268
+agc_reg_t16: RUN	agc_reg_t16	11	timed	0.105470	100 items	100000000 bytes	sha256 100/100
+agc_reg_t16: 	Maximum resident set size (kbytes): 19388948
+agc_s4_t16: RUN	agc_s4_t16	11	timed	11.171747	4 items	11989829249 bytes	sha256 4/4
+agc_s4_t16: 	Maximum resident set size (kbytes): 33955244
+## N 50 measure end 2026-10-07T11:21:00Z exit 0
+## N 50 perf start 2026-10-07T11:21:00Z
+RUN	perf_N50	0	timed	11.603443	10000 items	40960000 bytes	sha256 10000/10000
+    77.34%  agc_get_ctg_seq
+    22.66%  [other]        
+    55.53%  [.] CCollection_V3::deserialize_contig_details                                                              
+     4.96%  [.] std::vector<segment_desc_t, std::allocator<segment_desc_t> >::_M_default_append                         
+     3.47%  [.] __memset_avx512_unaligned_erms                                                                          
+     2.63%  [.] __memmove_avx512_unaligned_erms                                                                         
+     2.09%  [.] CSegment::tuples2bytes                                                                                  
+     1.05%  [k] 0xffffffffb83d6cf5                                                                                      
+     0.75%  [.] CSegment::get                                                                                           
+     0.65%  [.] CCollection_V3::decode_split                                                                            
+## N 50 perf end 2026-10-07T11:22:53Z exit 141
+## N 100 req start 2026-10-07T11:22:53Z
+N 100: 38960 contigs, 301045059679 valid window starts, 281160802301 valid 1 Mb starts
+truth exit 0
+9fd365756018e112c89faec7fd4df931d30b87923137de3bdb4694c817ba9d71  windows_4096.tsv
+5d7450398a11eaf2b6099701b111495e48e54a7bc04e3ac496c37e235b43720b  regions_1M.tsv
+5dd079157322fca21967678767e07ec498edc33a00dd40fc0940eb44d69bafb9  names.tsv
+f48e5aa307d6e601f5e043655e9e622b1a5bc74eb13084839845cae3f48e396b  samples4.txt
+285945d258c5e0e803be07ab3096257249a83265e1b29776337563222362a4ff  truth.tsv
+## N 100 req end 2026-10-07T11:30:27Z exit 0
+## N 100 create start 2026-10-07T11:30:27Z
+feed exit 0
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 12:52.74
+	Maximum resident set size (kbytes): 26359016
+	Exit status: 0
+1482895757 .wk/m6/N100/agc100.agc
+fd4340a06c95e38f265c2b503774e8a5aa93d266ce2b703b9893a7fb493e9a0a  .wk/m6/N100/agc100.agc
+## N 100 create end 2026-10-07T11:43:37Z exit 0
+## N 100 integrity start 2026-10-07T11:43:37Z
+SETS 100, listset ok, listctg failures: 0
+## N 100 integrity end 2026-10-07T11:43:41Z exit 0
+## N 100 h5 start 2026-10-07T11:43:41Z
+#0  CAGCDecompressorLibrary::decompress_contig (this=0x555556590220, contig_desc=..., zstd_ctx=0x0, ctg=std::vector of length 0, capacity 0, fast=false) at /home/aeterna/pubrepo/.wk/agccount/src/common/agc_decompressor_lib.cpp:175
+#1  0x000055555557a398 in CAGCDecompressorLibrary::GetContigString (this=0x555556590220, sample_name="y1_HG02886.2", contig_name="HG02886#2#JAHAOT010000120.1", start=start@entry=9636843, end=end@entry=9640938, contig_data="") at /home/aeterna/pubrepo/.wk/agccount/src/common/agc_decompressor_lib.cpp:133
+#2  0x000055555556edc2 in CAGCFile::GetCtgSeq (this=this@entry=0x5555562ea140, sample="y1_HG02886.2", name="HG02886#2#JAHAOT010000120.1", start=start@entry=9636843, end=end@entry=9640938, buffer="") at /home/aeterna/pubrepo/.wk/agccount/src/lib-cxx/lib-cxx.cpp:69
+#3  0x000055555556f192 in agc_get_ctg_seq (agc=0x5555562ea140, sample=0x5555556c8e20 "y1_HG02886.2", name=<optimized out>, start=9636843, end=9640938, buf=0x555555e01e10 "") at /home/aeterna/pubrepo/.wk/agccount/src/lib-cxx/lib-cxx.cpp:166
+#4  0x0000555555562dde in main (argc=<optimized out>, argv=<optimized out>) at /home/aeterna/pubrepo/research/bench2610/m6/counters/agccount.cpp:42
+fast = false
+## N 100 h5 end 2026-10-07T11:43:42Z exit 0
+## N 100 counters start 2026-10-07T11:43:42Z
+AGCCOUNT	/home/aeterna/pubrepo/.wk/m6/N100/cnt_win.tsv	1000 requests	sha256 1000/1000
+AGCCOUNT	/home/aeterna/pubrepo/.wk/m6/N100/cnt_win_sorted.tsv	1000 requests	sha256 1000/1000
+AGCCOUNT	/home/aeterna/pubrepo/.wk/m6/N100/regions_1M.tsv	100 requests	sha256 100/100
+## N 100 counters end 2026-10-07T11:44:15Z exit 0
+## N 100 measure start 2026-10-07T11:44:15Z
+rr3_q4k_win_t1: RUN	rr3_q4k_win_t1	11	timed	0.056460	10000 items	40960000 bytes	sha256 10000/10000
+rr3_q4k_win_t1: 	Maximum resident set size (kbytes): 7069132
+rr3_q4k_reg_t1: RUN	rr3_q4k_reg_t1	11	timed	0.051859	100 items	100000000 bytes	sha256 100/100
+rr3_q4k_reg_t1: 	Maximum resident set size (kbytes): 7127624
+rr3_q4k_s4_t1: RUN	rr3_q4k_s4_t1	11	timed	5.225205	4 items	11989829249 bytes	sha256 4/4
+rr3_q4k_s4_t1: 	Maximum resident set size (kbytes): 21708064
+rr3_q16k_win_t1: RUN	rr3_q16k_win_t1	11	timed	0.116091	10000 items	40960000 bytes	sha256 10000/10000
+rr3_q16k_win_t1: 	Maximum resident set size (kbytes): 6146024
+rr3_q16k_reg_t1: RUN	rr3_q16k_reg_t1	11	timed	0.053604	100 items	100000000 bytes	sha256 100/100
+rr3_q16k_reg_t1: 	Maximum resident set size (kbytes): 6146004
+rr3_q16k_s4_t1: RUN	rr3_q16k_s4_t1	11	timed	5.113415	4 items	11989829249 bytes	sha256 4/4
+rr3_q16k_s4_t1: 	Maximum resident set size (kbytes): 19663648
+agc_win_t1: RUN	agc_win_t1	11	timed	264.634074	10000 items	40960000 bytes	sha256 10000/10000
+agc_win_t1: 	Maximum resident set size (kbytes): 1638564
+agc_reg_t1: RUN	agc_reg_t1	11	timed	2.315074	100 items	100000000 bytes	sha256 100/100
+agc_reg_t1: 	Maximum resident set size (kbytes): 1706748
+agc_s4_t1: RUN	agc_s4_t1	11	timed	30.961539	4 items	11989829249 bytes	sha256 4/4
+agc_s4_t1: 	Maximum resident set size (kbytes): 16276368
+rr3_q4k_win_t16: RUN	rr3_q4k_win_t16	11	timed	0.006537	10000 items	40960000 bytes	sha256 10000/10000
+rr3_q4k_win_t16: 	Maximum resident set size (kbytes): 7071184
+rr3_q4k_reg_t16: RUN	rr3_q4k_reg_t16	11	timed	0.014087	100 items	100000000 bytes	sha256 100/100
+rr3_q4k_reg_t16: 	Maximum resident set size (kbytes): 7129256
+rr3_q4k_s4_t16: RUN	rr3_q4k_s4_t16	11	timed	0.933700	4 items	11989829249 bytes	sha256 4/4
+rr3_q4k_s4_t16: 	Maximum resident set size (kbytes): 21708284
+rr3_q16k_win_t16: RUN	rr3_q16k_win_t16	11	timed	0.012351	10000 items	40960000 bytes	sha256 10000/10000
+rr3_q16k_win_t16: 	Maximum resident set size (kbytes): 6146132
+rr3_q16k_reg_t16: RUN	rr3_q16k_reg_t16	11	timed	0.011310	100 items	100000000 bytes	sha256 100/100
+rr3_q16k_reg_t16: 	Maximum resident set size (kbytes): 6145984
+rr3_q16k_s4_t16: RUN	rr3_q16k_s4_t16	11	timed	0.929926	4 items	11989829249 bytes	sha256 4/4
+rr3_q16k_s4_t16: 	Maximum resident set size (kbytes): 19665264
+agc_win_t16: RUN	agc_win_t16	11	timed	74.003077	10000 items	40960000 bytes	sha256 10000/10000
+agc_win_t16: 	Maximum resident set size (kbytes): 25384756
+agc_reg_t16: RUN	agc_reg_t16	11	timed	0.682518	100 items	100000000 bytes	sha256 100/100
+agc_reg_t16: 	Maximum resident set size (kbytes): 24924724
+agc_s4_t16: RUN	agc_s4_t16	11	timed	11.070110	4 items	11989829249 bytes	sha256 4/4
+agc_s4_t16: 	Maximum resident set size (kbytes): 39358804
+## N 100 measure end 2026-10-07T13:21:26Z exit 0
+## N 100 perf start 2026-10-07T13:21:26Z
+RUN	perf_N100	0	timed	262.315368	10000 items	40960000 bytes	sha256 10000/10000
+    78.69%  agc_get_ctg_seq
+    21.31%  [other]        
+    60.32%  [.] CCollection_V3::deserialize_contig_details                                                              
+     5.29%  [.] std::vector<segment_desc_t, std::allocator<segment_desc_t> >::_M_default_append                         
+     3.22%  [.] __memset_avx512_unaligned_erms                                                                          
+     2.18%  [.] __memmove_avx512_unaligned_erms                                                                         
+     1.88%  [k] 0xffffffffb8400bf9                                                                                      
+     0.77%  [k] 0xffffffffb83d6ceb                                                                                      
+     0.76%  [.] CCollection_V3::decode_split                                                                            
+     0.69%  [k] 0xffffffffb83d6cf5                                                                                      
+## N 100 perf end 2026-10-07T13:27:23Z exit 141
+## N 200 req start 2026-10-07T13:27:23Z
+N 200: 48254 contigs, 599589252525 valid window starts, 575047199029 valid 1 Mb starts
+truth exit 0
+c8f613aeb2b813df6e1a143e52a0b0a9b72094b1e9d869d5cb53d1b03a2a084f  windows_4096.tsv
+c9dbe7f0f31d7c913994398ce8c743ba462139bb6476f7c1c8731908c60c6669  regions_1M.tsv
+49926a848903d60c20b2d361242be5727a8281857b541f4b4fcb3e8f162c9e79  names.tsv
+f48e5aa307d6e601f5e043655e9e622b1a5bc74eb13084839845cae3f48e396b  samples4.txt
+b387aad30ef7baa5187d246c49f76e63e4f470380c4a877f39a2b6b4ab124e5d  truth.tsv
+## N 200 req end 2026-10-07T13:44:17Z exit 0
+## N 200 create start 2026-10-07T13:44:17Z
+feed exit 0
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 26:47.48
+	Maximum resident set size (kbytes): 27482696
+	Exit status: 0
+1990727652 .wk/m6/N200/agc200.agc
+3a5a9237432530289df4cd1bda50dd7105fe686169db561d7efcbfeb62f3a902  .wk/m6/N200/agc200.agc
+## N 200 create end 2026-10-07T14:11:24Z exit 0
+## N 200 integrity start 2026-10-07T14:11:24Z
+SETS 200, listset ok, listctg failures: 0
+## N 200 integrity end 2026-10-07T14:11:31Z exit 0
+## N 200 h5 start 2026-10-07T14:11:31Z
+#0  CAGCDecompressorLibrary::decompress_contig (this=0x555555eb2a00, contig_desc=..., zstd_ctx=0x0, ctg=std::vector of length 0, capacity 0, fast=false) at /home/aeterna/pubrepo/.wk/agccount/src/common/agc_decompressor_lib.cpp:175
+#1  0x000055555557a398 in CAGCDecompressorLibrary::GetContigString (this=0x555555eb2a00, sample_name="y1_HG03516.2", contig_name="HG03516#2#JAGYYS010000029.1", start=start@entry=8494031, end=end@entry=8498126, contig_data="") at /home/aeterna/pubrepo/.wk/agccount/src/common/agc_decompressor_lib.cpp:133
+#2  0x000055555556edc2 in CAGCFile::GetCtgSeq (this=this@entry=0x555555eb2c40, sample="y1_HG03516.2", name="HG03516#2#JAGYYS010000029.1", start=start@entry=8494031, end=end@entry=8498126, buffer="") at /home/aeterna/pubrepo/.wk/agccount/src/lib-cxx/lib-cxx.cpp:69
+#3  0x000055555556f192 in agc_get_ctg_seq (agc=0x555555eb2c40, sample=0x555555eba6e0 "y1_HG03516.2", name=<optimized out>, start=8494031, end=8498126, buf=0x555555ce3f60 "") at /home/aeterna/pubrepo/.wk/agccount/src/lib-cxx/lib-cxx.cpp:166
+#4  0x0000555555562dde in main (argc=<optimized out>, argv=<optimized out>) at /home/aeterna/pubrepo/research/bench2610/m6/counters/agccount.cpp:42
+fast = false
+## N 200 h5 end 2026-10-07T14:11:33Z exit 0
+## N 200 counters start 2026-10-07T14:11:33Z
+AGCCOUNT	/home/aeterna/pubrepo/.wk/m6/N200/cnt_win.tsv	1000 requests	sha256 1000/1000
+AGCCOUNT	/home/aeterna/pubrepo/.wk/m6/N200/cnt_win_sorted.tsv	1000 requests	sha256 1000/1000
+AGCCOUNT	/home/aeterna/pubrepo/.wk/m6/N200/regions_1M.tsv	100 requests	sha256 100/100
+## N 200 counters end 2026-10-07T14:12:18Z exit 0
+## N 200 measure start 2026-10-07T14:12:18Z
+rr3_q4k_win_t1: RUN	rr3_q4k_win_t1	11	timed	0.053091	10000 items	40960000 bytes	sha256 10000/10000
+rr3_q4k_win_t1: 	Maximum resident set size (kbytes): 10945536
+rr3_q4k_reg_t1: RUN	rr3_q4k_reg_t1	11	timed	0.045898	100 items	100000000 bytes	sha256 100/100
+rr3_q4k_reg_t1: 	Maximum resident set size (kbytes): 11004060
+rr3_q4k_s4_t1: RUN	rr3_q4k_s4_t1	11	timed	5.158834	4 items	11989829249 bytes	sha256 4/4
+rr3_q4k_s4_t1: 	Maximum resident set size (kbytes): 25587448
+rr3_q16k_win_t1: RUN	rr3_q16k_win_t1	11	timed	0.115577	10000 items	40960000 bytes	sha256 10000/10000
+rr3_q16k_win_t1: 	Maximum resident set size (kbytes): 6891804
+rr3_q16k_reg_t1: RUN	rr3_q16k_reg_t1	11	timed	0.043326	100 items	100000000 bytes	sha256 100/100
+rr3_q16k_reg_t1: 	Maximum resident set size (kbytes): 6953436
+rr3_q16k_s4_t1: RUN	rr3_q16k_s4_t1	11	timed	5.065912	4 items	11989829249 bytes	sha256 4/4
+rr3_q16k_s4_t1: 	Maximum resident set size (kbytes): 21529936
+agc_win_t1: RUN	agc_win_t1	11	timed	354.909041	10000 items	40960000 bytes	sha256 10000/10000
+agc_win_t1: 	Maximum resident set size (kbytes): 2139224
+agc_reg_t1: RUN	agc_reg_t1	11	timed	3.774227	100 items	100000000 bytes	sha256 100/100
+agc_reg_t1: 	Maximum resident set size (kbytes): 2213060
+agc_s4_t1: RUN	agc_s4_t1	11	timed	30.055083	4 items	11989829249 bytes	sha256 4/4
+agc_s4_t1: 	Maximum resident set size (kbytes): 16776192
+rr3_q4k_win_t16: RUN	rr3_q4k_win_t16	11	timed	0.006718	10000 items	40960000 bytes	sha256 10000/10000
+rr3_q4k_win_t16: 	Maximum resident set size (kbytes): 10947688
+rr3_q4k_reg_t16: RUN	rr3_q4k_reg_t16	11	timed	0.011991	100 items	100000000 bytes	sha256 100/100
+rr3_q4k_reg_t16: 	Maximum resident set size (kbytes): 11006856
+rr3_q4k_s4_t16: RUN	rr3_q4k_s4_t16	11	timed	0.932658	4 items	11989829249 bytes	sha256 4/4
+rr3_q4k_s4_t16: 	Maximum resident set size (kbytes): 25587732
+rr3_q16k_win_t16: RUN	rr3_q16k_win_t16	11	timed	0.012013	10000 items	40960000 bytes	sha256 10000/10000
+rr3_q16k_win_t16: 	Maximum resident set size (kbytes): 6894112
+rr3_q16k_reg_t16: RUN	rr3_q16k_reg_t16	11	timed	0.012323	100 items	100000000 bytes	sha256 100/100
+rr3_q16k_reg_t16: 	Maximum resident set size (kbytes): 6955612
+rr3_q16k_s4_t16: RUN	rr3_q16k_s4_t16	11	timed	0.928832	4 items	11989829249 bytes	sha256 4/4
+rr3_q16k_s4_t16: 	Maximum resident set size (kbytes): 21530088
+agc_win_t16: RUN	agc_win_t16	11	timed	91.447256	10000 items	40960000 bytes	sha256 10000/10000
+agc_win_t16: 	Maximum resident set size (kbytes): 33389892
+agc_reg_t16: RUN	agc_reg_t16	11	timed	1.051487	100 items	100000000 bytes	sha256 100/100
+agc_reg_t16: 	Maximum resident set size (kbytes): 32974468
+agc_s4_t16: RUN	agc_s4_t16	11	timed	11.069729	4 items	11989829249 bytes	sha256 4/4
+agc_s4_t16: 	Maximum resident set size (kbytes): 47343612
+## N 200 measure end 2026-10-07T16:13:07Z exit 0
+## N 200 perf start 2026-10-07T16:13:07Z
+RUN	perf_N200	0	timed	353.364359	10000 items	40960000 bytes	sha256 10000/10000
+    80.26%  agc_get_ctg_seq
+    19.74%  [other]        
+    62.60%  [.] CCollection_V3::deserialize_contig_details                                                              
+     5.73%  [.] std::vector<segment_desc_t, std::allocator<segment_desc_t> >::_M_default_append                         
+     3.42%  [.] __memset_avx512_unaligned_erms                                                                          
+     2.34%  [.] __memmove_avx512_unaligned_erms                                                                         
+     1.78%  [k] 0xffffffffb8400bf9                                                                                      
+     0.58%  [k] 0xffffffffb83d6cf5                                                                                      
+     0.54%  [k] 0xffffffffb83d6ceb                                                                                      
+     0.50%  [.] CCollection_V3::decode_split                                                                            
+## N 200 perf end 2026-10-07T16:20:47Z exit 141
+## N 558 req start 2026-10-07T16:20:47Z
+N 558: 76894 contigs, 1680122867627 valid window starts, 1640051816201 valid 1 Mb starts
+truth exit 0
+d4fc587aee77a7372057388106a85b527524767c9e464dddc162b96f8ec68595  windows_4096.tsv
+68a7ed019285d64c5bdc2e64a4a85fcf3c7a3445124da6a6bb450f39c74025e4  regions_1M.tsv
+1ee659eb50a0c192e0e3e1b60f3d4c5443c8e6042d85f2c2c10bad18cae0d797  names.tsv
+f48e5aa307d6e601f5e043655e9e622b1a5bc74eb13084839845cae3f48e396b  samples4.txt
+3185b7b97b784c7075862f142a3724329e9f3eed6a17ce0218354955b4cc22bf  truth.tsv
+## N 558 req end 2026-10-07T17:11:12Z exit 0
+## N 558 create start 2026-10-07T17:11:12Z
+3721635360 .wk/agc558/agc558.agc
+9011701c446ba1395b5ce2bc56708a931aa9bfe4b7e010e920651e5b0dc14721  .wk/agc558/agc558.agc
+## N 558 create end 2026-10-07T17:11:19Z exit 0
+## N 558 integrity start 2026-10-07T17:11:19Z
+SETS 558, listset ok, listctg failures: 0
+## N 558 integrity end 2026-10-07T17:11:49Z exit 0
+## N 558 h5 start 2026-10-07T17:11:49Z
+#0  CAGCDecompressorLibrary::decompress_contig (this=0x555556883bb0, contig_desc=..., zstd_ctx=0x0, ctg=std::vector of length 0, capacity 0, fast=false) at /home/aeterna/pubrepo/.wk/agccount/src/common/agc_decompressor_lib.cpp:175
+#1  0x000055555557a398 in CAGCDecompressorLibrary::GetContigString (this=0x555556883bb0, sample_name="r2_NA19776_hap2_hprc_r2_v1.0.1", contig_name="NA19776#2#CM094054.1", start=start@entry=6791411, end=end@entry=6795506, contig_data="") at /home/aeterna/pubrepo/.wk/agccount/src/common/agc_decompressor_lib.cpp:133
+#2  0x000055555556edc2 in CAGCFile::GetCtgSeq (this=this@entry=0x555555e1e100, sample="r2_NA19776_hap2_hprc_r2_v1.0.1", name="NA19776#2#CM094054.1", start=start@entry=6791411, end=end@entry=6795506, buffer="") at /home/aeterna/pubrepo/.wk/agccount/src/lib-cxx/lib-cxx.cpp:69
+#3  0x000055555556f192 in agc_get_ctg_seq (agc=0x555555e1e100, sample=0x5555556c7190 "r2_NA19776_hap2_hprc_r2_v1.0.1", name=<optimized out>, start=6791411, end=6795506, buf=0x555556652780 "") at /home/aeterna/pubrepo/.wk/agccount/src/lib-cxx/lib-cxx.cpp:166
+#4  0x0000555555562dde in main (argc=<optimized out>, argv=<optimized out>) at /home/aeterna/pubrepo/research/bench2610/m6/counters/agccount.cpp:42
+fast = false
+## N 558 h5 end 2026-10-07T17:11:51Z exit 0
+## N 558 counters start 2026-10-07T17:11:51Z
+AGCCOUNT	/home/aeterna/pubrepo/.wk/m6/N558/cnt_win.tsv	1000 requests	sha256 1000/1000
+AGCCOUNT	/home/aeterna/pubrepo/.wk/m6/N558/cnt_win_sorted.tsv	1000 requests	sha256 1000/1000
+AGCCOUNT	/home/aeterna/pubrepo/.wk/m6/N558/regions_1M.tsv	100 requests	sha256 100/100
+## N 558 counters end 2026-10-07T17:12:42Z exit 0
+## N 558 measure start 2026-10-07T17:12:42Z
+rr3_q4k_win_t1: RUN	rr3_q4k_win_t1	11	timed	0.068348	10000 items	40960000 bytes	sha256 10000/10000
+rr3_q4k_win_t1: 	Maximum resident set size (kbytes): 24932584
+rr3_q4k_reg_t1: RUN	rr3_q4k_reg_t1	11	timed	0.040918	100 items	100000000 bytes	sha256 100/100
+rr3_q4k_reg_t1: 	Maximum resident set size (kbytes): 24999924
+rr3_q4k_s4_t1: RUN	rr3_q4k_s4_t1	11	timed	5.205183	4 items	11989829249 bytes	sha256 4/4
+rr3_q4k_s4_t1: 	Maximum resident set size (kbytes): 39585536
+rr3_q16k_win_t1: RUN	rr3_q16k_win_t1	11	timed	0.135703	10000 items	40960000 bytes	sha256 10000/10000
+rr3_q16k_win_t1: 	Maximum resident set size (kbytes): 13586600
+rr3_q16k_reg_t1: RUN	rr3_q16k_reg_t1	11	timed	0.040993	100 items	100000000 bytes	sha256 100/100
+rr3_q16k_reg_t1: 	Maximum resident set size (kbytes): 13672356
+rr3_q16k_s4_t1: RUN	rr3_q16k_s4_t1	11	timed	5.081467	4 items	11989829249 bytes	sha256 4/4
+rr3_q16k_s4_t1: 	Maximum resident set size (kbytes): 28248428
+agc_win_t1: RUN	agc_win_t1	11	timed	378.420661	10000 items	40960000 bytes	sha256 10000/10000
+agc_win_t1: 	Maximum resident set size (kbytes): 3841992
+agc_reg_t1: RUN	agc_reg_t1	11	timed	3.771885	100 items	100000000 bytes	sha256 100/100
+agc_reg_t1: 	Maximum resident set size (kbytes): 3916168
+agc_s4_t1: RUN	agc_s4_t1	11	timed	30.427849	4 items	11989829249 bytes	sha256 4/4
+agc_s4_t1: 	Maximum resident set size (kbytes): 18474164
+rr3_q4k_win_t16: RUN	rr3_q4k_win_t16	11	timed	0.007632	10000 items	40960000 bytes	sha256 10000/10000
+rr3_q4k_win_t16: 	Maximum resident set size (kbytes): 24935304
+rr3_q4k_reg_t16: RUN	rr3_q4k_reg_t16	11	timed	0.009990	100 items	100000000 bytes	sha256 100/100
+rr3_q4k_reg_t16: 	Maximum resident set size (kbytes): 25002028
+rr3_q4k_s4_t16: RUN	rr3_q4k_s4_t16	11	timed	0.931258	4 items	11989829249 bytes	sha256 4/4
+rr3_q4k_s4_t16: 	Maximum resident set size (kbytes): 39585336
+rr3_q16k_win_t16: RUN	rr3_q16k_win_t16	11	timed	0.013955	10000 items	40960000 bytes	sha256 10000/10000
+rr3_q16k_win_t16: 	Maximum resident set size (kbytes): 13589660
+rr3_q16k_reg_t16: RUN	rr3_q16k_reg_t16	11	timed	0.009948	100 items	100000000 bytes	sha256 100/100
+rr3_q16k_reg_t16: 	Maximum resident set size (kbytes): 13674056
+rr3_q16k_s4_t16: RUN	rr3_q16k_s4_t16	11	timed	0.928621	4 items	11989829249 bytes	sha256 4/4
+rr3_q16k_s4_t16: 	Maximum resident set size (kbytes): 28248740
+agc_win_t16: RUN	agc_win_t16	11	timed	102.811458	10000 items	40960000 bytes	sha256 10000/10000
+agc_win_t16: 	Maximum resident set size (kbytes): 60620500
+agc_reg_t16: RUN	agc_reg_t16	11	timed	1.062666	100 items	100000000 bytes	sha256 100/100
+agc_reg_t16: 	Maximum resident set size (kbytes): 60110824
+agc_s4_t16: RUN	agc_s4_t16	11	timed	11.141662	4 items	11989829249 bytes	sha256 4/4
+agc_s4_t16: 	Maximum resident set size (kbytes): 74825820
+## N 558 measure end 2026-10-07T19:19:38Z exit 0
+## N 558 perf start 2026-10-07T19:19:38Z
+RUN	perf_N558	0	timed	379.096902	10000 items	40960000 bytes	sha256 10000/10000
+    81.61%  agc_get_ctg_seq
+    18.39%  [other]        
+    65.14%  [.] CCollection_V3::deserialize_contig_details                                                              
+     6.25%  [.] std::vector<segment_desc_t, std::allocator<segment_desc_t> >::_M_default_append                         
+     3.60%  [.] __memset_avx512_unaligned_erms                                                                          
+     2.04%  [.] __memmove_avx512_unaligned_erms                                                                         
+     1.26%  [k] 0xffffffffb83d6cf5                                                                                      
+     0.52%  [k] 0xffffffffb8400bf9                                                                                      
+     0.39%  [k] 0xffffffffb83d6ceb                                                                                      
+     0.38%  [k] 0xffffffffb83d6d05                                                                                      
+## N 558 perf end 2026-10-07T19:27:35Z exit 141
+# run_all done 2026-10-07T19:27:35Z

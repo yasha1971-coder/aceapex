@@ -1,0 +1,38 @@
+# agc_win_t16 start 2026-10-07T18:53:30Z loadavg 1.68 1.75 1.34 1/1072 3270912
+OPEN	agc_win_t16	16 handles (prefetching=1)	18.842 s
+RUN	agc_win_t16	0	warmup	102.872512	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t16	1	warmup	102.828332	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t16	2	warmup	102.898315	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t16	3	timed	102.818841	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t16	4	timed	102.817009	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t16	5	timed	103.228340	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t16	6	timed	102.934044	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t16	7	timed	103.056454	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t16	8	timed	102.604372	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t16	9	timed	102.816884	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t16	10	timed	102.771610	10000 items	40960000 bytes	sha256 10000/10000
+RUN	agc_win_t16	11	timed	102.811458	10000 items	40960000 bytes	sha256 10000/10000
+	Command being timed: "/home/aeterna/pubrepo/.wk/avr/agcbench req /home/aeterna/pubrepo/.wk/agc558/agc558.agc /home/aeterna/pubrepo/.wk/m6/N558/windows_4096.tsv /home/aeterna/pubrepo/.wk/m6/N558/truth.tsv 16 3 9 agc_win_t16"
+	User time (seconds): 16834.89
+	System time (seconds): 2425.61
+	Percent of CPU this job got: 1533%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 20:56.21
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 60620500
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 464024488
+	Voluntary context switches: 3528427
+	Involuntary context switches: 695780
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 104
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+# exit 0 end 2026-10-07T19:14:26Z loadavg 14.85 15.74 12.27 1/1070 3273672
