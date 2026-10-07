@@ -1,0 +1,4 @@
+ESTIMATE f=5 anchors=y1_HG01978,y1_HG02630 (K=2) repl_switch=3.191 B
+covered breaks 84549712, covered bytes 211174211 (4.223 MB per sample over N), runs 24832206, mean run length 3.40 breaks
+run length histogram (runs): 1:12366135 2-3:7236561 4-7:3170397 8-15:1255363 16-31:534142 32-63:206391 64-127:55128 128+:8089
+MB per sample: base 13.1441 | covered cost 0: 8.9207 | one switch per break: 14.3168 | one switch per run: 10.5055

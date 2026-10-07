@@ -43,8 +43,8 @@ f >= 25: 0.99 (sums of the FREQ rows).
 | 10, repl 3.19 B | 13.14 | 12.46 | 12.12 | 11.88 | 11.83 |
 | 25, repl 3.19 B | 13.14 | 12.91 | 12.84 | 12.83 | 12.84 |
 
-Anchors chosen (repl 0, f = 2): K = 1 y1_HG02257, K = 2 + y1_HG01978, K = 4 + y1_HG02630, y1_HG00621, K = 8 + y1_HG00735,
-y1_HG02886, y1_HG01071, y1_HG01928 (haplotype suffix cut in the output). At f = 25 the greedy step can increase the
+Anchors chosen (repl 0, f = 2): K = 1 y1_HG02257.1, K = 2 + y1_HG01978.1, K = 4 + y1_HG02630.1, y1_HG00621.1, K = 8 + y1_HG00735.2,
+y1_HG02886.1, y1_HG01071.2, y1_HG01928.2 (full names in h4agg.out). At f = 25 the greedy step can increase the
 size (it must add K anchors; an anchor's full size counts).
 
 ## Conclusion (estimate)
@@ -58,6 +58,33 @@ size (it must add K anchors; an anchor's full size counts).
 - Covering is by exact key (T2T position x strand of the copy end); shared variants whose copies end at different
   positions are not counted (the estimate can be low there), and copying from an anchor across a covered break is
   assumed exact (it can be high there).
+
+## Refinement: one anchor switch per RUN of covered breaks (`h4runs`, same break files; ESTIMATE)
+
+The conservative bound above charged one switch event (3.19 B) per covered break. `h4runs` walks every non-anchor
+sample's breaks in stream order and counts runs of consecutive covered breaks: one switch per run (a block boundary
+is not in the break files, so a run may span it - a slight overestimate of run length). Anchors = the greedy sets of
+the repl-0 rows (full names in h4agg.out; e.g. f = 2, K = 4: y1_HG02257.1, y1_HG01978.1, y1_HG02630.1, y1_HG00621.1).
+
+| f | K | covered breaks | runs | mean run | MB/sample, cost 0 | MB/sample, one switch per run |
+|---:|---:|---:|---:|---:|---:|---:|
+| 2 | 2 | 88.4 M | 24.5 M | 3.61 | 8.76 | **10.32** |
+| 2 | 4 | 120.6 M | 27.2 M | 4.44 | 7.15 | **8.89** |
+| 2 | 8 | 139.4 M | 23.1 M | 6.04 | 6.18 | **7.66** |
+| 5 | 2 | 84.5 M | 24.8 M | 3.40 | 8.92 | **10.51** |
+| 5 | 4 | 114.3 M | 29.2 M | 3.91 | 7.48 | **9.35** |
+| 5 | 8 | 129.4 M | 25.8 M | 5.02 | 6.74 | **8.38** |
+| 10 | 2 | 73.5 M | 26.0 M | 2.83 | 9.53 | **11.18** |
+| 10 | 4 | 94.8 M | 30.6 M | 3.10 | 8.49 | **10.44** |
+| 10 | 8 | 100.6 M | 29.6 M | 3.40 | 8.20 | **10.09** |
+
+Run-length histogram (f = 2, K = 4): runs of 1 break 12.0 M, 2-3: 8.0 M, 4-7: 4.0 M, 8-15: 1.8 M, 16-31: 0.84 M, 32-63:
+0.38 M, 64-127: 0.13 M, 128+: 0.03 M (`runs/runs_f2_K4.out`).
+
+**Conclusion with the run model (estimate):** <= 8.65 MB per sample at N = 50 needs K = 8 anchors at f = 2 (7.66) or
+f = 5 (8.38); K = 4 at f = 2 gives 8.89, just above. The remaining unknowns are the same as above (exact-key covering,
+exact copying across a covered break) plus the cost of the switch itself (3.19 B is the mean exact-continuation copy
+event of today's format; a cohort-dictionary pointer would be coded differently).
 
 ## (d) H1 and H3 from the H0 ledger (q16k, N = 50, same archives)
 
@@ -73,8 +100,9 @@ size (it must add K anchors; an anchor's full size counts).
 ## Reproduce
 
 ```
-bash build.sh <dir>
+bash build.sh <dir>; g++ -std=c++17 -O2 h4runs.cpp -o <dir>/h4runs
 <dir>/h4breaks ~/golden/genome/t2t.fa <out.brk dir> .wk/hprc_cohort/v1/<50 names>.q16k.rr3 > breaks50.tsv
 <dir>/h4agg breaks50.tsv <out.brk dir> > h4agg.out
+<dir>/h4runs breaks50.tsv <out.brk dir> <f> <anchor indices in breaks50.tsv order, comma-separated> > runs/runs_f<f>_K<K>.out
 ```
 Outputs: breaks50.tsv (131f89e0...), h4agg.out (bc5562d4...); binaries h4breaks 5616d64b..., h4agg 7f373d05...

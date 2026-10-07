@@ -66,7 +66,7 @@ int main(int argc, char** argv) {
                 A |= 1ull << best; chosen.push_back(best); kdone++;
             }
             const double sv = saved_of(A);
-            std::string an; for (int s : chosen) { if (!an.empty()) an += ","; an += names[s].substr(0, names[s].find('.', 3)); }
+            std::string an; for (int s : chosen) { if (!an.empty()) an += ","; an += names[s].substr(0, names[s].find(".q16k")); }
             printf("TABLE\t%d\t%s\t%d\t%s\t%.3f\t%.4f\n", fmin, ri ? "cont" : "0", KS_[ki], an.empty() ? "-" : an.c_str(), sv / 1e6, (sumbase - sv) / N / 1e6);
             fflush(stdout);
         }
