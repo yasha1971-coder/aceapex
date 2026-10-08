@@ -125,6 +125,9 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+08.10-А: заявление (2) закрыто - hw-apex B verdict job (протокол v1.1, 0ace54d) на HPRC N=4: refrel3 q4k/q16k PASS
+(ошибки <= 3.3 % на 1/8/64 КиБ), BGZF PASS, zstd/LZ4/OZSEG FAIL (c0 < 0), AGC FAILED (нет геометрии); verify PASS (da5dbd5).
+Серия B HW в PR #63 (HEAD 0ace54d, CI 5/5, bundle на Drive). EVIDENCE.md без NO LOG HERE (panvram). Zenodo tar собраны.
 07.10-Д: M6 закрыт (78709b5): AGC окна 868 -> 26 /с (N 50 -> 558, 1 нить) — счётчики: случайный образец = перезагрузка
 пачки метаданных (15.6 МБ zstd, 105 МБ аллокаций на окно при N >= 100), отсортированный порядок — 0 загрузок при любом N;
 refrel3 q4k 200 884 -> 145 222 /с. H4-оценка с моделью «переключение на серию» (06554e0): <= 8.65 при K = 8 (f 2: 7.66).
