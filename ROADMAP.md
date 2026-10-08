@@ -128,8 +128,8 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
 08.10-Б: Zenodo черновик 23232317 полон (48 файлов, 20 429 771 699 B: 40 частей по 500 МиБ + 8 малых; API == таблица по md5,
 поток частей == .sha256 tar), не опубликован. panvram 4465fd6 (private main, CI success), DOI-патч, тарбол на Drive.
 Финальная репетиция quickstart — прямо с черновика по API (~/outgoing/quickstart_final_dryrun.ipynb 76fabb14, метод
-проверен на ace-core) — запускает пользователь в Colab. Энкодер refrel3: orphan 052fc51d (дерево c96b8f01), тег ставит
-пользователь в фазе 2. HW: A4 v2 806e1c2 зелёное, push в PR #63 ждёт пользователя (бандл fb6448a..806e1c2 на Drive).
+проверен на ace-core) — запускает пользователь в Colab. Источники для panvram: orphan d6899513 (research/refrel+cleanroom+bench2610, дерево 04e259bd), тег panvram-1.0-sources ставит
+пользователь в фазе 2 (052fc51d/refrel3-v1 не нужен). HW: A4 v2 806e1c2 зелёное, push в PR #63 ждёт пользователя (бандл fb6448a..806e1c2 на Drive).
 Drive: квота общего client_id rclone — части на Drive не грузить.
 08.10-А: заявление (2) закрыто - hw-apex B verdict job (протокол v1.1, 0ace54d) на HPRC N=4: refrel3 q4k/q16k PASS
 (ошибки <= 3.3 % на 1/8/64 КиБ), BGZF PASS, zstd/LZ4/OZSEG FAIL (c0 < 0), AGC FAILED (нет геометрии); verify PASS (da5dbd5).
@@ -426,7 +426,7 @@ match 30.3, bases 7.4, seq 5.1. Архивы zstd/rans T2T зависят от l
 898 263 414; 1.4.8: 902 319 887 / 898 903 131), open одинаков.
 
 ## Дальше
-00000000. Фаза 2 публикации panvram 1.0 (после репетиции): push PR #63 A4 v2 (пользователь) -> CI 5/5; тег refrel3-v1 и
+00000000. Фаза 2 публикации panvram 1.0 (после репетиции, panvram 989d415): тег panvram-1.0-sources (d6899513) и
 публикация Zenodo — только по слову пользователя; A4 v1 дефект (pages.yml statuses) вернуть HW — закрыт v2.
 0000000. После M6: H1 (компактная таблица) -> H2 (хеш суперблока) -> H3 -> H4 (когортный словарь, сначала N=5).
 C1 Colab: гейт GPU panvram 087c638+ (тарбол Drive ACEAPEX-OVH/outgoing/panvram-e768115.tar.gz, sha e348d9b7...).
