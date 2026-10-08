@@ -1,0 +1,4 @@
+OPEN	perf_N50	1 handles (prefetching=1)	0.390 s
+RUN	perf_N50	0	timed	11.603443	10000 items	40960000 bytes	sha256 10000/10000
+[ perf record: Woken up 15 times to write data ]
+[ perf record: Captured and wrote 3.607 MB /home/aeterna/pubrepo/.wk/m6/N50/perf.data (36110 samples) ]

@@ -1,0 +1,122 @@
+{
+ "root": "/home/aeterna/pubrepo/.wk/vBsmall",
+ "repo": "/home/aeterna/pubrepo/.wk/hwab63",
+ "run_id": "rehearsal-small-2026-10-07",
+ "assemblies": [
+  {
+   "assembly_id": "asmA",
+   "fasta": "fasta/asmA.fa",
+   "source_url": "file://clean-room-synthetic/gen.py#asmA",
+   "source_sha256": "5dc6cbe1a1d4478dfab1537f30174770ad15270a48e9561862a87eb7a4e8d6e8"
+  },
+  {
+   "assembly_id": "asmB",
+   "fasta": "fasta/asmB.fa",
+   "source_url": "file://clean-room-synthetic/gen.py#asmB",
+   "source_sha256": "5d75c95f7a9bc562e16a33f1b6eaace68e9a2495e75169ed1c5e6e89b5250aa1"
+  },
+  {
+   "assembly_id": "asmC",
+   "fasta": "fasta/asmC.fa",
+   "source_url": "file://clean-room-synthetic/gen.py#asmC",
+   "source_sha256": "8c3f85e23513a4fea6741d2da357008232a95200df4c2aa8d7e9b75ff1811646"
+  },
+  {
+   "assembly_id": "asmF",
+   "fasta": "fasta/asmF.fa",
+   "source_url": "file://clean-room-synthetic/gen.py#asmF",
+   "source_sha256": "c6f9fe0a879581fc3592137db5d9cdfff52483479fd6794cf6fc11eb49ff499a"
+  }
+ ],
+ "reference": "ref/reference.fa",
+ "refrel3": {
+  "q4k": [
+   "refrel3/asmA.q4k.hash.rr3",
+   "refrel3/asmB.q4k.hash.rr3",
+   "refrel3/asmC.q4k.hash.rr3",
+   "refrel3/asmF.q4k.hash.rr3"
+  ],
+  "q16k": [
+   "refrel3/asmA.q16k.hash.rr3",
+   "refrel3/asmB.q16k.hash.rr3",
+   "refrel3/asmC.q16k.hash.rr3",
+   "refrel3/asmF.q16k.hash.rr3"
+  ]
+ },
+ "bgzf": {
+  "default": [
+   "bgzf_default/asmA.fa.bgz",
+   "bgzf_default/asmB.fa.bgz",
+   "bgzf_default/asmC.fa.bgz",
+   "bgzf_default/asmF.fa.bgz"
+  ],
+  "matched": [
+   "bgzf_matched/asmA.fa.bgz",
+   "bgzf_matched/asmB.fa.bgz",
+   "bgzf_matched/asmC.fa.bgz",
+   "bgzf_matched/asmF.fa.bgz"
+  ],
+  "granule": 4147
+ },
+ "zstd": [
+  {
+   "archive": "zstd/asmA.seq.zst",
+   "contig_map": "zstd/asmA.map.json"
+  },
+  {
+   "archive": "zstd/asmB.seq.zst",
+   "contig_map": "zstd/asmB.map.json"
+  },
+  {
+   "archive": "zstd/asmC.seq.zst",
+   "contig_map": "zstd/asmC.map.json"
+  },
+  {
+   "archive": "zstd/asmF.seq.zst",
+   "contig_map": "zstd/asmF.map.json"
+  }
+ ],
+ "lz4": [
+  {
+   "archive": "lz4/asmA.lz4blocks",
+   "index": "lz4/asmA.index.json"
+  },
+  {
+   "archive": "lz4/asmB.lz4blocks",
+   "index": "lz4/asmB.index.json"
+  },
+  {
+   "archive": "lz4/asmC.lz4blocks",
+   "index": "lz4/asmC.index.json"
+  },
+  {
+   "archive": "lz4/asmF.lz4blocks",
+   "index": "lz4/asmF.index.json"
+  }
+ ],
+ "ozseg": {
+  "variants": [
+   "l1_w64k"
+  ],
+  "archives": [
+   "ozseg/asmA.l1_w64k.ozseg",
+   "ozseg/asmB.l1_w64k.ozseg",
+   "ozseg/asmC.l1_w64k.ozseg",
+   "ozseg/asmF.l1_w64k.ozseg"
+  ]
+ },
+ "agc": {
+  "archive": "agc/placeholder.agc",
+  "reference": "ref/reference.fa",
+  "geometry": "agc/GEOMETRY_MISSING.json",
+  "create_calls": 1
+ },
+ "libs": {
+  "refrel3": "/home/aeterna/pubrepo/.wk/hwnative/refrel3/libhwa_refrel3.so",
+  "bgzf": "/home/aeterna/pubrepo/.wk/hwnative/bgzf/libhwa_bgzf.so",
+  "zstd": "/home/aeterna/pubrepo/.wk/hwnative/libhwa_zstd_seekable.so",
+  "lz4": "/home/aeterna/pubrepo/.wk/hwnative/libhwa_lz4.so",
+  "openzl": "/home/aeterna/pubrepo/.wk/hwnative/openzl/libhwa_openzl.so",
+  "agc": "/home/aeterna/pubrepo/.wk/hwnative/agc/libhwa_agc.so"
+ }
+}

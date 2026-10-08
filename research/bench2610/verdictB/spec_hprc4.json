@@ -1,0 +1,151 @@
+{
+ "root": "/home/aeterna/pubrepo/.wk/vB",
+ "repo": "/home/aeterna/pubrepo/.wk/hwab63",
+ "run_id": "ace-core-hprc4-protocol-v1.1-2026-10-07",
+ "assemblies": [
+  {
+   "assembly_id": "y1_HG00438.1",
+   "fasta": "fasta/y1_HG00438.1.fa",
+   "source_url": "s3://human-pangenomics/working/HPRC/HG00438/assemblies/year1_f1_assembly_v2_genbank/HG00438.paternal.f1_assembly_v2_genbank.fa.gz",
+   "source_sha256": "a5840157a6995c5fbc08698e52b614fbdf6f57a7245db944edb328a0b3e23ff8"
+  },
+  {
+   "assembly_id": "y1_HG00438.2",
+   "fasta": "fasta/y1_HG00438.2.fa",
+   "source_url": "s3://human-pangenomics/working/HPRC/HG00438/assemblies/year1_f1_assembly_v2_genbank/HG00438.maternal.f1_assembly_v2_genbank.fa.gz",
+   "source_sha256": "ca307e58dfba48336dd3a05d0ea59b87e3383a5a8c839e5b7c6e7ab6178d58ea"
+  },
+  {
+   "assembly_id": "y1_HG00621.1",
+   "fasta": "fasta/y1_HG00621.1.fa",
+   "source_url": "s3://human-pangenomics/working/HPRC/HG00621/assemblies/year1_f1_assembly_v2_genbank/HG00621.paternal.f1_assembly_v2_genbank.fa.gz",
+   "source_sha256": "bb7d30232f423cabf8d2ebf7443d15aa42bdbfe826424e89ac5f0ee33b0bc780"
+  },
+  {
+   "assembly_id": "y1_HG00621.2",
+   "fasta": "fasta/y1_HG00621.2.fa",
+   "source_url": "s3://human-pangenomics/working/HPRC/HG00621/assemblies/year1_f1_assembly_v2_genbank/HG00621.maternal.f1_assembly_v2_genbank.fa.gz",
+   "source_sha256": "1180dda57e968c6f9cf1902981038141f0905b395d44ea9a068131891d22e353"
+  }
+ ],
+ "reference": "ref/t2t.fa",
+ "refrel3": {
+  "q4k": [
+   "refrel3/y1_HG00438.1.q4k.rr3",
+   "refrel3/y1_HG00438.2.q4k.rr3",
+   "refrel3/y1_HG00621.1.q4k.rr3",
+   "refrel3/y1_HG00621.2.q4k.rr3"
+  ],
+  "q16k": [
+   "refrel3/y1_HG00438.1.q16k.rr3",
+   "refrel3/y1_HG00438.2.q16k.rr3",
+   "refrel3/y1_HG00621.1.q16k.rr3",
+   "refrel3/y1_HG00621.2.q16k.rr3"
+  ]
+ },
+ "bgzf": {
+  "default": [
+   "bgzf_default/y1_HG00438.1.fa.bgz",
+   "bgzf_default/y1_HG00438.2.fa.bgz",
+   "bgzf_default/y1_HG00621.1.fa.bgz",
+   "bgzf_default/y1_HG00621.2.fa.bgz"
+  ],
+  "matched": [
+   "bgzf_matched/y1_HG00438.1.fa.bgz",
+   "bgzf_matched/y1_HG00438.2.fa.bgz",
+   "bgzf_matched/y1_HG00621.1.fa.bgz",
+   "bgzf_matched/y1_HG00621.2.fa.bgz"
+  ],
+  "granule": 4147
+ },
+ "zstd": [
+  {
+   "archive": "zstd/y1_HG00438.1.seq.zst",
+   "contig_map": "zstd/y1_HG00438.1.map.json"
+  },
+  {
+   "archive": "zstd/y1_HG00438.2.seq.zst",
+   "contig_map": "zstd/y1_HG00438.2.map.json"
+  },
+  {
+   "archive": "zstd/y1_HG00621.1.seq.zst",
+   "contig_map": "zstd/y1_HG00621.1.map.json"
+  },
+  {
+   "archive": "zstd/y1_HG00621.2.seq.zst",
+   "contig_map": "zstd/y1_HG00621.2.map.json"
+  }
+ ],
+ "lz4": [
+  {
+   "archive": "lz4/y1_HG00438.1.lz4blocks",
+   "index": "lz4/y1_HG00438.1.index.json"
+  },
+  {
+   "archive": "lz4/y1_HG00438.2.lz4blocks",
+   "index": "lz4/y1_HG00438.2.index.json"
+  },
+  {
+   "archive": "lz4/y1_HG00621.1.lz4blocks",
+   "index": "lz4/y1_HG00621.1.index.json"
+  },
+  {
+   "archive": "lz4/y1_HG00621.2.lz4blocks",
+   "index": "lz4/y1_HG00621.2.index.json"
+  }
+ ],
+ "ozseg": {
+  "variants": [
+   "l1_w64k",
+   "l1_w1m",
+   "l3_w64k",
+   "l3_w1m"
+  ],
+  "archives": {
+   "l1_w64k": [
+    "ozseg/y1_HG00438.1.l1_w64k.ozseg",
+    "ozseg/y1_HG00438.2.l1_w64k.ozseg",
+    "ozseg/y1_HG00621.1.l1_w64k.ozseg",
+    "ozseg/y1_HG00621.2.l1_w64k.ozseg"
+   ],
+   "l1_w1m": [
+    "ozseg/y1_HG00438.1.l1_w1m.ozseg",
+    "ozseg/y1_HG00438.2.l1_w1m.ozseg",
+    "ozseg/y1_HG00621.1.l1_w1m.ozseg",
+    "ozseg/y1_HG00621.2.l1_w1m.ozseg"
+   ],
+   "l3_w64k": [
+    "ozseg/y1_HG00438.1.l3_w64k.ozseg",
+    "ozseg/y1_HG00438.2.l3_w64k.ozseg",
+    "ozseg/y1_HG00621.1.l3_w64k.ozseg",
+    "ozseg/y1_HG00621.2.l3_w64k.ozseg"
+   ],
+   "l3_w1m": [
+    "ozseg/y1_HG00438.1.l3_w1m.ozseg",
+    "ozseg/y1_HG00438.2.l3_w1m.ozseg",
+    "ozseg/y1_HG00621.1.l3_w1m.ozseg",
+    "ozseg/y1_HG00621.2.l3_w1m.ozseg"
+   ]
+  }
+ },
+ "agc": {
+  "archive": "agc/t2t_4.agc",
+  "reference": "ref/t2t.fa",
+  "geometry": "agc/GEOMETRY_MISSING.json",
+  "create_calls": 1,
+  "cohort_order": [
+   "HG00438.1",
+   "HG00438.2",
+   "HG00621.1",
+   "HG00621.2"
+  ]
+ },
+ "libs": {
+  "refrel3": "/home/aeterna/pubrepo/.wk/hwnative/refrel3/libhwa_refrel3.so",
+  "bgzf": "/home/aeterna/pubrepo/.wk/hwnative/bgzf/libhwa_bgzf.so",
+  "zstd": "/home/aeterna/pubrepo/.wk/hwnative/libhwa_zstd_seekable.so",
+  "lz4": "/home/aeterna/pubrepo/.wk/hwnative/libhwa_lz4.so",
+  "openzl": "/home/aeterna/pubrepo/.wk/hwnative/openzl/libhwa_openzl.so",
+  "agc": "/home/aeterna/pubrepo/.wk/hwnative/agc/libhwa_agc.so"
+ }
+}

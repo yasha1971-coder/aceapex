@@ -1,0 +1,38 @@
+# agc_s4_t1 start 2026-10-07T18:38:41Z loadavg 1.01 1.02 1.00 1/1075 3266492
+OPEN	agc_s4_t1	1 handles (prefetching=1)	1.305 s
+RUN	agc_s4_t1	0	warmup	33.826669	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_s4_t1	1	warmup	30.191011	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_s4_t1	2	warmup	30.370235	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_s4_t1	3	timed	30.397258	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_s4_t1	4	timed	30.471866	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_s4_t1	5	timed	30.433546	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_s4_t1	6	timed	30.419391	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_s4_t1	7	timed	30.443913	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_s4_t1	8	timed	30.460768	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_s4_t1	9	timed	30.419922	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_s4_t1	10	timed	30.444416	4 items	11989829249 bytes	sha256 4/4
+RUN	agc_s4_t1	11	timed	30.427849	4 items	11989829249 bytes	sha256 4/4
+	Command being timed: "taskset -c 3 /home/aeterna/pubrepo/.wk/avr/agcbench sample /home/aeterna/pubrepo/.wk/agc558/agc558.agc y1_HG00438.1,y1_HG00438.2,y1_HG00621.1,y1_HG00621.2 /home/aeterna/pubrepo/.wk/m6/N558/truth.tsv 1 3 9 agc_s4_t1"
+	User time (seconds): 361.01
+	System time (seconds): 125.61
+	Percent of CPU this job got: 99%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 8:06.69
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 18474164
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 110965192
+	Voluntary context switches: 49
+	Involuntary context switches: 4279
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 96
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+# exit 0 end 2026-10-07T18:46:48Z loadavg 1.05 1.05 1.00 1/1082 3267847

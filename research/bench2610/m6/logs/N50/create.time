@@ -1,0 +1,23 @@
+	Command being timed: "/home/aeterna/pubrepo/.wk/tools/agc-src/bin/agc create -d -k 31 -l 20 -s 60000 -b 50 -t 16 -o /home/aeterna/pubrepo/.wk/m6/N50/agc50.agc /home/aeterna/golden/genome/t2t.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG00438.1.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG00438.2.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG00621.1.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG00621.2.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG00673.1.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG00673.2.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG00735.1.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG00735.2.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG00741.1.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG00741.2.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG01071.1.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG01071.2.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG01106.1.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG01106.2.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG01123.1.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG01123.2.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG01175.1.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG01175.2.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG01258.1.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG01258.2.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG01358.1.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG01358.2.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG01361.1.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG01361.2.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG01891.1.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG01891.2.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG01928.1.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG01928.2.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG01952.1.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG01952.2.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG01978.1.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG01978.2.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG02148.1.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG02148.2.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG02257.1.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG02257.2.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG02486.1.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG02486.2.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG02559.1.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG02559.2.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG02572.1.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG02572.2.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG02622.1.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG02622.2.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG02630.1.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG02630.2.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG02717.1.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG02717.2.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG02886.1.fa /home/aeterna/pubrepo/.wk/m6/N50/in/y1_HG02886.2.fa"
+	User time (seconds): 2239.55
+	System time (seconds): 154.29
+	Percent of CPU this job got: 585%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 6:48.99
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 26464032
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 2
+	Minor (reclaiming a frame) page faults: 86820039
+	Voluntary context switches: 2246909
+	Involuntary context switches: 171560
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 2225912
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

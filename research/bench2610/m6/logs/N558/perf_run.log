@@ -1,0 +1,4 @@
+OPEN	perf_N558	1 handles (prefetching=1)	1.373 s
+RUN	perf_N558	0	timed	379.096902	10000 items	40960000 bytes	sha256 10000/10000
+[ perf record: Woken up 511 times to write data ]
+[ perf record: Captured and wrote 127.642 MB /home/aeterna/pubrepo/.wk/m6/N558/perf.data (1265433 samples) ]

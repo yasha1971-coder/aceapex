@@ -1,0 +1,58 @@
+## q4k: 50 archives, 1110996471 B; header+name+meta+hashes+payload == file in 50/50
+exact sum check: 1110996471 == 1110996471: True
+header	6800	0.001 %
+reference name	400	0.000 %
+meta (zstd)	54934384	4.945 %
+block XXH3 section	294248760	26.485 %
+payload	761806127	68.570 %
+  payload: length raw bits	170356702	15.334 %
+  payload: length symbols	169888568	15.292 %
+  payload: coder overhead	91066701	8.197 %
+  payload: abs_dir_pos raw bits	76938200	6.925 %
+  payload: LL symbols	40020060	3.602 %
+  payload: kind symbols	33036726	2.974 %
+  payload: delta symbols	32147188	2.894 %
+  payload: delta raw bits	31262077	2.814 %
+  payload: lit_long symbols	27932297	2.514 %
+  payload: lit_short symbols	27515157	2.477 %
+  payload: rep_delta raw bits	17276804	1.555 %
+  payload: rep_delta symbols	14793142	1.332 %
+  payload: flip_delta raw bits	9884272	0.890 %
+  payload: rep_which symbols	6026869	0.542 %
+  payload: self_dist symbols	3911458	0.352 %
+  payload: self_dist raw bits	3416482	0.308 %
+  payload: flip_delta symbols	2696163	0.243 %
+  payload: abs_dir_pos symbols	2296938	0.207 %
+  payload: flip_which symbols	943417	0.085 %
+  payload: LL raw bits	396906	0.036 %
+  payload fields + overhead == payload: True
+meta raw: contigs 747870, case runs 400, model tables 105831, block table 82576235 (raw 83430336 -> zstd 54934384)
+## q16k: 50 archives, 730769451 B; header+name+meta+hashes+payload == file in 50/50
+exact sum check: 730769451 == 730769451: True
+header	6800	0.001 %
+reference name	400	0.000 %
+meta (zstd)	19565356	2.677 %
+block XXH3 section	73562360	10.066 %
+payload	637634535	87.255 %
+  payload: length symbols	152921050	20.926 %
+  payload: length raw bits	150252740	20.561 %
+  payload: abs_dir_pos raw bits	71111272	9.731 %
+  payload: LL symbols	37714276	5.161 %
+  payload: kind symbols	32212535	4.408 %
+  payload: delta symbols	29388338	4.022 %
+  payload: lit_short symbols	26187494	3.584 %
+  payload: delta raw bits	25754758	3.524 %
+  payload: lit_long symbols	25592742	3.502 %
+  payload: coder overhead	23063052	3.156 %
+  payload: rep_delta raw bits	16261431	2.225 %
+  payload: rep_delta symbols	14232569	1.948 %
+  payload: flip_delta raw bits	9370031	1.282 %
+  payload: self_dist raw bits	6205362	0.849 %
+  payload: rep_which symbols	5849807	0.800 %
+  payload: self_dist symbols	5562815	0.761 %
+  payload: flip_delta symbols	2557508	0.350 %
+  payload: abs_dir_pos symbols	2121823	0.290 %
+  payload: flip_which symbols	926065	0.127 %
+  payload: LL raw bits	348866	0.048 %
+  payload fields + overhead == payload: True
+meta raw: contigs 747870, case runs 400, model tables 105427, block table 22104525 (raw 22958222 -> zstd 19565356)

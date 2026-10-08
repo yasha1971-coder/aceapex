@@ -1,0 +1,23 @@
+{
+  "built_on": "ace-core",
+  "codec_version": "1.5.7",
+  "compiler": "g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0",
+  "decoder_threads": 1,
+  "dependencies": {
+    "seekable_format": "contrib/seekable_format/zstdseek_decompress.c of the same tree",
+    "shim": "codecs/native/zstd_seekable.c",
+    "zstd": "v1.5.7 f8745da6ff1ad1e7bab384bd1f9d742439278e99, lib/libzstd.a"
+  },
+  "family_key": "zstd",
+  "flags": [
+    "-O3",
+    "-std=gnu11",
+    "-fPIC",
+    "-shared",
+    "-DXXH_NAMESPACE=ZSTD_"
+  ],
+  "library_path": "lib/libhwa_zstd_seekable.so",
+  "library_sha256": "b066840fd3b8af3f2f208ec9a01274bd80f5dc2dc27124ecf9f32afcf32de52b",
+  "schema": "window-law-build-receipt-v1",
+  "source_commit": "f8745da6ff1ad1e7bab384bd1f9d742439278e99"
+}

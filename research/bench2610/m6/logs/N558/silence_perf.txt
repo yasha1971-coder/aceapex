@@ -1,0 +1,13 @@
+# silence gate perf 2026-10-07T19:21:08Z
+loadavg: 0.45 5.17 8.54 1/1060 3275245
+df: 74G free of 878G
+mem: 115 GB available of 125
+top processes by CPU:
+    PID USER     %CPU %MEM COMMAND
+2310730 aeterna   1.1  0.2 2.1.284
+2343617 aeterna   0.3  0.1 2.1.284
+3277404 root      0.2  0.0 cloudflared
+ 554052 aeterna   0.1  0.0 claude
+2843050 aeterna   0.1  0.0 MainThread
+2843061 aeterna   0.1  0.0 copilot-runtime
+3040299 aeterna   0.1  0.0 containerd

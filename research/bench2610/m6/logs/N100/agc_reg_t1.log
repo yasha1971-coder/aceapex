@@ -1,0 +1,38 @@
+# agc_reg_t1 start 2026-10-07T12:47:27Z loadavg 1.05 1.03 1.07 1/1085 3162911
+OPEN	agc_reg_t1	1 handles (prefetching=1)	0.507 s
+RUN	agc_reg_t1	0	warmup	2.735144	100 items	100000000 bytes	sha256 100/100
+RUN	agc_reg_t1	1	warmup	2.652091	100 items	100000000 bytes	sha256 100/100
+RUN	agc_reg_t1	2	warmup	2.658309	100 items	100000000 bytes	sha256 100/100
+RUN	agc_reg_t1	3	timed	2.654839	100 items	100000000 bytes	sha256 100/100
+RUN	agc_reg_t1	4	timed	2.632759	100 items	100000000 bytes	sha256 100/100
+RUN	agc_reg_t1	5	timed	2.569363	100 items	100000000 bytes	sha256 100/100
+RUN	agc_reg_t1	6	timed	2.364489	100 items	100000000 bytes	sha256 100/100
+RUN	agc_reg_t1	7	timed	2.297780	100 items	100000000 bytes	sha256 100/100
+RUN	agc_reg_t1	8	timed	2.316253	100 items	100000000 bytes	sha256 100/100
+RUN	agc_reg_t1	9	timed	2.322523	100 items	100000000 bytes	sha256 100/100
+RUN	agc_reg_t1	10	timed	2.305745	100 items	100000000 bytes	sha256 100/100
+RUN	agc_reg_t1	11	timed	2.315074	100 items	100000000 bytes	sha256 100/100
+	Command being timed: "taskset -c 3 /home/aeterna/pubrepo/.wk/avr/agcbench req /home/aeterna/pubrepo/.wk/m6/N100/agc100.agc /home/aeterna/pubrepo/.wk/m6/N100/regions_1M.tsv /home/aeterna/pubrepo/.wk/m6/N100/truth.tsv 1 3 9 agc_reg_t1"
+	User time (seconds): 23.03
+	System time (seconds): 7.96
+	Percent of CPU this job got: 99%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:31.00
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 1706748
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 6114661
+	Voluntary context switches: 13
+	Involuntary context switches: 213
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 0
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+# exit 0 end 2026-10-07T12:47:58Z loadavg 1.03 1.03 1.07 1/1083 3162994

@@ -1,0 +1,673 @@
+{
+  "dq_repeats": 9,
+  "dq_warmups": 3,
+  "harness_commit": "0ace54d691af6dd39f9e08cfaba5068bd9b6163d",
+  "prepared": {
+    "bytes": 4392,
+    "path": "prepared/prepared.json",
+    "sha256": "74fcbee32c247e5092acd8143b9f24c7f55739ac151622d64fa544fffd0f9a85"
+  },
+  "run_id": "ace-core-hprc4-protocol-v1.1-2026-10-07",
+  "runbook": {
+    "bytes": 4023,
+    "path": "RUN.md",
+    "sha256": "cb7ae6a53b1645f7ecf60ec76bd07cdfd6df58712337b68e62cd1a83d42cc5c6"
+  },
+  "schema": "window-law-plan-v1",
+  "scope": "cpu-in-process",
+  "seed": 20261003,
+  "threads": 1,
+  "variants": [
+    {
+      "archives": [
+        {
+          "archive": {
+            "bytes": 21765741,
+            "path": "refrel3/y1_HG00438.1.q4k.rr3",
+            "sha256": "7a0b3cc91237ddb40f070949c02c65701818042977163160ddb16b1a09edda8a"
+          },
+          "assembly_id": "y1_HG00438.1"
+        },
+        {
+          "archive": {
+            "bytes": 21398081,
+            "path": "refrel3/y1_HG00438.2.q4k.rr3",
+            "sha256": "3bb1e1db6eef79aee51373219ab0115f7b0395c77643f7b69a2c5120698fe7f2"
+          },
+          "assembly_id": "y1_HG00438.2"
+        },
+        {
+          "archive": {
+            "bytes": 21055988,
+            "path": "refrel3/y1_HG00621.1.q4k.rr3",
+            "sha256": "cf9bac5de5d7e6d9dc592f23edb3dc5650e238a9ecd529550578eab5a1312c8a"
+          },
+          "assembly_id": "y1_HG00621.1"
+        },
+        {
+          "archive": {
+            "bytes": 20912606,
+            "path": "refrel3/y1_HG00621.2.q4k.rr3",
+            "sha256": "b1818cc77d3cf031e8a6cec0602da53515854f3c6b3112a0ec4ba0090436fc14"
+          },
+          "assembly_id": "y1_HG00621.2"
+        }
+      ],
+      "build_receipt": {
+        "bytes": 783,
+        "path": "lib/libhwa_refrel3.so.receipt.json",
+        "sha256": "d094eebeba6ca58b5c3dad1407af6ac28528b13fabcfb5d32030816492f42287"
+      },
+      "family": "refrel3",
+      "id": "refrel3_q4k",
+      "library": {
+        "bytes": 500696,
+        "path": "lib/libhwa_refrel3.so",
+        "sha256": "17f68ec97d817823a5e94a37b67a7139b6160c00edc678b3f0ad1d87f3b67345"
+      },
+      "reference": {
+        "bytes": 3156259565,
+        "path": "ref/t2t.fa",
+        "sha256": "51ab7d3c2a375ecff53ee2a1be03e58d57cc1601c948a860c03a78d724f26e4c"
+      },
+      "variant": "q4k"
+    },
+    {
+      "archives": [
+        {
+          "archive": {
+            "bytes": 14178830,
+            "path": "refrel3/y1_HG00438.1.q16k.rr3",
+            "sha256": "c3f6999af29c9d4e235d07b93f50663e337e2ddfbe3a3496010131ec07e9b729"
+          },
+          "assembly_id": "y1_HG00438.1"
+        },
+        {
+          "archive": {
+            "bytes": 13783523,
+            "path": "refrel3/y1_HG00438.2.q16k.rr3",
+            "sha256": "10a2480c3581a42ec50e3d44c02a0a77378227a9a408765c34d484a5b8b3ece8"
+          },
+          "assembly_id": "y1_HG00438.2"
+        },
+        {
+          "archive": {
+            "bytes": 13747486,
+            "path": "refrel3/y1_HG00621.1.q16k.rr3",
+            "sha256": "7179912a6c4dcd284224f33700adcd9266d9c8a868e24d23fa90c5b961c929ce"
+          },
+          "assembly_id": "y1_HG00621.1"
+        },
+        {
+          "archive": {
+            "bytes": 13390703,
+            "path": "refrel3/y1_HG00621.2.q16k.rr3",
+            "sha256": "4e48d26a6b9b52c47c206340ec06739389951a573dd0d549e0203abe6bf020c9"
+          },
+          "assembly_id": "y1_HG00621.2"
+        }
+      ],
+      "build_receipt": {
+        "bytes": 783,
+        "path": "lib/libhwa_refrel3.so.receipt.json",
+        "sha256": "d094eebeba6ca58b5c3dad1407af6ac28528b13fabcfb5d32030816492f42287"
+      },
+      "family": "refrel3",
+      "id": "refrel3_q16k",
+      "library": {
+        "bytes": 500696,
+        "path": "lib/libhwa_refrel3.so",
+        "sha256": "17f68ec97d817823a5e94a37b67a7139b6160c00edc678b3f0ad1d87f3b67345"
+      },
+      "reference": {
+        "bytes": 3156259565,
+        "path": "ref/t2t.fa",
+        "sha256": "51ab7d3c2a375ecff53ee2a1be03e58d57cc1601c948a860c03a78d724f26e4c"
+      },
+      "variant": "q16k"
+    },
+    {
+      "archives": [
+        {
+          "archive": {
+            "bytes": 793804406,
+            "path": "bgzf_default/y1_HG00438.1.fa.bgz",
+            "sha256": "ecb98e7ffa29ecdae390344cc2b5075ac52c5245b22a14f5bac49aebc33a2d0f"
+          },
+          "assembly_id": "y1_HG00438.1",
+          "fai": {
+            "bytes": 14442,
+            "path": "bgzf_default/y1_HG00438.1.fa.bgz.fai",
+            "sha256": "fe6e77bd0798aee26ef243e89b3c7ecdc6eb0a151cf31aa2799002f63fcf9d20"
+          },
+          "gzi": {
+            "bytes": 751576,
+            "path": "bgzf_default/y1_HG00438.1.fa.bgz.gzi",
+            "sha256": "b35bedf4262a7c588317d5af2803ac1c660c4c1382eddd917b09caa2404ffae7"
+          }
+        },
+        {
+          "archive": {
+            "bytes": 794531208,
+            "path": "bgzf_default/y1_HG00438.2.fa.bgz",
+            "sha256": "e6be29842216e56ce6fee19d0ff90ac3b887974e767643cd57702fee87e2d4f0"
+          },
+          "assembly_id": "y1_HG00438.2",
+          "fai": {
+            "bytes": 13531,
+            "path": "bgzf_default/y1_HG00438.2.fa.bgz.fai",
+            "sha256": "c474b3e74d521b4ef39891fe1962f06fa25653c303c3a8819b9fae5a4fb90334"
+          },
+          "gzi": {
+            "bytes": 754216,
+            "path": "bgzf_default/y1_HG00438.2.fa.bgz.gzi",
+            "sha256": "c95df9c3fef9b514b760863d95a765718dd6b16d0babb012e2ace44f1df0b0ec"
+          }
+        },
+        {
+          "archive": {
+            "bytes": 758981481,
+            "path": "bgzf_default/y1_HG00621.1.fa.bgz",
+            "sha256": "2499622f36bfba856a891e5c7a3fb935814492224ad7312b09af0622b72b3161"
+          },
+          "assembly_id": "y1_HG00621.1",
+          "fai": {
+            "bytes": 14985,
+            "path": "bgzf_default/y1_HG00621.1.fa.bgz.fai",
+            "sha256": "48c0ac52defb07bf74ca943e800d17fa422a8ce9e252dbd2c725b97b5756aa60"
+          },
+          "gzi": {
+            "bytes": 721976,
+            "path": "bgzf_default/y1_HG00621.1.fa.bgz.gzi",
+            "sha256": "7cd39ef46491312bf507b5afcb925bfd120fc387e49a874024dded1f1e282e38"
+          }
+        },
+        {
+          "archive": {
+            "bytes": 792393067,
+            "path": "bgzf_default/y1_HG00621.2.fa.bgz",
+            "sha256": "f17f9c6faa80987e74b1cc472ac3c3e5393a519b8181fa72e78201f1293b910e"
+          },
+          "assembly_id": "y1_HG00621.2",
+          "fai": {
+            "bytes": 13243,
+            "path": "bgzf_default/y1_HG00621.2.fa.bgz.fai",
+            "sha256": "53c50f713617fb1c73fa07b347e9c621e41e4bcb7bfa739049a9c1006ac10c94"
+          },
+          "gzi": {
+            "bytes": 751064,
+            "path": "bgzf_default/y1_HG00621.2.fa.bgz.gzi",
+            "sha256": "5333b1846790316552e256aa5237d90d738be32dbc16576e64bcbbe37a971c7a"
+          }
+        }
+      ],
+      "build_receipt": {
+        "bytes": 715,
+        "path": "lib/libhwa_bgzf.so.receipt.json",
+        "sha256": "641676a6ae18dbc38613b212aeb5e25664905bbacb8cefc57e26f9c17df7ec3e"
+      },
+      "family": "bgzf",
+      "id": "bgzf_default",
+      "library": {
+        "bytes": 1126176,
+        "path": "lib/libhwa_bgzf.so",
+        "sha256": "df363a23b76fd2738193187e6ba9bcc28ac0f7d3505c0054ee58a63ae8ff5fb3"
+      },
+      "variant": "default"
+    },
+    {
+      "archives": [
+        {
+          "archive": {
+            "bytes": 843122611,
+            "path": "bgzf_matched/y1_HG00438.1.fa.bgz",
+            "sha256": "b163814597e99f23a7affe2f6c8f97ad37f0b0d1cfd0f7f7643036523b3f2993"
+          },
+          "assembly_id": "y1_HG00438.1",
+          "fai": {
+            "bytes": 14442,
+            "path": "bgzf_matched/y1_HG00438.1.fa.bgz.fai",
+            "sha256": "fe6e77bd0798aee26ef243e89b3c7ecdc6eb0a151cf31aa2799002f63fcf9d20"
+          },
+          "gzi": {
+            "bytes": 11817464,
+            "path": "bgzf_matched/y1_HG00438.1.fa.bgz.gzi",
+            "sha256": "81676c4ff149d33e5d94d274885d28cd8bb976180f8843aefd1764a0ed28b886"
+          }
+        },
+        {
+          "archive": {
+            "bytes": 845205122,
+            "path": "bgzf_matched/y1_HG00438.2.fa.bgz",
+            "sha256": "78472d768f745ef00dfe89bddbd10fdda71aa756a68f49a93b32fa31d8377415"
+          },
+          "assembly_id": "y1_HG00438.2",
+          "fai": {
+            "bytes": 13531,
+            "path": "bgzf_matched/y1_HG00438.2.fa.bgz.fai",
+            "sha256": "c474b3e74d521b4ef39891fe1962f06fa25653c303c3a8819b9fae5a4fb90334"
+          },
+          "gzi": {
+            "bytes": 11858936,
+            "path": "bgzf_matched/y1_HG00438.2.fa.bgz.gzi",
+            "sha256": "bd8e211309d5436ea32ed91613a6b7939fe681b53a412604947368070044c080"
+          }
+        },
+        {
+          "archive": {
+            "bytes": 808635762,
+            "path": "bgzf_matched/y1_HG00621.1.fa.bgz",
+            "sha256": "0be571110816a6d6da1cdbd45a482b81b31c83837311807c430471e657c1fbe4"
+          },
+          "assembly_id": "y1_HG00621.1",
+          "fai": {
+            "bytes": 14985,
+            "path": "bgzf_matched/y1_HG00621.1.fa.bgz.fai",
+            "sha256": "48c0ac52defb07bf74ca943e800d17fa422a8ce9e252dbd2c725b97b5756aa60"
+          },
+          "gzi": {
+            "bytes": 11351944,
+            "path": "bgzf_matched/y1_HG00621.1.fa.bgz.gzi",
+            "sha256": "3f9c7286f89b0a74eaefb5e2ac307caf293eeee12f4e0658d651f56c2e35e4df"
+          }
+        },
+        {
+          "archive": {
+            "bytes": 842264355,
+            "path": "bgzf_matched/y1_HG00621.2.fa.bgz",
+            "sha256": "e9898d309443bb723db917c326b87fcbe3b1d54765fcd711987f41e4f73edf1d"
+          },
+          "assembly_id": "y1_HG00621.2",
+          "fai": {
+            "bytes": 13243,
+            "path": "bgzf_matched/y1_HG00621.2.fa.bgz.fai",
+            "sha256": "53c50f713617fb1c73fa07b347e9c621e41e4bcb7bfa739049a9c1006ac10c94"
+          },
+          "gzi": {
+            "bytes": 11809288,
+            "path": "bgzf_matched/y1_HG00621.2.fa.bgz.gzi",
+            "sha256": "cff466330d1ed13fb91a239a183bd340ba2e1cd1910a65573977aec9d5ad096d"
+          }
+        }
+      ],
+      "build_receipt": {
+        "bytes": 715,
+        "path": "lib/libhwa_bgzf.so.receipt.json",
+        "sha256": "641676a6ae18dbc38613b212aeb5e25664905bbacb8cefc57e26f9c17df7ec3e"
+      },
+      "family": "bgzf",
+      "granule_raw_bytes": 4147,
+      "id": "bgzf_matched",
+      "library": {
+        "bytes": 1126176,
+        "path": "lib/libhwa_bgzf.so",
+        "sha256": "df363a23b76fd2738193187e6ba9bcc28ac0f7d3505c0054ee58a63ae8ff5fb3"
+      },
+      "variant": "matched-g"
+    },
+    {
+      "archives": [
+        {
+          "archive": {
+            "bytes": 938690623,
+            "path": "zstd/y1_HG00438.1.seq.zst",
+            "sha256": "999fbd5805170220ffe8aafa7ace1cc32a2fc8dadba63dd231ce82384c9e9d67"
+          },
+          "assembly_id": "y1_HG00438.1",
+          "contig_map": {
+            "bytes": 37432,
+            "path": "zstd/y1_HG00438.1.map.json",
+            "sha256": "f690a0a0b9d19a19686e6e1ab86d8cdc499199194c2c6844847228c3304fbce5"
+          }
+        },
+        {
+          "archive": {
+            "bytes": 939176658,
+            "path": "zstd/y1_HG00438.2.seq.zst",
+            "sha256": "ecdd4ab1729d283169bc8c2a0fbe9e5bccf0df1671ce1fd8653ebcfc1b6297b6"
+          },
+          "assembly_id": "y1_HG00438.2",
+          "contig_map": {
+            "bytes": 35027,
+            "path": "zstd/y1_HG00438.2.map.json",
+            "sha256": "dd7ef5a6bfae7608fc397c8ab42f9e76ba6afc8e508f14473c06cdc5d621236c"
+          }
+        },
+        {
+          "archive": {
+            "bytes": 896910067,
+            "path": "zstd/y1_HG00621.1.seq.zst",
+            "sha256": "3bd62bcec2468ed2cf76418607bb5193a58cc47e962d3e2036a21cb4aee9e375"
+          },
+          "assembly_id": "y1_HG00621.1",
+          "contig_map": {
+            "bytes": 38888,
+            "path": "zstd/y1_HG00621.1.map.json",
+            "sha256": "ba04650c02c42b1ce9b68c5ed4b9326c3a2c0711395ec4bb657d97e4d527e813"
+          }
+        },
+        {
+          "archive": {
+            "bytes": 936967431,
+            "path": "zstd/y1_HG00621.2.seq.zst",
+            "sha256": "5fb1b4783d36948d3e26f9db91297ea8f1e4c775e7151db8338583d92c18c1ad"
+          },
+          "assembly_id": "y1_HG00621.2",
+          "contig_map": {
+            "bytes": 34324,
+            "path": "zstd/y1_HG00621.2.map.json",
+            "sha256": "83f9ffdf95522690b831df14bc4252ef26d595ea150bd42c42a82e5049346aeb"
+          }
+        }
+      ],
+      "build_receipt": {
+        "bytes": 748,
+        "path": "lib/libhwa_zstd_seekable.so.receipt.json",
+        "sha256": "cff5a9a14f54a9f8c3dbfb90d2f0e7a104db958746c1d8399aa56c2f11422451"
+      },
+      "family": "zstd-seekable",
+      "id": "zstd_seekable_l3_f16k",
+      "library": {
+        "bytes": 395440,
+        "path": "lib/libhwa_zstd_seekable.so",
+        "sha256": "b066840fd3b8af3f2f208ec9a01274bd80f5dc2dc27124ecf9f32afcf32de52b"
+      },
+      "variant": "seekable_compression level 3, frame 16384 B"
+    },
+    {
+      "archives": [
+        {
+          "archive": {
+            "bytes": 1603052346,
+            "path": "lz4/y1_HG00438.1.lz4blocks",
+            "sha256": "5a2e854eef26bfb95ee1927694fc6384096940e76f66bf87bdcc3bd976fd98bb"
+          },
+          "assembly_id": "y1_HG00438.1",
+          "index": {
+            "bytes": 92293,
+            "path": "lz4/y1_HG00438.1.index.json",
+            "sha256": "ac290623286825918065195c421d557c3155748db2471fe553e2c358689e7ff6"
+          }
+        },
+        {
+          "archive": {
+            "bytes": 1603246745,
+            "path": "lz4/y1_HG00438.2.lz4blocks",
+            "sha256": "2bef09c9aa3d7d441294cc54d20c663ff27c3e0704842b08c3ee50275b3bb30c"
+          },
+          "assembly_id": "y1_HG00438.2",
+          "index": {
+            "bytes": 90052,
+            "path": "lz4/y1_HG00438.2.index.json",
+            "sha256": "ff81481d29272cf8e82dab6ec99ee12a5d62a08897a6da6609c5a90692c29753"
+          }
+        },
+        {
+          "archive": {
+            "bytes": 1531023498,
+            "path": "lz4/y1_HG00621.1.lz4blocks",
+            "sha256": "9026e1712012f747be48536224dd5e893e4aec5690a74ebde441477c71f0fbb3"
+          },
+          "assembly_id": "y1_HG00621.1",
+          "index": {
+            "bytes": 91523,
+            "path": "lz4/y1_HG00621.1.index.json",
+            "sha256": "110b86e29a2388d22c2ca0e6f5fe2e4e81eb5185bea134543aba8666a3dc33c6"
+          }
+        },
+        {
+          "archive": {
+            "bytes": 1599338465,
+            "path": "lz4/y1_HG00621.2.lz4blocks",
+            "sha256": "b276db3402484692e580bfbee0d8256d88f85dead296b1d18c2e355650933138"
+          },
+          "assembly_id": "y1_HG00621.2",
+          "index": {
+            "bytes": 89114,
+            "path": "lz4/y1_HG00621.2.index.json",
+            "sha256": "9c6d870dea5ca0e21f324648a97f7670f1428750de083c483d8e30ea2485fd34"
+          }
+        }
+      ],
+      "build_receipt": {
+        "bytes": 694,
+        "path": "lib/libhwa_lz4.so.receipt.json",
+        "sha256": "ac415821135f98cea28eb00b48a44306cf1a4e2fed530598d83203cb0b642947"
+      },
+      "family": "lz4-indexed",
+      "id": "lz4_indexed_b4m",
+      "library": {
+        "bytes": 125224,
+        "path": "lib/libhwa_lz4.so",
+        "sha256": "356696e5e8234e22196ebe3394a5000ba8e4746d40d8c3647d7c3a01dd982122"
+      },
+      "variant": "LZ4_compress_default, independent 4 MiB blocks"
+    },
+    {
+      "archives": [
+        {
+          "archive": {
+            "bytes": 871712486,
+            "path": "ozseg/y1_HG00438.1.l1_w64k.ozseg",
+            "sha256": "8591123b2a23cc194982d54c22a08a28bb4474e8499c0dd6922a51deb5f2a457"
+          },
+          "assembly_id": "y1_HG00438.1"
+        },
+        {
+          "archive": {
+            "bytes": 871851624,
+            "path": "ozseg/y1_HG00438.2.l1_w64k.ozseg",
+            "sha256": "7f7fba1c473aba5ba8ee6dcaabdab1cf15be4b1839ddea4fbba8149c70fa0dda"
+          },
+          "assembly_id": "y1_HG00438.2"
+        },
+        {
+          "archive": {
+            "bytes": 832581900,
+            "path": "ozseg/y1_HG00621.1.l1_w64k.ozseg",
+            "sha256": "5ee148c80769c5a8182e39f92566ac7047fdaa19bf3f68450ef42f0a59318f8e"
+          },
+          "assembly_id": "y1_HG00621.1"
+        },
+        {
+          "archive": {
+            "bytes": 869771125,
+            "path": "ozseg/y1_HG00621.2.l1_w64k.ozseg",
+            "sha256": "dd728975034f33c133f4f3ca44a9e6430a3ac2b640ca84a5d32f855f00af05b0"
+          },
+          "assembly_id": "y1_HG00621.2"
+        }
+      ],
+      "build_receipt": {
+        "bytes": 671,
+        "path": "lib/libhwa_openzl.so.receipt.json",
+        "sha256": "4cbb6410ca4f86f67f1d0e9ad8a354a3cc05e20a5b1f2645020138c9e3937602"
+      },
+      "family": "ozseg",
+      "id": "ozseg_l1_w64k",
+      "library": {
+        "bytes": 8549088,
+        "path": "lib/libhwa_openzl.so",
+        "sha256": "5d3625273ebacd253011e7109694a0713eb620e75801080bb20a03855aec07ad"
+      },
+      "variant": "l1_w64k"
+    },
+    {
+      "archives": [
+        {
+          "archive": {
+            "bytes": 881366308,
+            "path": "ozseg/y1_HG00438.1.l1_w1m.ozseg",
+            "sha256": "bb0288a5badc4d8326058e97a9cbc54809f4a3b96a65bdbc7e9f80855eeef3f1"
+          },
+          "assembly_id": "y1_HG00438.1"
+        },
+        {
+          "archive": {
+            "bytes": 881437512,
+            "path": "ozseg/y1_HG00438.2.l1_w1m.ozseg",
+            "sha256": "3039112425b9fbbf24e1519bf817bc16d6dbdfb880ed60d875468e0b59d0d0e6"
+          },
+          "assembly_id": "y1_HG00438.2"
+        },
+        {
+          "archive": {
+            "bytes": 841776312,
+            "path": "ozseg/y1_HG00621.1.l1_w1m.ozseg",
+            "sha256": "a129212ae7a25ca262239b1f95608f6be1ca00f755ed263a2addba83bbae9b2f"
+          },
+          "assembly_id": "y1_HG00621.1"
+        },
+        {
+          "archive": {
+            "bytes": 879558904,
+            "path": "ozseg/y1_HG00621.2.l1_w1m.ozseg",
+            "sha256": "03b6b32a9943ccbd0ab09e7c7864dbfc86f6f4901b8366d539a000cf59af4739"
+          },
+          "assembly_id": "y1_HG00621.2"
+        }
+      ],
+      "build_receipt": {
+        "bytes": 671,
+        "path": "lib/libhwa_openzl.so.receipt.json",
+        "sha256": "4cbb6410ca4f86f67f1d0e9ad8a354a3cc05e20a5b1f2645020138c9e3937602"
+      },
+      "family": "ozseg",
+      "id": "ozseg_l1_w1m",
+      "library": {
+        "bytes": 8549088,
+        "path": "lib/libhwa_openzl.so",
+        "sha256": "5d3625273ebacd253011e7109694a0713eb620e75801080bb20a03855aec07ad"
+      },
+      "variant": "l1_w1m"
+    },
+    {
+      "archives": [
+        {
+          "archive": {
+            "bytes": 905972176,
+            "path": "ozseg/y1_HG00438.1.l3_w64k.ozseg",
+            "sha256": "704e4271379f01161fb7cdadf2d95ae1a69b95bcdc38d19f5aa65aeffbc24f3f"
+          },
+          "assembly_id": "y1_HG00438.1"
+        },
+        {
+          "archive": {
+            "bytes": 906197719,
+            "path": "ozseg/y1_HG00438.2.l3_w64k.ozseg",
+            "sha256": "9e8732611a669f6de9f1531309b257b1df6bb0a87543daf58449b36a3c96c369"
+          },
+          "assembly_id": "y1_HG00438.2"
+        },
+        {
+          "archive": {
+            "bytes": 865356449,
+            "path": "ozseg/y1_HG00621.1.l3_w64k.ozseg",
+            "sha256": "f07548e98336b5590142ee924ae9f795afc02737594beb2f040853b51dba3e15"
+          },
+          "assembly_id": "y1_HG00621.1"
+        },
+        {
+          "archive": {
+            "bytes": 904059797,
+            "path": "ozseg/y1_HG00621.2.l3_w64k.ozseg",
+            "sha256": "5320216303a3270c77d6d82cedd34e37e03e792d333df3fe7e2e5f7fe82d694d"
+          },
+          "assembly_id": "y1_HG00621.2"
+        }
+      ],
+      "build_receipt": {
+        "bytes": 671,
+        "path": "lib/libhwa_openzl.so.receipt.json",
+        "sha256": "4cbb6410ca4f86f67f1d0e9ad8a354a3cc05e20a5b1f2645020138c9e3937602"
+      },
+      "family": "ozseg",
+      "id": "ozseg_l3_w64k",
+      "library": {
+        "bytes": 8549088,
+        "path": "lib/libhwa_openzl.so",
+        "sha256": "5d3625273ebacd253011e7109694a0713eb620e75801080bb20a03855aec07ad"
+      },
+      "variant": "l3_w64k"
+    },
+    {
+      "archives": [
+        {
+          "archive": {
+            "bytes": 875910772,
+            "path": "ozseg/y1_HG00438.1.l3_w1m.ozseg",
+            "sha256": "2da45be24d0348d7c2f2ee4d95d50e0057625993ef71fcc27e232c6d93230d91"
+          },
+          "assembly_id": "y1_HG00438.1"
+        },
+        {
+          "archive": {
+            "bytes": 876010335,
+            "path": "ozseg/y1_HG00438.2.l3_w1m.ozseg",
+            "sha256": "bf2e23fd8bd2761ffd32fd76963e5e02fe5289abe92fbb71268fd1fe283250f3"
+          },
+          "assembly_id": "y1_HG00438.2"
+        },
+        {
+          "archive": {
+            "bytes": 836747631,
+            "path": "ozseg/y1_HG00621.1.l3_w1m.ozseg",
+            "sha256": "e0f704505df8d297e255f3bf13f8c6ff08ae0987cdfdf21c13f6c921611cda12"
+          },
+          "assembly_id": "y1_HG00621.1"
+        },
+        {
+          "archive": {
+            "bytes": 874189263,
+            "path": "ozseg/y1_HG00621.2.l3_w1m.ozseg",
+            "sha256": "f44c755174f6ce63339381b54097e84d2904eb78e0c4de58662d64038628e362"
+          },
+          "assembly_id": "y1_HG00621.2"
+        }
+      ],
+      "build_receipt": {
+        "bytes": 671,
+        "path": "lib/libhwa_openzl.so.receipt.json",
+        "sha256": "4cbb6410ca4f86f67f1d0e9ad8a354a3cc05e20a5b1f2645020138c9e3937602"
+      },
+      "family": "ozseg",
+      "id": "ozseg_l3_w1m",
+      "library": {
+        "bytes": 8549088,
+        "path": "lib/libhwa_openzl.so",
+        "sha256": "5d3625273ebacd253011e7109694a0713eb620e75801080bb20a03855aec07ad"
+      },
+      "variant": "l3_w1m"
+    },
+    {
+      "archive": {
+        "bytes": 787595850,
+        "path": "agc/t2t_4.agc",
+        "sha256": "244a3ff2229772469e5e99828b0a817335fbee1d70250a0252614c8e79a55e5b"
+      },
+      "build_receipt": {
+        "bytes": 827,
+        "path": "lib/libhwa_agc.so.receipt.json",
+        "sha256": "e11eff5298742fc7733b402763642e205a821022861624001ed5856fccc8103b"
+      },
+      "family": "agc",
+      "geometry": {
+        "bytes": 563,
+        "path": "agc/GEOMETRY_MISSING.json",
+        "sha256": "35e463ca198cf1cfa3c243cfd91590a7c92ee8d3467ad96fe369e173ea313fbd"
+      },
+      "id": "agc_t2t",
+      "library": {
+        "bytes": 1705504,
+        "path": "lib/libhwa_agc.so",
+        "sha256": "ce63e6fa11bd1d14ba737e9e67c6c8e316b068e24b2d127134f7451a33f163bb"
+      },
+      "reference": {
+        "bytes": 3156259565,
+        "path": "ref/t2t.fa",
+        "sha256": "51ab7d3c2a375ecff53ee2a1be03e58d57cc1601c948a860c03a78d724f26e4c"
+      },
+      "variant": "t2t"
+    }
+  ]
+}

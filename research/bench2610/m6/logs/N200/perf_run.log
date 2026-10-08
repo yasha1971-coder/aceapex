@@ -1,0 +1,4 @@
+OPEN	perf_N200	1 handles (prefetching=1)	0.685 s
+RUN	perf_N200	0	timed	353.364359	10000 items	40960000 bytes	sha256 10000/10000
+[ perf record: Woken up 449 times to write data ]
+[ perf record: Captured and wrote 112.220 MB /home/aeterna/pubrepo/.wk/m6/N200/perf.data (1114884 samples) ]

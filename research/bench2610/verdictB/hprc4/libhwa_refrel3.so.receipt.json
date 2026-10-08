@@ -1,0 +1,24 @@
+{
+  "built_on": "ace-core",
+  "codec_version": "refrel3 v1 (research/refrel @ 5b6d5ce), hw-apex native/refrel3_reader.cpp",
+  "compiler": "g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0",
+  "decoder_threads": 1,
+  "dependencies": {
+    "aceapex_api.cpp": "aceapex 5b6d5ce src/aceapex_api.cpp",
+    "build_script": "review/axis3/build_refrel3_native.sh",
+    "libzstd": "system 1.4.8 (Ubuntu 22.04)"
+  },
+  "family_key": "refrel3",
+  "flags": [
+    "-std=c++17",
+    "-O3",
+    "-fPIC",
+    "-shared",
+    "-march=native",
+    "-funroll-loops"
+  ],
+  "library_path": "lib/libhwa_refrel3.so",
+  "library_sha256": "17f68ec97d817823a5e94a37b67a7139b6160c00edc678b3f0ad1d87f3b67345",
+  "schema": "window-law-build-receipt-v1",
+  "source_commit": "5b6d5cec0f5962a561ac48822a1b5c48793a5b47"
+}

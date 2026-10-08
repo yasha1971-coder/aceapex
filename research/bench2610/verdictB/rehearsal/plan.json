@@ -1,0 +1,526 @@
+{
+  "dq_repeats": 9,
+  "dq_warmups": 3,
+  "harness_commit": "0ace54d691af6dd39f9e08cfaba5068bd9b6163d",
+  "prepared": {
+    "bytes": 4390,
+    "path": "prepared/prepared.json",
+    "sha256": "9d16fc1653e5fb30bbc36426af897af0bbee6d3a03ab761a97f87f18c60fbde2"
+  },
+  "run_id": "rehearsal-small-2026-10-07",
+  "runbook": {
+    "bytes": 4023,
+    "path": "RUN.md",
+    "sha256": "cb7ae6a53b1645f7ecf60ec76bd07cdfd6df58712337b68e62cd1a83d42cc5c6"
+  },
+  "schema": "window-law-plan-v1",
+  "scope": "cpu-in-process",
+  "seed": 20261003,
+  "threads": 1,
+  "variants": [
+    {
+      "archives": [
+        {
+          "archive": {
+            "bytes": 9740,
+            "path": "refrel3/asmA.q4k.hash.rr3",
+            "sha256": "99dc65ede1962823cb444f9904730aa9868a40f98a1b370f8dbaf393113794c7"
+          },
+          "assembly_id": "asmA"
+        },
+        {
+          "archive": {
+            "bytes": 5676,
+            "path": "refrel3/asmB.q4k.hash.rr3",
+            "sha256": "058a977c7447514b3700896bd7577fc2058973f5d81c7ee0ed2f9bc30ae54588"
+          },
+          "assembly_id": "asmB"
+        },
+        {
+          "archive": {
+            "bytes": 3983,
+            "path": "refrel3/asmC.q4k.hash.rr3",
+            "sha256": "176c05ef7dd256e1528d15669d7e8efc6bc45e9b0fad9c7d7facf9dcafd62adf"
+          },
+          "assembly_id": "asmC"
+        },
+        {
+          "archive": {
+            "bytes": 8354,
+            "path": "refrel3/asmF.q4k.hash.rr3",
+            "sha256": "849ea0763a22113bc99b897b1a30dd9e76ac5df01cf8f4018903641539ca2471"
+          },
+          "assembly_id": "asmF"
+        }
+      ],
+      "build_receipt": {
+        "bytes": 783,
+        "path": "lib/libhwa_refrel3.so.receipt.json",
+        "sha256": "d094eebeba6ca58b5c3dad1407af6ac28528b13fabcfb5d32030816492f42287"
+      },
+      "family": "refrel3",
+      "id": "refrel3_q4k",
+      "library": {
+        "bytes": 500696,
+        "path": "lib/libhwa_refrel3.so",
+        "sha256": "17f68ec97d817823a5e94a37b67a7139b6160c00edc678b3f0ad1d87f3b67345"
+      },
+      "reference": {
+        "bytes": 2025047,
+        "path": "ref/reference.fa",
+        "sha256": "ad1cd0be61ea684b4ab5bf882ee1c5f306973618d3ac080e103c5965bc2dc8a6"
+      },
+      "variant": "q4k"
+    },
+    {
+      "archives": [
+        {
+          "archive": {
+            "bytes": 7712,
+            "path": "refrel3/asmA.q16k.hash.rr3",
+            "sha256": "d01bcdd354849d855d9db30558b6bfac34ccaca9f3614d0531a8107ab2bc85be"
+          },
+          "assembly_id": "asmA"
+        },
+        {
+          "archive": {
+            "bytes": 4618,
+            "path": "refrel3/asmB.q16k.hash.rr3",
+            "sha256": "a7970ca91bb236f063142d69b8afcf7e787791ca9efaf1f1ad04b5a0f1a48f2a"
+          },
+          "assembly_id": "asmB"
+        },
+        {
+          "archive": {
+            "bytes": 3240,
+            "path": "refrel3/asmC.q16k.hash.rr3",
+            "sha256": "e58680f42d0deb73547dd97949f44eed2462e5fe1ea8a0b15071f6164232c2c4"
+          },
+          "assembly_id": "asmC"
+        },
+        {
+          "archive": {
+            "bytes": 6626,
+            "path": "refrel3/asmF.q16k.hash.rr3",
+            "sha256": "797de9d8a1bb8ddbe723e939281e6c3bcbc27947d98a5175aef2cc4259a9ffef"
+          },
+          "assembly_id": "asmF"
+        }
+      ],
+      "build_receipt": {
+        "bytes": 783,
+        "path": "lib/libhwa_refrel3.so.receipt.json",
+        "sha256": "d094eebeba6ca58b5c3dad1407af6ac28528b13fabcfb5d32030816492f42287"
+      },
+      "family": "refrel3",
+      "id": "refrel3_q16k",
+      "library": {
+        "bytes": 500696,
+        "path": "lib/libhwa_refrel3.so",
+        "sha256": "17f68ec97d817823a5e94a37b67a7139b6160c00edc678b3f0ad1d87f3b67345"
+      },
+      "reference": {
+        "bytes": 2025047,
+        "path": "ref/reference.fa",
+        "sha256": "ad1cd0be61ea684b4ab5bf882ee1c5f306973618d3ac080e103c5965bc2dc8a6"
+      },
+      "variant": "q16k"
+    },
+    {
+      "archives": [
+        {
+          "archive": {
+            "bytes": 240971,
+            "path": "bgzf_default/asmA.fa.bgz",
+            "sha256": "44482ed0c2da0893947e3c3febe1e27fb9a8457dc2c1ab7a2abfe506ad3bd83a"
+          },
+          "assembly_id": "asmA",
+          "fai": {
+            "bytes": 76,
+            "path": "bgzf_default/asmA.fa.bgz.fai",
+            "sha256": "cb4173df205c3a26f03e0d5f0f6820040e32351e0ce7ac9cb16e6bbd286318f5"
+          },
+          "gzi": {
+            "bytes": 216,
+            "path": "bgzf_default/asmA.fa.bgz.gzi",
+            "sha256": "42c205a025dc2c50878ad541e71cb555c29c70327f5142902ce606988cbac69b"
+          }
+        },
+        {
+          "archive": {
+            "bytes": 139634,
+            "path": "bgzf_default/asmB.fa.bgz",
+            "sha256": "ee008f82d2ebc250b8e2a619d7254ec9a9e466423f806893970096a74d46510a"
+          },
+          "assembly_id": "asmB",
+          "fai": {
+            "bytes": 47,
+            "path": "bgzf_default/asmB.fa.bgz.fai",
+            "sha256": "3dc995c8d172c3b23ea697ae0dfe119a7d80a7b17a78a447e3a483c1a6f7e0fa"
+          },
+          "gzi": {
+            "bytes": 104,
+            "path": "bgzf_default/asmB.fa.bgz.gzi",
+            "sha256": "24145b1b98ff9e6f9cb4143cb8833bedff865abe4ca8a0a1281d4670aa473bda"
+          }
+        },
+        {
+          "archive": {
+            "bytes": 78754,
+            "path": "bgzf_default/asmC.fa.bgz",
+            "sha256": "c957d099795705686bb3e2d7ea1d62efa4066a1feecbc715936fc83a6807b137"
+          },
+          "assembly_id": "asmC",
+          "fai": {
+            "bytes": 51,
+            "path": "bgzf_default/asmC.fa.bgz.fai",
+            "sha256": "0f95ddd74c6f1cfb8cc5ada55702a3709ec7f285d4c95073de87412c6415c594"
+          },
+          "gzi": {
+            "bytes": 72,
+            "path": "bgzf_default/asmC.fa.bgz.gzi",
+            "sha256": "4b7c7eba9a18a48480e48494537dda7863a09ed26577f2df5e190c71f6940162"
+          }
+        },
+        {
+          "archive": {
+            "bytes": 207621,
+            "path": "bgzf_default/asmF.fa.bgz",
+            "sha256": "b9eb970e4b17bfaaa1c723fed9f9190599bb19a7f0f90c95508fd20be459d6bf"
+          },
+          "assembly_id": "asmF",
+          "fai": {
+            "bytes": 23,
+            "path": "bgzf_default/asmF.fa.bgz.fai",
+            "sha256": "f7e326079d2a5a0c8c455c6fa6ba9124cbaaea3c525357c9a6d0401212af3d7e"
+          },
+          "gzi": {
+            "bytes": 184,
+            "path": "bgzf_default/asmF.fa.bgz.gzi",
+            "sha256": "79d024ec1e15d38dc6d05762b7378ea7b9ff3b08b89e335b44786bfe30148605"
+          }
+        }
+      ],
+      "build_receipt": {
+        "bytes": 715,
+        "path": "lib/libhwa_bgzf.so.receipt.json",
+        "sha256": "641676a6ae18dbc38613b212aeb5e25664905bbacb8cefc57e26f9c17df7ec3e"
+      },
+      "family": "bgzf",
+      "id": "bgzf_default",
+      "library": {
+        "bytes": 1126176,
+        "path": "lib/libhwa_bgzf.so",
+        "sha256": "df363a23b76fd2738193187e6ba9bcc28ac0f7d3505c0054ee58a63ae8ff5fb3"
+      },
+      "variant": "default"
+    },
+    {
+      "archives": [
+        {
+          "archive": {
+            "bytes": 251496,
+            "path": "bgzf_matched/asmA.fa.bgz",
+            "sha256": "9b890917ee8e2626b1eca71ffd451dd9cd9f61d4a6d97fa6dd21be394418c557"
+          },
+          "assembly_id": "asmA",
+          "fai": {
+            "bytes": 76,
+            "path": "bgzf_matched/asmA.fa.bgz.fai",
+            "sha256": "cb4173df205c3a26f03e0d5f0f6820040e32351e0ce7ac9cb16e6bbd286318f5"
+          },
+          "gzi": {
+            "bytes": 3288,
+            "path": "bgzf_matched/asmA.fa.bgz.gzi",
+            "sha256": "856c3453d634409dc5500c8b0fdc6bdfeab0f84f916474a4c5ffd611b48095e6"
+          }
+        },
+        {
+          "archive": {
+            "bytes": 142392,
+            "path": "bgzf_matched/asmB.fa.bgz",
+            "sha256": "8d2ca1658b86a7b7c3dd33e9132d995fbb8071c2677586f92ddd2728bdc8e4df"
+          },
+          "assembly_id": "asmB",
+          "fai": {
+            "bytes": 47,
+            "path": "bgzf_matched/asmB.fa.bgz.fai",
+            "sha256": "3dc995c8d172c3b23ea697ae0dfe119a7d80a7b17a78a447e3a483c1a6f7e0fa"
+          },
+          "gzi": {
+            "bytes": 1752,
+            "path": "bgzf_matched/asmB.fa.bgz.gzi",
+            "sha256": "3561298d2217e59f7e9243befce1fe7369eace5020c431377efd6becd8b50fe0"
+          }
+        },
+        {
+          "archive": {
+            "bytes": 81274,
+            "path": "bgzf_matched/asmC.fa.bgz",
+            "sha256": "32c0d211542d72f056f99fa3016ce3f85f20c5ff2c109bac1a02a0b6f92cfa71"
+          },
+          "assembly_id": "asmC",
+          "fai": {
+            "bytes": 51,
+            "path": "bgzf_matched/asmC.fa.bgz.fai",
+            "sha256": "0f95ddd74c6f1cfb8cc5ada55702a3709ec7f285d4c95073de87412c6415c594"
+          },
+          "gzi": {
+            "bytes": 1160,
+            "path": "bgzf_matched/asmC.fa.bgz.gzi",
+            "sha256": "ba41706facbc5491908e0ed0b1682d8c79aea2150ef086f5f13bccdfbd03daef"
+          }
+        },
+        {
+          "archive": {
+            "bytes": 215306,
+            "path": "bgzf_matched/asmF.fa.bgz",
+            "sha256": "9e043564d0e836026c4d15be8347c70c034f800ed73e39ff9ab228427e4ca55c"
+          },
+          "assembly_id": "asmF",
+          "fai": {
+            "bytes": 23,
+            "path": "bgzf_matched/asmF.fa.bgz.fai",
+            "sha256": "f7e326079d2a5a0c8c455c6fa6ba9124cbaaea3c525357c9a6d0401212af3d7e"
+          },
+          "gzi": {
+            "bytes": 2824,
+            "path": "bgzf_matched/asmF.fa.bgz.gzi",
+            "sha256": "0a04b8d787d00405bee01399d8361e4bcae5a8981f6d4af59c285950f9aadca6"
+          }
+        }
+      ],
+      "build_receipt": {
+        "bytes": 715,
+        "path": "lib/libhwa_bgzf.so.receipt.json",
+        "sha256": "641676a6ae18dbc38613b212aeb5e25664905bbacb8cefc57e26f9c17df7ec3e"
+      },
+      "family": "bgzf",
+      "granule_raw_bytes": 4147,
+      "id": "bgzf_matched",
+      "library": {
+        "bytes": 1126176,
+        "path": "lib/libhwa_bgzf.so",
+        "sha256": "df363a23b76fd2738193187e6ba9bcc28ac0f7d3505c0054ee58a63ae8ff5fb3"
+      },
+      "variant": "matched-g"
+    },
+    {
+      "archives": [
+        {
+          "archive": {
+            "bytes": 284460,
+            "path": "zstd/asmA.seq.zst",
+            "sha256": "80915c4bed1a6a000b2fdc974f56268ffadb4bce4fe52ae7b09bb01c6e94d3f0"
+          },
+          "assembly_id": "asmA",
+          "contig_map": {
+            "bytes": 372,
+            "path": "zstd/asmA.map.json",
+            "sha256": "c767b461a226e5fe6727391e184c449268de63351c60e790247e9e3ca253ffb6"
+          }
+        },
+        {
+          "archive": {
+            "bytes": 152312,
+            "path": "zstd/asmB.seq.zst",
+            "sha256": "78e135cacdf250c0193b0c5bbc8c76488e5a9550cbb319b9b6c02e1e144dcbdc"
+          },
+          "assembly_id": "asmB",
+          "contig_map": {
+            "bytes": 268,
+            "path": "zstd/asmB.map.json",
+            "sha256": "a21f87ac7b5e694344a2a1370a189705afe8f84785bb6698c2943faceba9fe4a"
+          }
+        },
+        {
+          "archive": {
+            "bytes": 91850,
+            "path": "zstd/asmC.seq.zst",
+            "sha256": "1499727738a2dadac5cdc518176e4c841c8b6df8714b81bb918bc5ba84c5297a"
+          },
+          "assembly_id": "asmC",
+          "contig_map": {
+            "bytes": 271,
+            "path": "zstd/asmC.map.json",
+            "sha256": "4782ae7c25265bb35f897902a2aa09044db95c8db46358443160b4b18d30695c"
+          }
+        },
+        {
+          "archive": {
+            "bytes": 243818,
+            "path": "zstd/asmF.seq.zst",
+            "sha256": "944b096b7ce46d28765760470b61c5fec8b78d4fc3ad14b1d4a2a5f41ee583c3"
+          },
+          "assembly_id": "asmF",
+          "contig_map": {
+            "bytes": 168,
+            "path": "zstd/asmF.map.json",
+            "sha256": "8ebb979e9daf64241a8b498d7d9c33162b001a34539a4d5415cc13d73c5071bc"
+          }
+        }
+      ],
+      "build_receipt": {
+        "bytes": 748,
+        "path": "lib/libhwa_zstd_seekable.so.receipt.json",
+        "sha256": "cff5a9a14f54a9f8c3dbfb90d2f0e7a104db958746c1d8399aa56c2f11422451"
+      },
+      "family": "zstd-seekable",
+      "id": "zstd_seekable_l3_f16k",
+      "library": {
+        "bytes": 395440,
+        "path": "lib/libhwa_zstd_seekable.so",
+        "sha256": "b066840fd3b8af3f2f208ec9a01274bd80f5dc2dc27124ecf9f32afcf32de52b"
+      },
+      "variant": "seekable_compression level 3, frame 16384 B"
+    },
+    {
+      "archives": [
+        {
+          "archive": {
+            "bytes": 582580,
+            "path": "lz4/asmA.lz4blocks",
+            "sha256": "189b297d0da2ca3282d7ed87c62257d71e521eba0c8e0aea00b6e253b670e086"
+          },
+          "assembly_id": "asmA",
+          "index": {
+            "bytes": 1269,
+            "path": "lz4/asmA.index.json",
+            "sha256": "1635f2e3cac986d14b888b794b0e21e587ac52cdc4a3af3964e21799a96ff174"
+          }
+        },
+        {
+          "archive": {
+            "bytes": 311922,
+            "path": "lz4/asmB.lz4blocks",
+            "sha256": "0499e7add3388a9e555c2defad470d10b5b264af04c87631c90b4c7d825cdb8a"
+          },
+          "assembly_id": "asmB",
+          "index": {
+            "bytes": 775,
+            "path": "lz4/asmB.index.json",
+            "sha256": "449ce7d9ad1637e65df5a853e1e82653e9672bb58fb22ef59667898d70be806c"
+          }
+        },
+        {
+          "archive": {
+            "bytes": 187565,
+            "path": "lz4/asmC.lz4blocks",
+            "sha256": "ebf0aa3aef4521f16735ee0b6a70e2cec64f4d4ea7a2d1fd22ccd44aeac5cdb9"
+          },
+          "assembly_id": "asmC",
+          "index": {
+            "bytes": 648,
+            "path": "lz4/asmC.index.json",
+            "sha256": "03acf5dfe6773a6e7544b3fe090e6a052429d78554df0ce304476d68285733bb"
+          }
+        },
+        {
+          "archive": {
+            "bytes": 499254,
+            "path": "lz4/asmF.lz4blocks",
+            "sha256": "e79eff7389a322682970c328f5421ca3cb632e983894f82b9c5b6ab64911bb9e"
+          },
+          "assembly_id": "asmF",
+          "index": {
+            "bytes": 935,
+            "path": "lz4/asmF.index.json",
+            "sha256": "0c866e9184c03c48c4a6a1d0db77fee3e85b5ac08932d750499a4356d2758598"
+          }
+        }
+      ],
+      "build_receipt": {
+        "bytes": 694,
+        "path": "lib/libhwa_lz4.so.receipt.json",
+        "sha256": "ac415821135f98cea28eb00b48a44306cf1a4e2fed530598d83203cb0b642947"
+      },
+      "family": "lz4-indexed",
+      "id": "lz4_indexed_b4m",
+      "library": {
+        "bytes": 125224,
+        "path": "lib/libhwa_lz4.so",
+        "sha256": "356696e5e8234e22196ebe3394a5000ba8e4746d40d8c3647d7c3a01dd982122"
+      },
+      "variant": "LZ4_compress_default, independent 4 MiB blocks"
+    },
+    {
+      "archives": [
+        {
+          "archive": {
+            "bytes": 260943,
+            "path": "ozseg/asmA.l1_w64k.ozseg",
+            "sha256": "d4d5780949818e1b672a5ad4851b969fa9fe03990cc0d6f861b741b258737491"
+          },
+          "assembly_id": "asmA"
+        },
+        {
+          "archive": {
+            "bytes": 139977,
+            "path": "ozseg/asmB.l1_w64k.ozseg",
+            "sha256": "097e676473aaaa5d636330737b0a382c2f43edcda7222f4404fd796fb2053c8e"
+          },
+          "assembly_id": "asmB"
+        },
+        {
+          "archive": {
+            "bytes": 86190,
+            "path": "ozseg/asmC.l1_w64k.ozseg",
+            "sha256": "3f984b99d41827984543d4308808ac811de6ff01186f4f8a62cc3b9eb7ba6544"
+          },
+          "assembly_id": "asmC"
+        },
+        {
+          "archive": {
+            "bytes": 223604,
+            "path": "ozseg/asmF.l1_w64k.ozseg",
+            "sha256": "07c1a8749d64ac209f58ead0f1b9acc9bf7b70b35b8d4e7adbe2e4ab58d43104"
+          },
+          "assembly_id": "asmF"
+        }
+      ],
+      "build_receipt": {
+        "bytes": 671,
+        "path": "lib/libhwa_openzl.so.receipt.json",
+        "sha256": "4cbb6410ca4f86f67f1d0e9ad8a354a3cc05e20a5b1f2645020138c9e3937602"
+      },
+      "family": "ozseg",
+      "id": "ozseg_l1_w64k",
+      "library": {
+        "bytes": 8549088,
+        "path": "lib/libhwa_openzl.so",
+        "sha256": "5d3625273ebacd253011e7109694a0713eb620e75801080bb20a03855aec07ad"
+      },
+      "variant": "l1_w64k"
+    },
+    {
+      "archive": {
+        "bytes": 179,
+        "path": "agc/placeholder.agc",
+        "sha256": "79aee1561d2c60c8f6c1f9e7ecc07aef4edad45eaf8a54c4313ea977b869d210"
+      },
+      "build_receipt": {
+        "bytes": 807,
+        "path": "lib/libhwa_agc.so.receipt.json",
+        "sha256": "9a4b8687148a9988172d8084cbccbb6324ac7ab93d7fdff2c02cecc0fcd82568"
+      },
+      "family": "agc",
+      "geometry": {
+        "bytes": 796,
+        "path": "agc/GEOMETRY_MISSING.json",
+        "sha256": "cd73991affed0f100da740433022a997578673d9663d0a2614b5966c2b2aca2e"
+      },
+      "id": "agc_t2t",
+      "library": {
+        "bytes": 1705504,
+        "path": "lib/libhwa_agc.so",
+        "sha256": "ce63e6fa11bd1d14ba737e9e67c6c8e316b068e24b2d127134f7451a33f163bb"
+      },
+      "reference": {
+        "bytes": 2025047,
+        "path": "ref/reference.fa",
+        "sha256": "ad1cd0be61ea684b4ab5bf882ee1c5f306973618d3ac080e103c5965bc2dc8a6"
+      },
+      "variant": "t2t"
+    }
+  ]
+}

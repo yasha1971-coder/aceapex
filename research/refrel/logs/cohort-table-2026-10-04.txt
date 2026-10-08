@@ -1,0 +1,16 @@
+cohort: 558 HPRC haplotype assemblies (year-1 94, release 2 464), 1.71 TB of FASTA; every one: v1+carry and refrel3 decoded back in full == FASTA
+| N | FASTA, GB | v1+carry total, MB (per assembly) | refrel3 total, MB (per assembly) | refrel3 vs v1+carry |
+| 4 | 12.1 | 70.4 (17.61) | 49.2 (12.31) | -30.1 % |
+| 50 | 152.5 | 940.1 (18.80) | 657.2 (13.14) | -30.1 % |
+| 94 | 287.0 | 1833.2 (19.50) | 1278.8 (13.60) | -30.2 % |
+| 558 | 1707.3 | 10406.2 (18.65) | 7277.4 (13.04) | -30.1 % |
+AGC 3.2.4 (archive bytes; per assembly = (archive - T2T alone 707 323 301) / N with T2T):
+  chain N=4: with T2T 841065173 B (33.44 MB per assembly); without reference 811173052
+  chain N=50: with T2T 1348467609 B (12.82 MB per assembly); without reference 1335294906
+  chain N=88: with T2T 1804080062 B (12.46 MB per assembly); without reference 1793898050
+  chain N=98: with T2T 1912422040 B (12.30 MB per assembly) [N=98: 94 year-1 + CHM13 v1.1 + GRCh38 + 2 release 2]; without reference -
+  chain N=560: with T2T 4559638761 B (6.88 MB per assembly) [incl. CHM13 v1.1 and GRCh38]; without reference -
+  create at once: T2T+4 787 595 850 B (20.07 MB/asm), T2T+50 1 139 665 987 B (8.65 MB/asm); no reference 4: 767 622 696, 50: 1 134 975 025 B
+refrel3 per assembly: min 10.58 median 12.39 max 16.02 MB; year-1 mean 13.60, release 2 mean 12.93
+wall time per assembly (both formats + full checks + waiting for the prefetched download): median 57 s; AGC append chain at N=560: 105.7 s for the last batch of 10
+references in the year-1 index, same pipeline: CHM13 v1.1 refrel3 783150 B, GRCh38 no-alt refrel3 10867115 B
