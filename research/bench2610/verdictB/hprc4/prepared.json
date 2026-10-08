@@ -1,0 +1,176 @@
+{
+  "corpus": {
+    "bytes": 112609,
+    "path": "prepared/corpus.json",
+    "sha256": "412dcb7180c7fcc379ac24df62e06dc228f5bae85feaa4564e17ba22f8b87ec7"
+  },
+  "domain": "uppercase-sequence-without-FASTA-framing",
+  "manifest": {
+    "bytes": 1957,
+    "path": "cohort.json",
+    "sha256": "15e3fa9ca1567a86b7ddb7de2f71cf031269e82b2edd05f696abcb56452d54b1"
+  },
+  "prepared_by": "tools.verdict_refrel3.prepare",
+  "prng": "python.random.Random/MT19937/randrange",
+  "protocol_sha256": "4a0027fec59b3252dc07b29458a57a5a451957f1b64b36f3927765cbc6be7a5c",
+  "requests": [
+    {
+      "W_bytes": 1,
+      "file": {
+        "bytes": 2031812,
+        "path": "prepared/w1.jsonl",
+        "sha256": "203428700588cd7eb50671d85626ce7a69c4226dcf47ef2f54a97c641b8cfe9e"
+      }
+    },
+    {
+      "W_bytes": 2,
+      "file": {
+        "bytes": 2031816,
+        "path": "prepared/w2.jsonl",
+        "sha256": "581eaa4248645030acfa56a1a95a0e6fb41d2f93ea777056944da628a5d5c507"
+      }
+    },
+    {
+      "W_bytes": 4,
+      "file": {
+        "bytes": 2031822,
+        "path": "prepared/w4.jsonl",
+        "sha256": "caed311fadc530898a46924247dea67b1b1e09096e3d7e21b03736d07b455a3c"
+      }
+    },
+    {
+      "W_bytes": 8,
+      "file": {
+        "bytes": 2031814,
+        "path": "prepared/w8.jsonl",
+        "sha256": "9a9587ef2865b3ffd94bb5a5626c7e0336471eea3c644cc2d54098ade068a7db"
+      }
+    },
+    {
+      "W_bytes": 16,
+      "file": {
+        "bytes": 2031820,
+        "path": "prepared/w16.jsonl",
+        "sha256": "8cf906818f9901a25b93e9c085c1130d2db1c2f44a137935f46bc60e78421d46"
+      }
+    },
+    {
+      "W_bytes": 32,
+      "file": {
+        "bytes": 2031792,
+        "path": "prepared/w32.jsonl",
+        "sha256": "90d37d156bfa2dc6c7155497ba6799dfd00d91f8ea8ff0bdf53a3e009b863253"
+      }
+    },
+    {
+      "W_bytes": 64,
+      "file": {
+        "bytes": 2031811,
+        "path": "prepared/w64.jsonl",
+        "sha256": "473b127a63d5bf10cccf475fcd29cee2526e4c8d1bd3d5b9a2134611f242f90e"
+      }
+    },
+    {
+      "W_bytes": 128,
+      "file": {
+        "bytes": 2031793,
+        "path": "prepared/w128.jsonl",
+        "sha256": "db5b631b31e1db74cb3bb7dfea14d0c88e01d41145a2539bff4945f6fa555738"
+      }
+    },
+    {
+      "W_bytes": 256,
+      "file": {
+        "bytes": 2031815,
+        "path": "prepared/w256.jsonl",
+        "sha256": "0aedd9de4fdbfa7f1454c553138266d929a1345f6bc481f5cf06dba7db529b69"
+      }
+    },
+    {
+      "W_bytes": 512,
+      "file": {
+        "bytes": 2031772,
+        "path": "prepared/w512.jsonl",
+        "sha256": "d7aad9325d487682302dcc94a0d2f6b81d5a5cd999d1795a0c4aaffb55d5e882"
+      }
+    },
+    {
+      "W_bytes": 1024,
+      "file": {
+        "bytes": 2031811,
+        "path": "prepared/w1024.jsonl",
+        "sha256": "e7666fd7ff1d06c8777ced89a0f860042ca7b2ae6068c5b99132456167639922"
+      }
+    },
+    {
+      "W_bytes": 2048,
+      "file": {
+        "bytes": 2031903,
+        "path": "prepared/w2048.jsonl",
+        "sha256": "09a89e9ce6ed8289c44a831c639bd41a2d2f012b1e899a638128e5917b797efc"
+      }
+    },
+    {
+      "W_bytes": 4096,
+      "file": {
+        "bytes": 2032022,
+        "path": "prepared/w4096.jsonl",
+        "sha256": "ce88b027e40df4e86c19a0d6f850fce6d94af29ed4768be0c3c47a274a5ca514"
+      }
+    },
+    {
+      "W_bytes": 8192,
+      "file": {
+        "bytes": 2032007,
+        "path": "prepared/w8192.jsonl",
+        "sha256": "4b79ccb4df41c5722a2cb43503c2b173f1964d978086be2245a16900a63c7de5"
+      }
+    },
+    {
+      "W_bytes": 16384,
+      "file": {
+        "bytes": 2031964,
+        "path": "prepared/w16384.jsonl",
+        "sha256": "1ccdfbd4a1367ab355b6fd69b2502f9dfa005f9ba5f674a88cde8504f840aaf4"
+      }
+    },
+    {
+      "W_bytes": 32768,
+      "file": {
+        "bytes": 2031844,
+        "path": "prepared/w32768.jsonl",
+        "sha256": "ce839065a6323e3e8529a4f575a1f88035643271186601deae96d64c5c140551"
+      }
+    },
+    {
+      "W_bytes": 65536,
+      "file": {
+        "bytes": 2032235,
+        "path": "prepared/w65536.jsonl",
+        "sha256": "28151942e941af8f8a240e3767438228185f160af9c2dc11b2779fa8aeaed46b"
+      }
+    }
+  ],
+  "samples_per_window": 10000,
+  "schema": "window-law-prepared-v1",
+  "seed": 20261003,
+  "windows_bytes": [
+    1,
+    2,
+    4,
+    8,
+    16,
+    32,
+    64,
+    128,
+    256,
+    512,
+    1024,
+    2048,
+    4096,
+    8192,
+    16384,
+    32768,
+    65536
+  ]
+}

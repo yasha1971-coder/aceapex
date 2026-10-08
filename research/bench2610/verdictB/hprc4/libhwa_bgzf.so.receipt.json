@@ -1,0 +1,22 @@
+{
+  "built_on": "ace-core",
+  "codec_version": "1.24",
+  "compiler": "g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0",
+  "decoder_threads": 1,
+  "dependencies": {
+    "build_script": "review/axis3/build_bgzf_axis3.sh",
+    "htslib": "4b705e4fada8ee2b6b15746f725ee8ac51631803 (PACKAGE_VERSION=1.24, --with-libdeflate)",
+    "libdeflate": "dd12ff2b36d603dbb7fa8838fe7e7176fcbd4f6f"
+  },
+  "family_key": "bgzf",
+  "flags": [
+    "-O3",
+    "-std=gnu11",
+    "-fPIC",
+    "-shared"
+  ],
+  "library_path": "lib/libhwa_bgzf.so",
+  "library_sha256": "df363a23b76fd2738193187e6ba9bcc28ac0f7d3505c0054ee58a63ae8ff5fb3",
+  "schema": "window-law-build-receipt-v1",
+  "source_commit": "4b705e4fada8ee2b6b15746f725ee8ac51631803"
+}

@@ -1,0 +1,22 @@
+{
+  "built_on": "ace-core",
+  "codec_version": "0.3.0",
+  "compiler": "g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0",
+  "decoder_threads": 1,
+  "dependencies": {
+    "lz4": "1.10.0 (submodule)",
+    "openzl": "32246b48faee46807f84183dac4db479089f5445 libopenzl.a",
+    "shim": "review/axis3/native/openzl_reader.c",
+    "zstd": "1.5.7 (submodule)"
+  },
+  "family_key": "openzl",
+  "flags": [
+    "-O3",
+    "-fPIC",
+    "-shared"
+  ],
+  "library_path": "lib/libhwa_openzl.so",
+  "library_sha256": "5d3625273ebacd253011e7109694a0713eb620e75801080bb20a03855aec07ad",
+  "schema": "window-law-build-receipt-v1",
+  "source_commit": "32246b48faee46807f84183dac4db479089f5445"
+}

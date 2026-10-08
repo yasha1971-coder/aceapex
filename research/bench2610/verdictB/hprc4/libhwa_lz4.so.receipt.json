@@ -1,0 +1,21 @@
+{
+  "built_on": "ace-core",
+  "codec_version": "1.10.0",
+  "compiler": "g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0",
+  "decoder_threads": 1,
+  "dependencies": {
+    "build_script": "review/axis3/build_lz4_native.sh",
+    "lz4": "v1.10.0 ebb370ca83af193212df4dcbadcc5d87bc0de2f0 (OpenZL 32246b4 submodule deps/lz4), lib/lz4.c",
+    "shim": "review/axis3/native/lz4_indexed.c"
+  },
+  "family_key": "lz4",
+  "flags": [
+    "-O3",
+    "-fPIC",
+    "-shared"
+  ],
+  "library_path": "lib/libhwa_lz4.so",
+  "library_sha256": "356696e5e8234e22196ebe3394a5000ba8e4746d40d8c3647d7c3a01dd982122",
+  "schema": "window-law-build-receipt-v1",
+  "source_commit": "ebb370ca83af193212df4dcbadcc5d87bc0de2f0"
+}
