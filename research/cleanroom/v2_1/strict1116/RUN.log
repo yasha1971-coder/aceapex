@@ -1,0 +1,23 @@
+# check_strict_1116.py run 2026-10-09T02:53:33Z on ace-core, nice -n 19 ionice -c3, one core per stream, nothing extracted
+## selftest (negative cases from package v2 asmB.q4k.hash.rr3 and corrupt/meta_two_frames.rr3)
+ok  valid archive                              rule1 True  rule2 True  frames 1+0 skip, first 877 / libzstd 877 / meta_bytes 877 | -
+ok  meta + empty zstd frame                    rule1 False rule2 False frames 2+0 skip, first 877 / libzstd 877 / meta_bytes 886 | -
+ok  meta + skippable frame                     rule1 False rule2 False frames 1+1 skip, first 877 / libzstd 877 / meta_bytes 889 | -
+ok  meta + 9 garbage bytes                     rule1 False rule2 False frames 1+0 skip, first 877 / libzstd 877 / meta_bytes 886 | meta: garbage at 877 (not a frame)
+ok  meta truncated by 3 B                      rule1 False rule2 False frames 0+0 skip, first None / libzstd None / meta_bytes 874 | meta: garbage at 0 (truncated block)
+ok  skippable frame first                      rule1 False rule2 False frames 1+1 skip, first 12 / libzstd 12 / meta_bytes 889 | -
+ok  record lengths +2^63 +2^63 (sum wraps)     rule1 True  rule2 False frames 1+0 skip, first 904 / libzstd 904 / meta_bytes 904 | u64 wraps: sum len exact 18446744073710001579
+ok  run gap 2^64-1 (run end wraps)             rule1 True  rule2 False frames 1+0 skip, first 904 / libzstd 904 / meta_bytes 904 | u64 wraps: run end exact 18446744073709556279, run end exact 18446744073709566111, run end exact 18446744073709572810
+ok  slen +2^63 +2^63 (sum wraps)               rule1 True  rule2 False frames 1+0 skip, first 908 / libzstd 908 / meta_bytes 908 | u64 wraps: sum slen exact 18446744073709555385
+ok  package v2 corrupt/meta_two_frames.rr3     rule1 False rule2 False frames 2+0 skip, first 678 / libzstd 678 / meta_bytes 687 | -
+selftest: 10/10 as expected
+## streams
+# other member ./SHA256SUMS 56583 B sha256 ab12d0a98af168536f2cff30f49f8866fb614be3a61dca4221d4c15cbc94d848
+# q4k: archives 558, sha256 == manifest 558, rule 1 (one meta frame) 558, rule 2 (exact sums) 558, manifest names not in the tar 0
+# q4k stream: 12330864640 B, sha256 d0a4a0baab5bba5e573c8f2ae5dd18f2a66f6ac222c29e9809e38ad99b26ecdc
+# other member ./SHA256SUMS 57141 B sha256 c17e433c95183e51da66c04526bbd81205807ba7030623a36f1d8545e7afd392
+# q16k: archives 558, sha256 == manifest 558, rule 1 (one meta frame) 558, rule 2 (exact sums) 558, manifest names not in the tar 0
+# q16k stream: 8098467840 B, sha256 3b8c497e9193984724128e0fd18df02d131a05c341df41df44fe3ed89a8114d5
+q4k exit 0
+q16k exit 0
+## expected stream sha256 (task): q4k d0a4a0baab5bba5e573c8f2ae5dd18f2a66f6ac222c29e9809e38ad99b26ecdc, q16k 3b8c497e9193984724128e0fd18df02d131a05c341df41df44fe3ed89a8114d5

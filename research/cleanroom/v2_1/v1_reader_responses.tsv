@@ -1,0 +1,11 @@
+# v1 reader (refrel3v1.cpp @ 5b6d5ce, binary sha256 b7d1842d340f32ddb2ae67fa4ebb67fdbdd1843378a46ab072c77bdc91b8a17a) on the refusal fixtures of package v2
+archive	exit	stderr	output_written	normative_stage	normative_reason	agreement
+corrupt/truncated.rr3	2	refused: section sizes	no	open	section sizes	equal
+corrupt/header_byte.rr3	2	refused: block count	no	open	block count	equal
+corrupt/block_with_hash.rr3	3	decode failed (block)	no	decode	block	equal
+corrupt/valid_for_wrong_reference.rr3	2	refused: reference SHA-256 / size differs	no	open	reference SHA-256 / size differs	equal
+corrupt/block_hash_byte.rr3	3	decode failed (block XXH3)	no	decode	block XXH3	equal
+corrupt/fasta_xxh3_field.rr3	3	decode failed (FASTA XXH3)	no	decode	FASTA XXH3	equal
+corrupt/blocks_swapped.rr3	3	decode failed (block XXH3)	no	decode	block XXH3	equal
+corrupt/zero_context.rr3	3	decode failed (block)	no	decode	block	equal
+corrupt/meta_two_frames.rr3	0	-	yes	open	meta frame count	accepted (no step 12a, spec 21)
