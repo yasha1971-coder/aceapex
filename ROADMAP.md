@@ -125,6 +125,7 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+16.10: сайт real7 опубликован (hw-apex PR #69 fb61913, Release site-real7-2026-10-16, pages-real.yml); 1226/1226 чисел главной == leaderboard.json.
 15.10: PR #63 принят как есть (историю не переписывать); в PR .mailmap (ac3d713) и пересобранный эталон синтетического
 сайта (2126c16, стал устаревшим после правок документации A13/N10). Ждём CI x2 и build_site real7 (без таймаута), затем
 merge и Pages. panvram fc51172/8b22677 (DRAM 103-116 нс; 387 тактов = 73.5 нс при 5.26 ГГц) запушены. SALVAGE локально:
