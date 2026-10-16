@@ -10,7 +10,7 @@ Run: 2026-10-07 23:49:58 UTC -> 2026-10-08 02:11:31 UTC (8 493 s wall, peak RSS 
 Method check first: the same job on 4 clean-room fixtures (`rehearsal/`, 7 formats measured, verify PASS).
 
 Cohort: y1_HG00438.1 / .2, y1_HG00621.1 / .2 (source URL and .fa.gz SHA-256 of MANIFEST.tsv), canonical domain
-uppercase sequence bytes without FASTA framing (12 009 829 249 B). Archives built on ace-core from the pinned sources:
+uppercase sequence bytes without FASTA framing (11 989 829 249 B). Archives built on ace-core from the pinned sources:
 refrel3 v1 q4k / q16k (manifest archives), BGZF default (bgzip -@ 1, libdeflate) and matched-g (explicit flush every
 4 147 raw bytes = 4 096 bases at 80-base lines), zstd seekable 1.5.7 (level 3, 16 KiB frames of the canonical stream),
 LZ4 1.10.0 independent 4 MiB blocks of the canonical stream, OZSEG (OpenZL 0.3.0 segmented container, 4 variants;
