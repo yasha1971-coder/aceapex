@@ -279,6 +279,7 @@ never silence. Corpora are read from `$GOLDEN` (default `~/golden`).
 | 4 | [What Governs Decode Throughput in Absolute-Offset GPU LZ77?](https://arxiv.org/abs/2607.18541) | Work granularity, not occupancy, governs throughput; an encode-time min-match-length lever moves ratio and throughput together. |
 | 5 | [What Actually Serializes GPU LZ77 Decode](https://arxiv.org/abs/2608.10188) | Parse holds 64–72% of decode, not copy; self-overlap is periodic, giving 2.75–8.42× on the match layer; the last sequential parse element removed for 0.540% of ratio. Corrects Paper 4. |
 | 6 | [The Price of Random Access](https://arxiv.org/abs/2609.16731) | Nine axes across four formats: 16 KiB independence costs 1.632% of the archive against 6.57% for seekable zstd. Three structural results, seventeen rejected directions. |
+| 7 | [panvram: GPU-resident Random Access to a Human Pangenome Cohort](https://arxiv.org/abs/2610.25149) | 558 HPRC haplotype assemblies resident on one GPU: 16.642 GB of persistent pools by default, 11.634 GB in the compact form; a window-cost model for fixed independent granules and the cohort-scale locality effect. Code in a separate repository: [panvram](https://github.com/yasha1971-coder/panvram). |
 
 Archived code, one deposit per paper:
 [Papers 1–3](https://doi.org/10.5281/zenodo.20729380) ·
