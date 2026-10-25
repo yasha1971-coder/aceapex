@@ -81,11 +81,31 @@ __global__ void k_v3(const uint8_t* __restrict__ LIT,const BlockOffsets* __restr
                 const uint32_t n=__shfl_sync(FULL,ll,j), lj=__shfl_sync(FULL,lex,j), oj=__shfl_sync(FULL,oex,j);
                 axv_copy16(dst+obase+oj,lit+lbase+lj,n,lane,32); }
             __syncwarp();
-            // matches in token order, each by the whole warp
-            uint32_t mm=__ballot_sync(FULL,ml>0);
+            // matches. pos_j = step start + oex_j + ll_j; a match whose source [src, src + min(dist, len)) ends at or
+            // before the first match destination of the step reads only final bytes (literals of the step are
+            // written): such matches run in parallel; the others in token order, each by the whole warp
+            const uint32_t mpos=obase+oex+ll, msrc=mpos-d;
+            uint32_t fm=ml?mpos:0xffffffffu;
+            #pragma unroll
+            for(int o=16;o>0;o>>=1) fm=min(fm,__shfl_xor_sync(FULL,fm,o));
+            const bool indep=ml>0 && msrc+min(d,ml)<=fm;
+            const uint32_t ms=(indep&&ml<64)?ml:0, mi=w_incl(ms,lane), mex=mi-ms, mtot=__shfl_sync(FULL,mi,31);
+            for(uint32_t kb=0;kb<mtot;kb+=32){                   // short independent matches: all bytes at once
+                const uint32_t k=kb+lane;
+                uint32_t lo=0,hi=31;
+                #pragma unroll
+                for(int it=0;it<5;it++){ uint32_t mid=(lo+hi+1)>>1; uint32_t xm=__shfl_sync(FULL,mex,mid); if(xm<=k) lo=mid; else hi=mid-1; }
+                const uint32_t xj=__shfl_sync(FULL,mex,lo), pj=__shfl_sync(FULL,mpos,lo), dj=__shfl_sync(FULL,d,lo);
+                if(k<mtot){ const uint32_t q=k-xj; dst[pj+q]=dst[pj-dj+(q%dj)]; }
+            }
+            uint32_t mm=__ballot_sync(FULL,indep&&ml>=64);         // long independent matches
             while(mm){ const int j=__ffs(mm)-1; mm&=mm-1;
-                const uint32_t pos=obase+__shfl_sync(FULL,oex,j)+__shfl_sync(FULL,ll,j), len=__shfl_sync(FULL,ml,j), dist=__shfl_sync(FULL,d,j);
-                const uint32_t src=pos-dist;
+                const uint32_t pos=__shfl_sync(FULL,mpos,j), len=__shfl_sync(FULL,ml,j), dist=__shfl_sync(FULL,d,j), src=pos-dist;
+                if(dist>=len) axv_copy16(dst+pos,dst+src,len,lane,32); else for(uint32_t q=lane;q<len;q+=32) dst[pos+q]=dst[src+(q%dist)]; }
+            __syncwarp();
+            mm=__ballot_sync(FULL,ml>0&&!indep);                   // dependent matches, in token order
+            while(mm){ const int j=__ffs(mm)-1; mm&=mm-1;
+                const uint32_t pos=__shfl_sync(FULL,mpos,j), len=__shfl_sync(FULL,ml,j), dist=__shfl_sync(FULL,d,j), src=pos-dist;
                 if(dist>=len){ if(len>=64) axv_copy16(dst+pos,dst+src,len,lane,32); else for(uint32_t q=lane;q<len;q+=32) dst[pos+q]=dst[src+q]; }
                 else { for(uint32_t q=lane;q<len;q+=32) dst[pos+q]=dst[src+(q%dist)]; }
                 __syncwarp(); }

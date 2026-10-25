@@ -49,7 +49,11 @@ int main(int argc,char** argv){
             for(uint32_t kb=0;kb<ltot;kb+=32) for(int l=0;l<32;l++){ uint32_t k=kb+l, lo=0, hi=31;
                 for(int it=0;it<5;it++){ uint32_t mid=(lo+hi+1)>>1; if(lex[mid]<=k) lo=mid; else hi=mid-1; }
                 if(k<ltot) dst[obase+oex[lo]+(k-lex[lo])]=bl[lbase+k]; }
-            for(int j=0;j<32;j++){ if(!ml[j]) continue; uint32_t pos=obase+oex[j]+ll[j], n=ml[j], dist=d[j], src=pos-dist;
+            uint32_t mpos[32], fm=0xffffffffu; bool indep[32];
+            for(int j=0;j<32;j++){ mpos[j]=obase+oex[j]+ll[j]; if(ml[j]) fm=std::min(fm,mpos[j]); }
+            for(int j=0;j<32;j++) indep[j]=ml[j]>0 && (mpos[j]-d[j])+std::min(d[j],ml[j])<=fm;
+            for(int j=0;j<32;j++) if(indep[j]){ uint32_t pos=mpos[j],n=ml[j],dist=d[j],src=pos-dist; for(uint32_t q=0;q<n;q++) dst[pos+q]=dst[src+(q%dist)]; }
+            for(int j=0;j<32;j++){ if(!ml[j]||indep[j]) continue; uint32_t pos=mpos[j], n=ml[j], dist=d[j], src=pos-dist;
                 if(dist>=n){ for(uint32_t q=0;q<n;q++) dst[pos+q]=dst[src+q]; } else { for(uint32_t q=0;q<n;q++) dst[pos+q]=dst[src+(q%dist)]; } }
             lbase+=ltot; obase+=otot;
         }
