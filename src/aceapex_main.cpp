@@ -1213,7 +1213,11 @@ static inline bool   ax_ce_bad (uint64_t e){ return ((e >> 48) & 0x3FFF) != 0 ||
 static inline bool   ax_profile_open(){ const char* e=ax_getenv("AX_PROFILE"); return e && !strcmp(e,"open"); }
 static inline bool   ax_tok_rans(){ const char* e=ax_getenv("AX_TOK"); return (e && !strcmp(e,"rans")) || ax_profile_open(); }
 // zstd-free literal chunks (ax_lit_open.h, ADR-019): mode 2 open DNA pack, mode 3 open plain
-static inline bool   ax_lit_open(){ const char* e=ax_getenv("AX_LIT"); return (e && !strcmp(e,"open")) || ax_profile_open(); }
+// PROBE (fast-probe branch): AX_TOK=raw stores every token chunk raw (entry bit 63), AX_LIT=raw every literal chunk as
+// an open plain raw piece (mode 3, piece mode 0) - archives of the existing format without an entropy stage
+static inline bool   ax_tok_raw(){ const char* e=ax_getenv("AX_TOK"); return e && !strcmp(e,"raw"); }
+static inline bool   ax_lit_raw(){ const char* e=ax_getenv("AX_LIT"); return e && !strcmp(e,"raw"); }
+static inline bool   ax_lit_open(){ const char* e=ax_getenv("AX_LIT"); return (e && (!strcmp(e,"open") || !strcmp(e,"raw"))) || ax_profile_open(); }
 // decode one token chunk of any kind; false on any error
 static inline bool ax_tok_chunk(uint64_t e, uint8_t* dst, size_t raw, const uint8_t* p, size_t z){
     if (ax_ce_bad(e)) return false;
@@ -1528,6 +1532,7 @@ static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
             ZW& z=p->w[i];
             // Байт режима перед данными: 0 = обычный zstd, 1 = DNA-трансформ.
             // Считаем оба и берём меньший, поэтому режим не может ухудшить размер.
+            if(ax_lit_raw()){ z.out[0]=3; z.out[1]=0; memcpy(z.out+2,z.in,z.isz); z.osz=z.isz+2; continue; }
             if(ax_lit_open()){                              // zstd-free: mode 3 plain, or mode 2 when smaller
                 std::vector<uint16_t> scr(z.isz+2*AXR_LANES);
                 size_t ps=axo_piece_encode(z.in,z.isz,z.out+1,scr.data()); z.out[0]=3; z.osz=ps+1;
@@ -1801,6 +1806,7 @@ static void entropy_encode(
         for(size_t i=0;i<nc;i++){
             size_t off=i*CHUNK;
             size_t isz=std::min<size_t>(CHUNK,e->isz-off);
+            if(ax_tok_raw()){memcpy(p,e->in+off,isz);csizes[i]=isz|(uint64_t(1)<<63);total+=isz;p+=isz;continue;}
             if(rans){
                 size_t r=axr_encode(e->in+off,isz,rb.data(),rw.data());
                 if(!r||r>=isz){memcpy(p,e->in+off,isz);csizes[i]=isz|(uint64_t(1)<<63);total+=isz;p+=isz;}
