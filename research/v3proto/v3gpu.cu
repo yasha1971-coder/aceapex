@@ -64,22 +64,29 @@ __global__ void k_v3(const uint8_t* __restrict__ LIT,const BlockOffsets* __restr
             const uint32_t ll=live?LL[i]:0, ml=live?ML[i]:0, d=live?D[i]:0;
             const uint32_t lin=w_incl(ll,lane), oin=w_incl(ll+ml,lane);
             const uint32_t lex=lin-ll, oex=oin-ll-ml, ltot=__shfl_sync(FULL,lin,31), otot=__shfl_sync(FULL,oin,31);
-            // literals of the step: byte k (0..ltot) belongs to the token j with lex_j <= k < lex_j + ll_j
-            for(uint32_t kb=0;kb<ltot;kb+=32){                   // uniform trip count: every lane runs the shuffles
+            // short literal runs (< 64 B): all their bytes of the step copied by the warp at once; byte k of the
+            // short-run concatenation belongs to the token j with sex_j <= k < sex_j + sl_j (binary search over lanes)
+            const uint32_t sl=ll<64?ll:0, sin=w_incl(sl,lane), sex=sin-sl, stot=__shfl_sync(FULL,sin,31);
+            for(uint32_t kb=0;kb<stot;kb+=32){                   // uniform trip count: every lane runs the shuffles
                 const uint32_t k=kb+lane;
-                uint32_t lo=0,hi=31;                               // last j with lex_j <= k
+                uint32_t lo=0,hi=31;                               // last j with sex_j <= k
                 #pragma unroll
-                for(int it=0;it<5;it++){ uint32_t mid=(lo+hi+1)>>1; uint32_t lm=__shfl_sync(FULL,lex,mid); if(lm<=k) lo=mid; else hi=mid-1; }
-                const uint32_t lj=__shfl_sync(FULL,lex,lo), oj=__shfl_sync(FULL,oex,lo);
-                if(k<ltot) dst[obase+oj+(k-lj)]=lit[lbase+k];
+                for(int it=0;it<5;it++){ uint32_t mid=(lo+hi+1)>>1; uint32_t sm=__shfl_sync(FULL,sex,mid); if(sm<=k) lo=mid; else hi=mid-1; }
+                const uint32_t sj=__shfl_sync(FULL,sex,lo), lj=__shfl_sync(FULL,lex,lo), oj=__shfl_sync(FULL,oex,lo);
+                if(k<stot) dst[obase+oj+(k-sj)]=lit[lbase+lj+(k-sj)];
             }
+            // long literal runs: one at a time, the warp copies 16 bytes per lane (as v7-RA)
+            uint32_t lm=__ballot_sync(FULL,ll>=64);
+            while(lm){ const int j=__ffs(lm)-1; lm&=lm-1;
+                const uint32_t n=__shfl_sync(FULL,ll,j), lj=__shfl_sync(FULL,lex,j), oj=__shfl_sync(FULL,oex,j);
+                axv_copy16(dst+obase+oj,lit+lbase+lj,n,lane,32); }
             __syncwarp();
             // matches in token order, each by the whole warp
             uint32_t mm=__ballot_sync(FULL,ml>0);
             while(mm){ const int j=__ffs(mm)-1; mm&=mm-1;
                 const uint32_t pos=obase+__shfl_sync(FULL,oex,j)+__shfl_sync(FULL,ll,j), len=__shfl_sync(FULL,ml,j), dist=__shfl_sync(FULL,d,j);
                 const uint32_t src=pos-dist;
-                if(dist>=len){ for(uint32_t q=lane;q<len;q+=32) dst[pos+q]=dst[src+q]; }
+                if(dist>=len){ if(len>=64) axv_copy16(dst+pos,dst+src,len,lane,32); else for(uint32_t q=lane;q<len;q+=32) dst[pos+q]=dst[src+q]; }
                 else { for(uint32_t q=lane;q<len;q+=32) dst[pos+q]=dst[src+(q%dist)]; }
                 __syncwarp(); }
             lbase+=ltot; obase+=otot;
