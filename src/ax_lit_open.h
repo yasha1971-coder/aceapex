@@ -163,7 +163,9 @@ static inline size_t axo_dna_encode(const uint8_t* s, size_t n, uint8_t* out) {
     }
     {
         uint8_t* p = out + AXO_HDR; uint32_t h[4];
-        h[0] = (uint32_t)axo_piece_encode(seq, np, p, scr); p += h[0];
+        if (getenv("AX_SEQ_RAW")) { p[0] = 0; memcpy(p + 1, seq, np); h[0] = (uint32_t)(np + 1); }   /* PROBE (fast-probe): seq raw */
+        else h[0] = (uint32_t)axo_piece_encode(seq, np, p, scr);
+        p += h[0];
         h[1] = (uint32_t)axo_piece_encode(cse, ncse, p, scr); p += h[1];
         h[2] = (uint32_t)axo_piece_encode(gap, ngap, p, scr); p += h[2];
         h[3] = (uint32_t)axo_piece_encode(val, nexc, p, scr); p += h[3];
