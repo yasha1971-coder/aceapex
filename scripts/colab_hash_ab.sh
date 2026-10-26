@@ -20,7 +20,9 @@ SM=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1 | tr -
 make -s 2>&1 | grep -i error; [ -x ./aceapex ] || { echo "no CLI" | tee -a $L; exit 1; }
 nvcc -O3 -std=c++17 -arch=sm_$SM -lineinfo -Isrc -I$NV/include -o $W/gpu_hash_ab scripts/gpu_hash_ab.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp \
      -L$LIB -l:libnvcomp.so.6 -lz 2>$W/nvcc.err || { cat $W/nvcc.err | tee -a $L; exit 1; }
-[ -s $W/chr1.fa ] || curl -sL https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr1.fa.gz | gunzip -c > $W/chr1.fa
+if ! echo "9465e0f0df6e2c6eb39729c39cee5465  $W/chr1.fa" | md5sum -c - >/dev/null 2>&1; then
+  for t in 1 2 3; do curl -sfL --retry 5 -o $W/chr1.fa.gz https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr1.fa.gz && gunzip -c $W/chr1.fa.gz > $W/chr1.fa && break; sleep 5; done
+fi
 echo "9465e0f0df6e2c6eb39729c39cee5465  $W/chr1.fa" | md5sum -c - >> $L || exit 1
 env -i PATH=$PATH AX_PROFILE=open ./aceapex c --in $W/chr1.fa --out $W/chr1.open.aet --threads $(nproc) >/dev/null 2>&1
 echo "archive chr1.open.aet $(stat -c%s $W/chr1.open.aet) B, sha256 $(sha256sum $W/chr1.open.aet | cut -c1-16)" | tee -a $L
