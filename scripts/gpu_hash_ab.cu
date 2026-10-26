@@ -43,7 +43,12 @@ int main(int argc, char** argv){
     CK(cudaMalloc(&dp,nb*sizeof(void*))); CK(cudaMalloc(&dn,nb*sizeof(size_t))); CK(cudaMalloc(&dcrc,nb*4)); CK(cudaMalloc(&dst,nb*sizeof(nvcompStatus_t)));
     CK(cudaMemcpy(dp,hp.data(),nb*sizeof(void*),cudaMemcpyHostToDevice)); CK(cudaMemcpy(dn,hn.data(),nb*sizeof(size_t),cudaMemcpyHostToDevice));
     nvcompBatchedCRC32Opts_t opts; memset(&opts,0,sizeof(opts)); opts.spec=nvcompCRC32;
-    if(nvcompBatchedCRC32GetHeuristicConf(dn,nb,&opts.kernel_conf,bs,s)!=nvcompSuccess){ fprintf(stderr,"nvcomp heuristic conf failed\n"); return 3; }
+    // kernel configuration: nvCOMP's heuristic (by max chunk size, then deduced from the sizes); if both refuse,
+    // the zeroed configuration (warp kernel) - which one was used is printed
+    const char* conf="heuristic(max chunk)";
+    nvcompStatus_t hs=nvcompBatchedCRC32GetHeuristicConf(nvcompCRC32IgnoredInputChunkBytes,nb,&opts.kernel_conf,bs,s);
+    if(hs!=nvcompSuccess){ conf="heuristic(deduced)"; memset(&opts.kernel_conf,0,sizeof(opts.kernel_conf)); hs=nvcompBatchedCRC32GetHeuristicConf(dn,nb,&opts.kernel_conf,nvcompCRC32DeducedMaxInputChunkBytes,s); }
+    if(hs!=nvcompSuccess){ fprintf(stderr,"nvcomp heuristic conf: status %d, using the zeroed (warp kernel) configuration\n",(int)hs); conf="zeroed (warp kernel)"; memset(&opts.kernel_conf,0,sizeof(opts.kernel_conf)); }
     CK(cudaStreamSynchronize(s));
     std::vector<uint32_t> hcrc(nb);
     cudaEvent_t e0,e1; CK(cudaEventCreate(&e0)); CK(cudaEventCreate(&e1));
@@ -63,7 +68,7 @@ int main(int argc, char** argv){
         if(status){ fprintf(stderr,"mode %c: device status %d\n",mode,status); exit(6); }
     };
     cudaDeviceProp pr; int dev; CK(cudaGetDevice(&dev)); CK(cudaGetDeviceProperties(&pr,dev));
-    printf("archive %s: %zu B -> %zu B, %zu blocks of %u, %s, runs %d per mode\n",argv[1],a.size(),n,nb,bs,pr.name,R);
+    printf("archive %s: %zu B -> %zu B, %zu blocks of %u, %s, runs %d per mode; nvCOMP CRC32 conf: %s\n",argv[1],a.size(),n,nb,bs,pr.name,R,conf);
     double dm,hm; for(char m:{'a','b','c'}) run(m,dm,hm);            // warm-up
     double base=0;
     printf("mode | device ms med / p90 | host combine ms med | total ms med | GB/s (total) | x decode\n");
