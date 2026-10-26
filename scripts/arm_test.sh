@@ -15,7 +15,7 @@ for tgt in aarch64-linux-gnu:qemu-aarch64-static:arm64 arm-linux-gnueabihf:qemu-
      || [ ! -f $Z/$tri/libzstd.a ] || [ ! -f $Z/include/zstd.h ]; then
     printf 'head_%s_cdecoder_conf\tdeclared\tno cross toolchain, qemu or static libzstd for %s on this host\n' "$short" "$tri"
     printf 'head_%s_cli_roundtrip\tdeclared\tsame\n' "$short"; continue; fi
-  $tri-gcc -std=c99 -O2 -static -Ic -I$Z/include -o $T/axdec_$short c/axdec.c c/aceapex_decode.c $Z/$tri/libzstd.a 2>$T/b1 || { printf 'head_%s_cdecoder_conf\tfail\tbuild: %s\n' "$short" "$(head -c 150 $T/b1|tr '\n' ' ')"; continue; }
+  $tri-gcc -std=c99 -O2 -static -DACEAPEX_ENV_TUNING -Ic -I$Z/include -o $T/axdec_$short c/axdec.c c/aceapex_decode.c $Z/$tri/libzstd.a 2>$T/b1 || { printf 'head_%s_cdecoder_conf\tfail\tbuild: %s\n' "$short" "$(head -c 150 $T/b1|tr '\n' ' ')"; continue; }
   $tri-g++ -std=c++17 -O2 -static -DACEAPEX_CLI -Isrc -I$Z/include -o $T/ace_$short src/aceapex_api.cpp -lpthread $Z/$tri/libzstd.a 2>$T/b2 || { printf 'head_%s_cli_roundtrip\tfail\tbuild: %s\n' "$short" "$(head -c 150 $T/b2|tr '\n' ' ')"; }
   ok=0; n=0; bad=""
   while IFS=$'\t' read -r name sz sha denv; do
