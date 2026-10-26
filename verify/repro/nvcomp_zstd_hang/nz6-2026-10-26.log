@@ -1,0 +1,14 @@
+NVIDIA L4, 23034 MiB, 2040 MHz, 580.82.07
+Build cuda_13.0.r13.0/compiler.36424714_0
+ae376cbc759787a2522ba9e091861579dda26d566fd39386c3a1ff8db4758a4e  good.zst
+0798885564da20fd2ad2cd7c3b34d1c65212dffa74ace1d692925a2e6062f209  bad.zst
+ 292  77 306
+nvcomp: nvidia-libnvcomp-cu13 6.0.0.12 at /usr/local/lib/python3.13/dist-packages/nvidia/libnvcomp
+== good.zst
+good.zst: 1136 bytes, frame content size 8192
+finished in 8.883 ms: status 0, decompressed 8192 bytes
+exit 0, wall .323246753 s
+== bad.zst
+bad.zst: 1136 bytes, frame content size 8192
+HANG: the decompression kernel has not finished after 60 s
+exit 4, wall 60.214988075 s
