@@ -16,14 +16,20 @@ struct Engine { std::string name; std::function<size_t(const uint8_t*, uint32_t,
 
 int main(int argc, char** argv) {
     if (argc < 2) { fprintf(stderr, "usage: %s file [block=1048576] [reps=7]\n", argv[0]); return 1; }
+    if (const char* lam = getenv("AXF_LAMBDA")) g_lambda = atof(lam);
     const size_t BS = argc > 2 ? strtoull(argv[2], 0, 10) : 1048576; const int R = argc > 3 ? atoi(argv[3]) : 7;
     FILE* f = fopen(argv[1], "rb"); if (!f) { perror(argv[1]); return 1; } fseek(f, 0, SEEK_END); size_t n = ftell(f); fseek(f, 0, SEEK_SET);
     std::vector<uint8_t> in(n); if (fread(in.data(), 1, n, f) != n) return 1; fclose(f);
     const size_t nb = (n + BS - 1) / BS;
     misa77::config mcfg(1);
     std::vector<Engine> E = {
+        {"axf L4 (ours)", [](const uint8_t* s, uint32_t k, std::vector<uint8_t>& o) { static thread_local Enc e; o.resize(enc_bound(k) + SLACK); size_t r = enc_block(s, k, o.data(), 4, e); return r; },
+                          [](const uint8_t* c, size_t cs, uint8_t* d, uint32_t k, size_t) { return dec_block(c, cs, d, k) == k; }, SLACK},
         {"axf L3 (ours)", [](const uint8_t* s, uint32_t k, std::vector<uint8_t>& o) { static thread_local Enc e; o.resize(enc_bound(k) + SLACK); size_t r = enc_block(s, k, o.data(), 3, e); return r; },
                           [](const uint8_t* c, size_t cs, uint8_t* d, uint32_t k, size_t) { return dec_block(c, cs, d, k) == k; }, SLACK},
+        {"misa77 -2", [&](const uint8_t* s, uint32_t k, std::vector<uint8_t>& o) { misa77::config c2(2); o.resize(misa77::compress_bound(k, c2)); return (size_t)misa77::compress(s, k, o.data(), o.size(), c2); },
+                      [](const uint8_t* c, size_t cs, uint8_t* d, uint32_t k, size_t cap) { return misa77::decompress(c, cs, d, cap) == k; },
+                      (size_t)(misa77::decompressed_buffer_bound(BS) - BS)},
         {"misa77 -1", [&](const uint8_t* s, uint32_t k, std::vector<uint8_t>& o) { o.resize(misa77::compress_bound(k, mcfg)); return (size_t)misa77::compress(s, k, o.data(), o.size(), mcfg); },
                       [](const uint8_t* c, size_t cs, uint8_t* d, uint32_t k, size_t cap) { return misa77::decompress(c, cs, d, cap) == k; },
                       (size_t)(misa77::decompressed_buffer_bound(BS) - BS)},

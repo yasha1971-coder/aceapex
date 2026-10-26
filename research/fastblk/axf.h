@@ -49,7 +49,17 @@ static double now() { return std::chrono::duration<double>(std::chrono::steady_c
 struct Enc { std::vector<uint32_t> head, chain; };
 #include <atomic>
 static std::atomic<uint64_t> g_tok{0}, g_lit{0};
+// ---------------------------------------------------------------- level 4+: optimal parse (F1-DM)
+// Price of a parse = literal bytes + TOKB bytes per token + LAMBDA per token (the decode cost of a token expressed
+// in bytes: LAMBDA = 0 minimises size, larger LAMBDA trades size for fewer tokens). Forward DP over the block;
+// at each position the longest match (hash chain, depth DEPTH4) and every shorter length of it are candidates.
+#ifndef DEPTH4
+#define DEPTH4 64
+#endif
+static double g_lambda = 0.0;   // set by the bench (env AXF_LAMBDA)
+static size_t enc_block_opt(const uint8_t* in, uint32_t n, uint8_t* out, Enc& e);
 static size_t enc_block(const uint8_t* in, uint32_t n, uint8_t* out, int level, Enc& e) {
+    if (level >= 4) return enc_block_opt(in, n, out, e);
     const uint32_t HB = 15, HN = 1u << HB; e.head.assign(HN, 0xffffffffu); e.chain.assign(n + 1, 0xffffffffu);
     const int depth = level <= 1 ? 1 : level == 2 ? 8 : 64;
     std::vector<uint32_t> tok; std::vector<uint8_t> ext, lit; tok.reserve(n / 8 + 1); lit.reserve(n);
@@ -99,6 +109,57 @@ static size_t enc_block(const uint8_t* in, uint32_t n, uint8_t* out, int level, 
     return (size_t)(p - out);
 }
 static size_t enc_bound(size_t n) { return 12 + n + n / MIN_MATCH * 5 + 64; }
+static size_t enc_block_opt(const uint8_t* in, uint32_t n, uint8_t* out, Enc& e) {
+    const uint32_t HB = 16, HN = 1u << HB; e.head.assign(HN, 0xffffffffu); e.chain.assign(n + 1, 0xffffffffu);
+    auto H = [&](uint32_t p) { return (rd32(in + p) * 0x9E3779B1u) >> (32 - HB); };
+    std::vector<uint32_t> bl(n + 1, 0), bd(n + 1, 0);
+    const uint32_t lastp = n > 12 ? n - 12 : 0;
+    for (uint32_t pos = 0; pos < lastp; pos++) {                 // longest match at every position
+        uint32_t h = H(pos), cand = e.head[h], best = 0, bdist = 0; int dep = DEPTH4;
+        while (cand != 0xffffffffu && dep-- > 0) {
+            uint32_t d = pos - cand; if (d > D_MAX + MIN_DIST || d > WIN) break;
+            if (d >= MIN_DIST && rd32(in + cand) == rd32(in + pos)) {
+                uint32_t l = 4, lim = n - pos - 8;
+                while (l + 8 <= lim) { uint64_t x = rd64(in + pos + l) ^ rd64(in + cand + l); if (x) { l += __builtin_ctzll(x) >> 3; break; } l += 8; }
+                if (l > lim) l = lim; if (l > best) { best = l; bdist = d; if (l >= 4096) break; }
+            }
+            cand = e.chain[cand];
+        }
+        e.chain[pos] = e.head[h]; e.head[h] = pos;
+        if (best >= MIN_MATCH) { bl[pos] = best; bd[pos] = bdist; }
+    }
+    const double TOKB = 4.0, LAM = g_lambda;
+    std::vector<double> price(n + 1, 1e300); std::vector<uint32_t> from(n + 1, 0), mlen(n + 1, 0), mdist(n + 1, 0);
+    price[0] = 0;
+    for (uint32_t i = 0; i < n; i++) {
+        const double pi = price[i];
+        if (pi + 1.0 < price[i + 1]) { price[i + 1] = pi + 1.0; from[i + 1] = i; mlen[i + 1] = 0; }
+        const uint32_t L = bl[i]; if (!L) continue;
+        const double c = pi + TOKB + LAM;
+        const uint32_t top = L < 64 ? L : 64;
+        for (uint32_t l = MIN_MATCH; l <= top; l++) { uint32_t j = i + l; if (c < price[j]) { price[j] = c; from[j] = i; mlen[j] = l; mdist[j] = bd[i]; } }
+        if (L > 64) { uint32_t j = i + L; if (c < price[j]) { price[j] = c; from[j] = i; mlen[j] = L; mdist[j] = bd[i]; } }
+    }
+    // backtrack into (start, len, dist) matches, then emit tokens in the order of the block
+    std::vector<uint32_t> ms, ml, md;
+    for (uint32_t j = n; j > 0; ) { uint32_t i = from[j]; if (mlen[j]) { ms.push_back(i); ml.push_back(mlen[j]); md.push_back(mdist[j]); } j = i; }
+    std::vector<uint32_t> tok; std::vector<uint8_t> ext, lit; tok.reserve(ms.size()); lit.reserve(n);
+    auto leb = [&](uint32_t r) { while (r >= 255) { ext.push_back(255); r -= 255; } ext.push_back((uint8_t)r); };
+    uint32_t anchor = 0;
+    for (size_t k = ms.size(); k-- > 0; ) {
+        uint32_t st = ms[k], l = ml[k], d = md[k], ll = st - anchor;
+        lit.insert(lit.end(), in + anchor, in + st);
+        uint32_t llf = ll; if (ll >= LL_EXT) { llf = LL_EXT; leb(ll - LL_EXT); }
+        uint32_t mlf; if (l <= ML_DIRECT_MAX) mlf = l - MIN_MATCH; else { mlf = ML_EXT; leb(l - COPY - 1); }
+        tok.push_back(llf | mlf << 6 | (d - MIN_DIST) << 12); anchor = st + l;
+    }
+    lit.insert(lit.end(), in + anchor, in + n);
+    g_tok += tok.size(); g_lit += lit.size();
+    uint8_t* p = out; wr32(p, (uint32_t)tok.size()); wr32(p + 4, (uint32_t)ext.size()); wr32(p + 8, n - anchor); p += 12;
+    memcpy(p, tok.data(), tok.size() * 4); p += tok.size() * 4; memcpy(p, ext.data(), ext.size()); p += ext.size();
+    memcpy(p, lit.data(), lit.size()); p += lit.size();
+    return (size_t)(p - out);
+}
 
 // ---------------------------------------------------------------- decoder
 static inline void copy64(uint8_t* d, const uint8_t* s) {
