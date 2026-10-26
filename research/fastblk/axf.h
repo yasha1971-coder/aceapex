@@ -31,7 +31,14 @@
 #ifndef MIN_MATCH
 #define MIN_MATCH 5u
 #endif
-enum : uint32_t { MIN_DIST = 16, COPY = 64, LL_EXT = 63, ML_EXT = 63, ML_DIRECT_MAX = COPY, D_MAX = (1u << 20) - 1, SLACK = 256 };
+#ifndef MIN_DIST_V
+#define MIN_DIST_V 64u     /* 26.10: 16 -> 64 = +0.37 pp, 1T +8 % (no store-forwarding hazard inside a 32-byte copy) */
+#endif
+enum : uint32_t { MIN_DIST = MIN_DIST_V, COPY = 64, LL_EXT = 63, ML_EXT = 63, ML_DIRECT_MAX = COPY, D_MAX = (1u << 20) - 1, SLACK = 256 };
+#ifndef WIN_V
+#define WIN_V (1u << 20)
+#endif
+static const uint32_t WIN = WIN_V;   /* encoder: farthest match source */
 // match length: code 0..62 -> MIN_MATCH + code (the encoder keeps it <= COPY); code 63 -> COPY + 1 + extension (bytes of 255, then one byte)
 static inline uint32_t rd32(const uint8_t* p) { uint32_t v; memcpy(&v, p, 4); return v; }
 static inline uint64_t rd64(const uint8_t* p) { uint64_t v; memcpy(&v, p, 8); return v; }
@@ -57,7 +64,7 @@ static size_t enc_block(const uint8_t* in, uint32_t n, uint8_t* out, int level, 
         uint32_t h = H(pos), cand = e.head[h], best = 0, bd = 0; int dep = depth;
         while (cand != 0xffffffffu && dep-- > 0) {
             uint32_t d = pos - cand;
-            if (d > D_MAX + MIN_DIST) break;
+            if (d > D_MAX + MIN_DIST || d > WIN) break;
             if (d >= MIN_DIST && rd32(in + cand) == rd32(in + pos)) {
                 uint32_t l = 4, lim = n - pos - 8;
                 while (l + 8 <= lim) { uint64_t x = rd64(in + pos + l) ^ rd64(in + cand + l); if (x) { l += __builtin_ctzll(x) >> 3; break; } l += 8; }
@@ -68,7 +75,7 @@ static size_t enc_block(const uint8_t* in, uint32_t n, uint8_t* out, int level, 
         }
         if (best >= MIN_MATCH && level >= 2 && pos + 13 < n) {               // lazy: a longer match one byte later wins
             uint32_t h2 = H(pos + 1), c2 = e.head[h2], b2 = 0; int dp = depth;
-            while (c2 != 0xffffffffu && dp-- > 0) { uint32_t d2 = pos + 1 - c2; if (d2 > D_MAX + MIN_DIST) break;
+            while (c2 != 0xffffffffu && dp-- > 0) { uint32_t d2 = pos + 1 - c2; if (d2 > D_MAX + MIN_DIST || d2 > WIN) break;
                 if (d2 >= MIN_DIST && rd32(in + c2) == rd32(in + pos + 1)) { uint32_t l = 4, lim = n - pos - 9;
                     while (l + 8 <= lim) { uint64_t x = rd64(in + pos + 1 + l) ^ rd64(in + c2 + l); if (x) { l += __builtin_ctzll(x) >> 3; break; } l += 8; }
                     if (l > lim) l = lim; if (l > b2) b2 = l; }
@@ -106,6 +113,8 @@ static inline void copy64(uint8_t* d, const uint8_t* s) {
 static inline void copyw(uint8_t* d, const uint8_t* s) {
 #if CW == 16
     _mm_storeu_si128((__m128i*)d, _mm_loadu_si128((const __m128i*)s));
+#elif CW == 32 && MIN_DIST_V >= 32 && defined(__AVX2__)
+    _mm256_storeu_si256((__m256i*)d, _mm256_loadu_si256((const __m256i*)s));   /* one load before the store: exact when dist >= 32 */
 #elif CW == 32
     _mm_storeu_si128((__m128i*)(d + 0),  _mm_loadu_si128((const __m128i*)(s + 0)));
     _mm_storeu_si128((__m128i*)(d + 16), _mm_loadu_si128((const __m128i*)(s + 16)));
