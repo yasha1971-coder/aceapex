@@ -37,7 +37,7 @@ Measured against bgzip and zstd-seekable on the same operation, nine axes, every
 byte for byte: [hw-apex-bench](https://yasha1971-coder.github.io/hw-apex-bench/). ACEAPEX does not
 lead every column there, and the ones it loses are printed as they came out.
 
-**Every published claim is answered with a number and a way to check it — see [CLAIMS.md](CLAIMS.md).**
+**Every published claim is answered with a number and a way to check it — see [CLAIMS.md](docs/research/CLAIMS.md).**
 
 ```bash
 git clone https://github.com/yasha1971-coder/aceapex.git && cd aceapex
@@ -69,7 +69,7 @@ ACEAPEX takes the second branch and works on the price of it:
 - **Encode:** match search is confined to the block, so a block never references outside itself; where it can be validated byte for byte, an explicit reference is additionally **redirected to the earlier originating position**, shortening the dependency chain inside the block
 - **Decode:** block-parallel reconstruction — each block is self-contained and independently decodable
 
-Two separate mechanisms, not one. Confining the search is what removes cross-block dependency and makes a block independently decodable; flattening only shortens dependency chains inside a block, and what remains is handled by the decoder — by wavefront ordering, or in closed form where a match is a periodic fill. The price is paid in ratio, and we state it: under an equal 16 KB independent-block constraint the match layer recovers about three quarters of what blocking costs (see [CLAIMS.md](CLAIMS.md)).
+Two separate mechanisms, not one. Confining the search is what removes cross-block dependency and makes a block independently decodable; flattening only shortens dependency chains inside a block, and what remains is handled by the decoder — by wavefront ordering, or in closed form where a match is a periodic fill. The price is paid in ratio, and we state it: under an equal 16 KB independent-block constraint the match layer recovers about three quarters of what blocking costs (see [CLAIMS.md](docs/research/CLAIMS.md)).
 
 ---
 
@@ -251,7 +251,7 @@ A fresh clone of tag `paper5-v1` on a CPU-only host gives **17 pass, 0 fail, 6 s
 
 ## Documentation
 
-See [BENCHMARK.md](BENCHMARK.md) for detailed benchmarks and [TECHNICAL_NOTE.md](TECHNICAL_NOTE.md) for design notes.
+See [BENCHMARK.md](docs/research/BENCHMARK.md) for detailed benchmarks and [TECHNICAL_NOTE.md](docs/research/TECHNICAL_NOTE.md) for design notes.
 
 ---
 
@@ -269,7 +269,7 @@ never silence. Corpora are read from `$GOLDEN` (default `~/golden`).
 
 ## Papers
 
-> ACEAPEX is an ongoing engineering investigation. These papers document specific stages of the project and may be superseded by later ones. Current claims and their reproduction status are maintained in [CLAIMS.md](CLAIMS.md) and `results.json`.
+> ACEAPEX is an ongoing engineering investigation. These papers document specific stages of the project and may be superseded by later ones. Current claims and their reproduction status are maintained in [CLAIMS.md](docs/research/CLAIMS.md) and `results.json`.
 
 | # | Paper | What it establishes |
 |---|-------|---------------------|
