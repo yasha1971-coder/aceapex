@@ -142,7 +142,7 @@ int main(int argc, char** argv) {
     for (int ai = 1; ai < argc; ai++) {                              // rANS chunks of real archives
         FILE* f = fopen(argv[ai], "rb"); if (!f) { bad++; continue; }
         std::vector<uint8_t> a; { uint8_t buf[1 << 16]; size_t r; while ((r = fread(buf, 1, sizeof buf, f)) > 0) a.insert(a.end(), buf, buf + r); } fclose(f);
-        if (a.size() < 68 || memcmp(a.data(), "ACEPX2\0\0", 8)) continue;
+        if (a.size() < 68 || memcmp(a.data(), "ACEPX2\0\0", 8) || rd32(&a[8]) != 2) continue;   // header version 2 only (the fast profile has no entropy chunks)
         uint32_t nb = rd32(&a[24]); uint64_t zsz[4] = {rd64(&a[36]), rd64(&a[44]), rd64(&a[52]), rd64(&a[60])};
         size_t p = 68 + 64ull * nb; const uint8_t* zs[4];
         for (int i = 0; i < 4; i++) { zs[i] = a.data() + p; p += zsz[i]; }

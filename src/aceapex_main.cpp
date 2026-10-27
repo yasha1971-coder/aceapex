@@ -1885,6 +1885,24 @@ static FILE* ax_cli_open_out(const char* out_path) { return strcmp(out_path, "-"
 static int ax_cli_close_out(FILE* f, const char* out_path) {
     const bool bad = ferror(f) != 0; const int c = f == stdout ? fflush(f) : fclose(f);
     if (bad || c) { fprintf(stderr, "Cannot write: %s\n", out_path); return 1; } return 0; }
+#include "ax_fast_glue.h"   // FAST profile (header version 3): levels 11..18, ax_fast_* (2.4.0)
+// the fast profile in the CLI: src -> archive file; level 11..18
+static int ax_cli_fast_compress(const char* in_path, const char* out_path, const uint8_t* src, size_t src_size, int threads, int level) {
+    const double t0 = now_sec();
+    std::vector<std::vector<uint8_t>> blocks; axf::Params P; uint32_t bs;
+    if (!ax_fast_encode(src, src_size, ax_fast_level(level), threads, blocks, P, bs)) { fprintf(stderr, "bad level %d\n", level); return 1; }
+    const double t_enc = now_sec() - t0;
+    std::vector<uint8_t> arc(axf::archive_size(blocks));
+    const int64_t total = ax_fast_assemble(blocks, P, bs, src, src_size, arc.data(), arc.size());
+    if (total < 0) { fprintf(stderr, "assemble failed\n"); return 1; }
+    FILE* fout = ax_cli_open_out(out_path); if (!fout) { fprintf(stderr, "Cannot write: %s\n", out_path); return 1; }
+    fwrite(arc.data(), 1, (size_t)total, fout); if (ax_cli_close_out(fout, out_path)) return 1;
+    uint64_t hv; memcpy(&hv, arc.data() + 28, 8);
+    fprintf(stderr, "  Profile:    fast level %d (min match %u, %s parse), %zu blocks of %u\n", ax_fast_level(level), P.mm, P.optimal ? "optimal" : "greedy/lazy", blocks.size(), bs);
+    fprintf(stderr, "  Original:   %14zu bytes\n  Compressed: %14lld bytes\n  Ratio:  %.5fx\n", src_size, (long long)total, (double)src_size / (double)total);
+    fprintf(stderr, "  Encode: %.2f MB/s  (%.3fs, %d threads)\n  XXH3:   %016llx\n", src_size / t_enc / 1e6, t_enc, threads, (unsigned long long)hv);
+    return 0;
+}
 static int do_compress(const char* in_path, const char* out_path, int threads, int level=2) {
 #ifdef ACEAPEX_ENV_TUNING
     if (ax_getenv("AX_LINEMODEL") && atoi(ax_getenv("AX_LINEMODEL"))) return ax_cli_lm_compress(in_path, out_path, threads, level);
@@ -1916,8 +1934,17 @@ static int do_compress(const char* in_path, const char* out_path, int threads, i
     t_fread=now_sec()-t_fread;
 
     fprintf(stderr,"[*] Compress: %s (%.2f MB) threads=%d\n",in_path,src_size/1e6,threads);
+    if (ax_fast_level(level)) {
+        const int rc = ax_cli_fast_compress(in_path, out_path, src, src_size, threads, level);
+#ifdef _WIN32
+        free((void*)src);
+#else
+        if (src_is_mmap) munmap((void*)src, src_size); else free((void*)src);
+#endif
+        return rc;
+    }
     double t_total_c=now_sec();
- 
+
     std::vector<BlockOffsets> boffs;
     uint8_t *raw_lit,*raw_off,*raw_len,*raw_cmd;
     size_t total_lit,total_off,total_len,total_cmd,num_blocks;
@@ -2001,7 +2028,7 @@ static int do_decompress_stream(const char* in_path, int threads) {
     {   // a literal stream without the chunked layout (text in the default profile; DNA archives above ~4 GiB of
         // literals written before 2.3) is not streamed: the whole-file decoder writes to stdout
         AetHeader h; uint64_t w = 0;
-        if (pread(fd, &h, sizeof h, 0) == (ssize_t)sizeof h && !memcmp(h.magic, "ACEPX2\0\0", 8) && h.num_blocks && h.zlit_sz >= 8 &&
+        if (pread(fd, &h, sizeof h, 0) == (ssize_t)sizeof h && !memcmp(h.magic, "ACEPX2\0\0", 8) && h.version == 2 && h.num_blocks && h.zlit_sz >= 8 &&
             pread(fd, &w, 8, (off_t)(sizeof h + (uint64_t)h.num_blocks * sizeof(BlockOffsets))) == 8 && !(((w >> 62) & 1) && ((w >> 61) & 1))) {
             close(fd); fprintf(stderr, "  literal stream not chunked: whole-file decode to stdout (memory = archive + output)\n");
             return do_decompress(in_path, "/dev/stdout", threads); } }
@@ -2026,12 +2053,30 @@ static int do_decompress(const char* in_path, const char* out_path, int threads=
     // Версия писалась с первого дня и не проверялась ни разу. Архив, созданный
     // более новым кодером, старый декодер читал как валидный и выдавал мусор:
     // при интерпретации новых битов orig_size получалось 3.4 эксабайта.
+    if (hdr.version == AXF_VERSION) {                 // FAST profile (2.4.0): the whole file in memory, blocks on the pool
+        fprintf(stderr,"[*] Decompress: %s -> %s (fast profile)\n",in_path,out_path);
+        fseek(fin, 0, SEEK_END); const long fsz = ftell(fin); fseek(fin, 0, SEEK_SET);
+        if (fsz < 68) { fprintf(stderr,"Cannot read: %s\n",in_path); fclose(fin); return 1; }
+        const size_t ssz = (size_t)fsz; uint8_t* arc = (uint8_t*)malloc(ssz);
+        if (!arc || fread(arc, 1, ssz, fin) != ssz) { fprintf(stderr,"Cannot read: %s\n",in_path); free(arc); fclose(fin); return 1; }
+        fclose(fin);
+        axf_arc_t a; if (axf_open(arc, ssz, &a) != 0) { fprintf(stderr,"Corrupt archive (header or block table)\n"); free(arc); return 1; }
+        uint8_t* dst = ax_big_malloc((size_t)a.orig); if (!dst) { free(arc); return 1; }
+        const int T = ax_decode_budget(threads, a.orig);
+        const double t0 = now_sec(); const bool ok_dec = ax_fast_decode_blocks(a, 0, a.nb, dst, T); const double dec_time = now_sec() - t0;
+        uint64_t dv = OUR_CHECKSUM(dst, (size_t)a.orig), hv3; memcpy(&hv3, hdr.xxhash, 8); const bool ok = ok_dec && dv == hv3;
+        FILE* fout = fopen(out_path, "wb"); if (fout) { fwrite(dst, 1, (size_t)a.orig, fout); fclose(fout); }
+        fprintf(stderr,"  Profile: fast (min match %u), %u blocks of %u, %d threads\n  Decode: %.2f MB/s  (%.3fs, algorithmic)\n  Decode wall: %.2f MB/s  (%.3fs, wall clock)\n",
+                a.mm, a.nb, a.bs, T, a.orig / dec_time / 1e6, dec_time, a.orig / (now_sec() - t_wall) / 1e6, now_sec() - t_wall);
+        if (!ok_dec) fprintf(stderr,"  Status: ❌ DECODE ERROR (corrupt block)\n"); else if (!ok) fprintf(stderr,"  Status: ❌ HASH MISMATCH\n");
+        free(dst); free(arc); return ok ? 0 : 1;
+    }
     if (hdr.version != 2) {
-        fprintf(stderr,"Unsupported format version %u (this build reads 2)\n", hdr.version);
+        fprintf(stderr,"Unsupported format version %u (this build reads 2 and 3)\n", hdr.version);
         return 1;
     }
     fprintf(stderr,"[*] Decompress: %s -> %s\n",in_path,out_path);
- 
+
     { // archive-level sanity before we trust any offset from the file
       fseek(fin,0,SEEK_END); long fsz=ftell(fin); fseek(fin,sizeof(hdr),SEEK_SET);
       if (fsz < 0 || !ax_header_ok(hdr,(uint64_t)fsz)) {
@@ -2156,7 +2201,31 @@ static int do_test(const char* in_path, int threads, int level=2) {
     fread(src,1,src_size,fin); fclose(fin);
     fprintf(stderr,"[*] Test: %s (%.2f MB) threads=%d\n",in_path,src_size/1e6,threads);
     double t_total_t=now_sec();
- 
+    if (ax_fast_level(level)) {                       // fast profile: encode to memory, decode, compare
+        std::vector<std::vector<uint8_t>> blocks; axf::Params P; uint32_t bs;
+        if (!ax_fast_encode(src, src_size, ax_fast_level(level), threads, blocks, P, bs)) { free(src); return 1; }
+        std::vector<uint8_t> arc(axf::archive_size(blocks));
+        const int64_t total = ax_fast_assemble(blocks, P, bs, src, src_size, arc.data(), arc.size());
+        const double t_enc = now_sec() - t_total_t;
+        std::vector<uint8_t> dst(src_size ? src_size : 1);
+        // decode timed over AX_REPS runs (default 7; tuning builds), the median reported; every run compared
+        int reps = 7; { const char* e = ax_getenv("AX_REPS"); if (e && atoi(e) > 0) reps = atoi(e); }
+        std::vector<double> ts; bool ok = total > 0;
+        for (int i = 0; i < reps && ok; i++) {
+            memset(dst.data(), 0, dst.size()); const double t0 = now_sec();
+            const int64_t r = ax_fast_decompress(arc.data(), (size_t)total, dst.data(), dst.size(), threads);
+            ts.push_back(now_sec() - t0);
+            ok = r == (int64_t)src_size && memcmp(dst.data(), src, src_size) == 0;
+        }
+        std::sort(ts.begin(), ts.end()); const double t_dec = ts.empty() ? 1 : ts[ts.size() / 2];
+        fprintf(stderr,"\n  ====================================================\n  ACEAPEX FAST PROFILE TEST REPORT\n  ====================================================\n");
+        fprintf(stderr,"  Profile:    fast level %d (min match %u, %s parse), %zu blocks of %u\n", ax_fast_level(level), P.mm, P.optimal ? "optimal" : "greedy/lazy", blocks.size(), bs);
+        fprintf(stderr,"  Original:   %14zu bytes\n  Compressed: %14lld bytes\n  Ratio:  %.5fx   BPB: %.4f\n", src_size, (long long)total, (double)src_size / (double)total, total * 8.0 / src_size);
+        fprintf(stderr,"  Encode: %.2f MB/s  (%.3fs)\n  Decode: %.2f MB/s  (%.4fs median of %d, min %.4fs, %d threads)\n", src_size / t_enc / 1e6, t_enc, src_size / t_dec / 1e6, t_dec, reps, ts.empty() ? 0.0 : ts[0], ax_decode_budget(threads, src_size));
+        fprintf(stderr,"  Status: %s\n  ====================================================\n", ok ? "✅ BIT-PERFECT" : "❌ MISMATCH");
+        free(src); return ok ? 0 : 1;
+    }
+
     std::vector<BlockOffsets> boffs;
     uint8_t *raw_lit,*raw_off,*raw_len,*raw_cmd;
     size_t total_lit,total_off,total_len,total_cmd,num_blocks;
@@ -2342,7 +2411,7 @@ int main(int argc, char** argv) {
             argv[0],argv[0],argv[0],argv[0],argv[0]);
         return 1;
     }
-    const char* cmd=argv[1]; const char* in=nullptr; const char* out=nullptr; int thr=8; int level=2;
+    const char* cmd=argv[1]; const char* in=nullptr; const char* out=nullptr; int thr=8; int level=0; bool fast=false;
     uint64_t reg_off=0,reg_len=0;
     for(int i=2;i<argc;i++) {
         if (!strcmp(argv[i],"--in")&&i+1<argc) in=argv[++i];
@@ -2351,8 +2420,14 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i],"--threads")&&i+1<argc) thr=atoi(argv[++i]);
         else if (!strcmp(argv[i],"--level")&&i+1<argc) level=atoi(argv[++i]);
         else if (!strcmp(argv[i],"--fast")) level=1;
+        else if (!strcmp(argv[i],"--profile")&&i+1<argc) { const char* p=argv[++i]; if (!strcmp(p,"fast")) fast=true; else if (strcmp(p,"default")) { fprintf(stderr,"unknown profile %s (default, fast)\n",p); return 1; } }
         else if (!strcmp(argv[i],"--region")&&i+2<argc) { reg_off=strtoull(argv[++i],nullptr,10); reg_len=strtoull(argv[++i],nullptr,10); }
     }
+    // --profile fast (or AX_PROFILE=fast in tuning builds) with --level 1..8 = the fast profile's levels (library levels
+    // 11..18, which --level also takes directly); the default profile keeps its levels 1..3, default 2
+    { const char* e = ax_getenv("AX_PROFILE"); if (e && !strcmp(e,"fast")) fast=true; }
+    if (fast && level >= 0 && level <= 8) level = 10 + (level ? level : 1);
+    if (level == 0) level = 2;
     if (!in) { fprintf(stderr,"--in required\n"); return 1; }
 #ifndef _WIN32
     if ((!strcmp(cmd,"c") || !strcmp(cmd,"d")) && ax_cli_stdin(in)) return 1;

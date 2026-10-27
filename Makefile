@@ -42,13 +42,13 @@ clean:
 	rm -rf $(OBJS) $(PROG) axdec libaceapex_decode.so libaceapex_gpu.so.1 libaceapex_gpu.so build/zstd
 
 # aceapex_api.cpp #includes aceapex_main.cpp; make must see that edge.
-src/aceapex_api.o: src/aceapex_main.cpp src/aceapex.h src/ax_align.h
+src/aceapex_api.o: src/aceapex_main.cpp src/aceapex.h src/ax_align.h src/ax_fast.h src/ax_fast_enc.h src/ax_fast_glue.h
 
 # Standalone C99 decoder (no C++, no threads): CLI and a shared library for bindings.
-axdec: c/axdec.c c/aceapex_decode.c c/aceapex_decode.h c/ax_rans.h c/ax_lit_open.h c/ax_env.h
+axdec: c/axdec.c c/aceapex_decode.c c/aceapex_decode.h c/ax_rans.h c/ax_lit_open.h c/ax_env.h c/ax_fast.h
 	$(CC) -std=c99 -O2 -Wall -DACEAPEX_ENV_TUNING -Ic $(ZSTD_CFLAGS) -o $@ c/axdec.c c/aceapex_decode.c $(ZSTD_LIBS)
 
-libaceapex_decode.so: c/aceapex_decode.c c/aceapex_decode.h c/ax_rans.h c/ax_lit_open.h c/ax_env.h
+libaceapex_decode.so: c/aceapex_decode.c c/aceapex_decode.h c/ax_rans.h c/ax_lit_open.h c/ax_env.h c/ax_fast.h
 	$(CC) -std=c99 -O2 -Wall -fPIC -shared -Ic $(ZSTD_CFLAGS) -o $@ c/aceapex_decode.c $(ZSTD_LIBS)
 
 # GPU library (C ABI src/aceapex_gpu.h), shared: libaceapex_gpu.so.1 (SONAME) + libaceapex_gpu.so -> .so.1.

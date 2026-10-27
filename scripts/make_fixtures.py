@@ -66,6 +66,14 @@ CASES = [
     ('dna_open_4097B', 4097,   20, 'ACEAPEX_BS=4096 AX_PROFILE=open',                '-'),
     ('dna_openlit_300K', 300000, 21, 'ACEAPEX_BS=16384 AX_LIT=open',                 '-'),
     ('text_open_200K', 200000, 22, 'AX_PROFILE=open',                                '-'),
+    # FAST profile (2.4.0, header version 3, docs/FORMAT_FAST.md): tokens without an entropy stage. A token in the
+    # encoder column (no '=') is a CLI argument. Cases: the headline level, a long literal run (random: ll = 63 + extension),
+    # long matches (zeros: mc = 63 + extension, one token per 1 MiB block), the optimal parse across a block boundary, tiny.
+    ('text_fast_200K',  200000,  23, '--level 14',                                      '-'),
+    ('rand_fast_70K',   70000,   24, '--level 11',                                      '-'),
+    ('zeros_fast_1500K', 1500000, 25, '--level 11',                                     '-'),
+    ('dna_fast_opt_2MiB', 2097152 + 1, 26, '--level 15',                                '-'),
+    ('rand_fast_7B',    7,       27, '--level 18',                                      '-'),
 ]
 
 def main():
@@ -92,11 +100,12 @@ def main():
                 b = a.depth; env = env[len('DEPTH '):]
             else:
                 b = a.bin
-            cmd = ['env', '-i', 'PATH=' + os.environ['PATH']] + env.split() + [b, 'c', '--in', src, '--out', dst, '--threads', '2']
+            toks = env.split(); envs = [t for t in toks if '=' in t]; args = [t for t in toks if '=' not in t]
+            cmd = ['env', '-i', 'PATH=' + os.environ['PATH']] + envs + [b, 'c', '--in', src, '--out', dst, '--threads', '2'] + args
             r = subprocess.run(cmd, capture_output=True, text=True)
             if r.returncode != 0 or not os.path.exists(dst):
                 print(f'FAIL {name}: {r.stderr[-300:]}'); sys.exit(1)
-            rows.append((name, n, sha, denv)); print(f'{name}: {n} B -> {os.path.getsize(dst)} B')
+            rows.append((name, len(data), sha, denv)); print(f'{name}: {len(data)} B -> {os.path.getsize(dst)} B')   # the text generator can stop one byte short of n
     if a.regen: print('inputs in /tmp/conf_inputs'); return
     mf = os.path.join(a.out, 'manifest.tsv')
     keep = []
