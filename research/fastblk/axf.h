@@ -43,6 +43,7 @@ static const uint32_t WIN = WIN_V;   /* encoder: farthest match source */
 static inline uint32_t rd32(const uint8_t* p) { uint32_t v; memcpy(&v, p, 4); return v; }
 static inline uint64_t rd64(const uint8_t* p) { uint64_t v; memcpy(&v, p, 8); return v; }
 static inline void wr32(uint8_t* p, uint32_t v) { memcpy(p, &v, 4); }
+static inline void cpyn(uint8_t* d, const void* s, size_t k) { if (k) memcpy(d, s, k); }   /* empty vectors give data() == nullptr */
 static double now() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 
 // ---------------------------------------------------------------- encoder (greedy, hash head + chain)
@@ -104,8 +105,8 @@ static size_t enc_block(const uint8_t* in, uint32_t n, uint8_t* out, int level, 
     const uint32_t tail = n - anchor;
     g_tok += tok.size(); g_lit += lit.size();
     uint8_t* p = out; wr32(p, (uint32_t)tok.size()); wr32(p + 4, (uint32_t)ext.size()); wr32(p + 8, tail); p += 12;
-    memcpy(p, tok.data(), tok.size() * 4); p += tok.size() * 4; memcpy(p, ext.data(), ext.size()); p += ext.size();
-    memcpy(p, lit.data(), lit.size()); p += lit.size();
+    cpyn(p, tok.data(), tok.size() * 4); p += tok.size() * 4; cpyn(p, ext.data(), ext.size()); p += ext.size();
+    cpyn(p, lit.data(), lit.size()); p += lit.size();
     return (size_t)(p - out);
 }
 static size_t enc_bound(size_t n) { return 12 + n + n / MIN_MATCH * 5 + 64; }
@@ -156,8 +157,8 @@ static size_t enc_block_opt(const uint8_t* in, uint32_t n, uint8_t* out, Enc& e)
     lit.insert(lit.end(), in + anchor, in + n);
     g_tok += tok.size(); g_lit += lit.size();
     uint8_t* p = out; wr32(p, (uint32_t)tok.size()); wr32(p + 4, (uint32_t)ext.size()); wr32(p + 8, n - anchor); p += 12;
-    memcpy(p, tok.data(), tok.size() * 4); p += tok.size() * 4; memcpy(p, ext.data(), ext.size()); p += ext.size();
-    memcpy(p, lit.data(), lit.size()); p += lit.size();
+    cpyn(p, tok.data(), tok.size() * 4); p += tok.size() * 4; cpyn(p, ext.data(), ext.size()); p += ext.size();
+    cpyn(p, lit.data(), lit.size()); p += lit.size();
     return (size_t)(p - out);
 }
 
@@ -219,3 +220,44 @@ static uint32_t dec_block(const uint8_t* src, size_t ssz, uint8_t* dst, uint32_t
     return n;
 }
 
+
+// ---------------------------------------------------------------- safe decoder (#D1-2)
+// The same format with no padding on either side: src is exactly ssz bytes, dst exactly n bytes. Any input either
+// decodes to n bytes or returns 0, and never reads outside [src, src + ssz) or writes outside [dst, dst + n).
+// Fast path (the unconditional CW-wide copies) only while a whole token fits in the margins: at least 64 literal
+// bytes left to read and 64 + (62 + MIN_MATCH rounded up to CW) output bytes left to write; otherwise the exact path (memcpy of the true lengths,
+// match copies in steps of dist, which keeps an overlapping copy exact).
+static inline uint32_t rd_ext(const uint8_t*& ext, const uint8_t* eend, bool& bad) {
+    uint32_t r = 0; for (;;) { if (ext >= eend) { bad = true; return 0; } uint8_t b = *ext++; r += b; if (b < 255) return r; if (r > (1u << 30)) { bad = true; return 0; } }
+}
+static uint32_t dec_block_safe(const uint8_t* src, size_t ssz, uint8_t* dst, uint32_t n) {
+    if (ssz < 12) return 0;
+    const uint32_t ntok = rd32(src), next = rd32(src + 4), tail = rd32(src + 8);
+    if ((uint64_t)12 + 4ull * ntok + next > ssz) return 0;
+    const uint8_t* tp = src + 12; const uint8_t* ext = tp + 4ull * ntok;
+    const uint8_t* lit = ext + next; const uint8_t* const lend = src + ssz; const uint8_t* const eend = lit;
+    uint8_t* d = dst; uint8_t* const dend = dst + n; bool bad = false;
+    const ptrdiff_t M = 64 + (ptrdiff_t)((62 + MIN_MATCH + CW - 1) / CW * CW);   // literal copy + widest direct match copy
+    for (uint32_t i = 0; i < ntok; i++) {
+        const uint32_t t = rd32(tp + 4ull * i); uint32_t ll = t & 63, mc = (t >> 6) & 63; const uint32_t dist = (t >> 12) + MIN_DIST;
+        if (__builtin_expect(ll != LL_EXT && mc != ML_EXT && lend - lit >= 64 && dend - d >= M, 1)) {
+            copy_le64(d, lit, ll); d += ll; lit += ll;                   // reads lit..lit+63, writes d..d+63: inside both
+            if (__builtin_expect((size_t)(d - dst) < dist, 0)) return 0;
+            const uint32_t ml = mc + MIN_MATCH;
+            copy_le64(d, d - dist, ml); d += ml;                         // writes < M - 62 bytes from d: inside dst
+            continue;
+        }
+        if (ll == LL_EXT) { ll += rd_ext(ext, eend, bad); if (bad) return 0; }
+        if ((size_t)(lend - lit) < ll || (size_t)(dend - d) < ll) return 0;
+        memcpy(d, lit, ll); d += ll; lit += ll;
+        if ((size_t)(d - dst) < dist) return 0;
+        uint32_t ml = mc + MIN_MATCH;
+        if (mc == ML_EXT) { ml = COPY + 1 + rd_ext(ext, eend, bad); if (bad) return 0; }
+        if ((size_t)(dend - d) < ml) return 0;
+        for (uint32_t k = 0; k < ml; ) { uint32_t c = std::min(ml - k, dist); memcpy(d + k, d + k - dist, c); k += c; }
+        d += ml;
+    }
+    if ((size_t)(lend - lit) != tail || (size_t)(dend - d) != tail) return 0;
+    memcpy(d, lit, tail);
+    return n;
+}

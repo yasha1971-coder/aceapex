@@ -41,3 +41,19 @@ int64_t lzbench_axf_decompress(char* inbuf, size_t insize, char* outbuf, size_t 
     }
     return (int64_t)outsize;
 }
+// axf_safe: the same container through dec_block_safe - no padding on either side, every block decoded in place
+// (the last one too), header fields checked against insize and outsize before any block is touched.
+int64_t lzbench_axf_safe_decompress(char* inbuf, size_t insize, char* outbuf, size_t outsize, codec_options_t*) {
+    const uint8_t* s = (const uint8_t*)inbuf; if (insize < 9) return -1;
+    const uint32_t mm = s[0]; uint32_t bs, nb; memcpy(&bs, s + 1, 4); memcpy(&nb, s + 5, 4);
+    if (mm < 1 || mm > 64 || bs == 0 || (uint64_t)nb != (outsize + bs - 1) / bs) return -1;
+    size_t pos = 9 + 4ull * nb; if (pos > insize) return -1;
+    g_mm = mm;
+    for (uint32_t b = 0; b < nb; b++) {
+        uint32_t c; memcpy(&c, s + 9 + 4ull * b, 4); size_t off = (size_t)b * bs; uint32_t k = (uint32_t)std::min<size_t>(bs, outsize - off);
+        if (c > insize - pos) return -1;
+        if (dec_block_safe(s + pos, c, (uint8_t*)outbuf + off, k) != k) return -1;
+        pos += c;
+    }
+    return pos == insize ? (int64_t)outsize : -1;
+}
