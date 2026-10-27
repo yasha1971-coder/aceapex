@@ -37,6 +37,13 @@ NCU=$(command -v ncu || ls /usr/local/cuda/bin/ncu 2>/dev/null | head -n 1)
 if [ -n "$NCU" ]; then
   timeout 300 $NCU --kernel-name regex:kg_xxh --launch-count 2 --set full -f -o results/nvcomp-crc/kg_xxh-$D $W/gpu_hash_ab $W/chr1.open.aet 1 > $W/ncu.out 2>&1
   echo "ncu: rc=$? $(tail -n 2 $W/ncu.out | tr '\n' ' ')" | tee -a $L
+  # kg_xxh_blocks and kg_xxh_chain apart (for the NVIDIA forum): duration of each kernel launch, ms, from the report;
+  # then a duration-only pass over 6 launches (no replay overhead of --set full) for the same split
+  echo "ncu per kernel (gpu__time_duration.sum, from the --set full report):" | tee -a $L
+  $NCU --import results/nvcomp-crc/kg_xxh-$D.ncu-rep --page raw --csv --metrics gpu__time_duration.sum 2>/dev/null \
+    | python3 -c "import csv,sys; r=list(csv.reader(sys.stdin)); h=r[0]; k=h.index('Kernel Name'); t=h.index('gpu__time_duration.sum'); u=r[1][t] if len(r)>1 else ''; [print(f'  {x[k].split(\"(\")[0]}: {x[t]} {u}') for x in r[2:]]" | tee -a $L
+  timeout 300 $NCU --kernel-name regex:kg_xxh --launch-count 6 --metrics gpu__time_duration.sum --csv $W/gpu_hash_ab $W/chr1.open.aet 3 2>/dev/null \
+    | python3 -c "import csv,sys,collections; r=[x for x in csv.reader(sys.stdin) if len(x)>10]; h=r[0]; k=h.index('Kernel Name'); v=h.index('Metric Value'); u=h.index('Metric Unit'); d=collections.defaultdict(list); [d[x[k].split('(')[0]].append((float(x[v].replace(',','')),x[u])) for x in r[1:]]; [print(f'  {n}: {len(a)} launches, ' + ', '.join(f'{t:g} {un}' for t,un in a)) for n,a in d.items()]" | tee -a $L
   ls -la results/nvcomp-crc/*.ncu-rep 2>/dev/null | tee -a $L
 else echo "ncu: not found on this VM" | tee -a $L; fi
 (cd results/nvcomp-crc && sha256sum * > SHA256SUMS) ; cat results/nvcomp-crc/SHA256SUMS | tee -a $L
