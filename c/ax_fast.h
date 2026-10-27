@@ -175,10 +175,56 @@ AXF_INLINE uint32_t axf_dec_block_mm(const uint8_t* src, size_t ssz, uint8_t* ds
     memcpy(d, lit, tail);
     return n;
 }
+/* Variant with a bound check on every token (2.4.0 first cut, 9f8a4ab). Measured on ace-core (lzbench -t8,8, median of 7,
+ * results/fast-bench-2026-10-27-0d3a065.md): with few tokens per KiB (min match 16 and 12, most tokens escape to the
+ * exact path) it is 1.7-1.8 % faster than the guarded runs; with many tokens (min match 8 and 5) the guarded runs are
+ * 4.5-15 % faster. Both keep the same contract; the dispatcher below picks per min_match. */
+AXF_INLINE uint32_t axf_dec_block_tok_mm(const uint8_t* src, size_t ssz, uint8_t* dst, uint32_t n, const uint32_t mm) {
+    uint32_t ntok, next, tail, i;
+    const uint8_t *tp, *ext, *lit, *lend, *eend;
+    uint8_t *d, *dend, *dfast;
+    if (ssz < AXF_BHDR + AXF_PAD) return 0;
+    ntok = axf_rd32(src); next = axf_rd32(src + 4); tail = axf_rd32(src + 8);
+    if ((uint64_t)AXF_BHDR + 4ull * ntok + next + AXF_PAD > ssz) return 0;
+    tp = src + AXF_BHDR; ext = tp + 4ull * ntok; lit = ext + next; eend = lit;
+    lend = src + ssz - AXF_PAD;                     /* literals end here; the pad [lend, lend + 64) is readable */
+    d = dst; dend = dst + n;
+    dfast = n >= AXF_ROOM ? dend - (AXF_ROOM - 1) : dst;   /* fast path while d < dfast, i.e. >= 160 bytes of room */
+    for (i = 0; i < ntok; i++) {
+        const uint32_t t = axf_rd32(tp + 4ull * i);
+        uint32_t ll = t & 63u, mc = (t >> 6) & 63u, ml;
+        const uint32_t dist = (t >> 12) + AXF_MIN_DIST;
+        if (AXF_LIKELY(d < dfast && ll != 63u && mc != 63u)) {
+            /* literal copy reads lit..lit+63: lit <= lend holds here, so the read ends inside the pad */
+            axf_cp32(d, lit); if (ll > 32u) axf_cp32(d + 32, lit + 32);
+            d += ll; lit += ll;
+            if (AXF_UNLIKELY((size_t)(d - dst) < dist)) return 0;    /* source before the block */
+            ml = mc + mm;                                            /* <= 94: at most 3 steps, < 160 - 62 bytes */
+            axf_cpw(d, d - dist, ml); d += ml;
+            if (AXF_UNLIKELY(lit > lend)) return 0;                  /* the literals of this token were not all there */
+            continue;
+        }
+        {   /* exact path: block end, long literal run, long match */
+            int bad = 0; uint32_t k;
+            if (ll == 63u) { ll += axf_ext(&ext, eend, &bad); if (bad) return 0; }
+            if ((size_t)(lend - lit) < ll || (size_t)(dend - d) < ll) return 0;
+            memcpy(d, lit, ll); d += ll; lit += ll;
+            if ((size_t)(d - dst) < dist) return 0;
+            ml = mc + mm;
+            if (mc == 63u) { ml = AXF_COPY + 1 + axf_ext(&ext, eend, &bad); if (bad) return 0; }
+            if ((size_t)(dend - d) < ml) return 0;
+            for (k = 0; k < ml; ) { uint32_t c = ml - k < dist ? ml - k : dist; memcpy(d + k, d + k - dist, c); k += c; }
+            d += ml;
+        }
+    }
+    if ((size_t)(lend - lit) != tail || (size_t)(dend - d) != tail) return 0;
+    memcpy(d, lit, tail);
+    return n;
+}
 static uint32_t axf_dec_block(const uint8_t* src, size_t ssz, uint8_t* dst, uint32_t n, uint32_t mm) {
-    switch (mm) {   /* the common min_match values as compile-time constants */
-    case 16: return axf_dec_block_mm(src, ssz, dst, n, 16);
-    case 12: return axf_dec_block_mm(src, ssz, dst, n, 12);
+    switch (mm) {   /* the common min_match values as compile-time constants; per-token checks for 16 and 12, guarded runs below */
+    case 16: return axf_dec_block_tok_mm(src, ssz, dst, n, 16);
+    case 12: return axf_dec_block_tok_mm(src, ssz, dst, n, 12);
     case 8:  return axf_dec_block_mm(src, ssz, dst, n, 8);
     case 5:  return axf_dec_block_mm(src, ssz, dst, n, 5);
     default: return axf_dec_block_mm(src, ssz, dst, n, mm);
