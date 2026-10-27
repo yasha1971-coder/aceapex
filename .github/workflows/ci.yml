@@ -9,9 +9,9 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Install dependencies
       run: sudo apt-get update && sudo apt-get install -y build-essential libzstd-dev pkg-config python3-numpy samtools tabix
@@ -29,7 +29,7 @@ jobs:
     # chr1 весит 254 MB; кэш держит его между прогонами, качается только при промахе
     - name: Cache chr1
       id: cache-chr1
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ~/golden/genome/chr1.fa
         key: chr1-hg38-9465e0f0df6e2c6eb39729c39cee5465
@@ -64,15 +64,20 @@ jobs:
       run: |
         make test
         python3 -c "import json;p=json.load(open('results/HEAD.json'))['provenance'];print(p);raise SystemExit(p['fail']+p['build_failed'])"
-    - uses: actions/upload-artifact@v4
-      with: {name: results-HEAD, path: results/HEAD.json}
+    # A red judge names its claims here and keeps HEAD.json as an artifact.
+    - name: Failed claims
+      if: failure()
+      run: python3 -c "import json;[print(c['claim_id'],c['verdict'],'measured:',str(c.get('measured'))[:300]) for c in json.load(open('results/HEAD.json'))['result']['claims'] if c['verdict'] not in ('pass','skipped','declared')]" || true
+    - uses: actions/upload-artifact@v5
+      if: always()
+      with: {name: results-HEAD, path: results/HEAD.json, if-no-files-found: ignore}
 
   # A4: the C decoder and the CLI on aarch64 and armv7 under qemu-user, all fixtures bit-perfect,
   # and the ARM encoders must produce the same bytes as the x86 fixture of the same libzstd line.
   arm:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - name: Cross toolchains and qemu
       run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf qemu-user-static
     - name: Static libzstd for both targets
@@ -85,12 +90,12 @@ jobs:
 
   verify-tags:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with: {fetch-depth: 0}
     - run: sudo apt-get update && sudo apt-get install -y build-essential libzstd-dev python3-numpy
-    - uses: actions/cache@v4
+    - uses: actions/cache@v5
       with: {path: ~/golden/genome/chr1.fa, key: chr1-hg38-9465e0f0df6e2c6eb39729c39cee5465}
     - run: |
         mkdir -p ~/golden/genome
@@ -98,7 +103,7 @@ jobs:
         echo "9465e0f0df6e2c6eb39729c39cee5465  $HOME/golden/genome/chr1.fa" | md5sum -c -
     - name: verify.sh over every paper tag
       run: ./verify.sh paper6-v1 paper5-v1 v4.0 v3.0 v2.0 v1.0.0
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v5
       if: always()
       with:
         name: results-tags

@@ -3,7 +3,9 @@
 # (random name:start-end, whole records, name:start, ends past the record, starts past it, commas, an unknown name,
 # start > end) on a FASTA of 6 records (line widths 50/60/70/80, lowercase runs, N runs, one record shorter than a
 # line), the default and the open profile, one region per call and all of them through -r; exit codes compared too.
-# Needs samtools (skipped without it). Usage: bash scripts/faidx_test.sh [aceapex binary]
+# samtools runs with -n 60: its default line length until 1.16 and the width aceapex faidx writes; samtools 1.17
+# (PR #1738) made the default the input line length, so without -n 1.17+ wraps at 50/70/80 and the claim went red on
+# ubuntu-24.04 (samtools 1.19.2). Needs samtools (skipped without it). Usage: bash scripts/faidx_test.sh [aceapex binary]
 set -u
 A=${1:-./aceapex}; T=$(mktemp -d); trap 'rm -rf $T' EXIT
 command -v samtools >/dev/null || { printf 'head_faidx\tskip\tno samtools\n'; exit 0; }
@@ -40,12 +42,12 @@ for P in default open; do
   $A faidx $T/x.$P.aet || bad=$((bad+1))
   cmp -s $T/x.fa.fai $T/x.$P.aet.fai || { echo "fai differs ($P)" >&2; bad=$((bad+1)); }
   while IFS= read -r r; do
-    $A faidx $T/x.$P.aet "$r" > $T/a.out 2>/dev/null; ra=$?; samtools faidx $T/x.fa "$r" > $T/s.out 2>/dev/null; rs=$?
+    $A faidx $T/x.$P.aet "$r" > $T/a.out 2>/dev/null; ra=$?; samtools faidx -n 60 $T/x.fa "$r" > $T/s.out 2>/dev/null; rs=$?
     { [ $ra = $rs ] && cmp -s $T/a.out $T/s.out; } || { bad=$((bad+1)); [ $bad -le 3 ] && echo "differs ($P): $r (exit $ra vs $rs)" >&2; }
   done < $T/regions.txt
   grep -v 'chrZ' $T/regions.txt | awk -F'[:-]' 'NF<3 || $2+0<=$3+0' > $T/ok.txt
-  $A faidx $T/x.$P.aet -r $T/ok.txt > $T/a.all 2>/dev/null; samtools faidx $T/x.fa -r $T/ok.txt > $T/s.all 2>/dev/null
+  $A faidx $T/x.$P.aet -r $T/ok.txt > $T/a.all 2>/dev/null; samtools faidx -n 60 $T/x.fa -r $T/ok.txt > $T/s.all 2>/dev/null
   cmp -s $T/a.all $T/s.all || { echo "-r output differs ($P)" >&2; bad=$((bad+1)); }
 done
-[ $bad = 0 ] && printf 'head_faidx\tpass\taceapex faidx == samtools faidx (%s) byte for byte and exit code on %s regions (whole, open end, past the end, commas, unknown name, start > end), default and open profile, and through -r; .fai identical\n' "$(samtools --version | head -n 1)" "$nreg" \
+[ $bad = 0 ] && printf 'head_faidx\tpass\taceapex faidx == samtools faidx -n 60 (%s) byte for byte and exit code on %s regions (whole, open end, past the end, commas, unknown name, start > end), default and open profile, and through -r; .fai identical\n' "$(samtools --version | head -n 1)" "$nreg" \
   || printf 'head_faidx\tfail\t%s differences against samtools faidx\n' "$bad"

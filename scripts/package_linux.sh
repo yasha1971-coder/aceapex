@@ -4,11 +4,12 @@
 # and SHA256SUMS, packed as aceapex-<id>-linux-x86_64.tar.gz. Checks before packing: the binary is static, the
 # conformance inputs and (optionally) a FASTA come back byte for byte in the default and the open profile, and
 # `faidx` answers.
-# Usage: bash scripts/package_linux.sh <zstd source tree> <out dir> [test FASTA]
+# Usage: [RELEASE=1] bash scripts/package_linux.sh <zstd source tree> <out dir> [test FASTA]
 #   zstd: a release tarball of https://github.com/facebook/zstd/releases (1.5.7: sha256 eb33e51f...ac24fc1b7ee09e6fa3)
 set -euo pipefail
 Z=$1; O=$2; FA=${3:-}
-ID="2.3.0-dev+$(git rev-parse --short HEAD)"
+V=$(sed -n 's/^#define ACEAPEX_VERSION_STRING "\(.*\)"/\1/p' src/aceapex.h)
+ID=${RELEASE:+$V}; ID=${ID:-$V-dev+$(git rev-parse --short HEAD)}   # RELEASE=1 on a tagged commit: the plain version
 N=aceapex-$ID-linux-x86_64; D=$O/$N; B=$O/build; mkdir -p $D $B/zstd $B/t
 for f in $Z/lib/common/*.c $Z/lib/compress/*.c $Z/lib/decompress/*.c $Z/lib/decompress/*.S; do
   [ -f "$f" ] && gcc -O3 -march=x86-64-v2 -I$Z/lib -I$Z/lib/common -c -o $B/zstd/$(basename $f).o $f; done

@@ -125,6 +125,14 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+27.10: CI0 (main зелёный: arm_test.sh без ACEAPEX_ENV_TUNING -> dna_depth_legacy; head_faidx против samtools 1.17+ -> -n 60;
+actions v5, ubuntu-24.04). v2.3.0 = b948923 (слияние release-2.3.0), тег запушен; release = c13b163 (merge, дерево == v2.3.0,
+без force). cli-stdin в main (2765cb6): c/d --in -, c --out -, пустой пайп -> rc 1 (было: пустой архив rc 0), претензия
+head_cli_stdin; судья 67/0. Выпуск 2.3.1 — только по слову. lzbench: ветка aceapex-2.3.0 в форке, PR не открывать.
+D1 (fast-probe a3c2821, research/fastblk): axf в lzbench, одна сборка, медиана 7: axf -1 11523 MB/s @61.34 % против zxc 0.15.0 -1
+10634 @61.67 % (+8.4 %); safe-декодер axf -1 10535 (-8.6 %, НИЖЕ zxc), misa77 safe -1.4 %; сжатие axf 25-28 MB/s (опт. разбор
+1.13); фазз safe 27.3 млн мутантов 0 отчётов; prior art: misa77 heavy - тот же токен u32 6/6/20. ARM не мерили.
+SCB0/SCB1 (локально, .wk/scb0): aceapex vs naf-22 vs zstd -19 через пайпы; SCB1 21/21 PASS (вкл. T2T x2 6.3 ГБ).
 03.10-Б: C99-декодер и Python: rANS через AVX2 (ax_rans.h собирает SIMD и в C) + проход таблицы чанков 03.10-А.
 T2T регион p50: C99 разовый 123 -> 49 мкс, хендл 104 -> 42, Python 111 -> 50 (C++ 50). Полный C99 chr1 open 1 нить
 0.313 -> 0.119 с. Таблица перестановок uint32 (байтовая стоила C++ open +6-8 %, ворота). Судья 66/0, ворота PASS.
@@ -399,6 +407,8 @@ match 30.3, bases 7.4, seq 5.1. Архивы zstd/rans T2T зависят от l
 898 263 414; 1.4.8: 902 319 887 / 898 903 131), open одинаков.
 
 ## Дальше
+-1. axf safe: цена 8.6-10 % против 1.4 % у misa77 - найти; runtime dispatch AVX2 (+2-5 %); ARM (нет железа). CB1 ClickBench
+   по колонкам. Отправка чего-либо наружу (lzbench PR, 2.3.1, письма) - только по слову.
 00000. [сделано 03.10-Б] C99/Python регион. Дальше: Python Archive.close() на mmap-файле - BufferError; регион 50 мкс:
    80 % - axr_decode + axo_dna_decode 64 КиБ-чанка (меньше литеральный чанк = формат/байты, по слову).
 0000. t2t: bases 8.28 мс (k_open_bases_x) — главный этап; XXH3-цепочка на t2t 66 мс — последовательная по 3M блоков,
