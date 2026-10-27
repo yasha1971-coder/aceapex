@@ -25,8 +25,9 @@
  *
  * Decoder contract (axf_dec_block): src is exactly ssz bytes, dst exactly n bytes. Any input either decodes to n
  * bytes (return n) or returns 0, and never reads outside [src, src + ssz) or writes outside [dst, dst + n).
- * The unconditional 32-byte copies run only while a whole token fits: 64 + 96 bytes of output room (a literal copy of
- * up to 64 and a match copy of up to 94 bytes rounded up to 32), everything else goes through exact copies. */
+ * The unconditional 32-byte copies run in guarded runs: k tokens with k <= (output room) / 160 and k <= (literals left)
+ * / 62 + 1, so no token of the run can write past dst or read past the pad; escapes and the block end go through exact
+ * copies, one token at a time. */
 #ifndef AX_FAST_H
 #define AX_FAST_H
 #include <stdint.h>
@@ -125,30 +126,40 @@ AXF_INLINE uint32_t axf_ext(const uint8_t** ext, const uint8_t* eend, int* bad) 
 AXF_INLINE uint32_t axf_dec_block_mm(const uint8_t* src, size_t ssz, uint8_t* dst, uint32_t n, const uint32_t mm) {
     uint32_t ntok, next, tail, i;
     const uint8_t *tp, *ext, *lit, *lend, *eend;
-    uint8_t *d, *dend, *dfast;
+    uint8_t *d, *dend;
     if (ssz < AXF_BHDR + AXF_PAD) return 0;
     ntok = axf_rd32(src); next = axf_rd32(src + 4); tail = axf_rd32(src + 8);
     if ((uint64_t)AXF_BHDR + 4ull * ntok + next + AXF_PAD > ssz) return 0;
     tp = src + AXF_BHDR; ext = tp + 4ull * ntok; lit = ext + next; eend = lit;
     lend = src + ssz - AXF_PAD;                     /* literals end here; the pad [lend, lend + 64) is readable */
     d = dst; dend = dst + n;
-    dfast = n >= AXF_ROOM ? dend - (AXF_ROOM - 1) : dst;   /* fast path while d < dfast, i.e. >= 160 bytes of room */
-    for (i = 0; i < ntok; i++) {
-        const uint32_t t = axf_rd32(tp + 4ull * i);
-        uint32_t ll = t & 63u, mc = (t >> 6) & 63u, ml;
-        const uint32_t dist = (t >> 12) + AXF_MIN_DIST;
-        if (AXF_LIKELY(d < dfast && ll != 63u && mc != 63u)) {
-            /* literal copy reads lit..lit+63: lit <= lend holds here, so the read ends inside the pad */
+    for (i = 0; i < ntok; ) {
+        /* Guarded run: k tokens with no bound check per token. A fast token reads at most 64 literal bytes from lit and
+         * advances lit by at most 62, and writes at most 62 + 96 bytes from d. With lit <= lend at the start (kept by
+         * every path) and k <= (lend - lit) / 62 + 1, every token of the run starts with lit <= lend, so its 64-byte
+         * read ends inside the pad; with k <= (dend - d) / 160 every write stays in dst. Only an escape (ll or mc = 63)
+         * or a source before the block leave the run. After the run lit may lie past lend: checked once. */
+        uint32_t k = ntok - i;
+        {   const size_t kd = (size_t)(dend - d) / AXF_ROOM, kl = (size_t)(lend - lit) / 62u + 1u;
+            if (kd < k) k = (uint32_t)kd;
+            if (kl < k) k = (uint32_t)kl; }
+        for (; k; k--, i++) {
+            const uint32_t t = axf_rd32(tp + 4ull * i);
+            const uint32_t ll = t & 63u, mc = (t >> 6) & 63u, dist = (t >> 12) + AXF_MIN_DIST;
+            if (AXF_UNLIKELY(ll == 63u || mc == 63u)) break;
             axf_cp32(d, lit); if (ll > 32u) axf_cp32(d + 32, lit + 32);
             d += ll; lit += ll;
             if (AXF_UNLIKELY((size_t)(d - dst) < dist)) return 0;    /* source before the block */
-            ml = mc + mm;                                            /* <= 94: at most 3 steps, < 160 - 62 bytes */
-            axf_cpw(d, d - dist, ml); d += ml;
-            if (AXF_UNLIKELY(lit > lend)) return 0;                  /* the literals of this token were not all there */
-            continue;
+            axf_cpw(d, d - dist, mc + mm); d += mc + mm;             /* <= 94 bytes: at most 3 steps */
         }
-        {   /* exact path: block end, long literal run, long match */
-            int bad = 0; uint32_t k;
+        if (AXF_UNLIKELY(lit > lend)) return 0;                      /* the run consumed literals that are not there */
+        if (i >= ntok) break;
+        {   /* exact path, one token: block end, long literal run, long match */
+            const uint32_t t = axf_rd32(tp + 4ull * i);
+            uint32_t ll = t & 63u, mc = (t >> 6) & 63u, ml;
+            const uint32_t dist = (t >> 12) + AXF_MIN_DIST;
+            i++;
+            int bad = 0; uint32_t c0;
             if (ll == 63u) { ll += axf_ext(&ext, eend, &bad); if (bad) return 0; }
             if ((size_t)(lend - lit) < ll || (size_t)(dend - d) < ll) return 0;
             memcpy(d, lit, ll); d += ll; lit += ll;
@@ -156,7 +167,7 @@ AXF_INLINE uint32_t axf_dec_block_mm(const uint8_t* src, size_t ssz, uint8_t* ds
             ml = mc + mm;
             if (mc == 63u) { ml = AXF_COPY + 1 + axf_ext(&ext, eend, &bad); if (bad) return 0; }
             if ((size_t)(dend - d) < ml) return 0;
-            for (k = 0; k < ml; ) { uint32_t c = ml - k < dist ? ml - k : dist; memcpy(d + k, d + k - dist, c); k += c; }
+            for (c0 = 0; c0 < ml; ) { uint32_t c = ml - c0 < dist ? ml - c0 : dist; memcpy(d + c0, d + c0 - dist, c); c0 += c; }
             d += ml;
         }
     }
