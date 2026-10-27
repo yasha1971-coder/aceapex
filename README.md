@@ -73,6 +73,32 @@ Two separate mechanisms, not one. Confining the search is what removes cross-blo
 
 ---
 
+## Fast profile (2.4.0)
+
+The same container, every block independent, no entropy stage: a fixed-width token stream the decoder runs without
+per-token branching on lengths. One archive for the C++ library, the C99 decoder and the Python package; regions,
+ranges and the streaming decode work as in the default profile. Levels 11–18 of `aceapex_compress`
+(`--profile fast --level 1..8` in the CLI): minimum match 16 / 12 / 8 / 5 with a greedy-lazy parse, then the same
+four with an optimal parse. A larger minimum match is fewer tokens, a faster decode and a lower ratio.
+Specification: [docs/FORMAT_FAST.md](docs/FORMAT_FAST.md).
+
+```bash
+./aceapex c --in silesia.tar --out silesia.axf --profile fast --level 1      # = --level 11
+./aceapex d --in silesia.axf --out silesia.tar                               # the version is in the header
+```
+
+The decoder is safe by construction — exact-size buffers, any input either decodes or is rejected
+(`scripts/fast_fuzz.cpp` under ASan/UBSan in `make test`) — and there is no second, looser decoder. Research numbers
+of the same layout before the release (ace-core EPYC 4344P, lzbench's single-thread method, silesia.tar, median of 7;
+`research/fastblk/d1-lzbench-2026-10-26.md`): min match 16 at 61.3 % decodes 11 523 MB/s against zxc 0.15.0 -1
+at 61.7 % and 10 634 MB/s in the same binary; min match 12 at 54.1 %, 11 237 MB/s. The release decoder is measured
+on the same host in `release/v2.4.0.md`.
+
+What it does not have: the DNA transform (use the default profile for genomes), the GPU path (2.4.0 reads version 3
+on the CPU only), `aceapex_decode_streams`.
+
+---
+
 ## lzbench 2.3 / 2.4
 
 ACEAPEX (CPU) and `aceapex_cuda` (GPU) are included in the [official lzbench 2.3 release](https://github.com/inikep/lzbench/releases/tag/v2.3) and carried as `aceapex 1.0.1` in [lzbench 2.4](https://github.com/inikep/lzbench/releases/tag/v2.4) (format 1 line; this repository is format 2, see CHANGELOG.md) — third-party validation by construction. GPU decoders for LZ77-family formats have been in lzbench since nvcomp's LZ4 and GDeflate; what `aceapex_cuda` adds is a GPU decode path for a format with absolute offsets and position-invariant random access.
@@ -228,6 +254,9 @@ nvcc -O3 -std=c++17 -o aceapex_cuda lz/aceapex/cuda/aceapex_cuda_wrapper.cu -lpt
 
 # Benchmark (in-memory)
 ./aceapex t --in myfile --threads 8
+
+# Fast profile (no entropy stage; levels 1..8 = library levels 11..18)
+./aceapex c --in myfile --out myfile.aet --profile fast --level 1
 ```
 
 The CLI also takes tuning knobs from the environment (`AX_PROFILE=open`, `ACEAPEX_BS`, `LIT_CHUNK`, ... - all 16 in

@@ -4,6 +4,41 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
+## v2.4.0 — DRAFT (release date and the ace-core numbers filled at tag time)
+
+**The FAST profile**: header version 3 of ACEPX2, the same container (independent blocks, one archive for every
+reader, regions, ranges, streaming) without the entropy stage — a fixed-width token stream for the decoder's speed.
+Specification `docs/FORMAT_FAST.md`; code `src/ax_fast.h` (C99 decoder, one copy in `src/`, `c/`, `python/csrc/`),
+`src/ax_fast_enc.h` (encoder), `src/ax_fast_glue.h` (library and CLI paths). Default-profile archives (version 2) are
+unchanged byte for byte; every reader of 2.4.0 reads both versions and rejects any other.
+
+- **Levels 11..18** of `aceapex_compress` (CLI `--level 11..18` or `--profile fast --level 1..8`): minimum match
+  16 / 12 / 8 / 5 with a greedy-lazy parse (11-14), the same four with an optimal parse (15-18; ~1 MB/s per core).
+  The minimum match is in the header; a larger one is fewer tokens, a faster decode, a lower ratio.
+- **Block**: `u32 ntok, next, tail`, `u32 tok[]` (literal length 6 bits, match code 6 bits, distance 20 bits),
+  extensions (bytes of 255), literals in token order, a 64-byte pad. Minimum distance 64, direct matches up to 64
+  bytes, longer ones escaped. 1 MiB blocks; the block table is `u64 boff[num_blocks + 1]`.
+- **One decoder, safe by construction** (`axf_dec_block`): exact-size buffers, never reads or writes outside them,
+  any input either decodes to the declared size or is rejected. The unconditional 32-byte copies run while a token
+  fits in the output (160 bytes of room) and the literal pointer is inside the run - the 64-byte pad takes the
+  over-read - everything else through exact copies. There is no looser second decoder: the research pair
+  (`research/fastblk/axf.h`, unsafe 11 523 vs safe 10 535 MB/s on silesia, `d1b-lzbench-2026-10-27.log`) is replaced
+  by one decoder with the fast path's structure. Measured on the release host in `release/v2.4.0.md`.
+- **Readers**: C++ library (`aceapex_decompress[_mt]`, `_region`, `_ranges`, `_stream` with `ACEAPEX_STREAM_VERIFY`),
+  CLI (`d`, `d --out -`, `r`, `faidx`), C99 decoder (`axdec`, `libaceapex_decode.so`, the pip package through it).
+  `aceapex_decode_streams` returns `ACEAPEX_ERR_DATA` (no entropy layer); the GPU library reports `E_HEADER` for
+  version 3 (CPU only in 2.4.0). A version-2 reader (2.3.1 and older) rejects a fast archive deterministically: the
+  profile and min-match fields sit where it reads a stream size.
+- **Claims** (`make test`, `scripts/fast_test.sh`): `head_fast_cli_roundtrip`, `head_fast_fixture_encode` (five new
+  conformance fixtures `*_fast_*` re-encoded byte for byte from regenerated inputs), `head_fast_cdecoder`,
+  `head_fast_api` (2102 library checks: levels, sizes around the block boundary, thread counts, regions, ranges,
+  refusals), `head_fast_fuzz` (ASan/UBSan mutants + a negative control), `head_fast_v2_reader`. The conformance set
+  grows from 22 to 27 fixtures; the ARM judge, the pipe test and the Python tests take them from the manifest.
+- `aceapex_compress_bound` also covers the fast profile's worst case (below 1.02 n + table; the default bound stays the larger).
+- Research record of the probe that led here (branch fast-probe, 25-27.10): `research/fastblk/` (F1 steps, the fair
+  harness, D1 in lzbench, the safe decoder's fuzz, prior art against misa77 0.6.0), `research/v3proto/`,
+  `docs/ARCH_V3.md`. The P1/P2 thresholds of ARCH_V3 §4 were not met (§4a); the fast profile is the measured branch.
+
 ## v2.3.1 — 2026-10-27
 
 CLI streams stdin/stdout (`--in -`, `--out -`); empty or failed pipe input is an error, never an empty archive.
