@@ -4,7 +4,10 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
-## Unreleased
+## v2.3.1 — 2026-10-27
+
+CLI streams stdin/stdout (`--in -`, `--out -`); empty or failed pipe input is an error, never an empty archive.
+Format ACEPX2 unchanged; archive bytes unchanged (the library and the encoders are those of 2.3.0).
 
 - **CLI as a pipe**: `c --in -` / `d --in -` (or `/dev/stdin` from a pipe) read the whole of stdin into an in-memory
   file and take the usual path; `c --out -` writes the archive to stdout. Archive bytes unchanged (a piped archive ==
