@@ -4,11 +4,10 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
-## v2.3.0 — DRAFT (not released; numbers marked [H100] are filled by the next H100 run)
+## v2.3.0 — 2026-10-26
 
 Format ACEPX2 unchanged; archive bytes unchanged for a given libzstd (every change below is a decoder change;
 encoder output byte-identical, checked by the conformance fixtures and the speed gate's pinned archive sizes).
-Version macros are bumped at tag time, not in this draft.
 
 - **GPU library with a C ABI** (`src/aceapex_gpu.h`, `libaceapex_gpu.so.1`, `docs/GPU_API.md`): host plan +
   async decode without allocation or synchronisation, range decode by coordinate, fail-closed status bits,
@@ -19,10 +18,10 @@ Version macros are bumped at tag time, not in this draft.
 - **GPU fail-closed**: every kernel loop bounded (step limit -> `STATUS_LIMIT`), varints <= 5 bytes, 64-bit sizes in
   the descriptors; claims `head_gpu_flip_emu`, `head_gpu_zstd_validate`, `head_gpu_abi`.
 - **GPU decode faster** (Blackwell, on-device, same archives): T2T open 27.14 -> 19.58 ms (library), chr1 open
-  2.83 -> 1.93 ms. Steps: rANS refill from a register window (AX_OPEN_SEQ, seq -23 %), exception positions in the
+  2.83 -> 1.93 ms; H100 library chr1 open 2.120 ms (119.8 GB/s), T2T 19.029 ms (165.9 GB/s), GRCh38 19.587 ms (167.1 GB/s), 9 HPRC assemblies 142.879 ms, all bit-perfect (`results/runpod-2026-10-02-h100-80gb-hbm3-summary-834d5d1.txt`). Steps: rANS refill from a register window (AX_OPEN_SEQ, seq -23 %), exception positions in the
   case-run kernel and the bytes in the bases store (AX_OPEN_EXC), the block's run ends in shared memory
   (AX_OPEN_SHB, T2T unpack -17 %), 16-byte stores (AX_VEC). AX_GPU_TILE (literals of a block built in shared
-  memory, no literal stream): in the code, off by default until measured [H100].
+  memory, no literal stream): in the code, off by default: measured slower (H100 run summary, "tile" pair: chr1 1.143 -> 2.642 ms, T2T 13.223 -> 31.533 ms; Blackwell chr1 library 1.993 -> 3.601 ms).
 - **CPU decode** (ace-core, EPYC 4344P 8 cores / 16 threads, median of 5, bit-perfect): T2T open 8 threads
   1.039 -> 0.229 s, all threads 0.955 -> 0.183 s (before = 374e4f0, 2.2.1 + AVX2 rANS); chr1 default 8 threads 0.094 -> 0.026 s; silesia default
   8 threads 0.074 -> 0.038 s. Steps: AVX2 rANS (AX_RANS_SIMD; open profile 1 thread x1.8-x2.4), compressed
@@ -39,7 +38,7 @@ Version macros are bumped at tag time, not in this draft.
 - **GPU outputs larger than the card**: block-range plans `aceapex_gpu_plan_create_blocks(h, n, b0, b1, flags)` +
   `aceapex_gpu_plan_input_window` (ABI additions): streams restricted to the blocks' chunks, temp and output sized
   for the batch; `scripts/gpu_stream.cu` decodes batches sized from the free memory, two in flight (decode / D2H),
-  XXH3 on the host. CPU judge: 121 batches through the plan emulator == original [H100: speed].
+  XXH3 on the host. CPU judge: 121 batches through the plan emulator == original; H100: GRCh38 in batches with D2H and host XXH3 1.78 GB/s (`results/runpod-2026-10-02-h100-80gb-hbm3-gpu-946591a.log`).
 - open: token chunk 16 KiB by default; region decode CPU p50 -21 % (T2T) / -37 % (chr1), p99 -35 % / -26 %; +452 B on T2T
   (+8 186 B on chr1); full decode unchanged within 2.3 %; old archives decode unchanged (`results/open-tok16-2026-10-02.log`).
 - Region decode: the literal chunk table is no longer walked one entry at a time per call (check summed in runs, the
