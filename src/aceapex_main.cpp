@@ -1847,6 +1847,44 @@ static int ax_cli_lm_decompress(const char* in, const char* out, int threads) {
     FILE* f = strcmp(out, "-") ? fopen(out, "wb") : stdout; if (!f || fwrite(o.data(), 1, orig, f) != orig) { fprintf(stderr, "Cannot write: %s\n", out); return 1; } if (f != stdout) fclose(f);
     fprintf(stderr, "  AX_LINEMODEL: %llu bytes in %.2f s, hash %s\n", (unsigned long long)orig, now_sec() - t0, h ? "OK" : "MISMATCH"); return h ? 0 : 1; }
 #endif
+// `--in -` or `--in /dev/stdin` from a pipe: the whole of stdin goes to an anonymous in-memory file (memfd; a
+// tmpfile elsewhere) and its /proc/self/fd path replaces the input, so compress and decompress take their usual
+// path (mmap, pread, seek). An empty pipe or a read error is an error (rc 1), never an empty archive. A regular file
+// redirected to stdin is read in place.
+#ifndef _WIN32
+static char g_stdin_path[64];
+static int ax_cli_stdin(const char*& in) {
+    if (strcmp(in, "-") && strcmp(in, "/dev/stdin")) return 0;
+    struct stat st;
+    if (fstat(0, &st) == 0 && S_ISREG(st.st_mode)) { in = "/dev/stdin"; return 0; }
+#ifdef __linux__
+    int fd = memfd_create("aceapex-stdin", 0);
+#else
+    FILE* tf = tmpfile(); int fd = tf ? dup(fileno(tf)) : -1; if (tf) fclose(tf);
+#endif
+    if (fd < 0) { fprintf(stderr, "Cannot buffer stdin: %s\n", strerror(errno)); return 1; }
+    std::vector<uint8_t> b(1 << 20); uint64_t total = 0;
+    for (;;) {
+        const ssize_t r = read(0, b.data(), b.size());
+        if (r < 0) { if (errno == EINTR) continue; fprintf(stderr, "Cannot read stdin: %s\n", strerror(errno)); close(fd); return 1; }
+        if (r == 0) break;
+        for (ssize_t o = 0; o < r; ) { const ssize_t w = write(fd, b.data() + o, (size_t)(r - o));
+            if (w <= 0) { fprintf(stderr, "Cannot buffer stdin: %s\n", strerror(errno)); close(fd); return 1; } o += w; }
+        total += (uint64_t)r;
+    }
+    if (total == 0) { fprintf(stderr, "Empty input on stdin: nothing to read (no archive written)\n"); close(fd); return 1; }
+    snprintf(g_stdin_path, sizeof g_stdin_path, "/proc/self/fd/%d", fd);
+#ifndef __linux__
+    snprintf(g_stdin_path, sizeof g_stdin_path, "/dev/fd/%d", fd);
+#endif
+    in = g_stdin_path; return 0;
+}
+#endif
+// `--out -`: the archive goes to stdout
+static FILE* ax_cli_open_out(const char* out_path) { return strcmp(out_path, "-") ? fopen(out_path, "wb") : stdout; }
+static int ax_cli_close_out(FILE* f, const char* out_path) {
+    const bool bad = ferror(f) != 0; const int c = f == stdout ? fflush(f) : fclose(f);
+    if (bad || c) { fprintf(stderr, "Cannot write: %s\n", out_path); return 1; } return 0; }
 static int do_compress(const char* in_path, const char* out_path, int threads, int level=2) {
 #ifdef ACEAPEX_ENV_TUNING
     if (ax_getenv("AX_LINEMODEL") && atoi(ax_getenv("AX_LINEMODEL"))) return ax_cli_lm_compress(in_path, out_path, threads, level);
@@ -1867,8 +1905,8 @@ static int do_compress(const char* in_path, const char* out_path, int threads, i
     size_t src_size=(size_t)fin_st.st_size;
     if (src_size == 0) {                               // empty input -> empty archive (one header)
         close(fin_fd); AetHeader eh; ax_empty_header(eh);
-        FILE* fo=fopen(out_path,"wb"); if(!fo){ fprintf(stderr,"Cannot write: %s\n",out_path); return 1; }
-        fwrite(&eh,sizeof(eh),1,fo); fclose(fo);
+        FILE* fo=ax_cli_open_out(out_path); if(!fo){ fprintf(stderr,"Cannot write: %s\n",out_path); return 1; }
+        fwrite(&eh,sizeof(eh),1,fo); if (ax_cli_close_out(fo,out_path)) return 1;
         fprintf(stderr,"[*] Compress: %s (0 bytes) -> empty archive, %zu bytes\n",in_path,sizeof(eh)); return 0; }
     uint8_t* src=(uint8_t*)mmap(nullptr,src_size,PROT_READ,MAP_SHARED|MAP_POPULATE,fin_fd,0);
     close(fin_fd);
@@ -1917,12 +1955,13 @@ static int do_compress(const char* in_path, const char* out_path, int threads, i
     hdr.zlit_sz=zlit_sz; hdr.zoff_sz=zoff_sz;
     hdr.zlen_sz=zlen_sz; hdr.zcmd_sz=zcmd_sz;
  
-    FILE* fout=fopen(out_path,"wb");
+    FILE* fout=ax_cli_open_out(out_path);
+    if (!fout) { fprintf(stderr,"Cannot write: %s\n",out_path); return 1; }
     fwrite(&hdr,sizeof(hdr),1,fout);
     fwrite(boffs.data(),sizeof(BlockOffsets),num_blocks,fout);
     fwrite(zlit,1,zlit_sz,fout); fwrite(zoff,1,zoff_sz,fout);
     fwrite(zlen,1,zlen_sz,fout); fwrite(zcmd,1,zcmd_sz,fout);
-    fclose(fout);
+    if (ax_cli_close_out(fout,out_path)) return 1;
     fprintf(stderr,"  Original:   %14zu bytes\n",src_size);
     fprintf(stderr,"  Compressed: %14zu bytes\n",total_z);
     fprintf(stderr,"  Ratio:  %.5fx\n",(double)src_size/total_z);
@@ -2296,8 +2335,8 @@ int main(int argc, char** argv) {
         printf("aceapex %s (format ACEPX2, libzstd %s)\n", ACEAPEX_BUILD_ID, ZSTD_versionString()); return 0; }
     if (argc < 2) {
         fprintf(stderr,"ACEAPEX v3 FSE — Global FSE + Parallel decode\n\n"
-            "Usage:\n  %s c --in <f> --out <f.aet> [--threads N]\n"
-            "  %s d --in <f.aet> --out <f>      (--out - or -c: streaming decode to stdout)\n  %s t --in <f> [--threads N]\n"
+            "Usage:\n  %s c --in <f> --out <f.aet> [--threads N]   (--in -: stdin, --out -: stdout)\n"
+            "  %s d --in <f.aet> --out <f>      (--in -: stdin; --out - or -c: streaming decode to stdout)\n  %s t --in <f> [--threads N]\n"
             "  %s r --in <f.aet> --out <f> --region OFFSET LENGTH   (bytes of the original)\n"
             "  %s faidx <f.aet> [-n W] [-r regions.txt] [chr:start-end ...]   (as samtools faidx; index <f.aet>.fai)\n",
             argv[0],argv[0],argv[0],argv[0],argv[0]);
@@ -2315,6 +2354,9 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i],"--region")&&i+2<argc) { reg_off=strtoull(argv[++i],nullptr,10); reg_len=strtoull(argv[++i],nullptr,10); }
     }
     if (!in) { fprintf(stderr,"--in required\n"); return 1; }
+#ifndef _WIN32
+    if ((!strcmp(cmd,"c") || !strcmp(cmd,"d")) && ax_cli_stdin(in)) return 1;
+#endif
     if (!strcmp(cmd,"c")) { if (!out) { fprintf(stderr,"--out required\n"); return 1; } return do_compress(in,out,thr,level); }
     if (!strcmp(cmd,"d")) { if (!out) { fprintf(stderr,"--out required (or - for stdout)\n"); return 1; } return strcmp(out,"-") ? do_decompress(in,out,thr) : do_decompress_stream(in,thr); }
     if (!strcmp(cmd,"t")) return do_test(in,thr,level);
