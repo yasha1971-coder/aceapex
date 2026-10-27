@@ -83,6 +83,76 @@ AXW_HD void axl_bases16(uint32_t g, const uint8_t* seq, const uint32_t* ends, ui
         for (uint32_t k = 0; k < 16; k++) if (i0 + k < raw) dst[i0 + k] = (uint8_t)(w[k >> 2] >> (8 * (k & 3)));
     }
 }
+/* AX_OPEN_EXC (default since 01.10; same bytes, judged by open_warp_emu and gpu_plan_emu): the exception positions are
+ * written by the case-run kernel (axl_exc_pos, k_open_cg) and the bases kernel (k_open_bases_x) puts the exception
+ * bytes into its 16-byte store (axl_bases16_v), so no byte is written twice and the scattered exception pass is gone.
+ * A warp of k_open_bases_x covers 512 positions: lanes find the runs and exceptions at its first and last position and
+ * every lane searches only between them (axl_run_in, axl_exc_in); the 4 packed bytes of 16 positions are one 32-bit
+ * load. (The bracketed search alone, without the exceptions - AX_OPEN_BASES - was slower on Blackwell and is gone.) */
+/* first run in [lo, hi] whose end is > pos (the answer is known to lie there) */
+AXW_HD uint32_t axl_run_in(const uint32_t* ends, uint32_t lo, uint32_t hi, uint32_t pos) {
+    while (lo < hi) { uint32_t mid = (lo + hi) >> 1; if (ends[mid] > pos) hi = mid; else lo = mid + 1; }
+    return lo;
+}
+/* first exception in [lo, hi] at a position >= pos */
+AXW_HD uint32_t axl_exc_in(const uint32_t* epos, uint32_t lo, uint32_t hi, uint32_t pos) {
+    while (lo < hi) { uint32_t mid = (lo + hi) >> 1; if (epos[mid] >= pos) hi = mid; else lo = mid + 1; }
+    return lo;
+}
+/* positions 16g .. 16g+15 as axl_bases16 from run j = axl_run_of(i0), packed bytes read as one word; with epos: the
+   exceptions e .. ehi-1 (positions ascending, e = first >= i0) inside the 16 positions take val[e] */
+/* the 16 bytes of positions i0 .. i0+15 (i0 = 16 g < raw) in w[0..3]: the steps of axl_bases16_v without the store; the
+   GPU tile kernel (AX_GPU_TILE) puts them into shared memory */
+AXW_HD void axl_bases16_w(uint32_t i0, const uint8_t* seq, const uint32_t* ends, uint32_t R, uint32_t raw, uint32_t j,
+                          const uint32_t* epos, uint32_t ehi, const uint8_t* val, uint32_t e, uint32_t w[4]) {
+    uint32_t sw = 0; w[0] = w[1] = w[2] = w[3] = 0;
+    if (i0 + 16 <= raw) {
+#ifdef __CUDA_ARCH__
+        sw = *(const uint32_t*)(seq + (i0 >> 2));
+#else
+        memcpy(&sw, seq + (i0 >> 2), 4);
+#endif
+    } else for (uint32_t q = 0; q < 4 && i0 + 4 * q < raw; q++) sw |= (uint32_t)seq[(i0 >> 2) + q] << (8 * q);
+#ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
+    for (uint32_t k = 0; k < 16; k++) {
+        const uint32_t i = i0 + k;
+        if (i < raw) {
+            while (j < R && ends[j] <= i) j++;
+            const uint32_t v = (sw >> (8 * (k >> 2))) & 0xFFu;
+            uint32_t c = (0x54474341u >> (8 * ((v >> (6 - 2 * (k & 3))) & 3))) & 0xFFu;
+            if (j & 1u) c |= 0x20;
+            w[k >> 2] |= c << (8 * (k & 3));
+        }
+    }
+    if (epos) for (; e < ehi; e++) {
+        const uint32_t p = epos[e];
+        if (p >= i0 + 16 || p >= raw) break;
+        if (p >= i0) { const uint32_t k = p - i0; w[k >> 2] = (w[k >> 2] & ~(0xFFu << (8 * (k & 3)))) | ((uint32_t)val[e] << (8 * (k & 3))); }
+    }
+}
+AXW_HD void axl_bases16_v(uint32_t g, const uint8_t* seq, const uint32_t* ends, uint32_t R, uint32_t raw, uint8_t* dst, uint32_t j,
+                          const uint32_t* epos, uint32_t ehi, const uint8_t* val, uint32_t e) {
+    const uint32_t i0 = 16 * g;
+    if (i0 >= raw) return;
+    uint32_t w[4]; axl_bases16_w(i0, seq, ends, R, raw, j, epos, ehi, val, e, w);
+    if (i0 + 16 <= raw) {
+#ifdef __CUDA_ARCH__
+        *(uint4*)(dst + i0) = make_uint4(w[0], w[1], w[2], w[3]);
+#else
+        memcpy(dst + i0, w, 16);
+#endif
+    } else {
+        for (uint32_t k = 0; k < 16; k++) if (i0 + k < raw) dst[i0 + k] = (uint8_t)(w[k >> 2] >> (8 * (k & 3)));
+    }
+}
+/* gap, AX_OPEN_EXC: exception j's position into epos (the checks of axl_exc) */
+AXW_HD void axl_exc_pos(bool term, uint32_t j, uint32_t v, uint64_t end, uint32_t nexc, uint32_t raw, uint32_t* epos, bool& bad) {
+    if (!term) return;
+    if (j >= nexc || (v == 0 && j > 0) || end >= raw) { bad = true; return; }
+    epos[j] = (uint32_t)end;
+}
 /* gap: exception j at position end (inclusive running sum) */
 AXW_HD void axl_exc(bool term, uint32_t j, uint32_t v, uint64_t end, uint32_t nexc, uint32_t raw,
                     const uint8_t* val, uint8_t* dst, bool& bad) {
@@ -102,6 +172,9 @@ static inline int axo_parse(const uint8_t* s, size_t sz, uint32_t raw, AxoParts*
     if (o != sz) return -1;
     if (P->nexc == 0 ? (P->ngap || P->h[2] || P->h[3]) : (P->ngap < P->nexc || !P->h[2] || !P->h[3])) return -1;
     if (P->ncse == 0 || P->nexc > raw) return -1;
+    /* hard bounds (verify/repro/gpu_hang): a run or a gap is one LEB128 of <= 5 bytes and there are <= raw + 1 runs;
+       without them a flipped high byte of ncse made a 3 G-symbol rANS piece: 15 GB of temp, a 93 M-trip warp loop */
+    if ((uint64_t)P->ncse > 5 * (uint64_t)raw + 5 || (uint64_t)P->ngap > 5 * (uint64_t)P->nexc) return -1;
     P->n[0] = (raw + 3) / 4; P->n[1] = P->ncse; P->n[2] = P->ngap; P->n[3] = P->nexc;
     for (int k = 0; k < 4; k++) {
         if (P->n[k] == 0) { if (P->h[k]) return -1; P->mode[k] = 0; continue; }

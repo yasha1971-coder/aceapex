@@ -77,6 +77,8 @@ Two separate mechanisms, not one. Confining the search is what removes cross-blo
 
 ACEAPEX (CPU) and `aceapex_cuda` (GPU) are included in the [official lzbench 2.3 release](https://github.com/inikep/lzbench/releases/tag/v2.3) and carried as `aceapex 1.0.1` in [lzbench 2.4](https://github.com/inikep/lzbench/releases/tag/v2.4) (format 1 line; this repository is format 2, see CHANGELOG.md) — third-party validation by construction. GPU decoders for LZ77-family formats have been in lzbench since nvcomp's LZ4 and GDeflate; what `aceapex_cuda` adds is a GPU decode path for a format with absolute offsets and position-invariant random access.
 
+ACEAPEX is also part of [TurboBench](https://github.com/powturbo/TurboBench) since v2.2.1 ([PR #57](https://github.com/powturbo/TurboBench/pull/57)).
+
 ---
 
 ## Benchmarks
@@ -228,6 +230,10 @@ nvcc -O3 -std=c++17 -o aceapex_cuda lz/aceapex/cuda/aceapex_cuda_wrapper.cu -lpt
 ./aceapex t --in myfile --threads 8
 ```
 
+The CLI also takes tuning knobs from the environment (`AX_PROFILE=open`, `ACEAPEX_BS`, `LIT_CHUNK`, ... - all 16 in
+[docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)). They are read only in builds with `ACEAPEX_ENV_TUNING` (the CLI and the
+repository's tools); the library inside lzbench, TurboBench or your program ignores the environment (since 2.2.2).
+
 ---
 
 ## Reproducing the results
@@ -273,6 +279,7 @@ never silence. Corpora are read from `$GOLDEN` (default `~/golden`).
 | 4 | [What Governs Decode Throughput in Absolute-Offset GPU LZ77?](https://arxiv.org/abs/2607.18541) | Work granularity, not occupancy, governs throughput; an encode-time min-match-length lever moves ratio and throughput together. |
 | 5 | [What Actually Serializes GPU LZ77 Decode](https://arxiv.org/abs/2608.10188) | Parse holds 64–72% of decode, not copy; self-overlap is periodic, giving 2.75–8.42× on the match layer; the last sequential parse element removed for 0.540% of ratio. Corrects Paper 4. |
 | 6 | [The Price of Random Access](https://arxiv.org/abs/2609.16731) | Nine axes across four formats: 16 KiB independence costs 1.632% of the archive against 6.57% for seekable zstd. Three structural results, seventeen rejected directions. |
+| 7 | [panvram: GPU-resident Random Access to a Human Pangenome Cohort](https://arxiv.org/abs/2610.25149) | 558 HPRC haplotype assemblies resident on one GPU: 16.642 GB of persistent pools by default, 11.634 GB in the compact form; a window-cost model for fixed independent granules and the cohort-scale locality effect. Code in a separate repository: [panvram](https://github.com/yasha1971-coder/panvram). |
 
 Archived code, one deposit per paper:
 [Papers 1–3](https://doi.org/10.5281/zenodo.20729380) ·
@@ -284,7 +291,9 @@ Measurement tool and its 435 records: [hw-apex-bench, 10.5281/zenodo.22713364](h
 
 ## Citation
 
-Software release v2.2.0 (2026-09-30): [10.5281/zenodo.23061934](https://doi.org/10.5281/zenodo.23061934).
+Software release v2.2.2 (2026-10-01): [10.5281/zenodo.23090998](https://doi.org/10.5281/zenodo.23090998);
+v2.2.1: [10.5281/zenodo.23070077](https://doi.org/10.5281/zenodo.23070077);
+v2.2.0: [10.5281/zenodo.23061934](https://doi.org/10.5281/zenodo.23061934).
 All versions: concept DOI [10.5281/zenodo.20440964](https://doi.org/10.5281/zenodo.20440964).
 Machine-readable metadata: [CITATION.cff](CITATION.cff) (GitHub "Cite this repository"). When a result
 comes from a paper, cite the paper (table above).

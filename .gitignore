@@ -15,6 +15,7 @@ method_a_encode
 off_delta_analyze
 tile_*_smoke*
 Q4
+/libaceapex_gpu.so*
 # временные/тестовые
 *.aet
 streams.bin

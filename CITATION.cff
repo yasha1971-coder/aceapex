@@ -24,13 +24,19 @@ keywords:
   - compressed-resident
   - random access
   - genomics
-version: 2.2.0
-date-released: '2026-09-30'
-doi: 10.5281/zenodo.23061934
+version: 2.3.0
+date-released: '2026-10-26'
+doi: 10.5281/zenodo.23090998
 identifiers:
   - type: doi
     value: 10.5281/zenodo.20440964
     description: Concept DOI (all versions)
+  - type: doi
+    value: 10.5281/zenodo.23090998
+    description: Software release v2.2.2
+  - type: doi
+    value: 10.5281/zenodo.23070077
+    description: Software release v2.2.1
   - type: doi
     value: 10.5281/zenodo.23061934
     description: Software release v2.2.0
@@ -106,3 +112,27 @@ references:
       - type: doi
         value: 10.5281/zenodo.21874972
         description: Archived artifacts
+  - type: article
+    title: >-
+      The Price of Random Access: Measuring Block Granularity
+      Across Four Compressed Formats
+    authors:
+      - given-names: Yakiv
+        family-names: Shavidze
+    year: 2026
+    identifiers:
+      - type: other
+        value: 'arXiv:2609.16731'
+        description: arXiv preprint
+  - type: article
+    title: >-
+      panvram: GPU-resident Random Access to a Human
+      Pangenome Cohort
+    authors:
+      - given-names: Yakiv
+        family-names: Shavidze
+    year: 2026
+    identifiers:
+      - type: other
+        value: 'arXiv:2610.25149'
+        description: arXiv preprint

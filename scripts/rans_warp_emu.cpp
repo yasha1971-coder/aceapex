@@ -16,7 +16,8 @@
 #include <random>
 #include <algorithm>
 
-static int axw_decode_emu(const uint8_t* src, uint32_t sz, uint8_t* dst, uint32_t n) {
+static uint64_t g_win_out = 0;                                       // V 1: a word outside the 64-word window (must stay 0)
+static int axw_decode_emu(const uint8_t* src, uint32_t sz, uint8_t* dst, uint32_t n, int V = 0) {
     static AxwShared sh;
     bool b[32] = {false};
     auto any = [&] { bool a = false; for (int l = 0; l < 32; l++) a |= b[l]; return a; };
@@ -42,12 +43,18 @@ static int axw_decode_emu(const uint8_t* src, uint32_t sz, uint8_t* dst, uint32_
     uint32_t x[32], W = 0; const uint8_t* words = nullptr;
     for (uint32_t l = 0; l < 32; l++) b[l] |= axw_init(l, src, sz, sh.end, x[l], W, words);
     if (any()) return -1;
-    uint32_t base = 0;
+    uint32_t base = 0, wb = 0, w0[32], w1[32];                     // V 1: the register window of k_rans<1> (lane l: words wb+l, wb+32+l)
+    for (uint32_t l = 0; l < 32; l++) { w0[l] = axw_wload(words, W, l); w1[l] = axw_wload(words, W, 32 + l); }
     for (uint32_t g = 0; g < (n + 31) / 32; g++) {
         bool need[32]; uint32_t m = 0;
         for (uint32_t l = 0; l < 32; l++) { need[l] = axw_step(l, sh, g, n, x[l], dst); if (need[l]) m |= 1u << l; }
-        for (uint32_t l = 0; l < 32; l++) axw_refill(l, need[l], m, base, W, words, x[l], b[l]);
+        if (V == 0) for (uint32_t l = 0; l < 32; l++) axw_refill(l, need[l], m, base, W, words, x[l], b[l]);
+        else for (uint32_t l = 0; l < 32; l++) {                    // shuffles: lane l reads lane (o & 31)'s w0 / w1
+            const uint32_t idx = axw_widx(l, m, base), o = idx - wb;
+            if (need[l] && o >= 64) g_win_out++;
+            axw_refill_v(need[l], idx, W, o < 32 ? w0[o & 31] : w1[o & 31], x[l], b[l]); }
         base += axw_popc(m);
+        if (V && base >= wb + 32) { wb += 32; for (uint32_t l = 0; l < 32; l++) { w0[l] = w1[l]; w1[l] = axw_wload(words, W, wb + 32 + l); } }
     }
     for (uint32_t l = 0; l < 32; l++) b[l] |= base != W || x[l] != AXR_L;
     return any() ? -1 : 0;
@@ -57,13 +64,20 @@ static uint64_t rd64(const uint8_t* p) { uint64_t v; memcpy(&v, p, 8); return v;
 static uint32_t rd32(const uint8_t* p) { uint32_t v; memcpy(&v, p, 4); return v; }
 
 // both decoders on one chunk: 0 = agree, 1 = disagree
-static uint64_t g_ok = 0, g_rej = 0, g_bytes = 0;
+static uint64_t g_ok = 0, g_rej = 0, g_bytes = 0, g_scalar = 0, g_512 = 0;
 static int cmp_chunk(const uint8_t* c, size_t csz, size_t n) {
     std::vector<uint8_t> a(n + 1, 0xAA), e(n + 1, 0x55);
     int ra = axr_decode(c, csz, a.data(), n);
     int re = axw_decode_emu(c, (uint32_t)csz, e.data(), (uint32_t)n);
-    if (ra != re) return 1;
-    if (ra == 0) { if (memcmp(a.data(), e.data(), n)) return 1; g_ok++; g_bytes += n; } else g_rej++;
+    std::vector<uint8_t> e1(n + 1, 0x33); int r1 = axw_decode_emu(c, (uint32_t)csz, e1.data(), (uint32_t)n, 1);   // windowed refill
+    std::vector<uint8_t> s0(n + 1, 0x44); int rs = axr_decode_scalar(c, csz, s0.data(), n); g_scalar++;   // axr_decode is the AVX2 one where the CPU has it
+    std::vector<uint8_t> s5(n + 1, 0x55); int r5 = rs;
+#ifdef AXR_SIMD
+    if (__builtin_cpu_supports("avx512f") && __builtin_cpu_supports("avx512bw") && __builtin_cpu_supports("avx512vl") && __builtin_cpu_supports("avx512vbmi2")) {
+        r5 = axr_decode_avx512(c, csz, s5.data(), n); g_512++; if (r5 == 0 && rs == 0 && memcmp(s5.data(), s0.data(), n)) return 1; }
+#endif
+    if (ra != re || ra != r1 || ra != rs || ra != r5) return 1;
+    if (ra == 0) { if (memcmp(a.data(), e.data(), n) || memcmp(a.data(), e1.data(), n) || memcmp(a.data(), s0.data(), n)) return 1; g_ok++; g_bytes += n; } else g_rej++;
     return 0;
 }
 
@@ -109,6 +123,7 @@ int main(int argc, char** argv) {
         if (!csz) { bad++; continue; }
         std::vector<uint8_t> e(n);
         if (axw_decode_emu(enc.data(), (uint32_t)csz, e.data(), (uint32_t)n) || memcmp(e.data(), in.data(), n)) bad++;
+        if (axw_decode_emu(enc.data(), (uint32_t)csz, e.data(), (uint32_t)n, 1) || memcmp(e.data(), in.data(), n)) bad++;
         rt++;
         for (int kind = 0; kind < 3; kind++) {                      // crafted: verdict must also be the expected one
             std::vector<uint8_t> m = craft(enc.data(), csz, kind);
@@ -152,8 +167,14 @@ int main(int argc, char** argv) {
             }
         }
     }
-    printf("head_rans_warp_emu\t%s\tGPU rANS warp steps (ax_rans_warp.h) == axr_decode: %llu round-trips, %llu archive chunks, %llu crafted tables, %llu mutations (%llu accepted, %llu rejected by both), %llu bytes, %llu mismatches\n",
-           (bad == 0 && rt > 0 && fx > 0 && crafted > 0) ? "pass" : "fail",
+    printf("head_rans_warp_emu\t%s\tGPU rANS warp steps (ax_rans_warp.h) == axr_decode, refill from global and from the register window (AX_OPEN_SEQ, %llu words outside it), CPU AVX2 decoder == scalar (%s, %llu chunks), AVX-512 decoder == scalar (%llu chunks): %llu round-trips, %llu archive chunks, %llu crafted tables, %llu mutations (%llu accepted, %llu rejected by both), %llu bytes, %llu mismatches\n",
+           (bad == 0 && rt > 0 && fx > 0 && crafted > 0 && g_win_out == 0) ? "pass" : "fail", (unsigned long long)g_win_out,
+#ifdef AXR_SIMD
+           __builtin_cpu_supports("avx2") ? "AVX2 on" : "no AVX2 on this CPU",
+#else
+           "no AVX2 path in this build",
+#endif
+           (unsigned long long)g_scalar, (unsigned long long)g_512,
            (unsigned long long)rt, (unsigned long long)fx, (unsigned long long)crafted, (unsigned long long)mut,
            (unsigned long long)g_ok, (unsigned long long)g_rej, (unsigned long long)g_bytes, (unsigned long long)bad);
     return 0;

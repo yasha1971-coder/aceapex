@@ -25,201 +25,7 @@
 #define CK(x) do{cudaError_t ck_e_=(x); if(ck_e_!=cudaSuccess){fprintf(stderr,"CUDA %s @%d: %s\n",#x,__LINE__,cudaGetErrorString(ck_e_)); exit(2);} }while(0)
 #define NV(x) do{nvcompStatus_t nv_s_=(x); if(nv_s_!=nvcompSuccess){fprintf(stderr,"nvcomp %s @%d: status %d\n",#x,__LINE__,(int)nv_s_); exit(3);} }while(0)
 
-#pragma pack(push,1)
-struct BlockOffsets { uint64_t lit_off, off_off, len_off, cmd_off, lit_sz, off_sz, len_sz, cmd_sz; };
-#pragma pack(pop)
-
-// ---------------------------------------------------------------- v7-RA match kernel
-__device__ static inline uint32_t rd_varint(const uint8_t* buf, uint32_t& p, uint32_t limit){
-    uint32_t val=0, shift=0;
-    while(p<limit){ uint8_t b=buf[p++]; val|=(uint32_t)(b&0x7F)<<shift; if(!(b&0x80)) return val; shift+=7; }
-    return val;
-}
-template<int G>
-__global__ void k_decode_g(const uint8_t* __restrict__ LIT, const uint8_t* __restrict__ OFF,
-                           const uint8_t* __restrict__ LEN, const uint8_t* __restrict__ CMD,
-                           const BlockOffsets* __restrict__ boffs, uint64_t orig_size, uint32_t block_size,
-                           uint8_t* __restrict__ out, uint32_t* __restrict__ blk_ctr, uint32_t blk_end)
-{
-    uint32_t lane=threadIdx.x&31, lg=lane&(G-1), leader=lane&~(uint32_t)(G-1);
-    uint32_t gmask=((G==32)?0xffffffffu:((1u<<G)-1u)<<leader);
-    for(;;){
-        uint32_t b=0; if(lg==0) b=atomicAdd(blk_ctr,1u); b=__shfl_sync(gmask,b,leader); if(b>=blk_end) return;
-        BlockOffsets bo=boffs[b];
-        const uint8_t *lit=LIT+bo.lit_off, *off=OFF+bo.off_off, *len=LEN+bo.len_off, *cmd=CMD+bo.cmd_off;
-        uint64_t base=(uint64_t)b*block_size, rem=orig_size-base;
-        uint32_t dst_size=(uint32_t)(rem<(uint64_t)block_size?rem:(uint64_t)block_size); uint8_t* dst=out+base;
-        uint32_t lp=0,op=0,np=0,cp=0,out_pos=0, rep[4]={1,2,4,8};
-        uint32_t cmd_sz=(uint32_t)bo.cmd_sz, lit_sz=(uint32_t)bo.lit_sz, off_sz=(uint32_t)bo.off_sz, len_sz=(uint32_t)bo.len_sz;
-        while(out_pos<dst_size){
-            uint32_t type=2,l=0,aux=0;
-            if(lg==0){ while(cp<cmd_sz){ uint8_t c=cmd[cp++];
-                if(c==0xFF){ rep[0]=1;rep[1]=2;rep[2]=4;rep[3]=8; continue; }
-                if(c<0x80){ l=(uint32_t)c+1; if(lp+l>lit_sz||out_pos+l>dst_size){type=2;break;} type=0; aux=lp; lp+=l; }
-                else if((c&0xC0)==0x80){ uint32_t ri=(c>>4)&3, lv=c&0x0F; if(lv==0x0F) lv+=rd_varint(len,np,len_sz); l=lv+6;
-                    uint32_t dist=rep[ri]; if(ri>0){ for(int i=(int)ri;i>0;i--) rep[i]=rep[i-1]; rep[0]=dist; }
-                    if(!dist||dist>out_pos||out_pos+l>dst_size){type=2;break;} type=1; aux=dist; }
-                else { uint32_t lv=(c==0xFE)?rd_varint(len,np,len_sz):(uint32_t)(c&0x3F); l=lv+6; uint32_t dist=rd_varint(off,op,off_sz);
-                    rep[3]=rep[2];rep[2]=rep[1];rep[1]=rep[0];rep[0]=dist;
-                    if(!dist||dist>out_pos||out_pos+l>dst_size){type=2;break;} type=1; aux=dist; }
-                break; } }
-            type=__shfl_sync(gmask,type,leader); l=__shfl_sync(gmask,l,leader); aux=__shfl_sync(gmask,aux,leader);
-            if(type==2) break;
-            if(type==0){ for(uint32_t i=lg;i<l;i+=G) dst[out_pos+i]=lit[aux+i]; }
-            else { uint32_t src=out_pos-aux;
-                if(aux>=l){ for(uint32_t i=lg;i<l;i+=G) dst[out_pos+i]=dst[src+i]; }
-                else      { for(uint32_t i=lg;i<l;i+=G) dst[out_pos+i]=dst[src+(i%aux)]; } }
-            __syncwarp(gmask); out_pos+=l;
-        }
-    }
-}
-typedef void (*kern_t)(const uint8_t*,const uint8_t*,const uint8_t*,const uint8_t*,const BlockOffsets*,uint64_t,uint32_t,uint8_t*,uint32_t*,uint32_t);
-
-// ---------------------------------------------------------------- DNA unpack kernels
-struct DnaDesc { const uint8_t *seq,*cse,*gap,*val; uint8_t* dst; uint32_t raw, nexc; };
-__global__ void k_unpack(const DnaDesc* d){
-    const DnaDesc c=d[blockIdx.x]; uint32_t i0=(blockIdx.y*blockDim.x+threadIdx.x)*4; if(i0>=c.raw) return;
-    uint8_t v=c.seq[i0>>2], m=c.cse[i0>>3]; uint32_t n=c.raw-i0; if(n>4) n=4;
-    #pragma unroll
-    for(uint32_t k=0;k<4;k++){ if(k<n){ uint8_t b="ACGT"[(v>>(6-2*k))&3]; if(m&(0x80>>((i0+k)&7))) b|=0x20; c.dst[i0+k]=b; } }
-}
-__global__ void k_exc(const DnaDesc* d){
-    const DnaDesc c=d[blockIdx.x]; if(!c.nexc) return; __shared__ uint32_t s[256]; uint32_t carry=0;
-    for(uint32_t base=0; base<c.nexc; base+=256){
-        uint32_t e=base+threadIdx.x; uint32_t g = e<c.nexc ? ((const uint32_t*)c.gap)[e] : 0; s[threadIdx.x]=g; __syncthreads();
-        for(uint32_t o=1;o<256;o<<=1){ uint32_t t = threadIdx.x>=o ? s[threadIdx.x-o] : 0; __syncthreads(); s[threadIdx.x]+=t; __syncthreads(); }
-        uint32_t pos=carry+s[threadIdx.x]; if(e<c.nexc && pos<c.raw) c.dst[pos] = c.val ? c.val[e] : 0;
-        carry+=s[255]; __syncthreads(); }
-}
-// ---------------------------------------------------------------- rANS token chunks (ADR-018)
-// One warp decodes one chunk: the steps of src/ax_rans_warp.h (judged on the CPU by
-// scripts/rans_warp_emu.cpp) with the warp collectives between them. The chunk bytes are in
-// the compressed buffer next to the zstd frames; the output goes into the stream buffer.
-// err[0] counts bad chunks, err[1] holds the lowest bad chunk index. A piece of the open
-// literal profile (spec 3.4) with mode 0 is a raw copy: the warp copies it.
-struct RansDesc { uint64_t src; uint8_t* dst; uint32_t csz, n, mode; };
-#define AXW_WARPS 4
-__device__ static inline uint32_t w_scan(uint32_t v, uint32_t lane, uint32_t& total){
-    uint32_t inc=v;
-    #pragma unroll
-    for(int o=1;o<32;o<<=1){ uint32_t t=__shfl_up_sync(0xffffffffu,inc,o); if(lane>=(uint32_t)o) inc+=t; }
-    total=__shfl_sync(0xffffffffu,inc,31); return inc-v;
-}
-// one warp decodes one piece/chunk into dst (global or shared); returns true (warp-uniform) on a bad chunk
-__device__ static bool rans_warp(const uint8_t* __restrict__ src, uint32_t csz, uint32_t n, uint32_t mode, uint8_t* dst, AxwShared& sh, uint32_t lane){
-    const uint32_t FULL=0xffffffffu, lt=(1u<<lane)-1u;
-    if(mode==0){ for(uint32_t i=lane;i<n;i+=32) dst[i]=src[i]; return false; }   // raw piece (sizes checked on the host)
-    bool b=false, bad=csz<AXW_MIN; uint32_t cb=0;
-    if(!bad){
-        axw_stage(lane,src,csz,sh); __syncwarp();
-        uint32_t K; const uint32_t r0=w_scan(axw_rank_count(lane,sh),lane,K);
-        axw_rank_write(lane,sh,r0); __syncwarp();
-        const uint32_t lim=axw_lim(csz); uint32_t jb=0;
-        for(uint32_t r=0; jb<K && 32+32*r<lim; r++){
-            const bool t=axw_term(lane,sh,r,lim); const uint32_t m=__ballot_sync(FULL,t);
-            axw_leb(lane,sh,r,t,jb+__popc(m&lt),K,b); jb+=__popc(m); }
-        b|= jb<K; __syncwarp();
-        uint32_t tot; cb=w_scan(axw_sum(lane,sh),lane,tot); b|= tot!=AXR_M;
-        bad=__any_sync(FULL,b);
-    }
-    if(!bad){
-        axw_cum(lane,sh,cb); __syncwarp(); axw_fill(lane,sh); __syncwarp();
-        uint32_t x,W; const uint8_t* words; b|=axw_init(lane,src,csz,sh.end,x,W,words); bad=__any_sync(FULL,b);
-        if(!bad){
-            uint32_t base=0; const uint32_t groups=(n+31)/32;
-            for(uint32_t g=0; g<groups; g++){
-                const bool need=axw_step(lane,sh,g,n,x,dst); const uint32_t m=__ballot_sync(FULL,need);
-                axw_refill(lane,need,m,base,W,words,x,b); base+=__popc(m); }
-            b|= base!=W || x!=AXR_L; bad=__any_sync(FULL,b);
-        }
-    }
-    return bad;
-}
-__global__ void __launch_bounds__(32*AXW_WARPS) k_rans(const uint8_t* __restrict__ C, const RansDesc* __restrict__ d, uint32_t nd, uint32_t* __restrict__ err){
-    __shared__ AxwShared sh_all[AXW_WARPS];
-    const uint32_t lane=threadIdx.x&31, k=blockIdx.x*AXW_WARPS+(threadIdx.x>>5);
-    if(k>=nd) return;                                   // whole warp: nd is uniform
-    const RansDesc c=d[k];
-    const bool bad=rans_warp(C+c.src,c.csz,c.n,c.mode,c.dst,sh_all[threadIdx.x>>5],lane);
-    if(bad && lane==0){ atomicAdd(err,1u); atomicMin(err+1,k); }
-}
-
-// ---------------------------------------------------------------- open DNA pack (ADR-019, spec 3.4)
-// After the pieces are decoded into the open scratch: the case runs are parsed into run ends
-// (k_open_cse, one block per chunk), the bases are written with their case (k_open_bases,
-// 16 positions per thread, binary search over the run ends), then the exceptions (k_open_exc,
-// one block per chunk). Steps in src/ax_open_warp.h, judged on the CPU by
-// scripts/open_warp_emu.cpp. err[0] counts bad chunks, err[1] the lowest index; a bad chunk
-// stores 0 runs.
-struct OpenDesc { const uint8_t *seq,*cse,*gap,*val; uint8_t* dst; uint32_t* ends; uint32_t* nrun; uint32_t raw, ncse, ngap, nexc; };
-// exclusive scan over the block of AXO_NT threads; total of all threads in `total`
-__device__ static inline uint64_t b_scan64(uint64_t v, uint64_t& total, uint64_t* sh){
-    const uint32_t lane=threadIdx.x&31, w=threadIdx.x>>5, NW=AXO_NT/32; uint64_t inc=v;
-    __syncwarp();                     // reconverge after the data-dependent LEB128 steps (T4: illegal instruction without it)
-    #pragma unroll
-    for(int o=1;o<32;o<<=1){ uint64_t t=__shfl_up_sync(0xffffffffu,inc,o); if(lane>=(uint32_t)o) inc+=t; }
-    if(lane==31) sh[w]=inc;
-    __syncthreads();
-    if(w==0){ uint64_t x=lane<NW?sh[lane]:0;
-        #pragma unroll
-        for(int o=1;o<32;o<<=1){ uint64_t t=__shfl_up_sync(0xffffffffu,x,o); if(lane>=(uint32_t)o) x+=t; }
-        if(lane<NW) sh[lane]=x; }
-    __syncthreads();
-    const uint64_t before=w?sh[w-1]:0; total=sh[NW-1];
-    __syncthreads();
-    return before+inc-v;
-}
-__global__ void __launch_bounds__(AXO_NT) k_open_cse(const OpenDesc* __restrict__ d, uint32_t* __restrict__ err){
-    __shared__ uint64_t sh[AXO_NT/32];
-    const uint32_t k=blockIdx.x, tid=threadIdx.x; const OpenDesc c=d[k]; const uint8_t* b=c.cse; const uint32_t n=c.ncse;
-    bool bad=false; uint64_t carry=0; uint32_t jb=0;
-    for(uint32_t base=0; base<n; base+=AXO_NT){
-        const uint32_t t=base+tid; const bool term=axl_term(t,b,n); const uint32_t v=axl_value(t,b,term,bad);
-        uint64_t total; const uint64_t ex=b_scan64(term?(AXO_KEY_J|v):0,total,sh);
-        axl_cse_end(term,jb+(uint32_t)(ex>>44),v,carry+(ex&(AXO_KEY_J-1))+v,c.raw,c.ends,bad);
-        jb+=(uint32_t)(total>>44); carry+=total&(AXO_KEY_J-1);
-    }
-    if(tid==0 && (axl_tail_bad(b,n) || carry!=c.raw)) bad=true;
-    __syncwarp();
-    const int any=__syncthreads_or(bad);
-    if(tid==0){ *c.nrun = any?0:jb; if(any){ atomicAdd(err,1u); atomicMin(err+1,k); } }
-}
-__global__ void __launch_bounds__(256) k_open_bases(const OpenDesc* __restrict__ d){
-    const OpenDesc c=d[blockIdx.x]; const uint32_t g=blockIdx.y*blockDim.x+threadIdx.x;
-    if(16*g<c.raw) axl_bases16(g,c.seq,c.ends,*c.nrun,c.raw,c.dst);
-}
-// Fused seq piece + bases (literal chunks <= 64 KiB): warp 0 decodes the chunk's seq piece (2-bit pack,
-// <= 16 KiB) into shared memory instead of the global scratch, then the block writes bases with their
-// case straight into the literal stream: the packed bases never leave the SM and k_open_bases is not
-// launched. Needs the run ends of k_open_cse (as k_open_bases). err as k_rans (piece index k).
-#define AXO_FSEQ 16384
-__global__ void __launch_bounds__(256) k_open_seqb(const uint8_t* __restrict__ C, const RansDesc* __restrict__ sd, const OpenDesc* __restrict__ d, uint32_t* __restrict__ err){
-    __shared__ AxwShared sh; __shared__ __align__(16) uint8_t sq[AXO_FSEQ]; __shared__ int bad_s;
-    const uint32_t k=blockIdx.x, tid=threadIdx.x; const OpenDesc c=d[k];
-    if(tid<32){ const RansDesc r=sd[k]; const bool bad = r.n>AXO_FSEQ || rans_warp(C+r.src,r.csz,r.n,r.mode,sq,sh,tid);
-        if(tid==0){ bad_s=bad; if(bad){ atomicAdd(err,1u); atomicMin(err+1,k); } } }
-    __syncthreads();
-    if(bad_s) return;
-    const uint32_t R=*c.nrun;
-    for(uint32_t g=tid; 16*g<c.raw; g+=256) axl_bases16(g,sq,c.ends,R,c.raw,c.dst);
-}
-__global__ void __launch_bounds__(AXO_NT) k_open_exc(const OpenDesc* __restrict__ d, uint32_t* __restrict__ err){
-    __shared__ uint64_t sh[AXO_NT/32];
-    const uint32_t k=blockIdx.x, tid=threadIdx.x; const OpenDesc c=d[k]; if(!c.nexc) return;   // uniform per block
-    const uint8_t* b=c.gap; const uint32_t n=c.ngap;
-    bool bad=false; uint64_t carry=0; uint32_t jb=0;
-    for(uint32_t base=0; base<n; base+=AXO_NT){
-        const uint32_t t=base+tid; const bool term=axl_term(t,b,n); const uint32_t v=axl_value(t,b,term,bad);
-        uint64_t total; const uint64_t ex=b_scan64(term?(AXO_KEY_J|v):0,total,sh);
-        axl_exc(term,jb+(uint32_t)(ex>>44),v,carry+(ex&(AXO_KEY_J-1))+v,c.nexc,c.raw,c.val,c.dst,bad);
-        jb+=(uint32_t)(total>>44); carry+=total&(AXO_KEY_J-1);
-    }
-    if(tid==0 && (axl_tail_bad(b,n) || jb!=c.nexc)) bad=true;
-    __syncwarp();
-    const int any=__syncthreads_or(bad);
-    if(tid==0 && any){ atomicAdd(err,1u); atomicMin(err+1,k); }
-}
-
+#include "src/aceapex_gpu_kernels.cuh"   // block table, match, unpack, rANS pieces, open pack kernels
 
 // ---------------------------------------------------------------- dense-open measurement (not in the format)
 // The literal stream coded by components/rans1_v4.c (container "AR1L": per 64 KiB chunk [n u32][cs u32]
@@ -234,10 +40,12 @@ __global__ void __launch_bounds__(32) k_r1(const uint8_t* __restrict__ C, const 
     const R1Desc c=d[blockIdx.x]; const uint8_t* p=C+c.src; uint8_t* o=out+c.dst; const uint32_t n=c.n;
     if(threadIdx.x==0){
         raw_s = n==0 || p[0]==1;
+        if(!raw_s && (p[1]==0 || p[1]>64)){ atomicAdd(err,1u); raw_s=2; }
         if(!raw_s){ const int K=p[1]; K_s=K; const uint8_t* q=p+2;
             for(int i=0;i<K;i++){ sym[i]=q[i]; rmap[q[i]]=(uint8_t)i; } q+=K;
             uint64_t acc=0; int nb=0;
-            auto get=[&](int bits)->uint32_t{ while(nb<bits){ acc|=(uint64_t)(*q++)<<nb; nb+=8; } uint32_t v=(uint32_t)(acc&((1u<<bits)-1)); acc>>=bits; nb-=bits; return v; };
+            const uint8_t* qe=p+c.cs; bool qb=false;      // get(): never past the chunk (a read there sets err)
+            auto get=[&](int bits)->uint32_t{ while(nb<bits){ if(q<qe) acc|=(uint64_t)(*q)<<nb; else qb=true; q++; nb+=8; } uint32_t v=(uint32_t)(acc&((1u<<bits)-1)); acc>>=bits; nb-=bits; return v; };
             uint64_t ru=0; for(int i=0;i<K;i++) ru|=(uint64_t)get(1)<<i;
             for(int i=0;i<K;i++){ cum[i][0]=0;
                 if(!((ru>>i)&1)){ for(int j=0;j<K;j++) cum[i][j+1]=0; continue; }
@@ -245,11 +53,12 @@ __global__ void __launch_bounds__(32) k_r1(const uint8_t* __restrict__ C, const 
                 uint32_t cc=0; for(int j=0;j<K;j++){ if((cu>>j)&1) cc+=get(12)+1; cum[i][j+1]=(uint16_t)cc; } }
             uint32_t sl[4]; for(int j=0;j<4;j++){ sl[j]=q[0]|q[1]<<8|q[2]<<16|(uint32_t)q[3]<<24; q+=4; }
             nck_s=*q++; ckp=q; q+=9*4*nck_s; for(int j=0;j<4;j++){ base[j]=q; q+=sl[j]; }
-            if(q>p+c.cs) atomicAdd(err,1u); }
+            if(qb || q>p+c.cs){ atomicAdd(err,1u); raw_s=2; } }
     }
     __syncthreads();
+    if(raw_s==2) return;
     if(raw_s){ if(n) for(uint32_t i=threadIdx.x;i<n;i+=blockDim.x) o[i]=p[1+i]; return; }
-    const int K=K_s, nck=nck_s; const uint32_t q4=n/4, CK=4096;
+    const int K=K_s, nck=nck_s; const uint32_t q4=n/4, CK=4096; const uint8_t* pe=p+c.cs;
     for(int lane=threadIdx.x; lane<4*(nck+1); lane+=blockDim.x){
         const int j=lane/(nck+1), sg=lane%(nck+1); const uint32_t len = j==3 ? n-3*q4 : q4;
         uint32_t t0=sg*CK, t1= sg<nck ? (sg+1)*CK : len; if(t0>=len) continue;
@@ -264,7 +73,7 @@ __global__ void __launch_bounds__(32) k_r1(const uint8_t* __restrict__ C, const 
             while(lo<hi){ const int mid=(lo+hi)>>1; if(r[mid+1]<=m) lo=mid+1; else hi=mid; }
             const uint32_t st=r[lo], f=r[lo+1]-st;
             x=f*(x>>12)+m-st; ol[t]=sym[lo]; ctx=(uint32_t)lo;
-            if(x<(1u<<15)){ x=(x<<16)|pk[0]|((uint32_t)pk[1]<<8); pk+=2; }
+            if(x<(1u<<15)){ if(pk+2>pe){ atomicAdd(err,1u); break; } x=(x<<16)|pk[0]|((uint32_t)pk[1]<<8); pk+=2; }
         }
     }
 }
@@ -291,18 +100,20 @@ template<int V> __global__ void __launch_bounds__(32) k_r2(const uint8_t* __rest
     if(ln==0){
         raw_s = n==0 || p[0]==1;
         if(!raw_s){ const int K=p[1]; K_s=K; const uint8_t* q=p+2;
-            if(K>KC){ atomicAdd(err,1u); raw_s=2; }
+            if(K>KC || K==0){ atomicAdd(err,1u); raw_s=2; }
             else {
             for(int i=0;i<K;i++) sym[i]=q[i];
             q+=K;
             uint64_t acc=0; int nb=0;
-            auto get=[&](int bits)->uint32_t{ while(nb<bits){ acc|=(uint64_t)(*q++)<<nb; nb+=8; } uint32_t v=(uint32_t)(acc&((1u<<bits)-1)); acc>>=bits; nb-=bits; return v; };
+            const uint8_t* qe=p+c.cs; bool qb=false;      // get(): never past the chunk (a read there sets err)
+            auto get=[&](int bits)->uint32_t{ while(nb<bits){ if(q<qe) acc|=(uint64_t)(*q)<<nb; else qb=true; q++; nb+=8; } uint32_t v=(uint32_t)(acc&((1u<<bits)-1)); acc>>=bits; nb-=bits; return v; };
             uint64_t ru=0; for(int i=0;i<K;i++) ru|=(uint64_t)get(1)<<i;
             for(int i=0;i<K;i++){ cum[i][0]=0;
                 if(!((ru>>i)&1)){ for(int j=0;j<K;j++) cum[i][j+1]=0; continue; }
                 uint64_t cu=0; for(int j=0;j<K;j++) cu|=(uint64_t)get(1)<<j;
                 uint32_t cc=0; for(int j=0;j<K;j++){ if((cu>>j)&1) cc+=get(12)+1; cum[i][j+1]=(uint16_t)cc; } }
-            if(*q++!=32) { atomicAdd(err,1u); raw_s=2; }
+            for(int i=0;i<K;i++) if(((ru>>i)&1) && cum[i][K]!=4096) qb=true;   // a used row must sum to 4096 (the slot searches rely on it)
+            if(qb || q>=qe || *q++!=32) { atomicAdd(err,1u); raw_s=2; }
             lens=q; }
         }
     }
@@ -312,11 +123,11 @@ template<int V> __global__ void __launch_bounds__(32) k_r2(const uint8_t* __rest
     const int K=K_s;
     if(V<=1){                                         // slot table: lane ln fills slots [128 ln, 128 ln + 128) of every used row
         for(int i=0;i<K;i++){ if(cum[i][K]==0) continue;
-            uint32_t m0=ln*128; int j=0; while(cum[i][j+1]<=m0) j++;
+            uint32_t m0=ln*128; int j=0; while(j<K-1 && cum[i][j+1]<=m0) j++;
             if(V==1){ uint32_t* w=(uint32_t*)(slot+i*2048+ln*64);
-                for(int k=0;k<16;k++){ uint32_t v=0; for(int b=0;b<8;b++){ uint32_t m=m0+k*8+b; while(cum[i][j+1]<=m) j++; v|=(uint32_t)j<<(4*b); } w[k]=v; } }
+                for(int k=0;k<16;k++){ uint32_t v=0; for(int b=0;b<8;b++){ uint32_t m=m0+k*8+b; while(j<K-1 && cum[i][j+1]<=m) j++; v|=(uint32_t)j<<(4*b); } w[k]=v; } }
             else { uint32_t* w=(uint32_t*)(slot+i*4096+ln*128);
-                for(int k=0;k<32;k++){ uint32_t v=0; for(int b=0;b<4;b++){ uint32_t m=m0+k*4+b; while(cum[i][j+1]<=m) j++; v|=(uint32_t)j<<(8*b); } w[k]=v; } }
+                for(int k=0;k<32;k++){ uint32_t v=0; for(int b=0;b<4;b++){ uint32_t m=m0+k*4+b; while(j<K-1 && cum[i][j+1]<=m) j++; v|=(uint32_t)j<<(8*b); } w[k]=v; } }
         }
     }
     if(V==2){                                         // lane ln < 16*8: row ln>>3, word ln&7 (and + 32 ...)
@@ -328,9 +139,11 @@ template<int V> __global__ void __launch_bounds__(32) k_r2(const uint8_t* __rest
     const uint32_t L=lens[2*ln]|(uint32_t)lens[2*ln+1]<<8; uint32_t incl=L;
     for(int k=1;k<32;k<<=1){ uint32_t y=__shfl_up_sync(0xffffffffu,incl,k); if(ln>=k) incl+=y; }
     const uint8_t* b=lens+64+(incl-L);
+    if(lens+64+__shfl_sync(0xffffffffu,incl,31)>p+c.cs){ if(ln==0) atomicAdd(err,1u); return; }   // substreams inside the chunk (uniform)
     __syncthreads();
     const uint32_t q=(n/32)&~3u, lo=ln*q, len= ln==31 ? n-31*q : q;
-    uint32_t x=b[0]|b[1]<<8|b[2]<<16|(uint32_t)b[3]<<24; const uint8_t* pk=b+4; uint32_t ctx=0, w=0;
+    if(len && L<4){ atomicAdd(err,1u); return; }        // no initial state (after the last block-wide barrier)
+    uint32_t x= L>=4 ? b[0]|b[1]<<8|b[2]<<16|(uint32_t)b[3]<<24 : 0; const uint8_t* pk=b+4; uint32_t ctx=0, w=0;
     uint32_t* ow=(uint32_t*)(o+lo);
     for(uint32_t t=0;t<len;t++){
         const uint32_t m=x&4095u;
@@ -346,7 +159,7 @@ template<int V> __global__ void __launch_bounds__(32) k_r2(const uint8_t* __rest
         x=f*(x>>12)+m-st; ctx=j;
         w|=(uint32_t)sym[j]<<(8*(t&3));
         if((t&3)==3){ ow[t>>2]=w; w=0; }
-        if(x<(1u<<15)){ x=(x<<16)|pk[0]|((uint32_t)pk[1]<<8); pk+=2; }
+        if(x<(1u<<15)){ if(pk+2>b+L){ atomicAdd(err,1u); break; } x=(x<<16)|pk[0]|((uint32_t)pk[1]<<8); pk+=2; }
     }
     for(uint32_t t=len&~3u;t<len;t++) o[lo+t]=(uint8_t)(w>>(8*(t&3)));
     if(pk!=b+L) atomicAdd(err,1u);
@@ -356,9 +169,15 @@ __global__ void k_cmp(const uint8_t* a, const uint8_t* b, size_t n, unsigned lon
     if(c) atomicAdd(bad,c);
 }
 __global__ void k_set(uint32_t* p, uint32_t v){ *p=v; }
+// output check: FNV-1a of every 1 MiB chunk, one thread per chunk (one thread over the whole output took about a
+// minute per check on T2T), then FNV-1a of the chunk hashes on the host; the original is hashed the same way
+#define FNV_CH (1u<<20)
 __global__ void k_fnv(const uint8_t* buf, size_t n, uint64_t* out){
-    if(blockIdx.x==0&&threadIdx.x==0){ uint64_t h=0xcbf29ce484222325ULL; for(size_t i=0;i<n;i++) h=(h^buf[i])*0x100000001b3ULL; *out=h; }
+    const size_t c=blockIdx.x*(size_t)blockDim.x+threadIdx.x, b=c*FNV_CH; if(b>=n) return;
+    const size_t e=b+FNV_CH<n?b+FNV_CH:n; uint64_t h=0xcbf29ce484222325ULL; for(size_t i=b;i<e;i++) h=(h^buf[i])*0x100000001b3ULL; out[c]=h;
 }
+static uint64_t fnv_of_chunks(const std::vector<uint64_t>& v){ uint64_t h=0xcbf29ce484222325ULL;
+    for(uint64_t x:v) for(int k=0;k<8;k++) h=(h^((x>>(8*k))&0xFF))*0x100000001b3ULL; return h; }
 
 // ---------------------------------------------------------------- archive parsing
 static std::vector<uint8_t> slurp(const char* p){ FILE* f=fopen(p,"rb"); if(!f){perror(p); exit(1);} fseek(f,0,SEEK_END); long n=ftell(f); fseek(f,0,SEEK_SET); std::vector<uint8_t> v(n); if(fread(v.data(),1,n,f)!=(size_t)n){fprintf(stderr,"short read %s\n",p); exit(1);} fclose(f); return v; }
@@ -442,7 +261,7 @@ int main(int argc, char** argv){
     // pieces (rANS token chunks, open-profile pieces) grouped by class; their bytes follow the frames in dC
     std::stable_sort(rans.begin(),rans.end(),[](const RansJob& x,const RansJob& y){ return x.cls<y.cls; });
     const size_t zbytes=cbytes, NR=rans.size(); std::vector<RansDesc> hr(NR); size_t cls_off[P_NCLS+1]={0};
-    for(size_t k=0;k<NR;k++){ hr[k]={cbytes,nullptr,(uint32_t)rans[k].csz,(uint32_t)rans[k].n,rans[k].mode}; cbytes+=rans[k].csz; cls_off[rans[k].cls+1]++; }
+    for(size_t k=0;k<NR;k++){ hr[k]={cbytes,nullptr,(uint64_t)rans[k].n,(uint32_t)rans[k].csz,(uint32_t)rans[k].mode,(uint32_t)rans[k].cls,0u}; cbytes+=rans[k].csz; cls_off[rans[k].cls+1]++; }
     for(int q=0;q<P_NCLS;q++) cls_off[q+1]+=cls_off[q];
     const size_t NTOK=cls_off[P_TOK+1]-cls_off[P_TOK];
     printf("archive %s: orig=%llu block=%u nb=%u; %zu zstd frames (%zu token, %zu literal; %.1f MB), pieces %.1f MB: %zu token rANS chunks, open pack seq/cse/gap/val %zu/%zu/%zu/%zu, open plain %zu; %zu raw chunks, %zu DNA chunks (zstd), %zu open DNA chunks; streams lit/off/len/cmd = %.1f/%.1f/%.1f/%.1f MB\n",
@@ -464,7 +283,10 @@ int main(int argc, char** argv){
     const size_t NO=opn.size(); std::vector<OpenDesc> ho(NO); OpenDesc* dOD; CK(cudaMalloc(&dOD,(NO+1)*sizeof(OpenDesc)));
     uint64_t nends=0; for(const OpenChunk& q:opn) nends+=q.ncse;          // run ends: at most one per case-run byte
     uint32_t *dEnds, *dNrun; CK(cudaMalloc(&dEnds,(nends+1)*4)); CK(cudaMalloc(&dNrun,(NO+1)*4));
-    for(size_t k=0;k<NO;k++){ const OpenChunk& q=opn[k]; ho[k]={dOS+q.off[0],dOS+q.off[1],dOS+q.off[2],dOS+q.off[3],dS[0]+(uint64_t)q.chunk*chunk[0],nullptr,dNrun+k,q.raw,q.ncse,q.ngap,q.nexc}; }
+    // exception positions of every open chunk (k_open_cg -> k_open_bases_x), chunk k's from heo[k]
+    std::vector<uint64_t> heo(NO+1,0); for(size_t k=0;k<NO;k++) heo[k+1]=heo[k]+opn[k].nexc;
+    uint32_t* dEpos; CK(cudaMalloc(&dEpos,(heo[NO]+1)*4));
+    for(size_t k=0;k<NO;k++){ const OpenChunk& q=opn[k]; ho[k]={dOS+q.off[0],dOS+q.off[1],dOS+q.off[2],dOS+q.off[3],dS[0]+(uint64_t)q.chunk*chunk[0],nullptr,dNrun+k,dEpos+heo[k],q.raw,q.ncse,q.ngap,q.nexc}; }
     { uint64_t e=0; for(size_t k=0;k<NO;k++){ ho[k].ends=dEnds+e; e+=opn[k].ncse; } }
     if(NO) CK(cudaMemcpy(dOD,ho.data(),NO*sizeof(OpenDesc),cudaMemcpyHostToDevice));
     for(auto& r:raws) CK(cudaMemcpy(dS[r.stream]+r.dst_off,r.src,r.n,cudaMemcpyHostToDevice));
@@ -494,8 +316,17 @@ int main(int argc, char** argv){
     auto h2d=[&](cudaStream_t s){ CK(cudaMemcpyAsync(dC,hc,cbytes,cudaMemcpyHostToDevice,s)); };
     auto zstd_rng=[&](cudaStream_t s, size_t i0, size_t i1){ if(i1>i0) NV(nvcompBatchedZstdDecompressAsync(dcp+i0,dcs+i0,dos+i0,dact+i0,i1-i0,dtemp,temp,dop+i0,opts,dst+i0,s)); };
     auto zstd_all=[&](cudaStream_t s){ zstd_rng(s,0,N); };
+    // the open path (same bytes either way; measured against each other below, "[open variants]"):
+    // AX_OPEN_SEQ windowed refill in k_rans (default 1: Blackwell af2c70c chr1 seq 0.309 -> 0.238 ms; 0 = refill from
+    // global); AX_OPEN_EXC exception positions in the case-run kernel and the bytes in the bases store (default 1; 0 =
+    // k_open_cse, k_open_bases, k_open_exc)
+    // AX_OPEN_SHB (with EXC): the bases kernel with the block's run ends / exception positions in shared memory
+    // (k_open_bases_s; default 1 since a7d161d: Blackwell T2T unpack 8.948 -> 7.458 ms, chr1 0.605 -> 0.583)
+    int VS=getenv("AX_OPEN_SEQ")?atoi(getenv("AX_OPEN_SEQ")):1, VE=getenv("AX_OPEN_EXC")?atoi(getenv("AX_OPEN_EXC")):1, VH=getenv("AX_OPEN_SHB")?atoi(getenv("AX_OPEN_SHB")):1;
+    const int VS0=VS, VE0=VE, VH0=VH;
     auto pieces=[&](cudaStream_t s, int c0, int c1){ const size_t i0=cls_off[c0], n=cls_off[c1]-i0;
-        if(n) k_rans<<<(unsigned)((n+AXW_WARPS-1)/AXW_WARPS),32*AXW_WARPS,0,s>>>(dC,dRD+i0,(uint32_t)n,dErr); };
+        if(n){ if(VS) k_rans<1><<<(unsigned)((n+AXW_WARPS-1)/AXW_WARPS),32*AXW_WARPS,0,s>>>(dC,dRD+i0,(uint32_t)n,dErr);
+               else   k_rans<0><<<(unsigned)((n+AXW_WARPS-1)/AXW_WARPS),32*AXW_WARPS,0,s>>>(dC,dRD+i0,(uint32_t)n,dErr); } };
     auto rans_all=[&](cudaStream_t s){ pieces(s,0,P_NCLS); };
     auto tok=[&](cudaStream_t s){ zstd_rng(s,0,NT); pieces(s,P_TOK,P_TOK+1); };   // token streams: zstd frames and/or rANS chunks
     auto lit=[&](cudaStream_t s){ zstd_rng(s,NT,N); pieces(s,P_SEQ,P_NCLS); };    // literal zstd frames and open pieces
@@ -503,11 +334,12 @@ int main(int argc, char** argv){
     auto rans_check=[&](const char* tag){ uint32_t e[4]; CK(cudaMemcpy(e,dErr,16,cudaMemcpyDeviceToHost));
         if(e[0]){ fprintf(stderr,"[%s] rANS/pieces: %u of %zu failed the spec 3.1.1/3.4 checks (first: piece %u) - archive rejected\n",tag,e[0],NR,e[1]); exit(6); }
         if(e[2]){ fprintf(stderr,"[%s] open DNA pack: %u of %zu chunks failed the spec 3.4 checks (first: %u) - archive rejected\n",tag,e[2],NO,e[3]); exit(6); } };
-    dim3 g1((unsigned)std::max<size_t>(dna.size(),1), (unsigned)((chunk[0]/4+255)/256));
+    dim3 g1((unsigned)std::max<size_t>(dna.size(),1), (unsigned)((chunk[0]/AXU_PER+255)/256));
     dim3 go((unsigned)std::max<size_t>(NO,1), (unsigned)((chunk[0]/16+255)/256));
-    auto un_seq=[&](cudaStream_t s){ if(NO) k_open_bases<<<go,256,0,s>>>(dOD); };                     // bases + case
-    auto un_cse=[&](cudaStream_t s){ if(NO) k_open_cse<<<(unsigned)NO,AXO_NT,0,s>>>(dOD,dErr+2); };   // case runs -> run ends
-    auto un_exc=[&](cudaStream_t s){ if(NO) k_open_exc<<<(unsigned)NO,AXO_NT,0,s>>>(dOD,dErr+2); };
+    auto un_seq=[&](cudaStream_t s){ if(NO){ if(VE && VH) k_open_bases_s<<<go,256,0,s>>>(dOD); else if(VE) k_open_bases_x<<<go,256,0,s>>>(dOD); else k_open_bases<<<go,256,0,s>>>(dOD); } };   // bases + case (+ exceptions)
+    auto un_cse=[&](cudaStream_t s){ if(NO){ if(VE) k_open_cg<<<(unsigned)NO,AXO_NT,0,s>>>(dOD,dErr+2);  // case runs -> run ends (+ exception positions)
+                                             else k_open_cse<<<(unsigned)NO,AXO_NT,0,s>>>(dOD,dErr+2); } };
+    auto un_exc=[&](cudaStream_t s){ if(NO && !VE) k_open_exc<<<(unsigned)NO,AXO_NT,0,s>>>(dOD,dErr+2); };
     // fused (literal chunks <= 64 KiB, every open chunk has its seq piece at cls_off[P_SEQ]+k): pieces without seq,
     // case runs, seq+bases in one kernel, exceptions - the same bytes as lit + unpack
     // closed 30.09 (Blackwell: fused chr1 2.18 vs 1.47 ms, T2T 19.36 vs 13.23 - one warp decodes the seq piece while
@@ -524,18 +356,21 @@ int main(int argc, char** argv){
         int maxblk=0; CK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&maxblk,k,TPB,0));
         uint64_t lanes=(uint64_t)(b1-b0)*G; uint32_t want=(uint32_t)((lanes+TPB-1)/TPB), grid=(uint32_t)nsm*maxblk; if(grid>want) grid=want; if(grid<1) grid=1;
         CK(cudaMemcpyAsync(dCTR,&b0,4,cudaMemcpyHostToDevice,s));
-        k<<<grid,TPB,0,s>>>(dS[0],dS[1],dS[2],dS[3],dBO,orig,bs,dOUT,dCTR,b1); };
+        k<<<grid,TPB,0,s>>>(dS[0],dS[1],dS[2],dS[3],dBO,orig,bs,dOUT,dCTR,b1,nullptr); };
 
     // ---- warm-up: full sequential pass, then check bit-perfect against the original
     h2d(s0); zstd_all(s0); rans_all(s0); unpack(s0); match(Gwant?Gwant:16,s0,0,nb); CK(cudaStreamSynchronize(s0)); CK(cudaGetLastError());
     rans_check("warm-up");
     { std::vector<nvcompStatus_t> hst(N); CK(cudaMemcpy(hst.data(),dst,N*sizeof(nvcompStatus_t),cudaMemcpyDeviceToHost)); size_t bad=0; for(auto x:hst) if(x!=nvcompSuccess) bad++;
       printf("frames: %zu bad of %zu\n",bad,N); }
-    auto fnv_check=[&](const char* tag){ uint64_t h=0; k_fnv<<<1,1,0,s0>>>(dOUT,(size_t)orig,dH); CK(cudaMemcpyAsync(&h,dH,8,cudaMemcpyDeviceToHost,s0)); CK(cudaStreamSynchronize(s0));
+    const size_t nfc=((size_t)orig+FNV_CH-1)/FNV_CH; uint64_t* dFC; CK(cudaMalloc(&dFC,(nfc+1)*8));
+    auto fnv_check=[&](const char* tag){ std::vector<uint64_t> hc(nfc);
+        if(nfc){ k_fnv<<<(unsigned)((nfc+127)/128),128,0,s0>>>(dOUT,(size_t)orig,dFC); CK(cudaMemcpyAsync(hc.data(),dFC,nfc*8,cudaMemcpyDeviceToHost,s0)); }
+        CK(cudaStreamSynchronize(s0)); const uint64_t h=fnv_of_chunks(hc);
         static uint64_t ho=0; static bool have=false;
-        if(!have){ FILE* f=fopen(argv[2],"rb"); if(!f){perror(argv[2]); exit(1);} std::vector<uint8_t> buf(1<<20); size_t n; ho=0xcbf29ce484222325ULL;
-            while((n=fread(buf.data(),1,buf.size(),f))>0){ for(size_t i=0;i<n;i++) ho=(ho^buf[i])*0x100000001b3ULL; }
-            fclose(f); have=true; }
+        if(!have){ FILE* f=fopen(argv[2],"rb"); if(!f){perror(argv[2]); exit(1);} std::vector<uint8_t> buf(FNV_CH); std::vector<uint64_t> oc; size_t n;
+            while((n=fread(buf.data(),1,buf.size(),f))>0){ uint64_t x=0xcbf29ce484222325ULL; for(size_t i=0;i<n;i++) x=(x^buf[i])*0x100000001b3ULL; oc.push_back(x); }
+            fclose(f); ho=fnv_of_chunks(oc); have=true; }
         printf("[%s] FNV out=%016llx orig=%016llx %s\n",tag,(unsigned long long)h,(unsigned long long)ho,h==ho?"MATCHES OK":"DIFFERS X"); return h==ho; };
     bool ok=fnv_check("warm-up");
 
@@ -581,6 +416,57 @@ int main(int argc, char** argv){
         { const uint32_t z0[4]={0u,0xffffffffu,0u,0xffffffffu}; CK(cudaMemcpy(dErr,z0,16,cudaMemcpyHostToDevice)); lit(s0); unpack(s0); CK(cudaStreamSynchronize(s0)); }
         printf("[fused] lit + unpack %.3f ms (lit %.3f + unpack %.3f; seq piece %.3f + bases %.3f) -> fused %.3f ms (seq+bases kernel %.3f); on-device %.3f -> %.3f ms\n",
             mL+mU,mL,mU,mLp[P_SEQ],mUs,mF,mFS,mD,mT+mF+mM);
+    }
+
+    // ---- open variants (AX_OPEN_SEQ, AX_OPEN_EXC), each against the same archive in this run: the literal stream, the
+    // open scratch and the output are cleared, lit + unpack + match run with the variant, the output is hashed
+    // (bit-perfect or the run fails); then seq pieces and unpack timed (median of reps)
+    if(NO){
+        struct V { const char* name; int s,e,h; float seq,un,bases,cse,exc; bool ok; };
+        V vv[4]={{"AX_OPEN_SEQ=0 AX_OPEN_EXC=0",0,0,0},{"AX_OPEN_SEQ=1 AX_OPEN_EXC=0",1,0,0},{"AX_OPEN_SEQ=1 AX_OPEN_EXC=1",1,1,0},{"AX_OPEN_SEQ=1 AX_OPEN_EXC=1 AX_OPEN_SHB=1",1,1,1}};
+        for(V& v:vv){ VS=v.s; VE=v.e; VH=v.h;
+            CK(cudaMemset(dS[0],0,ssz[0])); CK(cudaMemset(dOUT,0,orig)); CK(cudaMemset(dOS,0,oscr)); CK(cudaMemset(dEpos,0,(heo[NO]+1)*4));
+            if(N>NT) zstd_rng(s0,NT,N);
+            pieces(s0,P_SEQ,P_NCLS); unpack(s0); match(G,s0,0,nb); CK(cudaStreamSynchronize(s0)); CK(cudaGetLastError());
+            rans_check(v.name); v.ok=fnv_check(v.name); ok=v.ok && ok;
+            std::vector<float> a,b,c,d,e; for(int r=0;r<reps;r++){ a.push_back(elapsed(s0,[&]{pieces(s0,P_SEQ,P_SEQ+1);})); b.push_back(elapsed(s0,[&]{unpack(s0);}));
+                c.push_back(elapsed(s0,[&]{un_seq(s0);})); d.push_back(elapsed(s0,[&]{un_cse(s0);})); e.push_back(elapsed(s0,[&]{un_exc(s0);})); }
+            v.seq=median_ms(a); v.un=median_ms(b); v.bases=median_ms(c); v.cse=median_ms(d); v.exc=median_ms(e); }
+        VS=VS0; VE=VE0; VH=VH0;
+        printf("[open variants] seq pieces %.3f -> %.3f ms (AX_OPEN_SEQ 0 -> 1, windowed refill, %s); unpack %.3f ms (case %.3f + bases %.3f + exceptions %.3f) -> "
+               "%.3f ms (AX_OPEN_EXC 0 -> 1: case+exception positions %.3f + bases with exceptions %.3f, %s) -> %.3f ms (AX_OPEN_SHB=1: bases from shared %.3f, %s)\n",
+               vv[0].seq,vv[1].seq,vv[1].ok?"bit-perfect":"DIFFERS",vv[1].un,vv[1].cse,vv[1].bases,vv[1].exc,vv[2].un,vv[2].cse,vv[2].bases,vv[2].ok?"bit-perfect":"DIFFERS",
+               vv[3].un,vv[3].bases,vv[3].ok?"bit-perfect":"DIFFERS");
+        printf("OPENVAR\t%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%d\n",argv[1],vv[0].seq,vv[1].seq,vv[1].un,vv[2].un,vv[3].un,(int)(vv[0].ok&&vv[1].ok&&vv[2].ok&&vv[3].ok));
+    }
+
+    // ---- AX_GPU_TILE: the match kernel builds each block's literals in shared memory (k_decode_t; library: aceapex_gpu_lib.cu)
+    // against the default path (case runs + exception positions, bases kernel into the literal stream, match kernel); both
+    // from cleared buffers, each hashed (bit-perfect or the run fails); only when every literal chunk is an open DNA pack
+    // or an open plain piece and blocks are <= 16 KiB
+    {   const size_t NWc = chunk[0] ? (size_t)((ssz[0] + chunk[0] - 1) / chunk[0]) : 0;
+        std::vector<uint32_t> hcm(NWc, ~0u); std::vector<uint8_t> have(NWc, 0); bool tok_ok = NWc && dna.empty() && N == NT && bs <= 16384 && chunk[0] % 16 == 0;
+        for (size_t k = 0; tok_ok && k < NO; k++) { if (opn[k].chunk >= NWc) tok_ok = false; else { hcm[opn[k].chunk] = (uint32_t)k; have[opn[k].chunk] = 1; } }
+        for (const RansJob& r : rans) if (tok_ok && r.cls == P_PLAIN) { const size_t t = r.dst_off / chunk[0]; if (t >= NWc) tok_ok = false; else have[t] = 1; }
+        for (size_t t = 0; tok_ok && t < NWc; t++) if (!have[t]) tok_ok = false;
+        if (tok_ok && NO) {
+            uint32_t* dCM; CK(cudaMalloc(&dCM, NWc * 4 + 4)); CK(cudaMemcpy(dCM, hcm.data(), NWc * 4, cudaMemcpyHostToDevice));
+            int mb = 1; CK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&mb, k_decode_t, 32 * AXT_SLOTS, 0));
+            const unsigned gt = (unsigned)std::max(1, std::min<int>(nsm * mb, (int)(nb / AXT_SLOTS + 1)));
+            auto tile_match = [&](cudaStream_t s) { const uint32_t z = 0; CK(cudaMemcpyAsync(dCTR, &z, 4, cudaMemcpyHostToDevice, s));
+                k_decode_t<<<gt, 32 * AXT_SLOTS, 0, s>>>(dS[1], dS[2], dS[3], dBO, orig, bs, dOUT, dCTR, nb, dErr + 2, dOD, dCM, dS[0], (uint32_t)NWc, chunk[0], ssz[0]); };
+            float tb, tt; bool okb, okt;
+            {   CK(cudaMemset(dS[0], 0, ssz[0])); CK(cudaMemset(dOUT, 0, orig)); CK(cudaMemset(dOS, 0, oscr));
+                pieces(s0, P_SEQ, P_NCLS); un_cse(s0); un_seq(s0); match(G, s0, 0, nb); CK(cudaStreamSynchronize(s0)); okb = fnv_check("tile base");
+                std::vector<float> t; for (int r = 0; r < reps; r++) t.push_back(elapsed(s0, [&] { un_cse(s0); un_seq(s0); match(G, s0, 0, nb); })); tb = median_ms(t); }
+            {   CK(cudaMemset(dS[0], 0, ssz[0])); CK(cudaMemset(dOUT, 0, orig)); CK(cudaMemset(dOS, 0, oscr));
+                pieces(s0, P_SEQ, P_NCLS); un_cse(s0); tile_match(s0); CK(cudaStreamSynchronize(s0)); CK(cudaGetLastError()); rans_check("AX_GPU_TILE"); okt = fnv_check("AX_GPU_TILE=1");
+                std::vector<float> t; for (int r = 0; r < reps; r++) t.push_back(elapsed(s0, [&] { un_cse(s0); tile_match(s0); })); tt = median_ms(t); }
+            ok = okb && okt && ok;
+            printf("[tile variants] case runs + bases + match %.3f ms -> case runs + tile match %.3f ms (AX_GPU_TILE=1: literals in shared memory, no literal stream, %s)\n", tb, tt, okt ? "bit-perfect" : "DIFFERS");
+            printf("TILEVAR\t%s\t%.3f\t%.3f\t%d\n", argv[1], tb, tt, (int)(okb && okt));
+            CK(cudaFree(dCM));
+        } else printf("[tile variants] not applicable (literal chunks other than open DNA packs / open plain pieces, or blocks > 16 KiB)\n");
     }
 
     // ---- pipeline: NB batches of frames in order; H2D of batch k+1 on s1 overlaps zstd of batch k on s0
@@ -674,12 +560,12 @@ int main(int argc, char** argv){
             for(int k=0;k<K;k++){ CK(cudaStreamWaitEvent(s0,cev[k],0));
                 const size_t j0=jc[k], nj=jc[k+1]-j0, r0=rc[k], nr=rc[k+1]-r0, o0=oc[k], no=oc[k+1]-o0, d0=dc[k], nd=dc[k+1]-d0;
                 if(nj) NV(nvcompBatchedZstdDecompressAsync(qdcp+j0,qdcs+j0,qdos+j0,qdact+j0,nj,qdtemp,qtemp,qdop+j0,opts,qdst+j0,s0));
-                if(nr) k_rans<<<(unsigned)((nr+AXW_WARPS-1)/AXW_WARPS),32*AXW_WARPS,0,s0>>>(dC2,qdRD+r0,(uint32_t)nr,dErr);
+                if(nr) k_rans<1><<<(unsigned)((nr+AXW_WARPS-1)/AXW_WARPS),32*AXW_WARPS,0,s0>>>(dC2,qdRD+r0,(uint32_t)nr,dErr);
                 if(nd){ k_unpack<<<dim3((unsigned)nd,g1.y),256,0,s0>>>(dDD+d0); k_exc<<<(unsigned)nd,256,0,s0>>>(dDD+d0); }
-                if(no){ k_open_cse<<<(unsigned)no,AXO_NT,0,s0>>>(dOD+o0,dErr+2); k_open_bases<<<dim3((unsigned)no,go.y),256,0,s0>>>(dOD+o0); k_open_exc<<<(unsigned)no,AXO_NT,0,s0>>>(dOD+o0,dErr+2); }
+                if(no){ k_open_cg<<<(unsigned)no,AXO_NT,0,s0>>>(dOD+o0,dErr+2); k_open_bases_x<<<dim3((unsigned)no,go.y),256,0,s0>>>(dOD+o0); }
                 const uint32_t b0=bc[k], b1=bc[k+1]; if(b1>b0){
                     uint64_t lanes=(uint64_t)(b1-b0)*G; uint32_t want=(uint32_t)((lanes+TPB-1)/TPB), grid=(uint32_t)nsm*maxblk; if(grid>want) grid=want; if(grid<1) grid=1;
-                    k_set<<<1,1,0,s0>>>(dCTR2+k,b0); kG<<<grid,TPB,0,s0>>>(dS[0],dS[1],dS[2],dS[3],dBO,orig,bs,dOUT,dCTR2+k,b1); } } };
+                    k_set<<<1,1,0,s0>>>(dCTR2+k,b0); kG<<<grid,TPB,0,s0>>>(dS[0],dS[1],dS[2],dS[3],dBO,orig,bs,dOUT,dCTR2+k,b1,nullptr); } } };
         // cold pass on cleared buffers (output, decoded streams, scratch; raw chunks copied back): the hash
         // below checks this path alone, a batch that ran before its bytes arrived cannot hide behind old data
         CK(cudaMemset(dOUT,0,orig)); for(int i=0;i<4;i++) CK(cudaMemset(dS[i],0,ssz[i]+256));

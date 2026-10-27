@@ -4,7 +4,67 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
-## v2.2.2 — (date of the tag)
+## v2.3.0 — 2026-10-26
+
+Format ACEPX2 unchanged; archive bytes unchanged for a given libzstd (every change below is a decoder change;
+encoder output byte-identical, checked by the conformance fixtures and the speed gate's pinned archive sizes).
+
+- **GPU library with a C ABI** (`src/aceapex_gpu.h`, `libaceapex_gpu.so.1`, `docs/GPU_API.md`): host plan +
+  async decode without allocation or synchronisation, range decode by coordinate, fail-closed status bits,
+  `ACEAPEX_GPU_VERIFY_XXH3` (hash of the output on the device), `ACEAPEX_GPU_VALIDATE_ZSTD` (every zstd frame
+  through libzstd on the host first: nvCOMP 5.3.0.16 does not return on some corrupt frames, repro in
+  `verify/repro/nvcomp_zstd_hang/`). Frozen for 2.3: `plan_create(h, n, uint64_t flags)` (unknown bits ->
+  `E_ARGS`), `ACEAPEX_GPU_API_VERSION` 20300 + `aceapex_gpu_version()`; later versions only add.
+- **GPU fail-closed**: every kernel loop bounded (step limit -> `STATUS_LIMIT`), varints <= 5 bytes, 64-bit sizes in
+  the descriptors; claims `head_gpu_flip_emu`, `head_gpu_zstd_validate`, `head_gpu_abi`.
+- **GPU decode faster** (Blackwell, on-device, same archives): T2T open 27.14 -> 19.58 ms (library), chr1 open
+  2.83 -> 1.93 ms; H100 library chr1 open 2.120 ms (119.8 GB/s), T2T 19.029 ms (165.9 GB/s), GRCh38 19.587 ms (167.1 GB/s), 9 HPRC assemblies 142.879 ms, all bit-perfect (`results/runpod-2026-10-02-h100-80gb-hbm3-summary-834d5d1.txt`). Steps: rANS refill from a register window (AX_OPEN_SEQ, seq -23 %), exception positions in the
+  case-run kernel and the bytes in the bases store (AX_OPEN_EXC), the block's run ends in shared memory
+  (AX_OPEN_SHB, T2T unpack -17 %), 16-byte stores (AX_VEC). AX_GPU_TILE (literals of a block built in shared
+  memory, no literal stream): in the code, off by default: measured slower (H100 run summary, "tile" pair: chr1 1.143 -> 2.642 ms, T2T 13.223 -> 31.533 ms; Blackwell chr1 library 1.993 -> 3.601 ms).
+- **CPU decode** (ace-core, EPYC 4344P 8 cores / 16 threads, median of 5, bit-perfect): T2T open 8 threads
+  1.039 -> 0.229 s, all threads 0.955 -> 0.183 s (before = 374e4f0, 2.2.1 + AVX2 rANS); chr1 default 8 threads 0.094 -> 0.026 s; silesia default
+  8 threads 0.074 -> 0.038 s. Steps: AVX2 rANS (AX_RANS_SIMD; open profile 1 thread x1.8-x2.4), compressed
+  streams read in place, transparent huge pages + parallel prefault, literal tiles in L2 instead of a literal
+  stream (AX_LIT_TILE), non-temporal output (AX_NT), default budget = physical cores (all threads >= 1 GiB).
+  AVX-512 rANS (AX_RANS_SIMD=512) kept, not default: no gain on Zen 4.
+- **Streaming decode (CPU)**: `aceapex_decompress_stream(read cb, write cb, threads, flags)` on the tile path, memory
+  O(threads x tile), not O(archive): T2T open 16 threads 14.2 GB/s at 34.9 MB RSS, 1 thread 1.8 GB/s at 7 MB
+  (`results/stream-2026-10-02.log`); `ACEAPEX_STREAM_VERIFY` checks XXH3 against the header; CLI `d --out -` / `-c`
+  to stdout (archives without the chunked literal layout fall back to the whole-file decoder). Claim `head_stream`.
+- **Thread start**: the encoder's two thread_local arrays (8 MiB of TLS, zeroed in every new thread of a process
+  linking the library, decode threads included) are heap buffers on first use: T2T open full decode, all threads,
+  0.202 -> 0.183 s.
+- **GPU outputs larger than the card**: block-range plans `aceapex_gpu_plan_create_blocks(h, n, b0, b1, flags)` +
+  `aceapex_gpu_plan_input_window` (ABI additions): streams restricted to the blocks' chunks, temp and output sized
+  for the batch; `scripts/gpu_stream.cu` decodes batches sized from the free memory, two in flight (decode / D2H),
+  XXH3 on the host. CPU judge: 121 batches through the plan emulator == original; H100: GRCh38 in batches with D2H and host XXH3 1.78 GB/s (`results/runpod-2026-10-02-h100-80gb-hbm3-gpu-946591a.log`).
+- open: token chunk 16 KiB by default; region decode CPU p50 -21 % (T2T) / -37 % (chr1), p99 -35 % / -26 %; +452 B on T2T
+  (+8 186 B on chr1); full decode unchanged within 2.3 %; old archives decode unchanged (`results/open-tok16-2026-10-02.log`).
+- Region decode: the literal chunk table is no longer walked one entry at a time per call (check summed in runs, the
+  first chunk's body found by a straight sum, only the region's chunks visited); `aceapex faidx` copies bases in runs.
+  T2T 5000-base regions, 1 thread, p50: in process 92 -> 50 us (htslib `faidx_fetch_seq64` 102-104 us), `faidx -r`
+  119 -> 71 us per region (samtools -r 103-108 us). Decoder change only (`results/faidx-2026-10-03.log`).
+- C99 decoder and Python reader: rANS token chunks through the AVX2 decoder (`ax_rans.h` builds its SIMD paths in C
+  too) and the region-table change above; T2T region p50 C99 one-shot 123 -> 49 us, handle 104 -> 42 us, Python
+  111 -> 50 us; C99 full decode chr1 open 1 thread 0.313 -> 0.119 s (`results/region-c99-2026-10-03.log`).
+- **Literal chunk cap lifted** (65 535 -> 2^30 chunks): a DNA input above ~4 GiB of literals keeps the chunked layout
+  and the DNA transform - HPRC x 3 in one file 2 705 974 278 -> 2 140 557 191 B (ratio 3.36 -> 4.24) - and streams.
+  Archive bytes change only for such inputs; the 2.2.2 C++ and C99 decoders read them (`results/litcap-2026-10-02.log`).
+- **Measurement tools** (no format change; `results/dep-range-2026-10-01.log`, `results/reality-2026-10-02.log`,
+  `results/pangenome-2026-10-02.log`): match reach, bits by region class, approximate-repeat estimate, block cost
+  and thread tail (`AX_BLOCK_TIMES`, `AX_SCHED_COST`), and the AX_REFSEG pangenome prototype (`scripts/refseg.cpp`,
+  its own container). Encoder knobs for them in tuning builds only: `AX_MAXDIST`, `AX_HASH12`; default bytes unchanged.
+- **Speed gates**: `make perf-gate` (`results/baseline_ace-core.tsv`, > 5 % slower fails), per-card GPU baselines
+  checked in the run's SUMMARY.
+- **One GPU run script**: `scripts/gpu_run.sh` (RunPod / Colab / any host; corpus ladder chr1 -> T2T -> GRCh38 ->
+  HPRC with checksums; outputs larger than the card in windows, `scripts/gpu_stream.cu`).
+- Build: `make ZSTD_SRC=<zstd 1.5.x tree>` links zstd statically (1.5.x: chr1 default 1 thread -16 % against the
+  system 1.4.8).
+
+## v2.2.2 — 2026-10-01
+
+DOI: [10.5281/zenodo.23090998](https://doi.org/10.5281/zenodo.23090998)
 
 Archive bytes identical to 2.2.1 (the defaults are untouched; checked by the judge and on silesia/xml).
 
@@ -19,6 +79,8 @@ Archive bytes identical to 2.2.1 (the defaults are untouched; checked by the jud
   Claim `head_env_ignored`.
 
 ## v2.2.1 — 2026-09-30
+
+DOI: [10.5281/zenodo.23070077](https://doi.org/10.5281/zenodo.23070077)
 
 Archive bytes identical to 2.2.0 (compared on silesia, enwik8 and chr1, levels 1-3, 1 and 8 threads,
 default / open / interactive profiles: 54 of 54 byte-identical; fixtures unchanged).
