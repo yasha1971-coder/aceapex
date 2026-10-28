@@ -14,7 +14,7 @@
 extern "C" {
 #endif
 
-#define ACEAPEX_DECODE_VERSION "2.4.1"   /* tracks ACEAPEX_VERSION_STRING in src/aceapex.h */
+#define ACEAPEX_DECODE_VERSION "2.4.2"   /* tracks ACEAPEX_VERSION_STRING in src/aceapex.h */
 
 #define ACEAPEX_OK           0
 #define ACEAPEX_ERR_BUFFER  -1
