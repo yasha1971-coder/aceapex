@@ -4,6 +4,18 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
+## v2.4.1 — 2026-10-28
+
+Build fix for Windows (MinGW). Format, archive bytes, the library's decoders and encoders are those of 2.4.0.
+
+- The CLI's streaming paths (`d --out -`, `faidx` index build) read the archive with `pread`, which MinGW does not
+  have; since 2.3.0 the library did not compile there, also inside lzbench (lzbench #355: the four MinGW jobs failed
+  on `aceapex_main.cpp`). Positional reads now go through `ax_pread`: POSIX `pread`, on Windows `ReadFile` with an
+  OVERLAPPED offset (no shared file pointer), offsets as 64-bit values (a 32-bit `off_t` cut them at 2 GiB), and
+  those files are opened with `O_BINARY`. Checked here: the lzbench wrapper compiles with x86_64 and i686 MinGW-w64
+  (posix), clang, aarch64 and armhf; on Linux the pipe test 36/36, conformance 27/27, `d --out -` on a default and a
+  fast archive and `faidx` bit-perfect.
+
 ## v2.4.0 — 2026-10-28
 
 **The FAST profile**: header version 3 of ACEPX2, the same container (independent blocks, one archive for every
