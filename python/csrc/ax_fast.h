@@ -232,7 +232,15 @@ AXF_INLINE uint32_t axf_dec_block_tok_mm(const uint8_t* src, size_t ssz, uint8_t
     memcpy(d, lit, tail);
     return n;
 }
-static uint32_t axf_dec_block(const uint8_t* src, size_t ssz, uint8_t* dst, uint32_t n, uint32_t mm) {
+/* Built without -march (lzbench, distribution packages: baseline x86-64, SSE2) the 32-byte copies are two 16-byte moves.
+ * On x86-64 Linux with GCC 6+ / Clang 14+ the block decoder is cloned for AVX2 and picked at load time (ifunc), so a
+ * generic binary runs the 32-byte moves on CPUs that have them. Other targets build the one generic function. */
+#if defined(__x86_64__) && defined(__linux__) && defined(__GLIBC__) && ((defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 6) || (defined(__clang__) && __clang_major__ >= 14)) && !defined(AXF_NO_CLONES)
+#define AXF_CLONES __attribute__((target_clones("avx2", "default")))
+#else
+#define AXF_CLONES
+#endif
+AXF_CLONES static uint32_t axf_dec_block(const uint8_t* src, size_t ssz, uint8_t* dst, uint32_t n, uint32_t mm) {
     switch (mm) {   /* the common min_match values as compile-time constants; per-token checks for 16 and 12, guarded runs below */
     case 16: return axf_dec_block_tok_mm(src, ssz, dst, n, 16);
     case 12: return axf_dec_block_tok_mm(src, ssz, dst, n, 12);

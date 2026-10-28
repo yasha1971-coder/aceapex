@@ -20,6 +20,10 @@ and levels 12-18 unchanged; level-11 archives of earlier versions decode as befo
   bytes per token without length branches (the 160-byte room check already covers them); literal runs and matches on the
   escape path go in 32-byte steps instead of calls to memcpy when 32 bytes of room remain. Output unchanged byte for byte.
 - Level 11 writes a match of 65..128 bytes as tokens of at most 64 bytes, which take the branch-free path.
+- The fast-profile block decoder is cloned for AVX2 on x86-64 Linux (GCC 6+, Clang 14+; `target_clones`, picked at load
+  time): a binary built without `-march` - lzbench, distribution packages - ran its 32-byte copies as two 16-byte moves
+  (callgrind: 0.60 against 0.45 instructions per output byte). Other targets keep one generic function; `AXF_NO_CLONES`
+  turns it off.
 - Measured (DEC4: each Silesia member decoded on one core, time summed as lzbench sums it; `results/zen5-2026-10-28.log`,
   `results/dec4-2026-10-28-8201fb2.log`): on Zen 5 (Google Cloud C4D, EPYC 9B45) 17128 MB/s against zxc 0.15.0 -1 11663
   (+46.9 %) and 2.4.2 level 11 12416, ratio 61.34 % against 61.24 %; silesia.tar decoded whole 15520 against 10778.
