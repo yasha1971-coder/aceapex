@@ -17,7 +17,7 @@ int64_t aceapex_compress(
     void*       dst, size_t dst_capacity,
     int         level,    /* 1=fast, 2=default, 3=l1 encoder on any input (DNA uses l1 at every level, ADR-020);
                              11..18 = the FAST profile (2.4.0, docs/FORMAT_FAST.md): no entropy stage, header version 3,
-                             min match 16/12/8/5 greedy (11-14) and the same with the optimal parse (15-18) */
+                             min match 16/12/8/5: 11 sparse-probe parse, 12-14 greedy, 15-18 the optimal parse */
     int         threads   /* 0=auto */
 );
 

@@ -78,8 +78,8 @@ Two separate mechanisms, not one. Confining the search is what removes cross-blo
 The same container, every block independent, no entropy stage: a fixed-width token stream the decoder runs without
 per-token branching on lengths. One archive for the C++ library, the C99 decoder and the Python package; regions,
 ranges and the streaming decode work as in the default profile. Levels 11–18 of `aceapex_compress`
-(`--profile fast --level 1..8` in the CLI): minimum match 16 / 12 / 8 / 5 with a greedy-lazy parse, then the same
-four with an optimal parse. A larger minimum match is fewer tokens, a faster decode and a lower ratio.
+(`--profile fast --level 1..8` in the CLI): minimum match 16 / 12 / 8 / 5 (level 11: a sparse-probe parse, ~480 MB/s per core; 12-14: greedy-lazy), then the
+same four with an optimal parse. A larger minimum match is fewer tokens, a faster decode and a lower ratio.
 Specification: [docs/FORMAT_FAST.md](docs/FORMAT_FAST.md).
 
 ```bash

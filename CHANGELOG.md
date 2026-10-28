@@ -4,6 +4,21 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
+## Unreleased (2.5.0)
+
+**Level 11 (fast profile, min match 16) gets a new encoder**: ~19x faster at the same or better ratio. Format, decoders
+and levels 12-18 unchanged; level-11 archives of earlier versions decode as before, new ones decode with 2.4.x readers.
+
+- The sparse-probe parse (`enc_sparse` in `src/ax_fast_enc.h`): an 8-byte hash key, one slot per hash; probes every
+  3 bytes and every 2nd position in the table (coprime strides), a match found inside its span is extended backward to
+  its start; a candidate closer than the 64-byte minimum distance is lifted to the first legal multiple of its distance.
+- Measured on ace-core (EPYC 4344P, one core, median of 7; `results/hwenc2-2026-10-28-8201fb2.log`): silesia 61.21 %
+  (was 61.35 %) at 482 MB/s (was 25.8), decode 11138 MB/s (was 11011); enwik8 82.65 % (was 96.80 %); chr1 87.67 %
+  (was 91.44 %) with decode 11024 MB/s (was 13233). zxc 0.15.0 -1 on the same run: silesia 61.67 %, 1016 MB/s, 10624 MB/s.
+- Encoder workers keep one scratch buffer instead of zeroing a block-sized vector per block.
+- Conformance fixture `zeros_fast_1500K` re-encoded (same input, new level-11 bytes).
+- Research tool `research/fastblk/hwenc2/` (encoder variants, selftest, stream statistics, decode cost under perf).
+
 ## v2.4.2 — 2026-10-28
 
 Build fixes for gcc 9/10 and 32-bit ARMv5, found by the lzbench CI (#355), and a portability gate. Format, archive

@@ -101,8 +101,8 @@ bound held.
 
 | level | min_match | parse |
 |---|---|---|
-| 11 | 16 | greedy with lazy evaluation, hash chain depth 64 |
-| 12 | 12 | same |
+| 11 | 16 | sparse probe: probes every 3 bytes, every 2nd position in a one-slot hash table, matches extended backward (since 2.5.0; before: as 12) |
+| 12 | 12 | greedy with lazy evaluation, hash chain depth 64 |
 | 13 | 8 | same |
 | 14 | 5 | same |
 | 15 | 16 | optimal parse: price = literal bytes + 4 per token + 2 per token, chain depth 512 |
