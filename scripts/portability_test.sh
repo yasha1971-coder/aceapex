@@ -3,9 +3,13 @@
 # with the compilers that broke inside lzbench's CI (#355): MinGW-w64 x86_64 and i686 (no pread), gcc 10 (no
 # _mm256_cvtsi256_si32), 32-bit ARMv5 arm-linux-gnueabi (no lock-free 64-bit atomics: the object must not reference
 # __atomic_*_8). Compilers that are not installed are reported as declared, not as failures.
-# Output: claim_id <TAB> verdict <TAB> measured. ZSTD_INC: a zstd lib/ directory (zstd.h); default /usr/include.
+# Output: claim_id <TAB> verdict <TAB> measured. ZSTD_INC: a zstd lib/ directory (zstd.h); default: zstd.h and
+# zstd_errors.h copied from /usr/include.
 set -uo pipefail
-Z=${ZSTD_INC:-/usr/include}; T=$(mktemp -d); trap 'rm -rf $T' EXIT
+T=$(mktemp -d); trap 'rm -rf $T' EXIT
+# -I/usr/include would hand a cross compiler the host's Linux headers (asm/errno.h missing under MinGW): without
+# ZSTD_INC the zstd headers alone are copied from /usr/include into a private directory.
+if [ -n "${ZSTD_INC:-}" ]; then Z=$ZSTD_INC; else Z=$T/zinc; mkdir -p $Z; cp /usr/include/zstd.h /usr/include/zstd_errors.h $Z/ 2>/dev/null; fi
 ok=0; n=0; bad=""; skip=""
 for C in x86_64-w64-mingw32-g++-posix x86_64-w64-mingw32-g++ i686-w64-mingw32-g++-posix i686-w64-mingw32-g++ g++-10 arm-linux-gnueabi-g++; do
   command -v $C >/dev/null || { skip="$skip $C"; continue; }
