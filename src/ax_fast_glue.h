@@ -13,6 +13,9 @@ static bool ax_fast_encode(const uint8_t* src, size_t n, int flevel, int threads
                            std::vector<std::vector<uint8_t>>& blocks, axf::Params& P, uint32_t& bs) {
     if (!axf::level_params(flevel, P)) return false;
     bs = AXF_BLOCK_MAX;
+    // tuning builds (the CLI, the repository's tools): ACEAPEX_BS sets the fast profile's block size too, 4096..2^20 bytes,
+    // for matched-granularity comparisons (hw-apex-bench at g = 16 KiB); the library inside lzbench ignores it (ax_env.h)
+    { const char* e = ax_getenv("ACEAPEX_BS"); if (e) { const unsigned long v = strtoul(e, 0, 10); if (v >= 4096 && v <= AXF_BLOCK_MAX) bs = (uint32_t)v; } }
     const uint32_t nb = (uint32_t)((n + bs - 1) / bs);
     blocks.assign(nb, std::vector<uint8_t>());
     axf::Job j; j.src = src; j.n = n; j.bs = bs; j.nb = nb; j.P = P; j.blocks = &blocks; j.next = 0; j.err = 0;
