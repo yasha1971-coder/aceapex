@@ -4,7 +4,7 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
-## v2.4.0 — DRAFT (release date and the ace-core numbers filled at tag time)
+## v2.4.0 — 2026-10-28
 
 **The FAST profile**: header version 3 of ACEPX2, the same container (independent blocks, one archive for every
 reader, regions, ranges, streaming) without the entropy stage — a fixed-width token stream for the decoder's speed.
@@ -34,6 +34,11 @@ unchanged byte for byte; every reader of 2.4.0 reads both versions and rejects a
   `head_fast_api` (2102 library checks: levels, sizes around the block boundary, thread counts, regions, ranges,
   refusals), `head_fast_fuzz` (ASan/UBSan mutants + a negative control), `head_fast_v2_reader`. The conformance set
   grows from 22 to 27 fixtures; the ARM judge, the pipe test and the Python tests take them from the manifest.
+- **Decoder variant per min match** (b000c99): levels with min match 16 / 12 take the loop of 9f8a4ab (one bound check
+  per token), 8 / 5 the guarded runs of 0d3a065 (k tokens without a check) - the faster of the two on ace-core per
+  level (`results/fast-bench-2026-10-27-*.md`, `results/fast3-lzbench-2026-10-28.log`).
+- **`ACEAPEX_BS` for the fast profile** (0c56026): the block size from `ACEAPEX_BS` in tuning builds (the CLI and the
+  repository's tools), 4096..2^20 bytes; the library default stays 1 MiB.
 - `aceapex_compress_bound` also covers the fast profile's worst case (below 1.02 n + table; the default bound stays the larger).
 - Research record of the probe that led here (branch fast-probe, 25-27.10): `research/fastblk/` (F1 steps, the fair
   harness, D1 in lzbench, the safe decoder's fuzz, prior art against misa77 0.6.0), `research/v3proto/`,
