@@ -37,7 +37,7 @@ Measured against bgzip and zstd-seekable on the same operation, nine axes, every
 byte for byte: [hw-apex-bench](https://yasha1971-coder.github.io/hw-apex-bench/). ACEAPEX does not
 lead every column there, and the ones it loses are printed as they came out.
 
-**Every published claim is answered with a number and a way to check it — see [CLAIMS.md](CLAIMS.md).**
+**Every published claim is answered with a number and a way to check it — see [CLAIMS.md](docs/research/CLAIMS.md).**
 
 ```bash
 git clone https://github.com/yasha1971-coder/aceapex.git && cd aceapex
@@ -69,7 +69,33 @@ ACEAPEX takes the second branch and works on the price of it:
 - **Encode:** match search is confined to the block, so a block never references outside itself; where it can be validated byte for byte, an explicit reference is additionally **redirected to the earlier originating position**, shortening the dependency chain inside the block
 - **Decode:** block-parallel reconstruction — each block is self-contained and independently decodable
 
-Two separate mechanisms, not one. Confining the search is what removes cross-block dependency and makes a block independently decodable; flattening only shortens dependency chains inside a block, and what remains is handled by the decoder — by wavefront ordering, or in closed form where a match is a periodic fill. The price is paid in ratio, and we state it: under an equal 16 KB independent-block constraint the match layer recovers about three quarters of what blocking costs (see [CLAIMS.md](CLAIMS.md)).
+Two separate mechanisms, not one. Confining the search is what removes cross-block dependency and makes a block independently decodable; flattening only shortens dependency chains inside a block, and what remains is handled by the decoder — by wavefront ordering, or in closed form where a match is a periodic fill. The price is paid in ratio, and we state it: under an equal 16 KB independent-block constraint the match layer recovers about three quarters of what blocking costs (see [CLAIMS.md](docs/research/CLAIMS.md)).
+
+---
+
+## Fast profile (2.4.0)
+
+The same container, every block independent, no entropy stage: a fixed-width token stream the decoder runs without
+per-token branching on lengths. One archive for the C++ library, the C99 decoder and the Python package; regions,
+ranges and the streaming decode work as in the default profile. Levels 11–18 of `aceapex_compress`
+(`--profile fast --level 1..8` in the CLI): minimum match 16 / 12 / 8 / 5 with a greedy-lazy parse, then the same
+four with an optimal parse. A larger minimum match is fewer tokens, a faster decode and a lower ratio.
+Specification: [docs/FORMAT_FAST.md](docs/FORMAT_FAST.md).
+
+```bash
+./aceapex c --in silesia.tar --out silesia.axf --profile fast --level 1      # = --level 11
+./aceapex d --in silesia.axf --out silesia.tar                               # the version is in the header
+```
+
+The decoder is safe by construction — exact-size buffers, any input either decodes or is rejected
+(`scripts/fast_fuzz.cpp` under ASan/UBSan in `make test`) — and there is no second, looser decoder. Research numbers
+of the same layout before the release (ace-core EPYC 4344P, lzbench's single-thread method, silesia.tar, median of 7;
+`research/fastblk/d1-lzbench-2026-10-26.md`): min match 16 at 61.3 % decodes 11 523 MB/s against zxc 0.15.0 -1
+at 61.7 % and 10 634 MB/s in the same binary; min match 12 at 54.1 %, 11 237 MB/s. The release decoder is measured
+on the same host in `release/v2.4.0.md`.
+
+What it does not have: the DNA transform (use the default profile for genomes), the GPU path (2.4.0 reads version 3
+on the CPU only), `aceapex_decode_streams`.
 
 ---
 
@@ -228,6 +254,9 @@ nvcc -O3 -std=c++17 -o aceapex_cuda lz/aceapex/cuda/aceapex_cuda_wrapper.cu -lpt
 
 # Benchmark (in-memory)
 ./aceapex t --in myfile --threads 8
+
+# Fast profile (no entropy stage; levels 1..8 = library levels 11..18)
+./aceapex c --in myfile --out myfile.aet --profile fast --level 1
 ```
 
 The CLI also takes tuning knobs from the environment (`AX_PROFILE=open`, `ACEAPEX_BS`, `LIT_CHUNK`, ... - all 16 in
@@ -251,7 +280,7 @@ A fresh clone of tag `paper5-v1` on a CPU-only host gives **17 pass, 0 fail, 6 s
 
 ## Documentation
 
-See [BENCHMARK.md](BENCHMARK.md) for detailed benchmarks and [TECHNICAL_NOTE.md](TECHNICAL_NOTE.md) for design notes.
+See [BENCHMARK.md](docs/research/BENCHMARK.md) for detailed benchmarks and [TECHNICAL_NOTE.md](docs/research/TECHNICAL_NOTE.md) for design notes.
 
 ---
 
@@ -269,7 +298,7 @@ never silence. Corpora are read from `$GOLDEN` (default `~/golden`).
 
 ## Papers
 
-> ACEAPEX is an ongoing engineering investigation. These papers document specific stages of the project and may be superseded by later ones. Current claims and their reproduction status are maintained in [CLAIMS.md](CLAIMS.md) and `results.json`.
+> ACEAPEX is an ongoing engineering investigation. These papers document specific stages of the project and may be superseded by later ones. Current claims and their reproduction status are maintained in [CLAIMS.md](docs/research/CLAIMS.md) and `results.json`.
 
 | # | Paper | What it establishes |
 |---|-------|---------------------|

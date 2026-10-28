@@ -1,5 +1,8 @@
 /* aceapex_decode.c - standalone C99 decoder for ACEPX2 archives. See aceapex_decode.h.
  *
+ * Header version 3 (the FAST profile, 2.4.0) is read through ax_fast.h: header, u64 block table, independent
+ * token blocks, no entropy streams; docs/FORMAT_FAST.md. Below: header version 2, the four-stream layout.
+ *
  * Archive layout (all little-endian, packed):
  *   Empty input = one AetHeader: num_blocks 0, orig_size 0, stream sizes 0, block_size nonzero.
  *   AetHeader 68 B: magic "ACEPX2\0\0", u32 version, u64 orig_size, u32 block_size,
@@ -25,6 +28,7 @@
 #include "ax_env.h"      /* ax_getenv: FSE_CHUNK of legacy archives only with ACEAPEX_ENV_TUNING */
 #include "ax_rans.h"   /* rANS token chunks (entry bit 62); identical copy of src/ax_rans.h */
 #include "ax_lit_open.h" /* zstd-free literal chunks, modes 2/3; identical copy of src/ax_lit_open.h */
+#include "ax_fast.h"     /* header version 3, the FAST profile (2.4.0): axf_open, axf_dec_block_of; identical copy of src/ax_fast.h */
 #include <stdlib.h>
 #include <string.h>
 #include <zstd.h>
@@ -33,6 +37,7 @@ typedef struct { uint64_t lit_off, off_off, len_off, cmd_off, lit_sz, off_sz, le
 typedef struct {
     uint64_t orig; uint32_t bs, nb; const uint8_t* bo;   /* table bytes, 4-aligned: read via memcpy */
     const uint8_t *zl, *zo, *zn, *zc; uint64_t zls, zos, zns, zcs;
+    int fast; axf_arc_t fa;                               /* header version 3: the FAST profile, no streams */
 } Arc;
 static uint64_t rd64(const uint8_t* p){ uint64_t v; memcpy(&v,p,8); return v; }
 static uint32_t rd32(const uint8_t* p){ uint32_t v; memcpy(&v,p,4); return v; }
@@ -44,6 +49,12 @@ static int zdec(ZSTD_DCtx* x, void* d, size_t raw, const void* s, size_t n){
 static int open_arc(const void* src, size_t n, Arc* a){
     const uint8_t* p=(const uint8_t*)src;
     if(!src || n<68 || memcmp(p,"ACEPX2\0\0",8)) return ACEAPEX_ERR_DATA;
+    a->fast=0;
+    if(rd32(p+8)==AXF_VERSION){ /* FAST profile: header + block table + blocks; validated by axf_open */
+        if(axf_open(p,n,&a->fa)) return ACEAPEX_ERR_DATA;
+        a->fast=1; a->orig=a->fa.orig; a->bs=a->fa.bs; a->nb=a->fa.nb; a->bo=0;
+        a->zl=a->zo=a->zn=a->zc=0; a->zls=a->zos=a->zns=a->zcs=0; return ACEAPEX_OK; }
+    if(rd32(p+8)!=2) return ACEAPEX_ERR_DATA;             /* version 2: the four-stream layout below */
     a->orig=rd64(p+12); a->bs=rd32(p+20); a->nb=rd32(p+24);
     a->zls=rd64(p+36); a->zos=rd64(p+44); a->zns=rd64(p+52); a->zcs=rd64(p+60);
     if(!a->bs) return ACEAPEX_ERR_DATA;
@@ -254,6 +265,7 @@ typedef struct { Arc a; Cur l,o,n,c; } Dec;
 static int dec_open(Dec* d, const void* src, size_t n, int index){
     int r=open_arc(src,n,&d->a); if(r) return r;
     memset(&d->l,0,sizeof(Cur)); memset(&d->o,0,sizeof(Cur)); memset(&d->n,0,sizeof(Cur)); memset(&d->c,0,sizeof(Cur));
+    if(d->a.fast) return ACEAPEX_OK;                      /* no stream cursors in the FAST profile */
     if((r=cur_open(&d->l,d->a.zl,(size_t)d->a.zls,1,index))) return r;
     if((r=cur_open(&d->o,d->a.zo,(size_t)d->a.zos,0,index))) return r;
     if((r=cur_open(&d->n,d->a.zn,(size_t)d->a.zns,0,index))) return r;
@@ -265,6 +277,7 @@ static size_t block_size_of(const Dec* d, size_t b){
     uint64_t st=(uint64_t)b*d->a.bs; return (size_t)(st>=d->a.orig?0:(d->a.orig-st<d->a.bs?d->a.orig-st:d->a.bs)); }
 static int dec_block(Dec* d, size_t b, uint8_t* dst){
     if(b>=d->a.nb) return ACEAPEX_ERR_DATA;
+    if(d->a.fast) return axf_dec_block_of(&d->a.fa,(uint32_t)b,dst) ? ACEAPEX_OK : ACEAPEX_ERR_DATA;
     BO bov=bo_at(d->a.bo,b); const BO* bo=&bov; size_t sz=block_size_of(d,b); int err=0;
     const uint8_t* L=cur_get(&d->l,bo->lit_off,bo->lit_off+bo->lit_sz,&err); if(err) return err;
     const uint8_t* O=cur_get(&d->o,bo->off_off,bo->off_off+bo->off_sz,&err); if(err) return err;

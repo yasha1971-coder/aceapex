@@ -10,8 +10,10 @@ nothing: the defaults below apply, the archive bytes and the threads depend only
 
 | variable | default | effect |
 |---|---|---|
-| `ACEAPEX_BS` | derived from size and threads | block size in bytes (>= 4096); the "interactive" profile uses 16384 |
+| `ACEAPEX_BS` | derived from size and threads | block size in bytes (>= 4096); the "interactive" profile uses 16384; the fast profile (2.4.0) takes 4096..1048576, default 1048576 |
 | `AX_PROFILE` | unset | `open`: rANS token chunks and open literal chunks, no zstd frame (also sets AX_TOK/AX_LIT) |
+| `AX_PROFILE` | unset | `fast` (2.4.0): the FAST profile at the CLI's `--level` 1..8 (default 1), the same as `--profile fast` or `--level 11..18`, which work in every build (docs/FORMAT_FAST.md) |
+| `AX_REPS` | 7 | `aceapex t` with the fast profile: timed decode repetitions, the median is reported |
 | `AX_TOK` | unset | `rans`: token streams as rANS chunks (ADR-018) |
 | `AX_LIT` | unset | `open`: literal chunks as open DNA pack / open plain (ADR-019) |
 | `AX_ENC` | `l1` for DNA, chain otherwise | `l1` or `chain`: the match finder (ADR-020) |

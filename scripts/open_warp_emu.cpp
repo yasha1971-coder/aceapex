@@ -230,7 +230,7 @@ int main(int argc, char** argv) {
     for (int ai = 1; ai < argc; ai++) {                                   // mode 2 chunks of real archives
         FILE* f = fopen(argv[ai], "rb"); if (!f) { bad++; continue; }
         std::vector<uint8_t> a; { uint8_t buf[1 << 16]; size_t r; while ((r = fread(buf, 1, sizeof buf, f)) > 0) a.insert(a.end(), buf, buf + r); } fclose(f);
-        if (a.size() < 68 || memcmp(a.data(), "ACEPX2\0\0", 8)) continue;
+        if (a.size() < 68 || memcmp(a.data(), "ACEPX2\0\0", 8) || axo_rd32(&a[8]) != 2) continue;   // header version 2 only (the fast profile has no entropy chunks)
         uint32_t nb = axo_rd32(&a[24]); uint64_t zl = rd64(&a[36]);
         if (68 + 64ull * nb + zl > a.size() || zl < 16) continue;
         const uint8_t* z = a.data() + 68 + 64ull * nb; uint64_t h = rd64(z);

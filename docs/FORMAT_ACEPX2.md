@@ -263,8 +263,10 @@ applies to any implementation claiming conformance.
 ## 6. Versioning
 
 `version` is 2 and has been since the first release; this document freezes what version
-2 means. A future incompatible change increments `version`; readers MUST reject versions
-they do not implement. Flag bits in stream words are reserved: unknown set bits are an
+2 means. Version 3 (ACEAPEX 2.4.0) is the FAST profile, a different block layout under the
+same magic and the same first 36 header bytes: [FORMAT_FAST.md](FORMAT_FAST.md). A future
+incompatible change increments `version`; readers MUST reject versions
+they do not implement (the 2.4.0 readers reject anything but 2 and 3). Flag bits in stream words are reserved: unknown set bits are an
 error, not a hint. Compatibility rule: a reader of version N reads every archive of
 version <= N; a writer writes only the version it declares.
 
