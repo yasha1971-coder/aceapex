@@ -4,10 +4,21 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
-## Unreleased (2.5.0)
+## v2.5.0 — 2026-10-28
 
-**Level 11 (fast profile, min match 16) gets a new encoder**: ~19x faster at the same or better ratio. Format, decoders
-and levels 12-18 unchanged; level-11 archives of earlier versions decode as before, new ones decode with 2.4.x readers.
+**The fast profile: a new level-11 encoder (25.8 -> ~575 MB/s) and a faster decoder.** Format unchanged: archives of
+2.4.x decode with 2.5.0 and the other way round. lzbench on Zen 5 (Google Cloud C4D, AMD EPYC 9B45; lzbench aee1d72,
+gcc 13.3, silesia.tar, one pinned core, `-t8,8 -o1c4`, median of 5; `results/zen5-lzbench2-2026-10-28.log`):
+
+| | ratio | compression | decompression |
+|---|---|---|---|
+| aceapex_fast -1 (2.5.0) | 61.38 % | 575 MB/s | 15950 MB/s |
+| zxc 0.15.0 -1 | 61.67 % | 852 MB/s | 11027 MB/s |
+| memcpy | 100 % | | 28285 MB/s |
+
+On ace-core (EPYC 4344P, Zen 4 at 5+ GHz) one core writing to DRAM caps every fast decoder at ~11 GB/s, so there the
+two are within a few percent; the published lzbench machine (EPYC 9555P, 3.2 GHz) is in the compute-bound regime of the
+Zen 5 run.
 
 - The sparse-probe parse (`enc_sparse` in `src/ax_fast_enc.h`): an 8-byte hash key, one slot per hash; probes every
   3 bytes and every 2nd position in the table (coprime strides), a match found inside its span is extended backward to
