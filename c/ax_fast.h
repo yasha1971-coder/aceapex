@@ -162,12 +162,16 @@ AXF_INLINE uint32_t axf_dec_block_mm(const uint8_t* src, size_t ssz, uint8_t* ds
             int bad = 0; uint32_t c0;
             if (ll == 63u) { ll += axf_ext(&ext, eend, &bad); if (bad) return 0; }
             if ((size_t)(lend - lit) < ll || (size_t)(dend - d) < ll) return 0;
-            memcpy(d, lit, ll); d += ll; lit += ll;
+            /* lit + ll <= lend, so 32-byte steps read at most 31 bytes into the pad; with 32 bytes of room after the run
+               the steps may write past it (the next token overwrites those bytes) - no call, no size-dependent branches */
+            if ((size_t)(dend - d) >= (size_t)ll + 32u) axf_cpw(d, lit, ll); else memcpy(d, lit, ll);
+            d += ll; lit += ll;
             if ((size_t)(d - dst) < dist) return 0;
             ml = mc + mm;
             if (mc == 63u) { ml = AXF_COPY + 1 + axf_ext(&ext, eend, &bad); if (bad) return 0; }
             if ((size_t)(dend - d) < ml) return 0;
-            for (c0 = 0; c0 < ml; ) { uint32_t c = ml - c0 < dist ? ml - c0 : dist; memcpy(d + c0, d + c0 - dist, c); c0 += c; }
+            if ((size_t)(dend - d) >= (size_t)ml + 32u) axf_cpw(d, d - dist, ml);   /* dist >= 64 > 32: forward 32-byte steps are exact */
+            else for (c0 = 0; c0 < ml; ) { uint32_t c = ml - c0 < dist ? ml - c0 : dist; memcpy(d + c0, d + c0 - dist, c); c0 += c; }
             d += ml;
         }
     }
@@ -196,11 +200,14 @@ AXF_INLINE uint32_t axf_dec_block_tok_mm(const uint8_t* src, size_t ssz, uint8_t
         const uint32_t dist = (t >> 12) + AXF_MIN_DIST;
         if (AXF_LIKELY(d < dfast && ll != 63u && mc != 63u)) {
             /* literal copy reads lit..lit+63: lit <= lend holds here, so the read ends inside the pad */
-            axf_cp32(d, lit); if (ll > 32u) axf_cp32(d + 32, lit + 32);
+            /* branch-free on lengths: always 64 literal bytes and 96 match bytes (ll <= 62, ml <= 94); the room check
+               (>= 160 bytes before the copies, <= 62 literal bytes in front of the match: 98 left) covers both */
+            axf_cp32(d, lit); axf_cp32(d + 32, lit + 32);
             d += ll; lit += ll;
             if (AXF_UNLIKELY((size_t)(d - dst) < dist)) return 0;    /* source before the block */
-            ml = mc + mm;                                            /* <= 94: at most 3 steps, < 160 - 62 bytes */
-            axf_cpw(d, d - dist, ml); d += ml;
+            ml = mc + mm;
+            { const uint8_t* sm = d - dist; axf_cp32(d, sm); axf_cp32(d + 32, sm + 32); axf_cp32(d + 64, sm + 64); }
+            d += ml;
             if (AXF_UNLIKELY(lit > lend)) return 0;                  /* the literals of this token were not all there */
             continue;
         }
@@ -208,12 +215,16 @@ AXF_INLINE uint32_t axf_dec_block_tok_mm(const uint8_t* src, size_t ssz, uint8_t
             int bad = 0; uint32_t k;
             if (ll == 63u) { ll += axf_ext(&ext, eend, &bad); if (bad) return 0; }
             if ((size_t)(lend - lit) < ll || (size_t)(dend - d) < ll) return 0;
-            memcpy(d, lit, ll); d += ll; lit += ll;
+            /* lit + ll <= lend, so 32-byte steps read at most 31 bytes into the pad; with 32 bytes of room after the run
+               the steps may write past it (the next token overwrites those bytes) - no call, no size-dependent branches */
+            if ((size_t)(dend - d) >= (size_t)ll + 32u) axf_cpw(d, lit, ll); else memcpy(d, lit, ll);
+            d += ll; lit += ll;
             if ((size_t)(d - dst) < dist) return 0;
             ml = mc + mm;
             if (mc == 63u) { ml = AXF_COPY + 1 + axf_ext(&ext, eend, &bad); if (bad) return 0; }
             if ((size_t)(dend - d) < ml) return 0;
-            for (k = 0; k < ml; ) { uint32_t c = ml - k < dist ? ml - k : dist; memcpy(d + k, d + k - dist, c); k += c; }
+            if ((size_t)(dend - d) >= (size_t)ml + 32u) axf_cpw(d, d - dist, ml);   /* dist >= 64 > 32: forward 32-byte steps are exact */
+            else for (k = 0; k < ml; ) { uint32_t c = ml - k < dist ? ml - k : dist; memcpy(d + k, d + k - dist, c); k += c; }
             d += ml;
         }
     }

@@ -136,11 +136,12 @@ static size_t enc_greedy(const uint8_t* in, uint32_t n, uint8_t* out, const Para
 // hash. Positions == 0 mod SB enter the table, probes land every SA bytes (SA, SB coprime), so a match spanning enough probes
 // is found at some probe; it is then extended backward to its true start. A candidate closer than AXF_MIN_DIST is lifted to
 // the first legal multiple of its distance (same bytes on a run of that period) and verified. Matches of 8..15 bytes at the
-// probe that reach the minimum after the backward extension are taken. Inside a match every 8th table position and the one
-// 2 bytes before its end are inserted. Misses step SA + (bytes since the last match >> 8). Output in place: tokens,
+// probe that reach the minimum after the backward extension are taken. A match of 65..128 bytes goes out as tokens of at
+// most 64 bytes (same distance), which the decoder runs on its branch-free path. Inside a match every 8th table position
+// and the one 2 bytes before its end are inserted. Misses step SA + (bytes since the last match >> 8). Output in place: tokens,
 // extensions and literals into per-worker arrays (literals by 32-byte copies while 32 bytes of input remain).
 static size_t enc_sparse(const uint8_t* in, uint32_t n, uint8_t* out, const Params& P, Enc& e) {
-    enum : uint32_t { HB = 17, SA = 3, SB = 2, INS = 8, SKIP = 8 };
+    enum : uint32_t { HB = 17, SA = 3, SB = 2, INS = 8, SKIP = 8, SPLIT = 128 };   // SPLIT: DEC2/DEC4, results/zen5-2026-10-28.log
     const uint32_t mm = P.mm;
     e.stab.assign(1u << HB, 0u); if (e.stok.size() < n / 8 + 16) e.stok.resize(n / 8 + 16);
     if (e.slit.size() < (size_t)n + 64) e.slit.resize((size_t)n + 64); if (e.sext.size() < n / 16 + 64) e.sext.resize(n / 16 + 64);
@@ -181,8 +182,15 @@ static size_t enc_sparse(const uint8_t* in, uint32_t n, uint8_t* out, const Para
             if (pos + 32 <= n) { for (uint32_t i = 0; i < ll; i += 32) memcpy(L + nl + i, in + anchor + i, 32); } else cpyn(L + nl, in + anchor, ll);
             nl += ll;
             uint32_t llf = ll; if (ll >= LL_EXT) { llf = LL_EXT; leb(ll - LL_EXT); }
-            uint32_t mlf; if (len <= AXF_COPY) mlf = len - mm; else { mlf = ML_EXT; leb(len - AXF_COPY - 1); }
-            TK[nt++] = llf | mlf << 6 | (d - AXF_MIN_DIST) << 12;
+            {   // a match up to SPLIT bytes goes out as pieces of <= AXF_COPY (each >= mm, same distance, no literals): the decoder
+                // runs them on its branch-free path instead of the escape; longer matches keep one escaped token
+                uint32_t rest = len, first = 1;
+                if (rest > AXF_COPY && rest <= SPLIT)
+                    while (rest > AXF_COPY) { const uint32_t piece = rest - AXF_COPY < mm ? rest - mm : AXF_COPY;
+                        TK[nt++] = (first ? llf : 0u) | (piece - mm) << 6 | (d - AXF_MIN_DIST) << 12; first = 0; rest -= piece; }
+                uint32_t mlf; if (rest <= AXF_COPY) mlf = rest - mm; else { mlf = ML_EXT; leb(rest - AXF_COPY - 1); }
+                TK[nt++] = (first ? llf : 0u) | mlf << 6 | (d - AXF_MIN_DIST) << 12;
+            }
             const uint32_t end = pos + len;
             if (ip < end) { for (; ip + 8 < end && ip < last; ip += SB * INS) T[H(in + ip)] = ip + 1; ip = end + ((SB - end % SB) % SB); }
             if (end - 2 < last) T[H(in + end - 2)] = end - 2 + 1;
