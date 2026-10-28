@@ -15,6 +15,7 @@ bash scripts/fixture_test.sh > /tmp/_vh_fx.tsv 2>/dev/null
 bash scripts/cdec_test.sh >> /tmp/_vh_fx.tsv 2>/dev/null
 bash scripts/arm_test.sh >> /tmp/_vh_fx.tsv 2>/dev/null
 bash scripts/stdin_test.sh >> /tmp/_vh_fx.tsv 2>/dev/null
+bash scripts/portability_test.sh >> /tmp/_vh_fx.tsv 2>/dev/null
 bash scripts/fast_test.sh >> /tmp/_vh_fx.tsv 2>/dev/null
 python3 - "$V" "$M" "$HA" "$HB" <<'PY'
 import json,sys
