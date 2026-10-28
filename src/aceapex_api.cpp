@@ -10,8 +10,9 @@
 #include <atomic>
 
 size_t aceapex_compress_bound(size_t src_size) {
-    // Worst case: incompressible data + header overhead
-    return src_size + src_size/8 + 1024;
+    // Worst case: incompressible data + header overhead; the fast profile's bound (ax_fast_bound) is the larger one
+    const size_t d = src_size + src_size/8 + 1024, f = ax_fast_bound(src_size);
+    return d > f ? d : f;
 }
 
 int64_t aceapex_compress(
@@ -33,6 +34,12 @@ int64_t aceapex_compress(
 #ifdef ACEAPEX_ENV_TUNING
     if (axlm::wanted()) return axlm::compress((const uint8_t*)src, src_size, (uint8_t*)dst, dst_capacity, level, threads);
 #endif
+    if (ax_fast_level(level)) {                        // levels 11..18: the fast profile (header version 3)
+        std::vector<std::vector<uint8_t>> blocks; axf::Params P; uint32_t bs;
+        if (!ax_fast_encode((const uint8_t*)src, src_size, ax_fast_level(level), threads, blocks, P, bs)) return ACEAPEX_ERR_DATA;
+        const int64_t r = ax_fast_assemble(blocks, P, bs, (const uint8_t*)src, src_size, (uint8_t*)dst, dst_capacity);
+        return r < 0 ? ACEAPEX_ERR_BUFFER : r;
+    }
 
     std::vector<BlockOffsets> boffs;
     uint8_t *rl,*ro,*rn,*rc;
@@ -275,6 +282,7 @@ int64_t aceapex_decompress_mt(
 #ifdef ACEAPEX_ENV_TUNING
     if (axlm::is(src, src_size)) return dst ? axlm::decompress((const uint8_t*)src, src_size, (uint8_t*)dst, dst_capacity, threads) : ACEAPEX_ERR_DATA;
 #endif
+    if (src && axf_is_v3((const uint8_t*)src, src_size)) return dst ? ax_fast_decompress((const uint8_t*)src, src_size, (uint8_t*)dst, dst_capacity, threads) : ACEAPEX_ERR_DATA;
     const double t0 = ax_pt() ? ax_now() : 0;
     static const bool tile = [] { const char* e = ax_getenv("AX_LIT_TILE"); return e ? atoi(e) != 0 : true; }();   // default 1
     AxStreams S; int64_t r = ax_entropy_decode(src, src_size, threads, S, tile);
@@ -295,6 +303,7 @@ int aceapex_decode_streams(const void* src, size_t src_size, aceapex_streams_t* 
 {
     if (!out) return ACEAPEX_ERR_DATA;
     memset(out, 0, sizeof(*out));
+    if (src && axf_is_v3((const uint8_t*)src, src_size)) return ACEAPEX_ERR_DATA;   // the fast profile has no entropy streams
     AxStreams S; int64_t r = ax_entropy_decode(src, src_size, 0, S);
     if (r < 0) return (int)r;
     if (r == 0) { out->block_size = S.hdr.block_size; return 0; }   // empty archive: no streams
@@ -330,6 +339,10 @@ int64_t aceapex_decompress_region(
 #endif
     if (!src || src_size < sizeof(AetHeader)) return ACEAPEX_ERR_DATA;
     const uint8_t* p = (const uint8_t*)src;
+    if (axf_is_v3(p, src_size)) {                      // fast profile: the covering blocks, one thread
+        axf_arc_t a; if (axf_open(p, src_size, &a) != 0 || !dst) return ACEAPEX_ERR_DATA;
+        return ax_fast_region(a, (uint8_t*)dst, dst_capacity, offset, length, 1);
+    }
     AetHeader hdr; memcpy(&hdr, p, sizeof(hdr));
     if (memcmp(hdr.magic,"ACEPX2\0\0",8) != 0) return ACEAPEX_ERR_DATA;
     if (hdr.num_blocks == 0) return (ax_is_empty_archive(hdr) && length == 0) ? 0 : ACEAPEX_ERR_DATA;
@@ -500,6 +513,7 @@ int64_t aceapex_decompress_ranges(
     if(src_size<sizeof(AetHeader)) return ACEAPEX_ERR_DATA;
 
     const uint8_t* p=(const uint8_t*)src;
+    if (axf_is_v3(p, src_size)) return ax_fast_ranges(p, src_size, ranges, count, threads);
     AetHeader hdr; memcpy(&hdr,p,sizeof(hdr));
     if(memcmp(hdr.magic,"ACEPX2\0\0",8)!=0) return ACEAPEX_ERR_DATA;
     if(hdr.num_blocks==0){ if(!ax_is_empty_archive(hdr)) return ACEAPEX_ERR_DATA;
@@ -666,6 +680,7 @@ int64_t aceapex_decompress_stream(aceapex_read_fn rd, void* rctx, aceapex_write_
     StCtx c; c.rd = rd; c.rctx = rctx; c.wr = wr; c.wctx = wctx; c.flags = flags;
     AetHeader hdr; if (!st_read(c, 0, &hdr, sizeof hdr)) return ACEAPEX_ERR_DATA;
     if (memcmp(hdr.magic, "ACEPX2\0\0", 8) != 0) return ACEAPEX_ERR_DATA;
+    if (hdr.version == AXF_VERSION) return ax_fast_stream(rd, rctx, wr, wctx, threads, flags, hdr);
     if (hdr.num_blocks == 0) { if (!ax_is_empty_archive(hdr)) return ACEAPEX_ERR_DATA; return 0; }
     if (hdr.block_size == 0 || (uint64_t)hdr.num_blocks * hdr.block_size < hdr.orig_size || (uint64_t)(hdr.num_blocks - 1) * hdr.block_size >= hdr.orig_size) return ACEAPEX_ERR_DATA;
     c.orig = hdr.orig_size; c.bs = hdr.block_size; c.nb = hdr.num_blocks;

@@ -7,19 +7,22 @@ extern "C" {
 #endif
 
 #define ACEAPEX_VERSION_MAJOR 2
-#define ACEAPEX_VERSION_MINOR 3
-#define ACEAPEX_VERSION_PATCH 1
-#define ACEAPEX_VERSION_STRING "2.3.1"
+#define ACEAPEX_VERSION_MINOR 4
+#define ACEAPEX_VERSION_PATCH 0
+#define ACEAPEX_VERSION_STRING "2.4.0"
 
 /* One-shot compression */
 int64_t aceapex_compress(
     const void* src, size_t src_size,
     void*       dst, size_t dst_capacity,
-    int         level,    /* 1=fast, 2=default, 3=l1 encoder on any input (DNA uses l1 at every level, ADR-020) */
+    int         level,    /* 1=fast, 2=default, 3=l1 encoder on any input (DNA uses l1 at every level, ADR-020);
+                             11..18 = the FAST profile (2.4.0, docs/FORMAT_FAST.md): no entropy stage, header version 3,
+                             min match 16/12/8/5 greedy (11-14) and the same with the optimal parse (15-18) */
     int         threads   /* 0=auto */
 );
 
-/* One-shot decompression; uses every hardware thread. */
+/* One-shot decompression; uses every hardware thread. Reads header versions 2 (the default profile) and 3 (the
+   fast profile); the version is taken from the archive, the caller does nothing. */
 int64_t aceapex_decompress(
     const void* src, size_t src_size,
     void*       dst, size_t dst_capacity
@@ -115,7 +118,8 @@ void aceapex_stream_free(aceapex_stream_t* s);
 /* The entropy layer only: the four decoded streams and the block table of an archive,
    for a caller that runs the match phase itself (the lzbench CUDA decoder). Returns 0
    or a negative error code; free with aceapex_streams_free. An empty archive yields
-   zero streams and num_blocks 0. */
+   zero streams and num_blocks 0. A fast-profile archive (header version 3) has no
+   entropy layer: ACEAPEX_ERR_DATA. */
 typedef struct {
     uint8_t *lit, *off, *len, *cmd;     /* decoded streams (malloc'd) */
     uint64_t lit_sz, off_sz, len_sz, cmd_sz;
