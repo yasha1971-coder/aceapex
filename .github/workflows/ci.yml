@@ -88,6 +88,21 @@ jobs:
         grep -q fail /tmp/arm.tsv && exit 1
         [ "$(grep -c pass /tmp/arm.tsv)" = 4 ] || { echo "expected 4 pass"; exit 1; }
 
+  # The library TU as lzbench and TurboBench compile it, with the compilers that broke inside lzbench's CI (#355):
+  # MinGW-w64 x86_64/i686, gcc 10, 32-bit ARMv5 (no __atomic_*_8 in the object). Must pass before any release.
+  portability:
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v5
+    - name: Cross compilers
+      run: sudo apt-get update && sudo apt-get install -y libzstd-dev g++-mingw-w64-x86-64-posix g++-mingw-w64-i686-posix g++-10 g++-arm-linux-gnueabi
+    - name: zstd headers for the cross builds
+      run: git clone -q --depth 1 --branch v1.5.6 https://github.com/facebook/zstd.git /tmp/zstd
+    - name: Judge
+      run: |
+        ZSTD_INC=/tmp/zstd/lib bash scripts/portability_test.sh | tee /tmp/port.tsv
+        grep -q $'\tpass\t' /tmp/port.tsv
+
   verify-tags:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04

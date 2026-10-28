@@ -20,6 +20,9 @@ Build fixes for Windows (MinGW), gcc 9/10 and 32-bit ARMv5, found by the lzbench
 - 32-bit ARMv5 (lzbench #355, arm-linux-gnueabi): the fast profile's range batch counted results in a 64-bit atomic,
   which that target has no lock-free form of (`__atomic_load_8` unresolved at link time); the counter is `size_t` now.
   Checked: no `__atomic_*_8` reference left in the lzbench wrapper object for arm-linux-gnueabi (there were three).
+- So that it does not happen again: `scripts/portability_test.sh` (claim `head_portability`, a CI job `portability`
+  and the HEAD judge) builds the library TU with MinGW-w64 x86_64/i686, gcc 10 and arm-linux-gnueabi and checks the
+  ARMv5 object for 64-bit atomics. On the 2.4.0 sources it fails on all three causes; on 2.4.1 it passes.
 
 ## v2.4.0 — 2026-10-28
 
