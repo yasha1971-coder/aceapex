@@ -4,6 +4,21 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
+## v2.4.2 — 2026-10-28
+
+Build fixes for gcc 9/10 and 32-bit ARMv5, found by the lzbench CI (#355), and a portability gate. Format, archive
+bytes, encoders and decoders are those of 2.4.0 and 2.4.1.
+
+- gcc 9 and 10 (lzbench #355; also MinGW-w64 built on gcc 10): `ax_rans.h` used `_mm256_cvtsi256_si32`, an intrinsic
+  those compilers do not have; now `_mm_cvtsi128_si32(_mm256_castsi256_si128(x))`, the same instruction. Copies in
+  `c/` and `python/csrc/` identical.
+- 32-bit ARMv5 (lzbench #355, arm-linux-gnueabi): the fast profile's range batch counted results in a 64-bit atomic,
+  which that target has no lock-free form of (`__atomic_load_8` unresolved at link time); the counter is `size_t` now.
+  Checked: no `__atomic_*_8` reference left in the lzbench wrapper object for arm-linux-gnueabi (there were three).
+- So that it does not happen again: `scripts/portability_test.sh` (claim `head_portability`, a CI job `portability`
+  and the HEAD judge) builds the library TU with MinGW-w64 x86_64/i686, gcc 10 and arm-linux-gnueabi and checks the
+  ARMv5 object for 64-bit atomics. On the 2.4.0 sources it fails on all three causes, on 2.4.1 on two; on 2.4.2 it passes.
+
 ## v2.4.1 — 2026-10-28
 
 Build fix for Windows (MinGW). Format, archive bytes, the library's decoders and encoders are those of 2.4.0.
