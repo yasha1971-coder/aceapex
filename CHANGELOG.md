@@ -6,7 +6,7 @@ Every number below is reproduced by `make test && ./verify.sh` on the tagged com
 
 ## v2.4.1 — 2026-10-28
 
-Build fix for Windows (MinGW). Format, archive bytes, the library's decoders and encoders are those of 2.4.0.
+Build fixes for Windows (MinGW), gcc 9/10 and 32-bit ARMv5, found by the lzbench CI (#355). Format, archive bytes, encoders and decoders are those of 2.4.0.
 
 - The CLI's streaming paths (`d --out -`, `faidx` index build) read the archive with `pread`, which MinGW does not
   have; since 2.3.0 the library did not compile there, also inside lzbench (lzbench #355: the four MinGW jobs failed
@@ -15,6 +15,11 @@ Build fix for Windows (MinGW). Format, archive bytes, the library's decoders and
   those files are opened with `O_BINARY`. Checked here: the lzbench wrapper compiles with x86_64 and i686 MinGW-w64
   (posix), clang, aarch64 and armhf; on Linux the pipe test 36/36, conformance 27/27, `d --out -` on a default and a
   fast archive and `faidx` bit-perfect.
+- gcc 9 and 10 (lzbench #355): `ax_rans.h` used `_mm256_cvtsi256_si32`, an intrinsic those compilers do not have;
+  now `_mm_cvtsi128_si32(_mm256_castsi256_si128(x))`, the same instruction. Copies in `c/` and `python/csrc/` identical.
+- 32-bit ARMv5 (lzbench #355, arm-linux-gnueabi): the fast profile's range batch counted results in a 64-bit atomic,
+  which that target has no lock-free form of (`__atomic_load_8` unresolved at link time); the counter is `size_t` now.
+  Checked: no `__atomic_*_8` reference left in the lzbench wrapper object for arm-linux-gnueabi (there were three).
 
 ## v2.4.0 — 2026-10-28
 
