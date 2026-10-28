@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aceapex"
-version = "2.4.2"
+version = "2.5.0"
 description = "Read ACEAPEX (.aet) archives: whole, by region, or by batch of ranges. C99 decoder, libzstd only."
 readme = "README.md"
 license = { text = "MIT" }

@@ -4,6 +4,44 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
+## v2.5.0 — 2026-10-28
+
+**The fast profile: a new level-11 encoder (25.8 -> ~575 MB/s) and a faster decoder.** Format unchanged: archives of
+2.4.x decode with 2.5.0 and the other way round. lzbench on Zen 5 (Google Cloud C4D, AMD EPYC 9B45; lzbench aee1d72,
+gcc 13.3, silesia.tar, one pinned core, `-t8,8 -o1c4`, median of 5; `results/zen5-lzbench2-2026-10-28.log`):
+
+| | ratio | compression | decompression |
+|---|---|---|---|
+| aceapex_fast -1 (2.5.0) | 61.38 % | 575 MB/s | 15950 MB/s |
+| zxc 0.15.0 -1 | 61.67 % | 852 MB/s | 11027 MB/s |
+| memcpy | 100 % | | 28285 MB/s |
+
+On ace-core (EPYC 4344P, Zen 4 at 5+ GHz) one core writing to DRAM caps every fast decoder at ~11 GB/s, so there the
+two are within a few percent; the published lzbench machine (EPYC 9555P, 3.2 GHz) is in the compute-bound regime of the
+Zen 5 run.
+
+- The sparse-probe parse (`enc_sparse` in `src/ax_fast_enc.h`): an 8-byte hash key, one slot per hash; probes every
+  3 bytes and every 2nd position in the table (coprime strides), a match found inside its span is extended backward to
+  its start; a candidate closer than the 64-byte minimum distance is lifted to the first legal multiple of its distance.
+- Measured on ace-core (EPYC 4344P, one core, median of 7; `results/hwenc2-2026-10-28-8201fb2.log`): silesia 61.21 %
+  (was 61.35 %) at 482 MB/s (was 25.8), decode 11138 MB/s (was 11011); enwik8 82.65 % (was 96.80 %); chr1 87.67 %
+  (was 91.44 %) with decode 11024 MB/s (was 13233). zxc 0.15.0 -1 on the same run: silesia 61.67 %, 1016 MB/s, 10624 MB/s.
+- Encoder workers keep one scratch buffer instead of zeroing a block-sized vector per block.
+- **Fast-profile decoder (DEC2, all levels, every reader: C++, C99, Python):** the fast path copies 64 literal and 96 match
+  bytes per token without length branches (the 160-byte room check already covers them); literal runs and matches on the
+  escape path go in 32-byte steps instead of calls to memcpy when 32 bytes of room remain. Output unchanged byte for byte.
+- Level 11 writes a match of 65..128 bytes as tokens of at most 64 bytes, which take the branch-free path.
+- The fast-profile block decoder is cloned for AVX2 on x86-64 Linux (GCC 6+, Clang 14+; `target_clones`, picked at load
+  time): a binary built without `-march` - lzbench, distribution packages - ran its 32-byte copies as two 16-byte moves
+  (callgrind: 0.60 against 0.45 instructions per output byte). Other targets keep one generic function; `AXF_NO_CLONES`
+  turns it off.
+- Measured (DEC4: each Silesia member decoded on one core, time summed as lzbench sums it; `results/zen5-2026-10-28.log`,
+  `results/dec4-2026-10-28-8201fb2.log`): on Zen 5 (Google Cloud C4D, EPYC 9B45) 17128 MB/s against zxc 0.15.0 -1 11663
+  (+46.9 %) and 2.4.2 level 11 12416, ratio 61.34 % against 61.24 %; silesia.tar decoded whole 15520 against 10778.
+  On ace-core (Zen 4, one core writing to DRAM) the whole-file decode stays at the memory ceiling (~11 GB/s for both).
+- Conformance fixture `zeros_fast_1500K` re-encoded (same input, new level-11 bytes).
+- Research tool `research/fastblk/hwenc2/` (encoder variants, selftest, stream statistics, decode cost under perf).
+
 ## v2.4.2 — 2026-10-28
 
 Build fixes for gcc 9/10 and 32-bit ARMv5, found by the lzbench CI (#355), and a portability gate. Format, archive
