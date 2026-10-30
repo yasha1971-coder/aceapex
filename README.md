@@ -282,6 +282,8 @@ A fresh clone of tag `paper5-v1` on a CPU-only host gives **17 pass, 0 fail, 6 s
 
 See [BENCHMARK.md](docs/research/BENCHMARK.md) for detailed benchmarks and [TECHNICAL_NOTE.md](docs/research/TECHNICAL_NOTE.md) for design notes.
 
+- Article: [LZ encoder 25 -> 575 MB/s: what broke with the lz4 trick at min distance 64](https://dev.to/yasha1971coder/lz-encoder-25-575-mbs-what-broke-when-i-took-the-lz4-trick-into-a-format-with-min-distance-64-3gig)
+
 ---
 
 ## Verify every published number
