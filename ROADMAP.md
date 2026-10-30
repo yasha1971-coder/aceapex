@@ -125,6 +125,10 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+30.10: v2.6.0 = e104741 (main, тег), release = 04f3ebd (merge, дерево == v2.6.0, без force). Уровень 11: ENC3 + SKIP10;
+Zen 5 lzbench 969 / 15858 MB/s при 61.57 % против zxc -1 869 / 11135 при 61.67 %. Формат и декодер прежние, 12–18
+побайтно прежние. Ворота: судья 74/0, fast_test 6/0, portability 2/2. Дальше: Release и Zenodo (команды у Якова),
+DOI -> CITATION на main. lzbench / TurboBench / форум — только по слову.
 27.10: CI0 (main зелёный: arm_test.sh без ACEAPEX_ENV_TUNING -> dna_depth_legacy; head_faidx против samtools 1.17+ -> -n 60;
 actions v5, ubuntu-24.04). v2.3.0 = b948923 (слияние release-2.3.0), тег запушен; release = c13b163 (merge, дерево == v2.3.0,
 без force). cli-stdin в main (2765cb6): c/d --in -, c --out -, пустой пайп -> rc 1 (было: пустой архив rc 0), претензия
