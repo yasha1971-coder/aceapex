@@ -4,7 +4,7 @@
 #  head_fast_cli_roundtrip   a generated 6 MB mix (text, DNA with repeats, random, zeros) through c / d at levels 11, 14, 15 and
 #                            2 threads, the streaming decode (d --out -), the pipe (c --in - --out - | d), a region across a block
 #                            boundary, --profile fast --level 1 == --level 11 byte for byte
-#  head_fast_fixture_encode  the five fast fixtures re-encoded from their regenerated inputs == the archives in verify/fixtures/conf
+#  head_fast_fixture_encode  the six fast fixtures re-encoded from their regenerated inputs == the archives in verify/fixtures/conf
 #  head_fast_cdecoder        the C99 decoder (axdec) on the level-11 archive: whole file and 200 random ranges
 #  head_fast_api             scripts/fast_api_test.cpp through the library (levels 11..18, sizes, threads, regions, ranges, refusals)
 #  head_fast_fuzz            scripts/fast_fuzz.cpp under ASan/UBSan, 20 s, plus its negative control (a short buffer is reported)
@@ -38,9 +38,9 @@ sz=$(stat -c%s $T/f11.aet)
 [ -z "$bad" ] && printf 'head_fast_cli_roundtrip\tpass\t%d/%d checks on a 6 MB generated mix: c/d at levels 11, 14, 15 bit-perfect, stream and pipe bit-perfect, region across the block boundary, --profile fast --level 1 == --level 11, header version 3 / profile 1 / min match 16 (level 11: %s B)\n' $n $n "$sz" \
   || printf 'head_fast_cli_roundtrip\tfail\tfailed:%s\n' "$bad"
 # fixtures: regenerated inputs re-encoded with the manifest's level must give the stored archive
-if python3 scripts/make_fixtures.py --regen --only text_fast_200K,rand_fast_70K,zeros_fast_1500K,dna_fast_opt_2MiB,rand_fast_7B >/dev/null 2>&1 && [ -d /tmp/conf_inputs ]; then
+if python3 scripts/make_fixtures.py --regen --only text_fast_200K,rand_fast_70K,zeros_fast_1500K,dna_fast_opt_2MiB,rand_fast_7B,text_fast_l11_16K >/dev/null 2>&1 && [ -d /tmp/conf_inputs ]; then
   ok=0; m=0; bad=""
-  for c in text_fast_200K:14 rand_fast_70K:11 zeros_fast_1500K:11 dna_fast_opt_2MiB:15 rand_fast_7B:18; do
+  for c in text_fast_200K:14 rand_fast_70K:11 zeros_fast_1500K:11 dna_fast_opt_2MiB:15 rand_fast_7B:18 text_fast_l11_16K:11; do
     name=${c%%:*}; L=${c##*:}; m=$((m+1))
     env -i PATH="$PATH" $B c --in /tmp/conf_inputs/$name --out $T/re_$name.aet --threads 2 --level $L >/dev/null 2>&1
     cmp -s $T/re_$name.aet $F/conf/$name.aet && ok=$((ok+1)) || bad="$bad $name"

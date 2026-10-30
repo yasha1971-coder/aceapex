@@ -1,0 +1,79 @@
+16777216 bin
+16777216 dna
+12655775 mix
+16777216 rand
+72863 text
+16777216 zeros
+bin	L11	16777216	15541395	T1==T4	rt1=ok	rt4=ok
+bin	L12	16777216	14352139	T1==T4	rt1=ok	rt4=ok
+bin	L13	16777216	13129671	T1==T4	rt1=ok	rt4=ok
+bin	L14	16777216	13088130	T1==T4	rt1=ok	rt4=ok
+bin	L15	16777216	15143150	T1==T4	rt1=ok	rt4=ok
+bin	L16	16777216	13533203	T1==T4	rt1=ok	rt4=ok
+bin	L17	16777216	12963701	T1==T4	rt1=ok	rt4=ok
+bin	L18	16777216	12936850	T1==T4	rt1=ok	rt4=ok
+chr1.fa	L11	253935557	224446041	T1==T4	rt1=ok	rt4=ok
+chr1.fa	L12	253935557	229584600	T1==T4	rt1=ok	rt4=ok
+chr1.fa	L13	253935557	151386806	T1==T4	rt1=ok	rt4=ok
+chr1.fa	L14	253935557	127177412	T1==T4	rt1=ok	rt4=ok
+chr1.fa	L15	253935557	215695595	T1==T4	rt1=ok	rt4=ok
+chr1.fa	L16	253935557	198880322	T1==T4	rt1=ok	rt4=ok
+chr1.fa	L17	253935557	108991850	T1==T4	rt1=ok	rt4=ok
+chr1.fa	L18	253935557	105798144	T1==T4	rt1=ok	rt4=ok
+dna	L11	16777216	16356787	T1==T4	rt1=ok	rt4=ok
+dna	L12	16777216	16707705	T1==T4	rt1=ok	rt4=ok
+dna	L13	16777216	11405900	T1==T4	rt1=ok	rt4=ok
+dna	L14	16777216	9254799	T1==T4	rt1=ok	rt4=ok
+dna	L15	16777216	15835496	T1==T4	rt1=ok	rt4=ok
+dna	L16	16777216	14601385	T1==T4	rt1=ok	rt4=ok
+dna	L17	16777216	7915966	T1==T4	rt1=ok	rt4=ok
+dna	L18	16777216	7691049	T1==T4	rt1=ok	rt4=ok
+enwik8	L11	100000000	83368659	T1==T4	rt1=ok	rt4=ok
+enwik8	L12	100000000	75527889	T1==T4	rt1=ok	rt4=ok
+enwik8	L13	100000000	51956468	T1==T4	rt1=ok	rt4=ok
+enwik8	L14	100000000	47909622	T1==T4	rt1=ok	rt4=ok
+enwik8	L15	100000000	78579255	T1==T4	rt1=ok	rt4=ok
+enwik8	L16	100000000	64764285	T1==T4	rt1=ok	rt4=ok
+enwik8	L17	100000000	49225125	T1==T4	rt1=ok	rt4=ok
+enwik8	L18	100000000	46211807	T1==T4	rt1=ok	rt4=ok
+mix	L11	12655775	8059282	T1==T4	rt1=ok	rt4=ok
+mix	L12	12655775	8199576	T1==T4	rt1=ok	rt4=ok
+mix	L13	12655775	6758939	T1==T4	rt1=ok	rt4=ok
+mix	L14	12655775	6437426	T1==T4	rt1=ok	rt4=ok
+mix	L15	12655775	7842421	T1==T4	rt1=ok	rt4=ok
+mix	L16	12655775	7546078	T1==T4	rt1=ok	rt4=ok
+mix	L17	12655775	6108199	T1==T4	rt1=ok	rt4=ok
+mix	L18	12655775	6043591	T1==T4	rt1=ok	rt4=ok
+rand	L11	16777216	16778636	T1==T4	rt1=ok	rt4=ok
+rand	L12	16777216	16778636	T1==T4	rt1=ok	rt4=ok
+rand	L13	16777216	16778636	T1==T4	rt1=ok	rt4=ok
+rand	L14	16777216	16778636	T1==T4	rt1=ok	rt4=ok
+rand	L15	16777216	16778636	T1==T4	rt1=ok	rt4=ok
+rand	L16	16777216	16778636	T1==T4	rt1=ok	rt4=ok
+rand	L17	16777216	16778636	T1==T4	rt1=ok	rt4=ok
+rand	L18	16777216	16780651	T1==T4	rt1=ok	rt4=ok
+silesia.tar	L11	211957760	130497693	T1==T4	rt1=ok	rt4=ok
+silesia.tar	L12	211957760	114736373	T1==T4	rt1=ok	rt4=ok
+silesia.tar	L13	211957760	95273962	T1==T4	rt1=ok	rt4=ok
+silesia.tar	L14	211957760	86222212	T1==T4	rt1=ok	rt4=ok
+silesia.tar	L15	211957760	117342641	T1==T4	rt1=ok	rt4=ok
+silesia.tar	L16	211957760	103546864	T1==T4	rt1=ok	rt4=ok
+silesia.tar	L17	211957760	88574882	T1==T4	rt1=ok	rt4=ok
+silesia.tar	L18	211957760	83103395	T1==T4	rt1=ok	rt4=ok
+text	L11	72863	13033	T1==T4	rt1=ok	rt4=ok
+text	L12	72863	9424	T1==T4	rt1=ok	rt4=ok
+text	L13	72863	8977	T1==T4	rt1=ok	rt4=ok
+text	L14	72863	8909	T1==T4	rt1=ok	rt4=ok
+text	L15	72863	9644	T1==T4	rt1=ok	rt4=ok
+text	L16	72863	9133	T1==T4	rt1=ok	rt4=ok
+text	L17	72863	8810	T1==T4	rt1=ok	rt4=ok
+text	L18	72863	8763	T1==T4	rt1=ok	rt4=ok
+zeros	L11	16777216	68316	T1==T4	rt1=ok	rt4=ok
+zeros	L12	16777216	68508	T1==T4	rt1=ok	rt4=ok
+zeros	L13	16777216	68508	T1==T4	rt1=ok	rt4=ok
+zeros	L14	16777216	68508	T1==T4	rt1=ok	rt4=ok
+zeros	L15	16777216	68508	T1==T4	rt1=ok	rt4=ok
+zeros	L16	16777216	68508	T1==T4	rt1=ok	rt4=ok
+zeros	L17	16777216	68508	T1==T4	rt1=ok	rt4=ok
+zeros	L18	16777216	68508	T1==T4	rt1=ok	rt4=ok
+# 72 lines; T1!=T4: 0; rt FAIL: 0
