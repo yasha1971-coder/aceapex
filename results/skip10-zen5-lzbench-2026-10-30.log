@@ -1,0 +1,45 @@
+# aceapex-skip10-20261030011310 aceapex 51051441e7c92a30973d974a2e0f583fe606654a lzbench tree 1cda8a20423e59fc9989a1c9fcc138d9ffa3f76c; gcc 13.3.0; load 0.44 0.76 0.36
+Model name:                              AMD EPYC 9B45
+L2 cache:                                2 MiB (2 instances)
+L3 cache:                                32 MiB (1 instance)
+## run 1
+| Compressor name         | Compression| Decompress.| Compr. size | Ratio | Filename |
+| ---------------         | -----------| -----------| ----------- | ----- | -------- |
+| Compressor name         | Compression| Decompress.| Compr. size | Ratio | Filename |
+| ---------------         | -----------| -----------| ----------- | ----- | -------- |
+| aceapex 2.5.0 fast -1   |   976 MB/s | 15783 MB/s |   130497693 | 61.57 | /home/aeterna/silesia.tar|
+| zxc 0.15.0 -1           |   868 MB/s | 11028 MB/s |   130717790 | 61.67 | /home/aeterna/silesia.tar|
+| memcpy                  | 27452 MB/s | 28340 MB/s |   211957760 |100.00 | /home/aeterna/silesia.tar|
+## run 2
+| Compressor name         | Compression| Decompress.| Compr. size | Ratio | Filename |
+| ---------------         | -----------| -----------| ----------- | ----- | -------- |
+| Compressor name         | Compression| Decompress.| Compr. size | Ratio | Filename |
+| ---------------         | -----------| -----------| ----------- | ----- | -------- |
+| aceapex 2.5.0 fast -1   |   977 MB/s | 15858 MB/s |   130497693 | 61.57 | /home/aeterna/silesia.tar|
+| zxc 0.15.0 -1           |   868 MB/s | 11186 MB/s |   130717790 | 61.67 | /home/aeterna/silesia.tar|
+| memcpy                  | 27010 MB/s | 26280 MB/s |   211957760 |100.00 | /home/aeterna/silesia.tar|
+## run 3
+| Compressor name         | Compression| Decompress.| Compr. size | Ratio | Filename |
+| ---------------         | -----------| -----------| ----------- | ----- | -------- |
+| Compressor name         | Compression| Decompress.| Compr. size | Ratio | Filename |
+| ---------------         | -----------| -----------| ----------- | ----- | -------- |
+| aceapex 2.5.0 fast -1   |   961 MB/s | 15941 MB/s |   130497693 | 61.57 | /home/aeterna/silesia.tar|
+| zxc 0.15.0 -1           |   869 MB/s | 11176 MB/s |   130717790 | 61.67 | /home/aeterna/silesia.tar|
+| memcpy                  | 27613 MB/s | 27696 MB/s |   211957760 |100.00 | /home/aeterna/silesia.tar|
+## run 4
+| Compressor name         | Compression| Decompress.| Compr. size | Ratio | Filename |
+| ---------------         | -----------| -----------| ----------- | ----- | -------- |
+| Compressor name         | Compression| Decompress.| Compr. size | Ratio | Filename |
+| ---------------         | -----------| -----------| ----------- | ----- | -------- |
+| aceapex 2.5.0 fast -1   |   969 MB/s | 15782 MB/s |   130497693 | 61.57 | /home/aeterna/silesia.tar|
+| zxc 0.15.0 -1           |   872 MB/s | 11135 MB/s |   130717790 | 61.67 | /home/aeterna/silesia.tar|
+| memcpy                  | 28054 MB/s | 27815 MB/s |   211957760 |100.00 | /home/aeterna/silesia.tar|
+## run 5
+| Compressor name         | Compression| Decompress.| Compr. size | Ratio | Filename |
+| ---------------         | -----------| -----------| ----------- | ----- | -------- |
+| Compressor name         | Compression| Decompress.| Compr. size | Ratio | Filename |
+| ---------------         | -----------| -----------| ----------- | ----- | -------- |
+| aceapex 2.5.0 fast -1   |   969 MB/s | 15946 MB/s |   130497693 | 61.57 | /home/aeterna/silesia.tar|
+| zxc 0.15.0 -1           |   870 MB/s | 11040 MB/s |   130717790 | 61.67 | /home/aeterna/silesia.tar|
+| memcpy                  | 28123 MB/s | 28291 MB/s |   211957760 |100.00 | /home/aeterna/silesia.tar|
+# load after 0.99 0.90 0.51

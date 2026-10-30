@@ -1,0 +1,23 @@
+# ASan+UBSan rerun after the control, skip10 66fddf3 sources (library unchanged since 5105144), level 11, exact-size heap buffers
+/home/aeterna/golden/text/enwik8 11 4 100000000 83368659 ok
+/dev/shm/skg/corp/bin 11 1 16777216 15541395 ok
+/dev/shm/skg/corp/bin 11 4 16777216 15541395 ok
+/dev/shm/skg/corp/dna 11 1 16777216 16356787 ok
+/dev/shm/skg/corp/dna 11 4 16777216 16356787 ok
+/home/aeterna/golden/mixed/silesia.tar 11 4 211957760 130497693 ok
+/dev/shm/skg/corp/mix 11 4 12655775 8059282 ok
+/dev/shm/skg/corp/mix 11 1 12655775 8059282 ok
+/dev/shm/skg/corp/rand 11 4 16777216 16778636 ok
+/dev/shm/skg/corp/text 11 1 72863 13033 ok
+/dev/shm/skg/corp/rand 11 1 16777216 16778636 ok
+/dev/shm/skg/corp/text 11 4 72863 13033 ok
+/home/aeterna/golden/text/enwik8 11 1 100000000 83368659 ok
+/dev/shm/skg/corp/zeros 11 4 16777216 68316 ok
+/dev/shm/skg/corp/zeros 11 1 16777216 68316 ok
+/home/aeterna/golden/genome/chr1.fa 11 4 253935557 224446041 ok
+/dev/shm/skg/corp/text16 11 4 16777216 2756282 ok
+/dev/shm/skg/corp/text16 11 1 16777216 2756282 ok
+/dev/shm/skg/corp/code16 11 4 16777216 8646423 ok
+/dev/shm/skg/corp/code16 11 1 16777216 8646423 ok
+/home/aeterna/golden/mixed/silesia.tar 11 1 211957760 130497693 ok
+/home/aeterna/golden/genome/chr1.fa 11 1 253935557 224446041 ok
