@@ -74,6 +74,8 @@ CASES = [
     ('zeros_fast_1500K', 1500000, 25, '--level 11',                                     '-'),
     ('dna_fast_opt_2MiB', 2097152 + 1, 26, '--level 15',                                '-'),
     ('rand_fast_7B',    7,       27, '--level 18',                                      '-'),
+    # level 11 on text where the probe key and the step after a rejected key hit matter (SKIP10: ENC3 bytes differ)
+    ('text_fast_l11_16K', 16384, 28, '--level 11',                                     '-'),
 ]
 
 def main():
