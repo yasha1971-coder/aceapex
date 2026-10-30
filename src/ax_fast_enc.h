@@ -166,7 +166,7 @@ static size_t enc_sparse(const uint8_t* in, uint32_t n, uint8_t* out, const Para
             uint32_t len = 0, d = 0;
             {
                 const uint64_t k = rd64(in + pos);
-                if (rd64(in + c) == k && c < pos) {
+                if (((rd64(in + c) ^ k) | ((rd64(in + c + 8) ^ rd64(in + pos + 8)) & 0xffffull)) == 0 && c < pos) {
                     d = pos - c;
                     if (d < AXF_MIN_DIST) { d *= (AXF_MIN_DIST + d - 1) / d; if (d <= pos && rd64(in + pos - d) == k) c = pos - d; else d = 0; }
                     if (d) {
@@ -188,7 +188,7 @@ static size_t enc_sparse(const uint8_t* in, uint32_t n, uint8_t* out, const Para
                     pos -= k; len += k;
                 } else while (room && in[pos - 1] == in[pos - 1 - d]) { pos--; len++; room--; }
             }
-            if (len < mm) { pos = probe + SA; continue; }
+            if (len < mm) { pos = probe + SA + ((probe - anchor) >> SKIP); continue; }
             const uint32_t ll = pos - anchor;
             if (pos + 32 <= n) { for (uint32_t i = 0; i < ll; i += 32) memcpy(L + nl + i, in + anchor + i, 32); } else cpyn(L + nl, in + anchor, ll);
             nl += ll;
