@@ -4,6 +4,31 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
+## v2.6.0 — 2026-10-30
+
+**Fast profile, level 11 (`aceapex_fast -1`): faster compression, now ahead of zxc -1 at a better ratio.** Format and
+decoder unchanged; level-11 archives differ from 2.5.0, levels 12-18 are byte-identical; every older archive decodes.
+lzbench on Zen 5 (Google Cloud C4D, AMD EPYC 9B45; lzbench 1cda8a2, gcc 13.3, silesia.tar, one core, median of 5, zxc in the same run; `results/skip10-zen5-lzbench-2026-10-30.log`):
+
+| | ratio | compression | decompression |
+|---|---|---|---|
+| aceapex_fast -1 (2.6.0) | 61.57 % | 969 MB/s | 15858 MB/s |
+| zxc 0.15.0 -1 | 61.67 % | 869 MB/s | 11135 MB/s |
+
+- Level 11 with one thread (how lzbench and TurboBench call it) encodes blocks straight into the output buffer; table
+  inserts without branches through a spare slot; the backward-extension tail in one compare (ENC3, bytes unchanged).
+- The probe key is 10 bytes instead of 8, and a key hit rejected for length (< 16 after the extensions) steps like a
+  miss (probe step + literal-run skip) instead of one probe step (SKIP10). Fewer candidates pass the key, the rejected
+  ones no longer slow the step.
+- Ratio of level 11 against zxc 0.15.0 -1 (`results/skip10-ratio-l11-2026-10-30.md`): silesia 61.57 % / 61.67 %,
+  enwik8 83.37 % / 89.23 %, chr1 88.39 % / 73.54 %. chr1 loses: the fast profile has no DNA packing. Against 2.5.0 the
+  level-11 archives are 0.19 / 0.69 / 0.72 percentage points larger on silesia / enwik8 / chr1.
+- New conformance fixture `text_fast_l11_16K` (level 11; the 2.5.0 encoder gives other bytes, so it pins this logic);
+  fast_test: 6 fast fixtures, conformance 28.
+- Checked: round trip levels 11..18 at 1 and 4 threads on silesia, enwik8, chr1 and generated bin/dna/mix/rand/text/zeros,
+  1-thread archive == 4-thread archive (`results/skip10-gates-roundtrip-*`); level 11 under ASan+UBSan on exact-size
+  buffers 22/22 with a negative control caught (`results/skip10-gates-asan*`).
+
 ## v2.5.0 — 2026-10-28
 
 **The fast profile: a new level-11 encoder (25.8 -> ~575 MB/s) and a faster decoder.** Format unchanged: archives of
