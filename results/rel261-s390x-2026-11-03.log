@@ -1,0 +1,64 @@
+# REL261 BE gate: qemu-s390x-static, zig 0.14.1 c++ -target s390x-linux-musl -mcpu=z13, aceapex dc335d5+worktree; columns: level, archive size, FNV-1a of the archive, round trip
+== silesia.64k
+L11 63741 51156ad7cace05bc rt ok bytes==x86-2.6.0
+L12 64075 09e88cae834ca992 rt ok bytes==x86-2.6.0
+L13 46789 274d11fc9e4c845d rt ok bytes==x86-2.6.0
+L14 41451 297c4cd9efccbeee rt ok bytes==x86-2.6.0
+L15 62614 ce9af8b4a007c275 rt ok bytes==x86-2.6.0
+L16 57164 f6eae6b29a9a8134 rt ok bytes==x86-2.6.0
+L17 45359 6d53268c21e31905 rt ok bytes==x86-2.6.0
+L18 41327 137ae6bd44a5d9cd rt ok bytes==x86-2.6.0
+== e0
+L11 68 2dd64440437fffda rt ok bytes==x86-2.6.0
+L12 68 2dd64440437fffda rt ok bytes==x86-2.6.0
+L13 68 2dd64440437fffda rt ok bytes==x86-2.6.0
+L14 68 2dd64440437fffda rt ok bytes==x86-2.6.0
+L15 68 2dd64440437fffda rt ok bytes==x86-2.6.0
+L16 68 2dd64440437fffda rt ok bytes==x86-2.6.0
+L17 68 2dd64440437fffda rt ok bytes==x86-2.6.0
+L18 68 2dd64440437fffda rt ok bytes==x86-2.6.0
+== e1
+L11 161 f3005b808374c8bf rt ok bytes==x86-2.6.0
+L12 161 261abf5fe3c9dedb rt ok bytes==x86-2.6.0
+L13 161 f7b2324da2d29027 rt ok bytes==x86-2.6.0
+L14 161 ecfc3759e4eb5150 rt ok bytes==x86-2.6.0
+L15 161 f3005b808374c8bf rt ok bytes==x86-2.6.0
+L16 161 261abf5fe3c9dedb rt ok bytes==x86-2.6.0
+L17 161 f7b2324da2d29027 rt ok bytes==x86-2.6.0
+L18 161 ecfc3759e4eb5150 rt ok bytes==x86-2.6.0
+== e100
+L11 236 dafc377be4f29cb2 rt ok bytes==x86-2.6.0
+L12 245 2bb4b360a65ca5dc rt ok bytes==x86-2.6.0
+L13 245 8b5fd640561f0375 rt ok bytes==x86-2.6.0
+L14 245 5385d8329107c52a rt ok bytes==x86-2.6.0
+L15 245 fea9d4cafe4a674b rt ok bytes==x86-2.6.0
+L16 245 2bb4b360a65ca5dc rt ok bytes==x86-2.6.0
+L17 245 8b5fd640561f0375 rt ok bytes==x86-2.6.0
+L18 245 5385d8329107c52a rt ok bytes==x86-2.6.0
+== e1m5
+L11 963734 308404464865ed28 rt ok bytes==x86-2.6.0
+L12 1048938 723eb97ab3cf20f1 rt ok bytes==x86-2.6.0
+L13 534586 70807f52f99fb8e5 rt ok bytes==x86-2.6.0
+L14 503794 4cf4815b80691364 rt ok bytes==x86-2.6.0
+L15 893592 0d713cedd5c02788 rt ok bytes==x86-2.6.0
+L16 676041 6b73741dbf68599a rt ok bytes==x86-2.6.0
+L17 488233 9ffd042593538711 rt ok bytes==x86-2.6.0
+L18 466850 3ac51123a08f6aa8 rt ok bytes==x86-2.6.0
+== erand
+L11 300160 0b47620735f10999 rt ok bytes==x86-2.6.0
+L12 300160 3f8b35260718f925 rt ok bytes==x86-2.6.0
+L13 300160 9c2c3becc25d6631 rt ok bytes==x86-2.6.0
+L14 300160 5f540af92a1ee00c rt ok bytes==x86-2.6.0
+L15 300160 0b47620735f10999 rt ok bytes==x86-2.6.0
+L16 300160 3f8b35260718f925 rt ok bytes==x86-2.6.0
+L17 300160 9c2c3becc25d6631 rt ok bytes==x86-2.6.0
+L18 300160 5f540af92a1ee00c rt ok bytes==x86-2.6.0
+== edna
+L11 875204 bd5a07b3a293ee32 rt ok bytes==x86-2.6.0
+L12 982106 840144c88c3cb90a rt ok bytes==x86-2.6.0
+L13 564376 90b8e9b9b309b6f9 rt ok bytes==x86-2.6.0
+L14 504566 fceb98cb7b3f56dd rt ok bytes==x86-2.6.0
+L15 819882 ed37683b53b6cafc rt ok bytes==x86-2.6.0
+L16 736892 a015a2279e80dc8b rt ok bytes==x86-2.6.0
+L17 427504 5d08573aec3f6222 rt ok bytes==x86-2.6.0
+L18 414331 e1144774140a5506 rt ok bytes==x86-2.6.0

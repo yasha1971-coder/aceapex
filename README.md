@@ -236,6 +236,10 @@ g++ -O3 -march=native -funroll-loops -std=c++17 \
     -o aceapex src/aceapex_main.cpp -lpthread -lzstd
 ```
 
+**Byte order (2.6.1).** The fast profile (levels 11-18, header version 3) runs on big-endian hosts too and writes the
+same archive bytes there (checked under qemu-s390x). The default levels 1-3 (header version 2) support only
+little-endian hosts (x86, ARM, RISC-V in their usual modes).
+
 **GPU (aceapex_cuda, Mode 1 — nvcomp-free):**
 ```bash
 nvcc -O3 -std=c++17 -o aceapex_cuda lz/aceapex/cuda/aceapex_cuda_wrapper.cu -lpthread -lzstd
