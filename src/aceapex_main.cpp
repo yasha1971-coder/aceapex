@@ -1197,9 +1197,11 @@ static void parallel_decode(
         dargs[t]={lit,off,len,cmd,boffs,dst,dst_size,bstart,bend,block_size,ax_nt_for(nthreads,dst_size)};
     }
     if (nt == 1) { dec_worker(&dargs[0]); return; }   // threads=1: nothing is spawned
-    std::vector<pthread_t> dpts(nt);
-    for(size_t t=0;t<nt;t++) ax_thread(&dpts[t],dec_worker,&dargs[t]);
-    for(size_t t=0;t<nt;t++) pthread_join(dpts[t],nullptr);
+    // the caller decodes the last range itself: nt threads in all, not nt spawned + the caller waiting (2.6.1, lzbench #357)
+    std::vector<pthread_t> dpts(nt-1);
+    for(size_t t=0;t+1<nt;t++) ax_thread(&dpts[t],dec_worker,&dargs[t]);
+    dec_worker(&dargs[nt-1]);
+    for(size_t t=0;t+1<nt;t++) pthread_join(dpts[t],nullptr);
 }
  
 // Helper: chunked FSE decompress a stream

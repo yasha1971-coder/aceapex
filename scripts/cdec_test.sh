@@ -92,6 +92,10 @@ else printf 'head_gpu_abi\tfail\tbuild failed: %s\n' "$(head -c 150 $T/gab.err |
 if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/dna_err_test scripts/dna_err_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/dna.err; then
   $T/dna_err_test 2>/dev/null || true
 else printf 'head_dna_err\tfail\tbuild failed: %s\n' "$(head -c 150 $T/dna.err | tr '\n\t' '  ')"; fi
+# lzbench #357 (2.6.1): the decoder keeps to its thread budget (peak threads alive <= threads, pthread_create wrapped)
+if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/dec_budget_test scripts/dec_budget_test.cpp src/aceapex_api.cpp -Wl,--wrap=pthread_create -lzstd -lpthread 2>$T/dbt.err; then
+  $T/dec_budget_test 2>/dev/null || true
+else printf 'head_dec_budget\tfail\tbuild failed: %s\n' "$(head -c 150 $T/dbt.err | tr '\n\t' '  ')"; fi
 # lzbench #336: the library built without ACEAPEX_ENV_TUNING ignores the environment - five rows of tuning variables
 # give the same bytes at level 1 / one thread (text + silesia/xml when ~/CORPORA/silesia.tar is there), and no thread
 # is started at threads=1 (strace: no clone)
