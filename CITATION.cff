@@ -26,11 +26,14 @@ keywords:
   - genomics
 version: 2.6.1
 date-released: '2026-11-03'
-doi: 10.5281/zenodo.23804297
+doi: 10.5281/zenodo.23930083
 identifiers:
   - type: doi
     value: 10.5281/zenodo.20440964
     description: Concept DOI (all versions)
+  - type: doi
+    value: 10.5281/zenodo.23930083
+    description: Software release v2.6.1
   - type: doi
     value: 10.5281/zenodo.23804297
     description: Software release v2.6.0
