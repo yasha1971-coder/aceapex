@@ -4,6 +4,30 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
+## v2.6.1 — 2026-11-03
+
+**Fixes from the lzbench review of 2.6.0 (inikep/lzbench#357, 03.11.2026) and a big-endian fast profile.** Format
+unchanged; on x86 every archive of levels 1-3 and 11-18 is byte-identical to 2.6.0.
+
+- Decoder thread budget: `aceapex_decompress_mt(threads)` has at most `threads` threads alive at once. The match phase
+  spawned `threads` workers while the caller waited, and token streams under half a thread's share (DNA) got one thread
+  on top of the budget. Now the caller decodes the last range, and the token thread is taken from the literal threads.
+  Claim `head_dec_budget` (pthread_create wrapped): peak <= budget for 2/3/4/8 threads; 2.6.0 gave 3/4/5/9 on text.
+- A corrupt DNA literal chunk returns `ACEAPEX_ERR_DATA`. `dna_decompress` reported only through the per-call error flag,
+  `ax_lit_chunk_decode` returned true and nothing checked the flag after the tiled decode, so 2.6.0 returned orig_size
+  with wrong bytes. Claim `head_dna_err`: damaged sequence frame -> `ACEAPEX_ERR_DATA` at 1, 2 and 4 threads (2.6.0: 0/3).
+- The stdin helper (`memfd_create`, glibc 2.27+) is compiled only into the CLI, not into library builds such as lzbench's.
+- The AVX-512 rANS decoder (`avx512vbmi2`, `_mm256_maskz_expandloadu_epi16`) is built only with GCC 8+ / Clang 6+; older
+  compilers build the AVX2 and scalar decoders.
+- Fast streaming decoder (`aceapex_decompress_stream` on a version-3 archive): the header is validated before the block
+  table is allocated (a header claiming 2^32 - 1 blocks returned `std::bad_alloc` through the C API in 2.6.0), the archive
+  size is 64-bit on 32-bit builds too, and a failed allocation returns `ACEAPEX_ERR_MEMORY`.
+- Big-endian: the fast profile (levels 11-18) reads and writes every field as little-endian, and its hash keys and 8-byte
+  XOR compares read little-endian words, so `ctz`/`clz` count from the right end. Under qemu-s390x (zig c++ -target
+  s390x-linux-musl) levels 11-18 round-trip on silesia.64k and edge inputs and give the x86 archive bytes; the empty
+  archive is the same bytes on both. The default levels 1-3 support only little-endian hosts (README, FORMAT_FAST).
+- Not changed (noted in the review, not a blocker): fast levels 15-18 (optimal parse) are very slow on short-period data.
+
 ## v2.6.0 — 2026-10-30
 
 **Fast profile, level 11 (`aceapex_fast -1`): faster compression, now ahead of zxc -1 at a better ratio.** Format and
