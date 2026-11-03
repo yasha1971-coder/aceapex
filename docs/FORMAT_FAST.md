@@ -12,7 +12,9 @@ drops the entropy stage. What remains is a fixed-width token stream the decoder 
 on lengths. Density is lower than the default profile's and set by the minimum match length; the decoder is the
 fastest in the project (research measurements: `research/fastblk/d1-lzbench-2026-10-26.md`).
 
-All integers are little-endian. Offsets are from the start of the archive unless stated otherwise.
+All integers are little-endian. Offsets are from the start of the archive unless stated otherwise. Readers and the
+reference encoder convert on big-endian hosts (2.6.1): an archive is the same bytes on every host. (The default
+profile, header version 2, is little-endian only.)
 
 ## 1. Archive
 
