@@ -1,0 +1,89 @@
+# LVL18 (lzbench#357 review note, item 8): optimal parse (levels 15-18) on short periods, 2026-11-05, ace-core EPYC 4344P, taskset core 2, load1 < 0.5 before each run, aceapex_compress threads=1, -O3 -march=native
+# period13 input: scripts-free seeded reconstruction of 'period 13, runs up to ~5 KB': runs of random length 1..5000, each a random 13-byte pattern (random.Random(357)); 256 KiB sha256 eb7610b5bbbbdef816beb916dfd9550d5628d8624b5f1dbe67dd5cb031c12553; best of 3. silesia.tar = corpus-collection (sha256 a667bac8...), enwik8 (sha256 2b49720e...), 1 run each.
+# base = main before the change (chain walk stops at LONG 4096); n256 = walk stops at a 256-byte match (committed); n1024 = 1024 (not taken)
+== base
+load1 0.35
+period13_256k L15 n 262144 z 7994 ratio 3.0495% 0.197 MB/s (1.33 s)
+load1 0.40
+silesia.tar L15 n 211947520 z 117332617 ratio 55.3593% 1.076 MB/s (196.95 s)
+load1 0.45
+enwik8 L15 n 100000000 z 78579255 ratio 78.5793% 1.642 MB/s (60.90 s)
+load1 0.43
+period13_256k L16 n 262144 z 7994 ratio 3.0495% 0.197 MB/s (1.33 s)
+load1 0.48
+silesia.tar L16 n 211947520 z 103537485 ratio 48.8505% 1.083 MB/s (195.67 s)
+load1 0.45
+enwik8 L16 n 100000000 z 64764285 ratio 64.7643% 1.723 MB/s (58.04 s)
+load1 0.47
+period13_256k L17 n 262144 z 7994 ratio 3.0495% 0.199 MB/s (1.32 s)
+load1 0.44
+silesia.tar L17 n 211947520 z 88566976 ratio 41.7872% 1.071 MB/s (197.85 s)
+load1 0.47
+enwik8 L17 n 100000000 z 49225125 ratio 49.2251% 1.625 MB/s (61.54 s)
+load1 0.49
+period13_256k L18 n 262144 z 7994 ratio 3.0495% 0.197 MB/s (1.33 s)
+load1 0.45
+silesia.tar L18 n 211947520 z 83100635 ratio 39.2081% 1.077 MB/s (196.86 s)
+load1 0.44
+enwik8 L18 n 100000000 z 46211807 ratio 46.2118% 1.627 MB/s (61.46 s)
+load1_after 0.81
+DONE
+== n256
+load1 0.46
+period13_256k L15 n 262144 z 7994 ratio 3.0495% 5.858 MB/s (0.04 s)
+load1 0.46
+silesia.tar L15 n 211947520 z 117347683 ratio 55.3664% 1.401 MB/s (151.31 s)
+load1 0.49
+enwik8 L15 n 100000000 z 78579436 ratio 78.5794% 1.654 MB/s (60.45 s)
+load1 0.49
+period13_256k L16 n 262144 z 7994 ratio 3.0495% 5.694 MB/s (0.05 s)
+load1 0.49
+silesia.tar L16 n 211947520 z 103552607 ratio 48.8577% 1.400 MB/s (151.40 s)
+load1 0.49
+enwik8 L16 n 100000000 z 64764457 ratio 64.7645% 1.654 MB/s (60.45 s)
+load1 0.49
+period13_256k L17 n 262144 z 7994 ratio 3.0495% 5.676 MB/s (0.05 s)
+load1 0.49
+silesia.tar L17 n 211947520 z 88580614 ratio 41.7937% 1.345 MB/s (157.53 s)
+load1 0.48
+enwik8 L17 n 100000000 z 49225289 ratio 49.2253% 1.636 MB/s (61.12 s)
+load1 0.44
+period13_256k L18 n 262144 z 7994 ratio 3.0495% 5.718 MB/s (0.05 s)
+load1 0.44
+silesia.tar L18 n 211947520 z 83113789 ratio 39.2143% 1.394 MB/s (152.03 s)
+load1 0.46
+enwik8 L18 n 100000000 z 46211971 ratio 46.2120% 1.715 MB/s (58.30 s)
+load1_after 0.79
+DONE
+== n1024
+load1 0.47
+period13_256k L15 n 262144 z 7994 ratio 3.0495% 0.913 MB/s (0.29 s)
+load1 0.44
+silesia.tar L15 n 211947520 z 117333064 ratio 55.3595% 1.292 MB/s (164.05 s)
+load1 0.46
+enwik8 L15 n 100000000 z 78579265 ratio 78.5793% 1.647 MB/s (60.70 s)
+load1 0.49
+period13_256k L16 n 262144 z 7994 ratio 3.0495% 0.908 MB/s (0.29 s)
+load1 0.49
+silesia.tar L16 n 211947520 z 103537877 ratio 48.8507% 1.289 MB/s (164.44 s)
+load1 0.42
+enwik8 L16 n 100000000 z 64764295 ratio 64.7643% 1.641 MB/s (60.93 s)
+load1 0.48
+period13_256k L17 n 262144 z 7994 ratio 3.0495% 0.908 MB/s (0.29 s)
+load1 0.48
+silesia.tar L17 n 211947520 z 88567363 ratio 41.7874% 1.335 MB/s (158.70 s)
+load1 0.43
+enwik8 L17 n 100000000 z 49225135 ratio 49.2251% 1.634 MB/s (61.19 s)
+load1 0.48
+period13_256k L18 n 262144 z 7994 ratio 3.0495% 0.909 MB/s (0.29 s)
+load1 0.48
+silesia.tar L18 n 211947520 z 83101024 ratio 39.2083% 1.283 MB/s (165.26 s)
+load1 0.45
+enwik8 L18 n 100000000 z 46211817 ratio 46.2118% 1.710 MB/s (58.49 s)
+load1_after 0.80
+DONE
+== 3 MiB period13, level 18
+base period13_3M L18 n 3145728 z 101952 ratio 3.2410% 0.213 MB/s (14.78 s)
+n256 period13_3M L18 n 3145728 z 101952 ratio 3.2410% 5.693 MB/s (0.55 s)
+== bytes: levels 1,2,3,11,12,13,14 on chr1 / enwik8 first 8 MB vs v2.6.1 CLI: 14/14 identical; 15 and 18 differ (expected)
+== fixture verify/fixtures/conf/dna_fast_opt_2MiB.aet (level 15) re-made by scripts/make_fixtures.py --only: 1978569 -> 1978648 B, input sha256 unchanged; judge HEAD 77/0
