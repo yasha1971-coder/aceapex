@@ -125,6 +125,12 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+05.11 FREEZE-4 (без тега): CLI `d --out FILE` атомарный (временный файл + rename только при совпадении XXH3; претензия
+head_cli_atomic; 200 порч: exit 1 200, FILE создан 0, временных 0; старый CLI: создан 200); судья 77/0. ClusterFuzzLite в
+aceapex (fuzz/fuzz_api.cpp) и aceapex-fast (fuzz/fuzz_axfast.c): сырой путь — ASan/UBSan, VERIFY-путь — «успех => байты ==
+оригинал», PR 5 мин, batch ежедневно 30 мин, address+undefined — зелёные; негативный контроль (без VERIFY) -> abort. Ответы
+OpenSSF Best Practices — yasha-context ACEAPEX/OPENSSF_BP_ANSWERS_2026-11.md (Met 50 / N/A 9 / GAP 7: SECURITY.md,
+CONTRIBUTING.md — по слову Якова; анкету отправляет Яков).
 30.10: v2.6.0 = e104741 (main, тег), release = 04f3ebd (merge, дерево == v2.6.0, без force). Уровень 11: ENC3 + SKIP10;
 Zen 5 lzbench 969 / 15858 MB/s при 61.57 % против zxc -1 869 / 11135 при 61.67 %. Формат и декодер прежние, 12–18
 побайтно прежние. Ворота: судья 74/0, fast_test 6/0, portability 2/2. Дальше: Release и Zenodo (команды у Якова),
