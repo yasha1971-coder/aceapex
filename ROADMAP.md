@@ -134,6 +134,8 @@ CONTRIBUTING.md — по слову Якова; анкету отправляе�
 05.11 FREEZE-5: SECURITY.md (только Private vulnerability reporting — включён, первый ответ 7 дней) и CONTRIBUTING.md в aceapex
 (main 68398f6) и aceapex-fast (main c385671), без PR (запрет gh pr create), --no-ff; CI зелёный. OpenSSF passing: MUST 44 —
 Met 38, N/A 6, GAP 0. Анкету отправляет Яков.
+05.11 OpenSSF Best Practices passing (проект 16356), бейдж в README (4f74455). OPENSSF-FIX 892bff6: токен workflow read-only,
+fread в CLI проверяется; CodeQL 0 открытых. Дальше (по слову): пин действий по sha (Scorecard PinnedDependencies 22).
 30.10: v2.6.0 = e104741 (main, тег), release = 04f3ebd (merge, дерево == v2.6.0, без force). Уровень 11: ENC3 + SKIP10;
 Zen 5 lzbench 969 / 15858 MB/s при 61.57 % против zxc -1 869 / 11135 при 61.67 %. Формат и декодер прежние, 12–18
 побайтно прежние. Ворота: судья 74/0, fast_test 6/0, portability 2/2. Дальше: Release и Zenodo (команды у Якова),
