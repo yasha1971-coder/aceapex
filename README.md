@@ -9,6 +9,7 @@ Full device-resident GPU decode pipeline. Position-invariant random access on ge
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![papers](https://img.shields.io/badge/papers-arXiv%20%C2%B7%20Zenodo-b31b1b.svg)](#papers)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23061934.svg)](https://doi.org/10.5281/zenodo.23061934)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/16356/badge)](https://www.bestpractices.dev/projects/16356)
 
 ![ACEAPEX passport: 197 GB/s range-decode on T2T, +18.5% denser than nvCOMP zstd, 4/4 streams NVIDIA-decodable, 0.3-0.4 ms per 16 KiB block](docs/aceapex_passport.png)
 
