@@ -1,0 +1,33 @@
+name: ClusterFuzzLite batch fuzzing
+on:
+  schedule:
+  - cron: '17 3 * * *'
+  workflow_dispatch:
+  push:
+    branches: [freeze4]
+permissions: read-all
+jobs:
+  batch:
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: ${{ github.workflow }}-${{ matrix.sanitizer }}-${{ github.ref }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [address, undefined]
+    steps:
+    - name: build fuzzers (${{ matrix.sanitizer }})
+      id: build
+      uses: google/clusterfuzzlite/actions/build_fuzzers@v1
+      with:
+        language: c++
+        sanitizer: ${{ matrix.sanitizer }}
+    - name: run fuzzers 30 min (${{ matrix.sanitizer }})
+      id: run
+      uses: google/clusterfuzzlite/actions/run_fuzzers@v1
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        fuzz-seconds: 1800
+        mode: batch
+        sanitizer: ${{ matrix.sanitizer }}
