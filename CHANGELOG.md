@@ -6,10 +6,9 @@ Every number below is reproduced by `make test && ./verify.sh` on the tagged com
 
 ## Unreleased
 
-- Fast profile, levels 15-18 (optimal parse): the chain walk stops at a 256-byte match instead of measuring every
-  candidate up to 4096 bytes (lzbench#357 review note: very slow on short periods). Period-13 runs, 256 KiB: 0.197 ->
-  5.7 MB/s; silesia.tar 1.08 -> 1.35-1.40 MB/s at +0.006-0.007 pp ratio; enwik8 ratio +0.0002 pp or less. Archives of
-  levels 15-18 change; levels 1-3 and 11-14 are byte-identical to 2.6.1 (`results/lvl18-2026-11-05.txt`).
+- Levels 15–18 (optimal parse) stop the chain walk at a 256-byte match: 5.7–5.9 MB/s on short-period data (was 0.197),
+  silesia 1.35–1.40 MB/s (was 1.07), ratio +0.007 pp; archives at levels 15–18 differ from 2.6.1, still valid and readable
+  by any 2.4+ reader; levels 1–3 and 11–14 unchanged (`results/lvl18-2026-11-05.txt`).
 - Streaming decoder: a corrupt literal chunk size no longer drives a huge allocation (bounded by the literal stream,
   overflow-checked sums, the archive must reach its declared end); found by CI API fuzzing, seed 42064533943
   (`results/fuzzfix-api-fuzz-2026-11-05.txt`).
