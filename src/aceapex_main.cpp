@@ -27,6 +27,9 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #endif
+#ifdef _WIN32
+#include <process.h>
+#endif
 #ifndef MAP_HUGE_2MB
 #define MAP_HUGE_2MB (21 << MAP_HUGE_SHIFT)
 #endif
@@ -2067,7 +2070,36 @@ static int do_decompress_stream(const char* in_path, int threads) {
     fprintf(stderr, "  Stream: %lld bytes to stdout in %.3f s (%.2f GB/s), hash OK\n", (long long)n, now_sec() - t0, (double)n / (now_sec() - t0) / 1e9);
     return 0;
 }
-static int do_decompress(const char* in_path, const char* out_path, int threads=8) {
+static int do_decompress(const char* in_path, const char* out_path, int threads=8);
+// `d --out FILE` (FREEZE-4): the original goes to a temporary file next to FILE and is renamed to FILE only when the
+// decode succeeded and its XXH3 matches the header (every do_decompress path returns 0 only then); otherwise the
+// temporary file is removed, FILE is not created (an existing FILE is left as it was) and the exit status is 1. A FILE
+// that exists and is not a regular file (/dev/null, a FIFO, /dev/stdout) is written directly, as before.
+#if !defined(ACEAPEX_NO_MAIN) || defined(ACEAPEX_CLI)
+static int ax_cli_decompress_file(const char* in_path, const char* out_path, int threads) {
+#ifndef _WIN32
+    struct stat st;
+    if (::stat(out_path, &st) == 0 && !S_ISREG(st.st_mode)) return do_decompress(in_path, out_path, threads);
+    const long pid = (long)getpid();
+#else
+    const long pid = (long)_getpid();
+#endif
+    char tmp[4096];
+    if (snprintf(tmp, sizeof tmp, "%s.aceapex-tmp.%ld", out_path, pid) >= (int)sizeof tmp) { fprintf(stderr,"Output path too long: %s\n",out_path); return 1; }
+    const int rc = do_decompress(in_path, tmp, threads);
+    if (rc == 0) {
+#ifdef _WIN32
+        remove(out_path);                                    // rename() does not replace an existing file there
+#endif
+        if (rename(tmp, out_path) == 0) return 0;
+        fprintf(stderr,"Cannot rename %s to %s: %s\n", tmp, out_path, strerror(errno));
+    }
+    remove(tmp);
+    fprintf(stderr,"  %s not written (decode failed or XXH3 mismatch)\n", out_path);
+    return 1;
+}
+#endif
+static int do_decompress(const char* in_path, const char* out_path, int threads) {
     g_dec_err=0;
     double t_wall=now_sec();
     FILE* fin=fopen(in_path,"rb");
@@ -2461,7 +2493,7 @@ int main(int argc, char** argv) {
     if ((!strcmp(cmd,"c") || !strcmp(cmd,"d")) && ax_cli_stdin(in)) return 1;
 #endif
     if (!strcmp(cmd,"c")) { if (!out) { fprintf(stderr,"--out required\n"); return 1; } return do_compress(in,out,thr,level); }
-    if (!strcmp(cmd,"d")) { if (!out) { fprintf(stderr,"--out required (or - for stdout)\n"); return 1; } return strcmp(out,"-") ? do_decompress(in,out,thr) : do_decompress_stream(in,thr); }
+    if (!strcmp(cmd,"d")) { if (!out) { fprintf(stderr,"--out required (or - for stdout)\n"); return 1; } return strcmp(out,"-") ? ax_cli_decompress_file(in,out,thr) : do_decompress_stream(in,thr); }
     if (!strcmp(cmd,"t")) return do_test(in,thr,level);
     if (!strcmp(cmd,"r")) {
         if (!out) { fprintf(stderr,"--out required\n"); return 1; }

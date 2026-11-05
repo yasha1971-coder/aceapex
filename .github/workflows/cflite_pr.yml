@@ -1,0 +1,36 @@
+name: ClusterFuzzLite PR fuzzing
+on:
+  pull_request:
+    paths:
+    - 'src/**'
+    - 'fuzz/**'
+    - '.clusterfuzzlite/**'
+    - '.github/workflows/cflite_pr.yml'
+  workflow_dispatch:
+permissions: read-all
+jobs:
+  pr:
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: ${{ github.workflow }}-${{ matrix.sanitizer }}-${{ github.ref }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [address, undefined]
+    steps:
+    - name: build fuzzers (${{ matrix.sanitizer }})
+      id: build
+      uses: google/clusterfuzzlite/actions/build_fuzzers@v1
+      with:
+        language: c++
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        sanitizer: ${{ matrix.sanitizer }}
+    - name: run fuzzers 5 min (${{ matrix.sanitizer }})
+      id: run
+      uses: google/clusterfuzzlite/actions/run_fuzzers@v1
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        fuzz-seconds: 300
+        mode: ${{ github.event_name == 'pull_request' && 'code-change' || 'batch' }}
+        sanitizer: ${{ matrix.sanitizer }}

@@ -90,6 +90,14 @@ jobs:
       run: |
         if ./api_fuzz control > control.txt 2>&1; then cat control.txt; echo "negative control NOT caught"; exit 1; fi
         grep -q 'ERROR: AddressSanitizer' control.txt && echo "negative control caught"
+    - name: ClusterFuzzLite harness fuzz/fuzz_api.cpp with gcc (seeds + 60 s mutations) + VERIFY-assert negative control
+      run: |
+        SAN="-O1 -g -std=c++17 -fsanitize=address,undefined -fno-sanitize-recover=all"
+        g++ $SAN -Isrc -c src/aceapex_api.cpp -o api.o && mkdir seeds
+        g++ $SAN -Isrc fuzz/make_seeds.cpp api.o -o make_seeds -lzstd -lpthread && ./make_seeds seeds
+        g++ $SAN -Isrc fuzz/fuzz_api.cpp fuzz/standalone.cpp api.o -o fz -lzstd -lpthread && ./fz 60 seeds/*
+        g++ $SAN -DFUZZ_API_CONTROL -Isrc fuzz/fuzz_api.cpp fuzz/standalone.cpp api.o -o fzc -lzstd -lpthread
+        if ./fzc 60 seeds/verify*; then echo "VERIFY-assert negative control NOT caught"; exit 1; fi; echo "VERIFY-assert negative control caught"
   decoder-source:
     name: ax_fast.h == the decoder of aceapex-fast (pinned commit, scripts/axfast.lock)
     runs-on: ubuntu-24.04

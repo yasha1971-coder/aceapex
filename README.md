@@ -239,6 +239,9 @@ Two guarantees, kept apart:
 - **The checked paths** - the CLI `aceapex d`, `aceapex_decompress_stream` with `ACEAPEX_STREAM_VERIFY`, and
   `decompress()` of the aceapex-fast Python binding - compare the XXH3-64 of the output with the archive header and
   report a mismatch (CLI: exit 1; stream: `ACEAPEX_ERR_DATA` after the bytes were handed out). Zero wrong bytes accepted.
+- `aceapex d --out FILE` decodes into a temporary file next to FILE and renames it to FILE only when the XXH3 matches:
+  on a corrupt archive FILE is not created (an existing FILE is left as it was) and the exit status is 1 (claim
+  `head_cli_atomic`). `--out -` (stdout) streams as before: the bytes go out first, the exit status is the verdict.
 
 `scripts/api_fuzz.cpp`, 60 s, all profiles ([results/freeze3-api-fuzz-2026-11-05.txt](results/freeze3-api-fuzz-2026-11-05.txt)):
 
