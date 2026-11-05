@@ -7,6 +7,7 @@ Only the latest release (2.6.x). Older releases get no fixes; upgrade.
 ## Reporting
 
 Use GitHub private vulnerability reporting only: the **Security** tab of this repository -> **Report a vulnerability**.
+Direct link: https://github.com/yasha1971-coder/aceapex/security/advisories/new
 Do not open a public issue for a vulnerability.
 
 First reply within 7 days. No fix date is promised; a fix ships in the next release and is named in CHANGELOG.md.
