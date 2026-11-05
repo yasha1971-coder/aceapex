@@ -74,6 +74,33 @@ jobs:
 
   # A4: the C decoder and the CLI on aarch64 and armv7 under qemu-user, all fixtures bit-perfect,
   # and the ARM encoders must produce the same bytes as the x86 fixture of the same libzstd line.
+  fuzz:
+    name: corrupted archives through the C API (all profiles, ASan+UBSan, 60 s) + negative control
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v4
+    - name: deps
+      run: sudo apt-get update && sudo apt-get install -y build-essential libzstd-dev
+    - name: api_fuzz 60 s (gate - verified-silent 0, bad rc 0, no sanitizer report)
+      run: |
+        SAN="-O1 -g -std=c++17 -fsanitize=address,undefined -fno-sanitize-recover=all"
+        g++ $SAN -Isrc scripts/api_fuzz.cpp src/aceapex_api.cpp -o api_fuzz -lzstd -lpthread
+        ./api_fuzz 60 "$GITHUB_RUN_ID"
+    - name: negative control (a buffer one byte short must be reported)
+      run: |
+        if ./api_fuzz control > control.txt 2>&1; then cat control.txt; echo "negative control NOT caught"; exit 1; fi
+        grep -q 'ERROR: AddressSanitizer' control.txt && echo "negative control caught"
+  decoder-source:
+    name: ax_fast.h == the decoder of aceapex-fast (pinned commit, scripts/axfast.lock)
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v4
+    - name: fetch the pinned aceapex-fast commit and compare
+      run: |
+        C=$(sed -n 's/^commit=//p' scripts/axfast.lock)
+        git clone -q https://github.com/yasha1971-coder/aceapex-fast.git /tmp/aceapex-fast
+        git -C /tmp/aceapex-fast checkout -q "$C"
+        python3 scripts/sync_axfast.py --check /tmp/aceapex-fast/axfast.c
   arm:
     runs-on: ubuntu-24.04
     steps:
