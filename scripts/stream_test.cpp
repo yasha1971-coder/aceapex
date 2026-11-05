@@ -5,7 +5,9 @@
 // handed-out bytes against XXH3 of the input, and the archive header's hash through ACEAPEX_STREAM_VERIFY) and its
 // peak RSS is read from wait4. Sizes 64 and 512 MiB on the default thread budget: both bit-perfect, and the 512 MiB
 // peak at most 8 MiB above the 64 MiB peak (the buffers are threads x tile and threads x token window - a window is
-// full from ~16 MiB on - the chunk tables grow by ~15 B per 64 KiB of literals).
+// full from ~16 MiB on - the chunk tables grow by ~15 B per 64 KiB of literals). Since FREEZE-3 (after 2.6.1) also a text
+// input (24 MiB of seeded words, not DNA: the 4-chunk literal layout) at levels 1, 2 and 3: bit-perfect through the
+// same child (its memory is about half the literal stream: the 4 chunks are decoded whole, not bounded like DNA).
 // Build: g++ -std=c++17 -O2 -DACEAPEX_ENV_TUNING -Isrc scripts/stream_test.cpp src/aceapex_api.cpp -lzstd -lpthread
 #define XXH_INLINE_ALL
 #include "xxhash.h"
@@ -36,6 +38,28 @@ static std::vector<uint8_t> dna(size_t n, uint64_t seed) {
     }
     v.resize(n); return v;
 }
+static std::vector<uint8_t> text(size_t n, uint64_t seed) {
+    std::mt19937_64 r(seed); static const char* w[] = {"the ", "archive ", "of ", "random ", "access ", "genome ", "block ", "decoder\n", "stream ", "chunk "};
+    std::vector<uint8_t> v; v.reserve(n + 16);
+    while (v.size() < n) { const char* x = w[r() % 10]; while (*x) v.push_back((uint8_t)*x++); if (r() % 50 == 0) v.push_back((uint8_t)('0' + r() % 10)); }
+    v.resize(n); return v;
+}
+// encode, write to a temp file, stream it back in a child: true when bit-perfect (XXH3 of the sink == XXH3 of the input,
+// and ACEAPEX_STREAM_VERIFY accepted); rss gets the child's peak RSS
+static bool stream_once(const std::vector<uint8_t>& in, int level, const char* self, long& rss, std::string& note) {
+    std::vector<uint8_t> z(aceapex_compress_bound(in.size()));
+    const int64_t zs = aceapex_compress(in.data(), in.size(), z.data(), z.size(), level, 4);
+    if (zs <= 0) { note += " encode failed"; return false; }
+    char path[] = "/tmp/ax_stream_XXXXXX"; int fd = mkstemp(path); if (fd < 0) { note += " mkstemp"; return false; }
+    if (write(fd, z.data(), (size_t)zs) != zs) { note += " write"; close(fd); unlink(path); return false; }
+    close(fd);
+    char hex[32]; snprintf(hex, sizeof hex, "%llx", (unsigned long long)XXH3_64bits(in.data(), in.size()));
+    { std::vector<uint8_t>().swap(z); }
+    const pid_t pid = fork();
+    if (pid == 0) { execl("/proc/self/exe", self, "--child", path, hex, (char*)nullptr); _exit(3); }
+    int st = 0; rusage ru; wait4(pid, &st, 0, &ru); unlink(path); rss = ru.ru_maxrss;
+    return WIFEXITED(st) && WEXITSTATUS(st) == 0;
+}
 int main(int argc, char** argv) {
     if (argc == 4 && !strcmp(argv[1], "--child")) {                      // child: stream the archive, report
         int afd = open(argv[2], O_RDONLY); if (afd < 0) return 2; Sink s{XXH3_createState(), 0}; XXH3_64bits_reset(s.st);
@@ -60,8 +84,13 @@ int main(int argc, char** argv) {
         int st = 0; rusage ru; wait4(pid, &st, 0, &ru); if (getenv("KEEP_ARCHIVE")) fprintf(stderr, "kept %s\n", path); else unlink(path);
         ok[k] = WIFEXITED(st) && WEXITSTATUS(st) == 0; rss[k] = ru.ru_maxrss;
     }
-    const long grow = rss[1] - rss[0]; const bool pass = ok[0] && ok[1] && grow <= 8 * 1024;
-    printf("head_stream\t%s\tstreaming decode (pread + hashing sink, default thread budget): 64 MiB %s, 512 MiB %s; peak RSS %ld -> %ld KiB (%+ld KiB, limit +8192: the memory is threads x tile, not the archive)%s\n",
-           pass ? "pass" : "fail", ok[0] ? "bit-perfect" : "WRONG", ok[1] ? "bit-perfect" : "WRONG", rss[0], rss[1], grow, note.c_str());
+    const long grow = rss[1] - rss[0];
+    std::string tx; bool tok = true;
+    { const std::vector<uint8_t> t = text((size_t)24 << 20, 11);
+      for (int lv : {1, 2, 3}) { long r = 0; const bool o = stream_once(t, lv, argv[0], r, note); tok = tok && o;
+          tx += " L" + std::to_string(lv) + (o ? " bit-perfect" : " WRONG") + " (" + std::to_string(r) + " KiB)"; } }
+    const bool pass = ok[0] && ok[1] && grow <= 8 * 1024 && tok;
+    printf("head_stream\t%s\tstreaming decode (pread + hashing sink, default thread budget): DNA 64 MiB %s, 512 MiB %s; peak RSS %ld -> %ld KiB (%+ld KiB, limit +8192: the memory is threads x tile, not the archive); text 24 MiB (4-chunk literals):%s%s\n",
+           pass ? "pass" : "fail", ok[0] ? "bit-perfect" : "WRONG", ok[1] ? "bit-perfect" : "WRONG", rss[0], rss[1], grow, tx.c_str(), note.c_str());
     return pass ? 0 : 1;
 }

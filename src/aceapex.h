@@ -43,8 +43,10 @@ int64_t aceapex_decompress_mt(
    a group's output, the group's token chunks) + the chunk tables: it does not grow with the archive, so a 3 GB
    genome streams through ~40 MB (claim head_stream). threads 0 = the default budget. Flags:
    ACEAPEX_STREAM_VERIFY: XXH3 of the handed-out bytes against the header, ACEAPEX_ERR_DATA on a mismatch (after
-   everything was handed out: the sink sees the bytes before the verdict). Archives whose literal stream is not
-   chunked (written before 2.1 without LIT_CHUNK) are refused with ACEAPEX_ERR_DATA: use aceapex_decompress. */
+   everything was handed out: the sink sees the bytes before the verdict). Both literal layouts of the default profile
+   stream: the chunked one (DNA) with the memory bound above, the 4-chunk one (other data) with about half the literal
+   stream in memory (its 4 chunks are decoded whole; after 2.6.1). Archives of the pre-FSE literal layout are refused
+   with ACEAPEX_ERR_DATA: use aceapex_decompress. */
 typedef int64_t (*aceapex_read_fn)(void* ctx, uint64_t offset, void* buf, size_t len);
 typedef int     (*aceapex_write_fn)(void* ctx, const void* buf, size_t len);   /* 0 = ok, else the stream stops */
 #define ACEAPEX_STREAM_VERIFY 1u

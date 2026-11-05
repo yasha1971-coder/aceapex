@@ -1,0 +1,10 @@
+# FREEZE-3 2): CLI `aceapex d` on corrupted archives (2026-11-05, ace-core, freeze3 branch). Input: first 3 000 000 B of
+# enwik8; per level 40 archives with one random bit flipped after the 68-byte header (python random seed 5); decoded with
+# `aceapex d --in m.aet --out mo`. rc0_ok: exit 0 and the original bytes; rc0_WRONG: exit 0 and other bytes; rc1: exit 1.
+L1 {'rc0_ok': 0, 'rc0_WRONG': 0, 'rc1': 40, 'other': 0}
+L2 {'rc0_ok': 0, 'rc0_WRONG': 0, 'rc1': 40, 'other': 0}
+L3 {'rc0_ok': 0, 'rc0_WRONG': 0, 'rc1': 40, 'other': 0}
+L11 {'rc0_ok': 0, 'rc0_WRONG': 0, 'rc1': 40, 'other': 0}
+L14 {'rc0_ok': 0, 'rc0_WRONG': 0, 'rc1': 40, 'other': 0}
+# Also: one flip at 3/4 of the archive, L1 and L11, --out FILE and --out - (stdout): exit 1 in all four
+# ("DECODE ERROR (zstd frame)" at L1, "HASH MISMATCH" at L11); the bytes are written before the verdict, the exit code is it.
