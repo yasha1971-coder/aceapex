@@ -131,6 +131,9 @@ aceapex (fuzz/fuzz_api.cpp) и aceapex-fast (fuzz/fuzz_axfast.c): сырой п�
 оригинал», PR 5 мин, batch ежедневно 30 мин, address+undefined — зелёные; негативный контроль (без VERIFY) -> abort. Ответы
 OpenSSF Best Practices — yasha-context ACEAPEX/OPENSSF_BP_ANSWERS_2026-11.md (Met 50 / N/A 9 / GAP 7: SECURITY.md,
 CONTRIBUTING.md — по слову Якова; анкету отправляет Яков).
+05.11 FREEZE-5: SECURITY.md (только Private vulnerability reporting — включён, первый ответ 7 дней) и CONTRIBUTING.md в aceapex
+(main 68398f6) и aceapex-fast (main c385671), без PR (запрет gh pr create), --no-ff; CI зелёный. OpenSSF passing: MUST 44 —
+Met 38, N/A 6, GAP 0. Анкету отправляет Яков.
 30.10: v2.6.0 = e104741 (main, тег), release = 04f3ebd (merge, дерево == v2.6.0, без force). Уровень 11: ENC3 + SKIP10;
 Zen 5 lzbench 969 / 15858 MB/s при 61.57 % против zxc -1 869 / 11135 при 61.67 %. Формат и декодер прежние, 12–18
 побайтно прежние. Ворота: судья 74/0, fast_test 6/0, portability 2/2. Дальше: Release и Zenodo (команды у Якова),
