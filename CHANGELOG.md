@@ -4,6 +4,12 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
+## Unreleased
+
+- Streaming decoder: a corrupt literal chunk size no longer drives a huge allocation (bounded by the literal stream,
+  overflow-checked sums, the archive must reach its declared end); found by CI API fuzzing, seed 42064533943
+  (`results/fuzzfix-api-fuzz-2026-11-05.txt`).
+
 ## v2.6.1 — 2026-11-03
 
 **Fixes from the lzbench review of 2.6.0 (inikep/lzbench#357, 03.11.2026) and a big-endian fast profile.** Format

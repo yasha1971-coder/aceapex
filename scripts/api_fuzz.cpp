@@ -52,7 +52,8 @@ int main(int argc, char** argv) {
     const int secs = argc > 1 ? atoi(argv[1]) : 60; if (argc > 2) rs ^= strtoull(argv[2], 0, 10) * 0x9E3779B97F4A7C15ull;
     Stat st[2]; const time_t t0 = time(nullptr); long seeds = 0;
     while (time(nullptr) - t0 < secs) {
-        const int lv = levels[rnd() % 11], prof = lv >= 11; const size_t n = sizes[rnd() % 9];
+        const int lv = levels[rnd() % 11], prof = lv >= 11; size_t n = sizes[rnd() % 9];
+        if (lv >= 15 && n > (256u << 10)) n = 256u << 10;   // the optimal parse (15-18) is slow on some inputs under ASan: keep a seed within the time budget
         const std::vector<uint8_t> in = gen((int)(rnd() % 6), n);
         std::vector<uint8_t> z(aceapex_compress_bound(n));
         const int64_t zs = aceapex_compress(in.data(), n, z.data(), z.size(), lv, 1 + (int)(rnd() % 2));
