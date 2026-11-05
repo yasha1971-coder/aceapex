@@ -7,8 +7,6 @@ on:
     - '.clusterfuzzlite/**'
     - '.github/workflows/cflite_pr.yml'
   workflow_dispatch:
-  push:
-    branches: [freeze4]
 permissions: read-all
 jobs:
   pr:
