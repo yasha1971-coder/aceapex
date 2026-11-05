@@ -227,6 +227,32 @@ Meta's open DietGPU ANS: encode **364.9 GB/s**, decode **592.5 GB/s**, bit-perfe
 
 ---
 
+## Integrity
+
+Two guarantees, kept apart:
+
+- **The raw API** (`aceapex_decompress`, `aceapex_decompress_mt`, `aceapex_decompress_region` and friends - what
+  lzbench calls) gives **memory safety**: any input, corrupted or not, returns either the size or an error, and never
+  reads or writes outside the buffers it was given (fuzzed under ASan + UBSan on every push, with a negative control). It
+  does **not** check the content: it does not hash its output, so a damaged archive can decode to the declared size with
+  other bytes.
+- **The checked paths** - the CLI `aceapex d`, `aceapex_decompress_stream` with `ACEAPEX_STREAM_VERIFY`, and
+  `decompress()` of the aceapex-fast Python binding - compare the XXH3-64 of the output with the archive header and
+  report a mismatch (CLI: exit 1; stream: `ACEAPEX_ERR_DATA` after the bytes were handed out). Zero wrong bytes accepted.
+
+`scripts/api_fuzz.cpp`, 60 s, all profiles ([results/freeze3-api-fuzz-2026-11-05.txt](results/freeze3-api-fuzz-2026-11-05.txt)):
+
+| profile | mutants | raw API: error / original / **other bytes** | stream + VERIFY: error / original / **other bytes** |
+|---|---|---|---|
+| default, levels 1-3 | 1 560 | 909 / 290 / **361** | 1 256 / 304 / **0** |
+| fast, levels 11-18 | 5 160 | 2 894 / 1 125 / **1 141** | 4 051 / 1 109 / **0** |
+
+The earlier run ([results/freeze2-api-fuzz-2026-11-05.txt](results/freeze2-api-fuzz-2026-11-05.txt)) streamed only
+DNA archives of levels 1-3 (2 501 of 2 520 refused before the check); since then the streaming decoder reads the
+4-chunk literal layout that the default profile writes for other data. CLI: 200 archives with one flipped bit (levels
+1, 2, 3, 11, 14), exit 1 for all of them, none accepted with other bytes
+([results/freeze3-cli-verify-2026-11-05.txt](results/freeze3-cli-verify-2026-11-05.txt)).
+
 ## Build
 
 **CPU (Mode 1):**
