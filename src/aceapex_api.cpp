@@ -140,6 +140,9 @@ static int64_t ax_entropy_decode(const void* src, size_t src_size, int threads, 
     size_t os=0,ns=0,cs=0;
     if (!ax_fse_check(zo,hdr.zoff_sz,&os) || !ax_fse_check(zn,hdr.zlen_sz,&ns) || !ax_fse_check(zc,hdr.zcmd_sz,&cs)) {
         return ACEAPEX_ERR_DATA; }
+    // the literal stream decodes to at most the original's bytes: its own 8-byte header is checked against orig_size
+    // before anything is allocated for it (api_fuzz: a damaged header asked lit_decompress for 2^54 bytes)
+    if (ax_lit_decoded_size(zl,hdr.zlit_sz) > hdr.orig_size) return ACEAPEX_ERR_DATA;
     { uint64_t cap = hdr.orig_size * 4 + ((uint64_t)1 << 20);
       if (os > cap || ns > cap || cs > cap) return ACEAPEX_ERR_DATA; }
     uint8_t* o=ax_big_malloc(os);
