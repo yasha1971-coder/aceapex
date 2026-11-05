@@ -1922,7 +1922,8 @@ static int do_compress(const char* in_path, const char* out_path, int threads, i
     fseek(fin_w,0,SEEK_END); size_t src_size=(size_t)ftell(fin_w); fseek(fin_w,0,SEEK_SET);
     uint8_t* src=(uint8_t*)malloc(src_size);
     if(!src){fprintf(stderr,"malloc failed\n");fclose(fin_w);return 1;}
-    fread(src,1,src_size,fin_w); fclose(fin_w);
+    if(fread(src,1,src_size,fin_w)!=src_size){fprintf(stderr,"Cannot read: %s\n",in_path);free(src);fclose(fin_w);return 1;}
+    fclose(fin_w);
     bool src_is_mmap=false;
 #else
     int fin_fd=open(in_path,O_RDONLY);
@@ -2105,7 +2106,7 @@ static int do_decompress(const char* in_path, const char* out_path, int threads)
     FILE* fin=fopen(in_path,"rb");
     if (!fin) { fprintf(stderr,"Cannot open: %s\n",in_path); return 1; }
     AetHeader hdr;
-    fread(&hdr,sizeof(hdr),1,fin);
+    if (fread(&hdr,sizeof(hdr),1,fin)!=1) { fprintf(stderr,"Cannot read: %s (shorter than the header)\n",in_path); fclose(fin); return 1; }
 #ifdef ACEAPEX_ENV_TUNING
     if (!memcmp(hdr.magic, "AXLINE01", 8)) { fclose(fin); return ax_cli_lm_decompress(in_path, out_path, threads); }
 #endif
@@ -2148,15 +2149,16 @@ static int do_decompress(const char* in_path, const char* out_path, int threads)
 
     uint32_t nb=hdr.num_blocks;
     std::vector<BlockOffsets> boffs(nb);
-    fread(boffs.data(),sizeof(BlockOffsets),nb,fin);
+    if (fread(boffs.data(),sizeof(BlockOffsets),nb,fin)!=nb) { fprintf(stderr,"Cannot read: %s (block table)\n",in_path); fclose(fin); return 1; }
  
     uint8_t* zlit=(uint8_t*)malloc(hdr.zlit_sz);
     uint8_t* zoff=(uint8_t*)malloc(hdr.zoff_sz);
     uint8_t* zlen=(uint8_t*)malloc(hdr.zlen_sz);
     uint8_t* zcmd=(uint8_t*)malloc(hdr.zcmd_sz);
     if(!zlit||!zoff||!zlen||!zcmd){free(zlit);free(zoff);free(zlen);free(zcmd);fclose(fin);return 1;}
-    fread(zlit,1,hdr.zlit_sz,fin); fread(zoff,1,hdr.zoff_sz,fin);
-    fread(zlen,1,hdr.zlen_sz,fin); fread(zcmd,1,hdr.zcmd_sz,fin);
+    if (fread(zlit,1,hdr.zlit_sz,fin)!=hdr.zlit_sz || fread(zoff,1,hdr.zoff_sz,fin)!=hdr.zoff_sz ||
+        fread(zlen,1,hdr.zlen_sz,fin)!=hdr.zlen_sz || fread(zcmd,1,hdr.zcmd_sz,fin)!=hdr.zcmd_sz) {
+        fprintf(stderr,"Cannot read: %s (streams)\n",in_path); free(zlit);free(zoff);free(zlen);free(zcmd); fclose(fin); return 1; }
     fclose(fin);
  
     // Stream headers come from the file: a corrupted length would malloc() garbage.
@@ -2258,7 +2260,8 @@ static int do_test(const char* in_path, int threads, int level=2) {
     fseek(fin,0,SEEK_END); size_t src_size=(size_t)ftell(fin); fseek(fin,0,SEEK_SET);
     uint8_t* src=(uint8_t*)malloc(src_size);
     if(!src){fclose(fin);return 1;}
-    fread(src,1,src_size,fin); fclose(fin);
+    if(fread(src,1,src_size,fin)!=src_size){fprintf(stderr,"Cannot read: %s\n",in_path);free(src);fclose(fin);return 1;}
+    fclose(fin);
     fprintf(stderr,"[*] Test: %s (%.2f MB) threads=%d\n",in_path,src_size/1e6,threads);
     double t_total_t=now_sec();
     if (ax_fast_level(level)) {                       // fast profile: encode to memory, decode, compare

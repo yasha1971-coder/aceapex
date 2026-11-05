@@ -7,6 +7,9 @@ on:
     - cron: '17 4 * * 1'   # weekly: judge every paper tag from its own sources
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     runs-on: ubuntu-24.04
