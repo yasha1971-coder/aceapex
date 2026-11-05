@@ -1,0 +1,2 @@
+head_cli_atomic	pass	aceapex d --out FILE on 200 one-bit-flip archives (levels 1,2,3,11,14): exit 1 in 200, FILE created 0, temp files left 0; intact archive -> FILE == input: True; failed decode over an existing FILE leaves it: True
+control (old CLI, d730dc8): head_cli_atomic	fail	aceapex d --out FILE on 200 one-bit-flip archives (levels 1,2,3,11,14): exit 1 in 200, FILE created 200, temp files left 0; intact archive -> FILE == input: True; failed decode over an existing FILE leaves it: False
