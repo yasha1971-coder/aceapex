@@ -699,7 +699,8 @@ int64_t aceapex_decompress_stream(aceapex_read_fn rd, void* rctx, aceapex_write_
     c.orig = hdr.orig_size; c.bs = hdr.block_size; c.nb = hdr.num_blocks;
     uint64_t p = sizeof hdr + (uint64_t)hdr.num_blocks * sizeof(BlockOffsets);
     const uint64_t zsz[4] = {hdr.zlit_sz, hdr.zoff_sz, hdr.zlen_sz, hdr.zcmd_sz};
-    for (int st = 0; st < 4; st++) { c.zoff[st] = p; p += zsz[st]; }
+    for (int st = 0; st < 4; st++) { if (zsz[st] > ~0ull - p) return ACEAPEX_ERR_DATA; c.zoff[st] = p; p += zsz[st]; }
+    { uint8_t last; if (!st_read(c, p - 1, &last, 1)) return ACEAPEX_ERR_DATA; }  // the archive reaches the end its header claims: stream sizes are bounded by real bytes
     // token streams: header + chunk table, file offset of every chunk
     for (int st = 1; st < 4; st++) {
         StTok& t = c.tk[st]; if (zsz[st] < 8) continue;
@@ -741,7 +742,8 @@ int64_t aceapex_decompress_stream(aceapex_read_fn rd, void* rctx, aceapex_write_
     const uint64_t maxb = MAXB ? MAXB : std::max<uint64_t>(1, ((uint64_t)1 << 20) / c.bs);
     c.out_max = (size_t)(maxb * c.bs);
     if (c.four) c.tile_max = c.out_max;                                         // a group's literals: at most its output
-    else { c.tile_max = (size_t)((G + 1) * c.csz); for (const StChunk& ch : c.lch) c.rbuf_max = std::max(c.rbuf_max, (size_t)ch.csz); }
+    else { c.tile_max = (size_t)std::min<uint64_t>((G + 1) * c.csz, c.lch.empty() ? 0 : c.lch.back().off + c.lch.back().raw);   // a tile never exceeds the literal stream (cz comes from the archive)
+           for (const StChunk& ch : c.lch) c.rbuf_max = std::max(c.rbuf_max, (size_t)ch.csz); }
     if (flags & ACEAPEX_STREAM_VERIFY) { c.xs = XXH3_createState(); XXH3_64bits_reset(c.xs); }
     std::vector<pthread_t> th((size_t)T);
     for (int t = 0; t < T; t++) ax_thread(&th[(size_t)t], st_worker, &c);
