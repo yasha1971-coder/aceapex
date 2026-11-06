@@ -1,0 +1,14 @@
+----------------
+IN: aceapex_compress
+0x000000000002fb0a:  003b9c93          slli            s9,s7,3
+0x000000000002fb0e:  6586              ld              a1,64(sp)
+0x000000000002fb10:  04cc8713          addi            a4,s9,76
+0x000000000002fb14:  000b869b          sext.w          a3,s7
+0x000000000002fb18:  e8ba              sd              a4,80(sp)
+0x000000000002fb1a:  e4b6              sd              a3,72(sp)
+0x000000000002fb1c:  64e5efe3          bgtu            a4,a1,3678      # 0x3097a
+
+----------------
+IN: aceapex_compress
+0x000000000002fb20:  cd817057          illegal         
+

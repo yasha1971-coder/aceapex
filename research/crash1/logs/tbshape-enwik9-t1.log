@@ -1,0 +1,25 @@
+/home/aeterna/golden/text/enwik9 L1 t1: bound 1125001024 cap 1310000000 zs 332412901 dec 1000000000 ok
+  compress into 332412900: -1 error (ok)
+  compress into 166206450: -1 error (ok)
+  compress into 64: -1 error (ok)
+  decompress into 999999999: -1 error (ok)
+  decompress into 500000000: -1 error (ok)
+/home/aeterna/golden/text/enwik9 L2 t1: bound 1125001024 cap 1310000000 zs 331599863 dec 1000000000 ok
+  compress into 331599862: -1 error (ok)
+  compress into 165799931: -1 error (ok)
+  compress into 64: -1 error (ok)
+  decompress into 999999999: -1 error (ok)
+  decompress into 500000000: -1 error (ok)
+/home/aeterna/golden/text/enwik9 L3 t1: bound 1125001024 cap 1310000000 zs 315882016 dec 1000000000 ok
+  compress into 315882015: -1 error (ok)
+  compress into 157941008: -1 error (ok)
+  compress into 64: -1 error (ok)
+  decompress into 999999999: -1 error (ok)
+  decompress into 500000000: -1 error (ok)
+/home/aeterna/golden/text/enwik9 L4 t1: bound 1125001024 cap 1310000000 zs 331599863 dec 1000000000 ok
+  compress into 331599862: -1 error (ok)
+  compress into 165799931: -1 error (ok)
+  compress into 64: -1 error (ok)
+  decompress into 999999999: -1 error (ok)
+  decompress into 500000000: -1 error (ok)
+tbshape: 0 failures

@@ -1,0 +1,25 @@
+/tmp/hwref/corpus/silesia.tar L1 t1: bound 238441984 cap 285531776 zs 69435720 dec 211947520 ok
+  compress into 69435719: -1 error (ok)
+  compress into 34717860: -1 error (ok)
+  compress into 64: -1 error (ok)
+  decompress into 211947519: -1 error (ok)
+  decompress into 105973760: -1 error (ok)
+/tmp/hwref/corpus/silesia.tar L2 t1: bound 238441984 cap 285531776 zs 69034607 dec 211947520 ok
+  compress into 69034606: -1 error (ok)
+  compress into 34517303: -1 error (ok)
+  compress into 64: -1 error (ok)
+  decompress into 211947519: -1 error (ok)
+  decompress into 105973760: -1 error (ok)
+/tmp/hwref/corpus/silesia.tar L3 t1: bound 238441984 cap 285531776 zs 67208532 dec 211947520 ok
+  compress into 67208531: -1 error (ok)
+  compress into 33604266: -1 error (ok)
+  compress into 64: -1 error (ok)
+  decompress into 211947519: -1 error (ok)
+  decompress into 105973760: -1 error (ok)
+/tmp/hwref/corpus/silesia.tar L4 t1: bound 238441984 cap 285531776 zs 69034607 dec 211947520 ok
+  compress into 69034606: -1 error (ok)
+  compress into 34517303: -1 error (ok)
+  compress into 64: -1 error (ok)
+  decompress into 211947519: -1 error (ok)
+  decompress into 105973760: -1 error (ok)
+tbshape: 0 failures
