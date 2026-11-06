@@ -1,0 +1,1 @@
+cmd: /usr/bin/time -v /tmp/crash1/tb164/turbobench-linux-x86_64/turbobench silesia.tar -C4 -v2 -U -eaceapex,3:t4

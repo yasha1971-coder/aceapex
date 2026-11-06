@@ -1,0 +1,18 @@
+16G	aceapex	3	t1	r1	0	7555580	oom 0 oom_kill 0	pass	memory.max 17179869184 memory.swap.max 0
+16G	aceapex_fast	1	t1	r1	0	5226368	oom 0 oom_kill 0	pass	memory.max 17179869184 memory.swap.max 0
+12G	aceapex	3	t1	r1	0	7555580	oom 0 oom_kill 0	pass	memory.max 12884901888 memory.swap.max 0
+12G	aceapex_fast	1	t1	r1	0	5226368	oom 0 oom_kill 0	pass	memory.max 12884901888 memory.swap.max 0
+8G	aceapex	3	t1	r1	0	7555580	oom 0 oom_kill 0	pass	memory.max 8589934592 memory.swap.max 0
+8G	aceapex_fast	1	t1	r1	0	5226368	oom 0 oom_kill 0	pass	memory.max 8589934592 memory.swap.max 0
+7G	aceapex	3	t1	r1	137 signal 9 KILL	7316972	oom 1 oom_kill 1	FAIL	memory.max 7516192768 memory.swap.max 0
+7G	aceapex_fast	1	t1	r1	0	5226368	oom 0 oom_kill 0	pass	memory.max 7516192768 memory.swap.max 0
+6G	aceapex	3	t1	r1	137 signal 9 KILL	6283836	oom 1 oom_kill 1	FAIL	memory.max 6442450944 memory.swap.max 0
+6G	aceapex_fast	1	t1	r1	0	5226368	oom 0 oom_kill 0	pass	memory.max 6442450944 memory.swap.max 0
+5G	aceapex	3	t1	r1	137 signal 9 KILL	5236632	oom 1 oom_kill 1	FAIL	memory.max 5368709120 memory.swap.max 0
+5G	aceapex_fast	1	t1	r1	0	5226368	oom 0 oom_kill 0	pass	memory.max 5368709120 memory.swap.max 0
+4G	aceapex	3	t1	r1	137 signal 9 KILL	4190100	oom 1 oom_kill 1	FAIL	memory.max 4294967296 memory.swap.max 0
+4G	aceapex_fast	1	t1	r1	137 signal 9 KILL	4190084	oom 1 oom_kill 1	FAIL	memory.max 4294967296 memory.swap.max 0
+8G	aceapex	3	t1	r2	0	7555580	oom 0 oom_kill 0	pass	memory.max 8589934592 memory.swap.max 0
+8G	aceapex_fast	1	t1	r2	0	5226368	oom 0 oom_kill 0	pass	memory.max 8589934592 memory.swap.max 0
+7G	aceapex	3	t1	r2	137 signal 9 KILL	7316960	oom 1 oom_kill 1	FAIL	memory.max 7516192768 memory.swap.max 0
+7G	aceapex_fast	1	t1	r2	0	5226368	oom 0 oom_kill 0	pass	memory.max 7516192768 memory.swap.max 0

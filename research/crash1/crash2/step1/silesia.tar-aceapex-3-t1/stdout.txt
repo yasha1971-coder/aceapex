@@ -1,0 +1,8 @@
+silesia.tar,0
+'silesia.tar'
+    66632815  31.44%       200.08                     aceapex 3       silesia.tar   200.08  1.1   200.08  2.1   200.08  3.1                 1730.23  1.1  1730.23  2.1  1730.23  3.1      
+$silesia.tar	211947520	66632815	0.122497	1.059329	aceapex	3	2026-11-06.20:21:27	0	0	984616	102124
+plugprts:'silesia.tar' k=1
+TurboBench: 2026.11.06 20:21 - AMD EPYC 4344P 8-Core Processor
+      C Size  ratio%      C MB/s    D MB/s Rank        C MEM     D MEM   C STACK   D STACK Name            File
+    66632815  31.44%      200.08   1730.23   1👑           0         0    984616    102124 aceapex 3       silesia.tar

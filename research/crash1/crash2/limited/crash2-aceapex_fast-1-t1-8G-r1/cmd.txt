@@ -1,0 +1,1 @@
+cmd: systemd-run --user --scope -u crash2-aceapex_fast-1-t1-8G-r1 -p MemoryMax=8G -p MemorySwapMax=0 /usr/bin/time -v /tmp/crash1/tb164/turbobench-linux-x86_64/turbobench enwik9 -C4 -v2 -U -eaceapex_fast,1
