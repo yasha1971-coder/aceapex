@@ -39,6 +39,7 @@ reports. `aceapex_compress_bound` (1.125 n + 1024) < TurboBench's buffer (1.3 n 
 
 ## Status
 
-Not reproduced (x86_64 12/12, aarch64 1/1, ASan 0 reports). Steps 3-4 (ASan TurboBench build, bisect v2.6.1..b67c858)
-need a reproduction first. No code change, no API/ABI change, no release. Request to powturbo: `request-to-powturbo.md`
+Not reproduced (x86_64 12/12, aarch64 1/1, ASan 0 reports). An ASan build of the whole TurboBench was NOT done;
+a separate ASan+UBSan harness of the library (`tbshape.cpp`, above) was. Steps 3-4 (ASan TurboBench build, bisect
+v2.6.1..b67c858) need a reproduction first. No code change, no API/ABI change, no release. Request to powturbo: `request-to-powturbo.md`
 (draft, not sent).
