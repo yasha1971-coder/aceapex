@@ -1,0 +1,1 @@
+make STATIC=1 PHAZ=0

@@ -1,0 +1,2295 @@
+OpenMP enabled with -fopenmp and -fopenmp
+CC="gcc" CXX="g++"  CXL="g++"  CG="clang    " CCO="gcc" 
+g++ -O3   -w -Wall -fpermissive  -fno-rtti  -Izpaq -fopenmp  turbobench_/bcm/bcm.cpp -c -o build/turbobench_/bcm/bcm.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE GLZA/GLZAmodel.c -c -o build/GLZA/GLZAmodel.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE GLZA/GLZAcomp.c -c -o build/GLZA/GLZAcomp.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE GLZA/GLZAencode.c -c -o build/GLZA/GLZAencode.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE GLZA/GLZAcompress.c -c -o build/GLZA/GLZAcompress.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE GLZA/GLZAformat.c -c -o build/GLZA/GLZAformat.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE GLZA/GLZAdecode.c -c -o build/GLZA/GLZAdecode.o
+g++ -O3 -DLIBBSC_OPENMP_SUPPORT -DLIBSAIS_OPENMP -fopenmp -march=haswell -DLIBBSC_SORT_TRANSFORM_SUPPORT -ICSC/src/libcsc -c libbsc/libbsc/libbsc/libbsc.cpp -o build/libbsc/libbsc/libbsc/libbsc.o
+g++ -O3 -DLIBBSC_OPENMP_SUPPORT -DLIBSAIS_OPENMP -fopenmp -march=haswell -DLIBBSC_SORT_TRANSFORM_SUPPORT -ICSC/src/libcsc -c libbsc/libbsc/coder/coder.cpp -o build/libbsc/libbsc/coder/coder.o
+g++ -O3 -DLIBBSC_OPENMP_SUPPORT -DLIBSAIS_OPENMP -fopenmp -march=haswell -DLIBBSC_SORT_TRANSFORM_SUPPORT -ICSC/src/libcsc -c libbsc/libbsc/coder/qlfc/qlfc.cpp -o build/libbsc/libbsc/coder/qlfc/qlfc.o
+g++ -O3 -DLIBBSC_OPENMP_SUPPORT -DLIBSAIS_OPENMP -fopenmp -march=haswell -DLIBBSC_SORT_TRANSFORM_SUPPORT -ICSC/src/libcsc -c libbsc/libbsc/coder/qlfc/qlfc_model.cpp -o build/libbsc/libbsc/coder/qlfc/qlfc_model.o
+g++ -O3 -DLIBBSC_OPENMP_SUPPORT -DLIBSAIS_OPENMP -fopenmp -march=haswell -DLIBBSC_SORT_TRANSFORM_SUPPORT -ICSC/src/libcsc -c libbsc/libbsc/filters/detectors.cpp -o build/libbsc/libbsc/filters/detectors.o
+g++ -O3 -DLIBBSC_OPENMP_SUPPORT -DLIBSAIS_OPENMP -fopenmp -march=haswell -DLIBBSC_SORT_TRANSFORM_SUPPORT -ICSC/src/libcsc -c libbsc/libbsc/filters/preprocessing.cpp -o build/libbsc/libbsc/filters/preprocessing.o
+g++ -O3 -DLIBBSC_OPENMP_SUPPORT -DLIBSAIS_OPENMP -fopenmp -march=haswell -DLIBBSC_SORT_TRANSFORM_SUPPORT -ICSC/src/libcsc -c libbsc/libbsc/adler32/adler32.cpp -o build/libbsc/libbsc/adler32/adler32.o
+g++ -O3 -DLIBBSC_OPENMP_SUPPORT -DLIBSAIS_OPENMP -fopenmp -march=haswell -DLIBBSC_SORT_TRANSFORM_SUPPORT -ICSC/src/libcsc -c libbsc/libbsc/bwt/bwt.cpp -o build/libbsc/libbsc/bwt/bwt.o
+g++ -O3 -DLIBBSC_OPENMP_SUPPORT -DLIBSAIS_OPENMP -fopenmp -march=haswell -DLIBBSC_SORT_TRANSFORM_SUPPORT -ICSC/src/libcsc -c libbsc/libbsc/st/st.cpp -o build/libbsc/libbsc/st/st.o
+g++ -O3 -DLIBBSC_OPENMP_SUPPORT -DLIBSAIS_OPENMP -fopenmp -march=haswell -DLIBBSC_SORT_TRANSFORM_SUPPORT -ICSC/src/libcsc -c libbsc/libbsc/lzp/lzp.cpp -o build/libbsc/libbsc/lzp/lzp.o
+g++ -O3 -DLIBBSC_OPENMP_SUPPORT -DLIBSAIS_OPENMP -fopenmp -march=haswell -DLIBBSC_SORT_TRANSFORM_SUPPORT -ICSC/src/libcsc -c libbsc/libbsc/platform/platform.cpp -o build/libbsc/libbsc/platform/platform.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE libslz/src/slz.c -c -o build/libslz/src/slz.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE libslz/src/uslz.c -c -o build/libslz/src/uslz.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE libslz/src/slz_common.c -c -o build/libslz/src/slz_common.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lizard/lib/lizard_compress.c -c -o build/lizard/lib/lizard_compress.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lizard/lib/lizard_decompress.c -c -o build/lizard/lib/lizard_decompress.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lizard/lib/lizard_frame.c -c -o build/lizard/lib/lizard_frame.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lizard/lib/entropy/entropy_common.c -c -o build/lizard/lib/entropy/entropy_common.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lizard/lib/entropy/fse_compress.c -c -o build/lizard/lib/entropy/fse_compress.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lizard/lib/entropy/fse_decompress.c -c -o build/lizard/lib/entropy/fse_decompress.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lizard/lib/entropy/hist.c -c -o build/lizard/lib/entropy/hist.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lizard/lib/entropy/huf_compress.c -c -o build/lizard/lib/entropy/huf_compress.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lizard/lib/entropy/huf_decompress.c -c -o build/lizard/lib/entropy/huf_decompress.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lz4/lib/lz4hc.c -c -o build/lz4/lib/lz4hc.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lz4/lib/lz4.c -c -o build/lz4/lib/lz4.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lz4/lib/lz4frame.c -c -o build/lz4/lib/lz4frame.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lz4/lib/xxhash.c -c -o build/lz4/lib/xxhash.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lzfse/src/lzfse_decode_base.c -c -o build/lzfse/src/lzfse_decode_base.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lzfse/src/lzfse_decode.c -c -o build/lzfse/src/lzfse_decode.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lzfse/src/lzfse_encode_base.c -c -o build/lzfse/src/lzfse_encode_base.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lzfse/src/lzfse_encode.c -c -o build/lzfse/src/lzfse_encode.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lzfse/src/lzfse_fse.c -c -o build/lzfse/src/lzfse_fse.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lzfse/src/lzvn_decode_base.c -c -o build/lzfse/src/lzvn_decode_base.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lzfse/src/lzvn_encode_base.c -c -o build/lzfse/src/lzvn_encode_base.o
+g++ -O3 -D_MSC_VER -D"UINT64_MAX=-1ull" -Ilzham_codec_devel/include -Ilzham_codec_devel/lzhamcomp -Ilzham_codec_devel/lzhamdecomp -Wno-deprecated-enum-enum-conversion -c lzham_codec_devel/lzhamdecomp/lzham_platform.cpp -o build/lzham_codec_devel/lzhamdecomp/lzham_platform.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lzlib/lzlib.c -c -o build/lzlib/lzlib.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE turbobench_/lzlib/bbexample.c -c -o build/turbobench_/lzlib/bbexample.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lzma/C/Alloc.c -c -o build/lzma/C/Alloc.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lzma/C/CpuArch.c -c -o build/lzma/C/CpuArch.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lzma/C/LzFind.c -c -o build/lzma/C/LzFind.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lzma/C/LzmaDec.c -c -o build/lzma/C/LzmaDec.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lzma/C/LzmaEnc.c -c -o build/lzma/C/LzmaEnc.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lzma/C/LzmaLib.c -c -o build/lzma/C/LzmaLib.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lzma/C/Threads.c -c -o build/lzma/C/Threads.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lzma/C/LzFindMt.c -c -o build/lzma/C/LzFindMt.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE lzma/C/LzFindOpt.c -c -o build/lzma/C/LzFindOpt.o
+g++ -O3 -w -fpermissive -Ilzsa/src -Ilzsa/src/libdivsufsort/include -c lzsa/src/dictionary.c -o build/lzsa/src/dictionary.o
+g++ -O3 -w -fpermissive -Ilzsa/src -Ilzsa/src/libdivsufsort/include -c lzsa/src/expand_block_v1.c -o build/lzsa/src/expand_block_v1.o
+g++ -O3 -w -fpermissive -Ilzsa/src -Ilzsa/src/libdivsufsort/include -c lzsa/src/expand_block_v2.c -o build/lzsa/src/expand_block_v2.o
+g++ -O3 -w -fpermissive -Ilzsa/src -Ilzsa/src/libdivsufsort/include -c lzsa/src/expand_context.c -o build/lzsa/src/expand_context.o
+g++ -O3 -w -fpermissive -Ilzsa/src -Ilzsa/src/libdivsufsort/include -c lzsa/src/expand_inmem.c -o build/lzsa/src/expand_inmem.o
+g++ -O3 -w -fpermissive -Ilzsa/src -Ilzsa/src/libdivsufsort/include -c lzsa/src/expand_streaming.c -o build/lzsa/src/expand_streaming.o
+g++ -O3 -w -fpermissive -Ilzsa/src -Ilzsa/src/libdivsufsort/include -c lzsa/src/frame.c -o build/lzsa/src/frame.o
+g++ -O3 -w -fpermissive -Ilzsa/src -Ilzsa/src/libdivsufsort/include -c lzsa/src/matchfinder.c -o build/lzsa/src/matchfinder.o
+g++ -O3 -w -fpermissive -Ilzsa/src -Ilzsa/src/libdivsufsort/include -c lzsa/src/shrink_block_v1.c -o build/lzsa/src/shrink_block_v1.o
+g++ -O3 -w -fpermissive -Ilzsa/src -Ilzsa/src/libdivsufsort/include -c lzsa/src/shrink_block_v2.c -o build/lzsa/src/shrink_block_v2.o
+g++ -O3 -w -fpermissive -Ilzsa/src -Ilzsa/src/libdivsufsort/include -c lzsa/src/shrink_context.c -o build/lzsa/src/shrink_context.o
+g++ -O3 -w -fpermissive -Ilzsa/src -Ilzsa/src/libdivsufsort/include -c lzsa/src/shrink_inmem.c -o build/lzsa/src/shrink_inmem.o
+g++ -O3 -w -fpermissive -Ilzsa/src -Ilzsa/src/libdivsufsort/include -c lzsa/src/shrink_streaming.c -o build/lzsa/src/shrink_streaming.o
+g++ -O3 -w -fpermissive -Ilzsa/src -Ilzsa/src/libdivsufsort/include -c lzsa/src/stream.c -o build/lzsa/src/stream.o
+g++ -O3 -w -fpermissive -Ilzsa/src -Ilzsa/src/libdivsufsort/include -c lzsa/src/libdivsufsort/lib/divsufsort.c -o build/lzsa/src/libdivsufsort/lib/divsufsort.o
+g++ -O3 -w -fpermissive -Ilzsa/src -Ilzsa/src/libdivsufsort/include -c lzsa/src/libdivsufsort/lib/divsufsort_utils.c -o build/lzsa/src/libdivsufsort/lib/divsufsort_utils.o
+g++ -O3 -w -fpermissive -Ilzsa/src -Ilzsa/src/libdivsufsort/include -c lzsa/src/libdivsufsort/lib/sssort.c -o build/lzsa/src/libdivsufsort/lib/sssort.o
+g++ -O3 -w -fpermissive -Ilzsa/src -Ilzsa/src/libdivsufsort/include -c lzsa/src/libdivsufsort/lib/trsort.c -o build/lzsa/src/libdivsufsort/lib/trsort.o
+g++ -O2 -msse4.1 -std=c++11 LZSSE/lzsse2/lzsse2.cpp -c -o build/LZSSE/lzsse2/lzsse2.o
+g++ -O2 -msse4.1 -std=c++11 LZSSE/lzsse4/lzsse4.cpp -c -o build/LZSSE/lzsse4/lzsse4.o
+g++ -O2 -msse4.1 -std=c++11 LZSSE/lzsse8/lzsse8.cpp -c -o build/LZSSE/lzsse8/lzsse8.o
+cp memlz/memlz.h build/memlz/memlz.c 
+gcc -O3 -w -Wall  -fpermissive  -DNMEMSIZE -mavx -mpopcnt -DMEMLZ_IMPLEMENTATION build/memlz/memlz.c -c -o build/memlz/memlz.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE tamp/tamp/_c_src/tamp/common.c -c -o build/tamp/tamp/_c_src/tamp/common.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE tamp/tamp/_c_src/tamp/compressor.c -c -o build/tamp/tamp/_c_src/tamp/compressor.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE tamp/tamp/_c_src/tamp/decompressor.c -c -o build/tamp/tamp/_c_src/tamp/decompressor.o
+gcc -O2 -w -Wall  -fpermissive  -DNMEMSIZE -DNDEBUG -DWZIP_MULTITHREAD=1 -c wzip/src/WLZ4.c -o build/wzip/src/WLZ4.o
+gcc -O2 -w -Wall  -fpermissive  -DNMEMSIZE -DNDEBUG -DWZIP_MULTITHREAD=1 -c wzip/src/WZIP_L.c -o build/wzip/src/WZIP_L.o
+gcc -O2 -w -Wall  -fpermissive  -DNMEMSIZE -DNDEBUG -DWZIP_MULTITHREAD=1 -c wzip/src/WZIP_M.c -o build/wzip/src/WZIP_M.o
+gcc -O2 -w -Wall  -fpermissive  -DNMEMSIZE -DNDEBUG -DWZIP_MULTITHREAD=1 -c wzip/src/WZIP_wrapper.c -o build/wzip/src/WZIP_wrapper.o
+gcc -O2 -w -Wall  -fpermissive  -DNMEMSIZE -DNDEBUG -DWZIP_MULTITHREAD=1 -c wzip/src/Huffman_Compress.c -o build/wzip/src/Huffman_Compress.o
+gcc -O2 -w -Wall  -fpermissive  -DNMEMSIZE -DNDEBUG -DWZIP_MULTITHREAD=1 -c wzip/src/Huffman_Decompress.c -o build/wzip/src/Huffman_Decompress.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE zlib/adler32.c -c -o build/zlib/adler32.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE zlib/crc32.c -c -o build/zlib/crc32.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE zlib/compress.c -c -o build/zlib/compress.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE zlib/deflate.c -c -o build/zlib/deflate.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE zlib/infback.c -c -o build/zlib/infback.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE zlib/inffast.c -c -o build/zlib/inffast.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE zlib/inflate.c -c -o build/zlib/inflate.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE zlib/inftrees.c -c -o build/zlib/inftrees.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE zlib/trees.c -c -o build/zlib/trees.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE zlib/uncompr.c -c -o build/zlib/uncompr.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE zlib/zutil.c -c -o build/zlib/zutil.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE -DZ_PREFIX -Dz_errmsg=zlib_turbo_errmsg -DZ_TURBO_THREADS -DZ_TURBO_SIMD zlib-turbo/adler32.c -c -o build/zlib-turbo/adler32.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE -DZ_PREFIX -Dz_errmsg=zlib_turbo_errmsg -DZ_TURBO_THREADS -DZ_TURBO_SIMD zlib-turbo/compress.c -c -o build/zlib-turbo/compress.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE -DZ_PREFIX -Dz_errmsg=zlib_turbo_errmsg -DZ_TURBO_THREADS -DZ_TURBO_SIMD zlib-turbo/crc32.c -c -o build/zlib-turbo/crc32.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE -DZ_PREFIX -Dz_errmsg=zlib_turbo_errmsg -DZ_TURBO_THREADS -DZ_TURBO_SIMD zlib-turbo/deflate.c -c -o build/zlib-turbo/deflate.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE -DZ_PREFIX -Dz_errmsg=zlib_turbo_errmsg -DZ_TURBO_THREADS -DZ_TURBO_SIMD zlib-turbo/infback.c -c -o build/zlib-turbo/infback.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE -DZ_PREFIX -Dz_errmsg=zlib_turbo_errmsg -DZ_TURBO_THREADS -DZ_TURBO_SIMD zlib-turbo/inffast.c -c -o build/zlib-turbo/inffast.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE -DZ_PREFIX -Dz_errmsg=zlib_turbo_errmsg -DZ_TURBO_THREADS -DZ_TURBO_SIMD zlib-turbo/inflate.c -c -o build/zlib-turbo/inflate.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE -DZ_PREFIX -Dz_errmsg=zlib_turbo_errmsg -DZ_TURBO_THREADS -DZ_TURBO_SIMD zlib-turbo/inftrees.c -c -o build/zlib-turbo/inftrees.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE -DZ_PREFIX -Dz_errmsg=zlib_turbo_errmsg -DZ_TURBO_THREADS -DZ_TURBO_SIMD zlib-turbo/trees.c -c -o build/zlib-turbo/trees.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE -DZ_PREFIX -Dz_errmsg=zlib_turbo_errmsg -DZ_TURBO_THREADS -DZ_TURBO_SIMD zlib-turbo/uncompr.c -c -o build/zlib-turbo/uncompr.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE -DZ_PREFIX -Dz_errmsg=zlib_turbo_errmsg -DZ_TURBO_THREADS -DZ_TURBO_SIMD zlib-turbo/zutil.c -c -o build/zlib-turbo/zutil.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE -DZ_PREFIX -Dz_errmsg=zlib_turbo_errmsg -DZ_TURBO_THREADS -DZ_TURBO_SIMD turbobench_/zlib_turbo.c -c -o build/turbobench_/zlib_turbo.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE zopfli/src/zopfli/blocksplitter.c -c -o build/zopfli/src/zopfli/blocksplitter.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE zopfli/src/zopfli/cache.c -c -o build/zopfli/src/zopfli/cache.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE zopfli/src/zopfli/deflate.c -c -o build/zopfli/src/zopfli/deflate.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE zopfli/src/zopfli/gzip_container.c -c -o build/zopfli/src/zopfli/gzip_container.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE zopfli/src/zopfli/hash.c -c -o build/zopfli/src/zopfli/hash.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE zopfli/src/zopfli/katajainen.c -c -o build/zopfli/src/zopfli/katajainen.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE zopfli/src/zopfli/lz77.c -c -o build/zopfli/src/zopfli/lz77.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE zopfli/src/zopfli/squeeze.c -c -o build/zopfli/src/zopfli/squeeze.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE zopfli/src/zopfli/tree.c -c -o build/zopfli/src/zopfli/tree.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE zopfli/src/zopfli/util.c -c -o build/zopfli/src/zopfli/util.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE zopfli/src/zopfli/zlib_container.c -c -o build/zopfli/src/zopfli/zlib_container.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE zopfli/src/zopfli/zopfli_lib.c -c -o build/zopfli/src/zopfli/zopfli_lib.o
+(echo '#include <omp.h>'; cat zpaq/libzpaq.cpp) > build/libzpaq_omp.cpp
+g++ -O3   -w -Wall -fpermissive  -fno-rtti  -Izpaq -fopenmp  build/libzpaq_omp.cpp -c -o build/build/libzpaq_omp.o
+g++ -O3   -w -Wall -fpermissive  -fno-rtti  -Izpaq -fopenmp  EC/fastac/arithmetic_codec.cpp -c -o build/EC/fastac/arithmetic_codec.o
+g++ -O3   -w -Wall -fpermissive  -fno-rtti  -Izpaq -fopenmp  EC/fasthf/binary_codec.cpp -c -o build/EC/fasthf/binary_codec.o
+g++ -O3   -w -Wall -fpermissive  -fno-rtti  -Izpaq -fopenmp  EC/fpaq0p/fpaq0p_sh.cpp -c -o build/EC/fpaq0p/fpaq0p_sh.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE EC/FPC/fpc.c -c -o build/EC/FPC/fpc.o
+mkdir -p build/pivco-huffman
+cmake -S pivco-huffman -B build/pivco-huffman -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS="-Wno-format"
+-- The C compiler identification is GNU 16.2.0
+-- The CXX compiler identification is GNU 16.2.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /ucrt64/bin/cc.exe - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /ucrt64/bin/c++.exe - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Performing Test COMPILER_HAS_AVX512_VBMI2
+-- Performing Test COMPILER_HAS_AVX512_VBMI2 - Success
+-- Performing Test COMPILER_HAS_AVX2
+-- Performing Test COMPILER_HAS_AVX2 - Success
+-- x86_64 detected — enabling AVX-512 VBMI2 + AVX2 + SSE4.1
+-- Performing Test COMPILER_HAS_GFNI
+-- Performing Test COMPILER_HAS_GFNI - Success
+-- Performing Test COMPILER_HAS_BITALG
+-- Performing Test COMPILER_HAS_BITALG - Success
+-- Performing Test PHTD_AVX512_OK
+-- Performing Test PHTD_AVX512_OK - Success
+-- Oodle not detected at ext/oodle - pivco_fse_xy_micro will skip Oodle reference columns
+-- CPM: Adding package counters@4.1.0 (v4.1.0)
+-- EWAH not detected at ext/ewah — pivco_bench_golomb will skip EWAH column
+-- Configuring done (7.5s)
+-- Generating done (1.2s)
+-- Build files have been written to: /c/tb/build/pivco-huffman
+cmake --build build/pivco-huffman --target pivco_huffman_local -j
+make[1]: Entering directory '/c/tb/build/pivco-huffman'
+[  0%] Building C object CMakeFiles/pivco_codec_avx512.dir/src/pivco_huffman_codec.c.o
+[  0%] Building C object CMakeFiles/pivco_codec_x86.dir/src/pivco_huffman_codec.c.o
+[  5%] Building C object CMakeFiles/pivco_codec_scalar.dir/src/pivco_huffman_codec.c.o
+In file included from C:/tb/pivco-huffman/src/pivco_huffman_primitives.h:234,
+                 from C:/tb/pivco-huffman/src/pivco_huffman_codec.c:24:
+C:/tb/pivco-huffman/src/pivco_huffman_primitives_x86.h: In function 'part_core_x86':
+C:/tb/pivco-huffman/src/pivco_huffman_primitives_x86.h:1106:24: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+ 1106 |                        if (EMIT_RIGHT) tmp[n_right] = r; n_right++; }
+      |                        ^~
+C:/tb/pivco-huffman/src/pivco_huffman_primitives_x86.h:1106:58: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+ 1106 |                        if (EMIT_RIGHT) tmp[n_right] = r; n_right++; }
+      |                                                          ^~~~~~~
+[  5%] Built target pivco_codec_scalar
+[  5%] Built target pivco_codec_avx512
+[  5%] Built target pivco_codec_x86
+[ 11%] Building C object CMakeFiles/pivco_huffman.dir/src/huffman_table.c.o
+[ 17%] Building C object CMakeFiles/pivco_huffman.dir/src/joint_lengths.c.o
+[ 17%] Building C object CMakeFiles/pivco_huffman.dir/src/pivco_huffman.c.o
+[ 23%] Building C object CMakeFiles/pivco_huffman.dir/src/pivco_instrumentation.c.o
+[ 29%] Building C object CMakeFiles/pivco_huffman.dir/src/pivco_prof.c.o
+[ 29%] Building C object CMakeFiles/pivco_huffman.dir/src/pivcohuf_file.c.o
+[ 35%] Building C object CMakeFiles/pivco_huffman.dir/src/shake_lengths.c.o
+[ 41%] Building C object CMakeFiles/pivco_huffman.dir/src/traditional_huffman.c.o
+[ 41%] Building C object CMakeFiles/pivco_huffman.dir/src/pivco_fse.c.o
+C:/tb/pivco-huffman/src/traditional_huffman.c: In function 'trad_huffman_encode_4s':
+C:/tb/pivco-huffman/src/traditional_huffman.c:238:13: warning: variable 'stream_bits' set but not used [-Wunused-but-set-variable=]
+  238 |     size_t  stream_bits[4];
+      |             ^~~~~~~~~~~
+[ 47%] Building C object CMakeFiles/pivco_huffman.dir/src/pivco_k1.c.o
+[ 47%] Building C object CMakeFiles/pivco_huffman.dir/src/pivco_k2.c.o
+[ 52%] Building C object CMakeFiles/pivco_huffman.dir/src/pivco_dhuf0.c.o
+[ 58%] Building C object CMakeFiles/pivco_huffman.dir/src/pivco_nph.c.o
+[ 58%] Building C object CMakeFiles/pivco_huffman.dir/ext/fse/lib/fse_compress.c.o
+[ 64%] Building C object CMakeFiles/pivco_huffman.dir/ext/fse/lib/fse_decompress.c.o
+[ 70%] Building C object CMakeFiles/pivco_huffman.dir/ext/fse/lib/huf_compress.c.o
+In file included from C:/tb/pivco-huffman/src/pivco_nph.h:43,
+                 from C:/tb/pivco-huffman/src/pivco_nph.c:4:
+C:/tb/pivco-huffman/src/pivco_nph.c: In function 'pivco_nph_read_lens':
+C:/tb/pivco-huffman/src/pivco_nph.c:86:22: warning: 'vals' may be used uninitialized [-Wmaybe-uninitialized]
+   86 |     PIVCO_BACKEND_FN(pivco_merge_cst_vec)(presence, PIVCO_MAX_SYMBOLS, 0, vals, lens);
+      |                      ^
+C:/tb/pivco-huffman/src/pivco_huffman_common.h:171:34: note: in definition of macro 'PIVCO_BACKEND_CAT_'
+  171 | #define PIVCO_BACKEND_CAT_(f, b) f##_##b
+      |                                  ^
+C:/tb/pivco-huffman/src/pivco_huffman_common.h:173:34: note: in expansion of macro 'PIVCO_BACKEND_CAT'
+  173 | #define PIVCO_BACKEND_FN(f)      PIVCO_BACKEND_CAT(f, PIVCO_BACKEND_SUFFIX)
+      |                                  ^~~~~~~~~~~~~~~~~
+C:/tb/pivco-huffman/src/pivco_nph.c:86:5: note: in expansion of macro 'PIVCO_BACKEND_FN'
+   86 |     PIVCO_BACKEND_FN(pivco_merge_cst_vec)(presence, PIVCO_MAX_SYMBOLS, 0, vals, lens);
+      |     ^~~~~~~~~~~~~~~~
+C:/tb/pivco-huffman/src/pivco_nph.c:13:23: note: by argument 4 of type 'const uint8_t *' {aka 'const unsigned char *'} to 'pivco_merge_cst_vec_avx512' declared here
+   13 | void PIVCO_BACKEND_FN(pivco_merge_cst_vec)(const uint8_t *bm, int K,
+      |                       ^~~~~~~~~~~~~~~~~~~
+C:/tb/pivco-huffman/src/pivco_huffman_common.h:171:34: note: in definition of macro 'PIVCO_BACKEND_CAT_'
+  171 | #define PIVCO_BACKEND_CAT_(f, b) f##_##b
+      |                                  ^
+C:/tb/pivco-huffman/src/pivco_huffman_common.h:173:34: note: in expansion of macro 'PIVCO_BACKEND_CAT'
+  173 | #define PIVCO_BACKEND_FN(f)      PIVCO_BACKEND_CAT(f, PIVCO_BACKEND_SUFFIX)
+      |                                  ^~~~~~~~~~~~~~~~~
+C:/tb/pivco-huffman/src/pivco_nph.c:13:6: note: in expansion of macro 'PIVCO_BACKEND_FN'
+   13 | void PIVCO_BACKEND_FN(pivco_merge_cst_vec)(const uint8_t *bm, int K,
+      |      ^~~~~~~~~~~~~~~~
+C:/tb/pivco-huffman/src/pivco_nph.c:79:13: note: 'vals' declared here
+   79 |     uint8_t vals[PIVCO_MAX_SYMBOLS + 16];
+      |             ^~~~
+[ 70%] Building C object CMakeFiles/pivco_huffman.dir/ext/fse/lib/huf_decompress.c.o
+[ 76%] Building C object CMakeFiles/pivco_huffman.dir/ext/fse/lib/entropy_common.c.o
+[ 82%] Building C object CMakeFiles/pivco_huffman.dir/ext/fse/lib/hist.c.o
+[ 82%] Building C object CMakeFiles/pivco_huffman.dir/ext/fse/lib/debug.c.o
+[ 88%] Building C object CMakeFiles/pivco_huffman.dir/src/pivco_huffman_x86_tables.c.o
+[ 94%] Linking C static library libpivco_huffman.a
+[ 94%] Built target pivco_huffman
+[100%] Localizing FSE/HUF symbols -> libpivco_huffman_local.o
+[100%] Built target pivco_huffman_local
+make[1]: Leaving directory '/c/tb/build/pivco-huffman'
+g++ -c -O3 -w -Wall  -fpermissive  -DNMEMSIZE -march=corei7-avx -mtune=corei7-avx -mno-aes EC/sserangecoding/sserangecoder.cpp -o build/EC/sserangecoding/sserangecoder.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE EC/subotin_/subotin.c -c -o build/EC/subotin_/subotin.o
+g++ -O3   -w -Wall -fpermissive  -fno-rtti  -Izpaq -fopenmp  EC/vecrc/vector_rc.cpp -c -o build/EC/vecrc/vector_rc.o
+gcc -O3 -march=haswell -w -fstrict-aliasing -falign-loops=32 -DNDEBUG Turbo-Run-Length-Encoding/trlec.c -c -o build/Turbo-Run-Length-Encoding/trlec.o
+gcc -O3 -march=haswell -w -fstrict-aliasing -falign-loops=32 -DNDEBUG Turbo-Run-Length-Encoding/trled.c -c -o build/Turbo-Run-Length-Encoding/trled.o
+gcc -O3 -march=haswell -w -fstrict-aliasing -falign-loops=32 -DNDEBUG Turbo-Run-Length-Encoding/ext/mrle.c -c -o build/Turbo-Run-Length-Encoding/ext/mrle.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE fast-lzma2/dict_buffer.c -c -o build/fast-lzma2/dict_buffer.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE fast-lzma2/fl2_common.c -c -o build/fast-lzma2/fl2_common.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE fast-lzma2/fl2_compress.c -c -o build/fast-lzma2/fl2_compress.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE fast-lzma2/fl2_decompress.c -c -o build/fast-lzma2/fl2_decompress.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE fast-lzma2/fl2_pool.c -c -o build/fast-lzma2/fl2_pool.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE fast-lzma2/fl2_threading.c -c -o build/fast-lzma2/fl2_threading.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE fast-lzma2/lzma2_dec.c -c -o build/fast-lzma2/lzma2_dec.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE fast-lzma2/lzma2_enc.c -c -o build/fast-lzma2/lzma2_enc.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE fast-lzma2/radix_bitpack.c -c -o build/fast-lzma2/radix_bitpack.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE fast-lzma2/radix_mf.c -c -o build/fast-lzma2/radix_mf.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE fast-lzma2/radix_struct.c -c -o build/fast-lzma2/radix_struct.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE fast-lzma2/range_enc.c -c -o build/fast-lzma2/range_enc.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE fast-lzma2/util.c -c -o build/fast-lzma2/util.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE FastLZ/fastlz.c -c -o build/FastLZ/fastlz.o
+g++ -O3   -w -Wall -fpermissive  -fno-rtti  -Izpaq -fopenmp  ms-compress/src/mscomp.cpp -c -o build/ms-compress/src/mscomp.o
+g++ -O3   -w -Wall -fpermissive  -fno-rtti  -Izpaq -fopenmp  ms-compress/src/lznt1_compress.cpp -c -o build/ms-compress/src/lznt1_compress.o
+g++ -O3   -w -Wall -fpermissive  -fno-rtti  -Izpaq -fopenmp  ms-compress/src/lznt1_decompress.cpp -c -o build/ms-compress/src/lznt1_decompress.o
+g++ -O3   -w -Wall -fpermissive  -fno-rtti  -Izpaq -fopenmp  ms-compress/src/xpress_compress.cpp -c -o build/ms-compress/src/xpress_compress.o
+g++ -O3   -w -Wall -fpermissive  -fno-rtti  -Izpaq -fopenmp  ms-compress/src/xpress_decompress.cpp -c -o build/ms-compress/src/xpress_decompress.o
+g++ -O3   -w -Wall -fpermissive  -fno-rtti  -Izpaq -fopenmp  ms-compress/src/xpress_huff_compress.cpp -c -o build/ms-compress/src/xpress_huff_compress.o
+g++ -O3   -w -Wall -fpermissive  -fno-rtti  -Izpaq -fopenmp  ms-compress/src/xpress_huff_decompress.cpp -c -o build/ms-compress/src/xpress_huff_decompress.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE turbobench_/quicklz/quicklz1.c -c -o build/turbobench_/quicklz/quicklz1.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE turbobench_/quicklz/quicklz2.c -c -o build/turbobench_/quicklz/quicklz2.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE turbobench_/quicklz/quicklz3.c -c -o build/turbobench_/quicklz/quicklz3.o
+make -C aocl-compression BUILD_STATIC_LIBS=1 BUILD_DIR=/c/tb/build/aocl-compression LIB_DIR=/c/tb/build/aocl-compression/lib
+make[1]: Entering directory '/c/tb/aocl-compression'
+
+==========================================
+AOCL-Compression Build Configuration
+==========================================
+Platform: windows (windows)
+Architecture: x86_64
+C Compiler: gcc (gcc 16.2)
+C++ Compiler: g++
+Build Type: Release
+Library Type: static
+==========================================
+
+Generating aoclAlgoOpt.h (LZ4_FRAME_FORMAT_SUPPORT=0)...
+Generating templates...
+make[2]: Entering directory '/c/tb/aocl-compression'
+Generating LZ4 compress variant 1...
+Generating LZ4 compress variant 2 (FDS_noDict)...
+Generating LZ4 compress variant 3 (multi-threaded)...
+Generating LZ4 decompress variant 1...
+Generating LZ4 decompress variant 2 (multi-threaded)...
+✓ LZ4 templates generated (5 variants)
+make[2]: Leaving directory '/c/tb/aocl-compression'
+make[2]: Entering directory '/c/tb/aocl-compression'
+Generating ZSTD lazy FDS2 base...
+Generating ZSTD lazy FDS3 offset8...
+Generating ZSTD lazy FDS3 analyze...
+Generating ZSTD lazy FDS3 base...
+Generating ZSTD double-fast FDS2 base...
+Generating ZSTD double-fast FDS3 analyze...
+Generating ZSTD double-fast FDS3 base...
+Generating ZSTD fast FDS2 base...
+Generating ZSTD fast FDS3 analyze...
+Generating ZSTD fast FDS3 base...
+Generating ZSTD decode sequence...
+Generating ZSTD decode sequence GCC...
+Generating ZSTD decode sequence fast2...
+Generating ZSTD decode sequence GCC fast2...
+Generating ZSTD decode sequence fast3...
+Generating ZSTD decode sequence GCC fast3...
+Generating ZSTD exec sequence fast2...
+Generating ZSTD exec sequence nodict...
+Generating ZSTD decompress sequences body...
+Generating ZSTD decompress sequences body fast2...
+Generating ZSTD decompress sequences body fast3...
+Generating ZSTD decompress sequences body fast2 NOTB...
+✓ ZSTD templates generated (22 variants)
+make[2]: Leaving directory '/c/tb/aocl-compression'
+✓ Template generation complete
+CC /c/tb/aocl-compression/algos/bzip2/code_alignment.c
+CC /c/tb/aocl-compression/algos/bzip2/blocksort.c
+CC /c/tb/aocl-compression/algos/bzip2/huffman.c
+CC /c/tb/aocl-compression/algos/bzip2/crctable.c
+CC /c/tb/aocl-compression/algos/bzip2/randtable.c
+CC /c/tb/aocl-compression/algos/bzip2/compress.c
+CC /c/tb/aocl-compression/algos/bzip2/decompress.c
+CC /c/tb/aocl-compression/algos/bzip2/bzlib.c
+CC /c/tb/aocl-compression/algos/bzip2/libsais.c
+CC /c/tb/aocl-compression/algos/lz4/code_alignment_lz4.c
+CC /c/tb/aocl-compression/algos/lz4/lz4.c
+CC /c/tb/aocl-compression/algos/lz4/xxhash.c
+CC /c/tb/aocl-compression/algos/lz4/code_alignment_lz4hc.c
+CC /c/tb/aocl-compression/algos/lz4/lz4hc.c
+CC /c/tb/aocl-compression/algos/lzma/code_alignment.c
+CC /c/tb/aocl-compression/algos/lzma/LzFind.c
+CC /c/tb/aocl-compression/algos/lzma/LzmaDec.c
+CC /c/tb/aocl-compression/algos/lzma/LzmaEnc.c
+CC /c/tb/aocl-compression/algos/lzma/Alloc.c
+CC /c/tb/aocl-compression/algos/zlib/code_alignment.c
+CC /c/tb/aocl-compression/algos/zlib/adler32.c
+CC /c/tb/aocl-compression/algos/zlib/adler32_x86.c
+CC /c/tb/aocl-compression/algos/zlib/compress.c
+CC /c/tb/aocl-compression/algos/zlib/crc32.c
+CC /c/tb/aocl-compression/algos/zlib/crc32_x86_pclmul.c
+CC /c/tb/aocl-compression/algos/zlib/crc32_x86_vpclmulqdq.c
+CC /c/tb/aocl-compression/algos/zlib/deflate.c
+CC /c/tb/aocl-compression/algos/zlib/deflate_medium.c
+CC /c/tb/aocl-compression/algos/zlib/deflate_quick.c
+CC /c/tb/aocl-compression/algos/zlib/gzclose.c
+CC /c/tb/aocl-compression/algos/zlib/gzlib.c
+CC /c/tb/aocl-compression/algos/zlib/gzread.c
+CC /c/tb/aocl-compression/algos/zlib/gzwrite.c
+CC /c/tb/aocl-compression/algos/zlib/infback.c
+CC /c/tb/aocl-compression/algos/zlib/inffast.c
+CC /c/tb/aocl-compression/algos/zlib/inflate.c
+CC /c/tb/aocl-compression/algos/zlib/inftrees.c
+CC /c/tb/aocl-compression/algos/zlib/longest_match_x86.c
+CC /c/tb/aocl-compression/algos/zlib/slide_hash_x86.c
+CC /c/tb/aocl-compression/algos/zlib/trees.c
+CC /c/tb/aocl-compression/algos/zlib/uncompr.c
+CC /c/tb/aocl-compression/algos/zlib/zutil.c
+CC /c/tb/aocl-compression/algos/zlib/aocl_zlib_utils.c
+CC /c/tb/aocl-compression/algos/zlib/zlib-ng/arch/x86/chunkset_sse2.c
+CC /c/tb/aocl-compression/algos/zlib/zlib-ng/arch/x86/chunkset_avx512.c
+CC /c/tb/aocl-compression/algos/zstd/lib/common/code_alignment.c
+CC /c/tb/aocl-compression/algos/zstd/lib/common/zstd_common.c
+CC /c/tb/aocl-compression/algos/zstd/lib/common/fse_decompress.c
+CC /c/tb/aocl-compression/algos/zstd/lib/common/xxhash.c
+CC /c/tb/aocl-compression/algos/zstd/lib/common/error_private.c
+CC /c/tb/aocl-compression/algos/zstd/lib/common/entropy_common.c
+CC /c/tb/aocl-compression/algos/zstd/lib/common/pool.c
+CC /c/tb/aocl-compression/algos/zstd/lib/common/debug.c
+CC /c/tb/aocl-compression/algos/zstd/lib/common/threading.c
+CC /c/tb/aocl-compression/algos/zstd/lib/compress/zstd_compress.c
+CC /c/tb/aocl-compression/algos/zstd/lib/compress/zstd_compress_literals.c
+CC /c/tb/aocl-compression/algos/zstd/lib/compress/zstd_compress_sequences.c
+CC /c/tb/aocl-compression/algos/zstd/lib/compress/zstd_compress_superblock.c
+CC /c/tb/aocl-compression/algos/zstd/lib/compress/zstdmt_compress.c
+CC /c/tb/aocl-compression/algos/zstd/lib/compress/zstd_double_fast.c
+CC /c/tb/aocl-compression/algos/zstd/lib/compress/zstd_fast.c
+CC /c/tb/aocl-compression/algos/zstd/lib/compress/zstd_lazy.c
+CC /c/tb/aocl-compression/algos/zstd/lib/compress/zstd_ldm.c
+CC /c/tb/aocl-compression/algos/zstd/lib/compress/zstd_opt.c
+CC /c/tb/aocl-compression/algos/zstd/lib/compress/fse_compress.c
+CC /c/tb/aocl-compression/algos/zstd/lib/compress/huf_compress.c
+CC /c/tb/aocl-compression/algos/zstd/lib/compress/hist.c
+CC /c/tb/aocl-compression/algos/zstd/lib/compress/zstd_preSplit.c
+CC /c/tb/aocl-compression/algos/zstd/lib/decompress/zstd_decompress.c
+CC /c/tb/aocl-compression/algos/zstd/lib/decompress/huf_decompress.c
+CC /c/tb/aocl-compression/algos/zstd/lib/decompress/zstd_ddict.c
+CC /c/tb/aocl-compression/algos/zstd/lib/decompress/zstd_decompress_block.c
+CC /c/tb/aocl-compression/algos/zstd/lib/dictBuilder/cover.c
+CC /c/tb/aocl-compression/algos/zstd/lib/dictBuilder/divsufsort.c
+CC /c/tb/aocl-compression/algos/zstd/lib/dictBuilder/fastcover.c
+CC /c/tb/aocl-compression/algos/zstd/lib/dictBuilder/zdict.c
+CXX /c/tb/aocl-compression/api/code_alignment.cpp
+CXX /c/tb/aocl-compression/api/api.cpp
+CXX /c/tb/aocl-compression/api/codec.cpp
+CXX /c/tb/aocl-compression/algos/snappy/code_alignment.cc
+CXX /c/tb/aocl-compression/algos/snappy/snappy-sinksource.cc
+CXX /c/tb/aocl-compression/algos/snappy/snappy-stubs-internal.cc
+CXX /c/tb/aocl-compression/algos/snappy/snappy.cc
+CXX /c/tb/aocl-compression/algos/snappy/snappy-c.cc
+CXX /c/tb/aocl-compression/utils/code_alignment.cpp
+CXX /c/tb/aocl-compression/utils/utils.cpp
+CXX /c/tb/aocl-compression/utils/dispatcher.cpp
+CXX /c/tb/aocl-compression/utils/cpu_features.cpp
+AS /c/tb/aocl-compression/algos/zstd/lib/decompress/huf_decompress_amd64.S
+Linking static library: /c/tb/build/aocl-compression/lib/aocl_compression.a
+ar rcs /c/tb/build/aocl-compression/lib/aocl_compression.a /c/tb/build/aocl-compression/obj/algos/bzip2/code_alignment.o /c/tb/build/aocl-compression/obj/algos/bzip2/blocksort.o /c/tb/build/aocl-compression/obj/algos/bzip2/huffman.o /c/tb/build/aocl-compression/obj/algos/bzip2/crctable.o /c/tb/build/aocl-compression/obj/algos/bzip2/randtable.o /c/tb/build/aocl-compression/obj/algos/bzip2/compress.o /c/tb/build/aocl-compression/obj/algos/bzip2/decompress.o /c/tb/build/aocl-compression/obj/algos/bzip2/bzlib.o /c/tb/build/aocl-compression/obj/algos/bzip2/libsais.o /c/tb/build/aocl-compression/obj/algos/lz4/code_alignment_lz4.o /c/tb/build/aocl-compression/obj/algos/lz4/lz4.o /c/tb/build/aocl-compression/obj/algos/lz4/xxhash.o /c/tb/build/aocl-compression/obj/algos/lz4/code_alignment_lz4hc.o /c/tb/build/aocl-compression/obj/algos/lz4/lz4hc.o /c/tb/build/aocl-compression/obj/algos/lzma/code_alignment.o /c/tb/build/aocl-compression/obj/algos/lzma/LzFind.o /c/tb/build/aocl-compression/obj/algos/lzma/LzmaDec.o /c/tb/build/aocl-compression/obj/algos/lzma/LzmaEnc.o /c/tb/build/aocl-compression/obj/algos/lzma/Alloc.o /c/tb/build/aocl-compression/obj/algos/zlib/code_alignment.o /c/tb/build/aocl-compression/obj/algos/zlib/adler32.o /c/tb/build/aocl-compression/obj/algos/zlib/adler32_x86.o /c/tb/build/aocl-compression/obj/algos/zlib/compress.o /c/tb/build/aocl-compression/obj/algos/zlib/crc32.o /c/tb/build/aocl-compression/obj/algos/zlib/crc32_x86_pclmul.o /c/tb/build/aocl-compression/obj/algos/zlib/crc32_x86_vpclmulqdq.o /c/tb/build/aocl-compression/obj/algos/zlib/deflate.o /c/tb/build/aocl-compression/obj/algos/zlib/deflate_medium.o /c/tb/build/aocl-compression/obj/algos/zlib/deflate_quick.o /c/tb/build/aocl-compression/obj/algos/zlib/gzclose.o /c/tb/build/aocl-compression/obj/algos/zlib/gzlib.o /c/tb/build/aocl-compression/obj/algos/zlib/gzread.o /c/tb/build/aocl-compression/obj/algos/zlib/gzwrite.o /c/tb/build/aocl-compression/obj/algos/zlib/infback.o /c/tb/build/aocl-compression/obj/algos/zlib/inffast.o /c/tb/build/aocl-compression/obj/algos/zlib/inflate.o /c/tb/build/aocl-compression/obj/algos/zlib/inftrees.o /c/tb/build/aocl-compression/obj/algos/zlib/longest_match_x86.o /c/tb/build/aocl-compression/obj/algos/zlib/slide_hash_x86.o /c/tb/build/aocl-compression/obj/algos/zlib/trees.o /c/tb/build/aocl-compression/obj/algos/zlib/uncompr.o /c/tb/build/aocl-compression/obj/algos/zlib/zutil.o /c/tb/build/aocl-compression/obj/algos/zlib/aocl_zlib_utils.o /c/tb/build/aocl-compression/obj/algos/zlib/zlib-ng/arch/x86/chunkset_sse2.o /c/tb/build/aocl-compression/obj/algos/zlib/zlib-ng/arch/x86/chunkset_avx512.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/common/code_alignment.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/common/zstd_common.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/common/fse_decompress.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/common/xxhash.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/common/error_private.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/common/entropy_common.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/common/pool.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/common/debug.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/common/threading.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/compress/zstd_compress.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/compress/zstd_compress_literals.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/compress/zstd_compress_sequences.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/compress/zstd_compress_superblock.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/compress/zstdmt_compress.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/compress/zstd_double_fast.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/compress/zstd_fast.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/compress/zstd_lazy.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/compress/zstd_ldm.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/compress/zstd_opt.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/compress/fse_compress.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/compress/huf_compress.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/compress/hist.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/compress/zstd_preSplit.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/decompress/zstd_decompress.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/decompress/huf_decompress.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/decompress/zstd_ddict.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/decompress/zstd_decompress_block.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/dictBuilder/cover.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/dictBuilder/divsufsort.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/dictBuilder/fastcover.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/dictBuilder/zdict.o /c/tb/build/aocl-compression/obj/api/code_alignment.o /c/tb/build/aocl-compression/obj/api/api.o /c/tb/build/aocl-compression/obj/api/codec.o /c/tb/build/aocl-compression/obj/algos/snappy/code_alignment.o /c/tb/build/aocl-compression/obj/algos/snappy/snappy-sinksource.o /c/tb/build/aocl-compression/obj/algos/snappy/snappy-stubs-internal.o /c/tb/build/aocl-compression/obj/algos/snappy/snappy.o /c/tb/build/aocl-compression/obj/algos/snappy/snappy-c.o /c/tb/build/aocl-compression/obj/utils/code_alignment.o /c/tb/build/aocl-compression/obj/utils/utils.o /c/tb/build/aocl-compression/obj/utils/dispatcher.o /c/tb/build/aocl-compression/obj/utils/cpu_features.o /c/tb/build/aocl-compression/obj/algos/zstd/lib/decompress/huf_decompress_amd64.o
+Building benchmark: aocl_compression_bench.exe
+
+==========================================
+Build completed successfully!
+Library: /c/tb/build/aocl-compression/lib/aocl_compression.a
+Type: static
+==========================================
+make[1]: Leaving directory '/c/tb/aocl-compression'
+mkdir -p build/aocl-compression/
+nm -g --defined-only build/aocl-compression/lib/aocl_compression.a | awk '{print $NF}' | grep -v ':$' | grep -v '^aocl_llc_' | grep -v '^$' | LC_ALL=C sort -u | awk 'NF{print $1" AOCLLZB_"$1}' > build/aocl-compression/libaocl.a.redef
+objcopy --remove-section=".gnu.lto_*" --remove-section=".llvmcmd" --remove-section=".llvmbc" --redefine-syms=build/aocl-compression/libaocl.a.redef build/aocl-compression/lib/aocl_compression.a build/aocl-compression/libaocl.a
+rm -f build/aocl-compression/libaocl.a.redef
+cmake -S brotli -B build/brotli -DBUILD_SHARED_LIBS=OFF -DBROTLI_BUILD_TOOLS=OFF -DBROTLI_BUNDLED_MODE=ON  
+-- The C compiler identification is GNU 16.2.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /ucrt64/bin/cc.exe - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Setting build type to Release as none was specified
+-- Compiler is not EMSCRIPTEN
+-- Looking for log2 in m
+-- Looking for log2 in m - found
+-- Configuring done (3.2s)
+-- Generating done (0.6s)
+-- Build files have been written to: /c/tb/build/brotli
+cmake --build build/brotli --parallel 4
+make[1]: Entering directory '/c/tb/build/brotli'
+[  2%] Building C object CMakeFiles/brotlicommon.dir/c/common/constants.c.o
+[  5%] Building C object CMakeFiles/brotlicommon.dir/c/common/context.c.o
+[  7%] Building C object CMakeFiles/brotlicommon.dir/c/common/dictionary.c.o
+[ 10%] Building C object CMakeFiles/brotlicommon.dir/c/common/platform.c.o
+[ 13%] Building C object CMakeFiles/brotlicommon.dir/c/common/shared_dictionary.c.o
+[ 15%] Building C object CMakeFiles/brotlicommon.dir/c/common/transform.c.o
+[ 18%] Linking C static library libbrotlicommon.a
+[ 18%] Built target brotlicommon
+[ 21%] Building C object CMakeFiles/brotlidec.dir/c/dec/bit_reader.c.o
+[ 23%] Building C object CMakeFiles/brotlidec.dir/c/dec/decode.c.o
+[ 26%] Building C object CMakeFiles/brotlienc.dir/c/enc/backward_references.c.o
+[ 28%] Building C object CMakeFiles/brotlidec.dir/c/dec/huffman.c.o
+[ 31%] Building C object CMakeFiles/brotlienc.dir/c/enc/backward_references_hq.c.o
+[ 34%] Building C object CMakeFiles/brotlidec.dir/c/dec/prefix.c.o
+[ 36%] Building C object CMakeFiles/brotlidec.dir/c/dec/state.c.o
+[ 39%] Building C object CMakeFiles/brotlienc.dir/c/enc/bit_cost.c.o
+[ 42%] Building C object CMakeFiles/brotlidec.dir/c/dec/static_init.c.o
+[ 44%] Building C object CMakeFiles/brotlienc.dir/c/enc/block_splitter.c.o
+[ 47%] Linking C static library libbrotlidec.a
+[ 50%] Building C object CMakeFiles/brotlienc.dir/c/enc/brotli_bit_stream.c.o
+[ 50%] Built target brotlidec
+[ 52%] Building C object CMakeFiles/brotlienc.dir/c/enc/cluster.c.o
+[ 55%] Building C object CMakeFiles/brotlienc.dir/c/enc/command.c.o
+[ 57%] Building C object CMakeFiles/brotlienc.dir/c/enc/compound_dictionary.c.o
+[ 60%] Building C object CMakeFiles/brotlienc.dir/c/enc/compress_fragment.c.o
+[ 63%] Building C object CMakeFiles/brotlienc.dir/c/enc/compress_fragment_two_pass.c.o
+[ 65%] Building C object CMakeFiles/brotlienc.dir/c/enc/dictionary_hash.c.o
+[ 68%] Building C object CMakeFiles/brotlienc.dir/c/enc/encode.c.o
+[ 71%] Building C object CMakeFiles/brotlienc.dir/c/enc/encoder_dict.c.o
+[ 73%] Building C object CMakeFiles/brotlienc.dir/c/enc/entropy_encode.c.o
+[ 76%] Building C object CMakeFiles/brotlienc.dir/c/enc/fast_log.c.o
+[ 78%] Building C object CMakeFiles/brotlienc.dir/c/enc/histogram.c.o
+[ 81%] Building C object CMakeFiles/brotlienc.dir/c/enc/literal_cost.c.o
+[ 84%] Building C object CMakeFiles/brotlienc.dir/c/enc/memory.c.o
+[ 86%] Building C object CMakeFiles/brotlienc.dir/c/enc/metablock.c.o
+[ 89%] Building C object CMakeFiles/brotlienc.dir/c/enc/static_dict.c.o
+[ 92%] Building C object CMakeFiles/brotlienc.dir/c/enc/static_dict_lut.c.o
+[ 94%] Building C object CMakeFiles/brotlienc.dir/c/enc/static_init.c.o
+[ 97%] Building C object CMakeFiles/brotlienc.dir/c/enc/utf8_util.c.o
+[100%] Linking C static library libbrotlienc.a
+[100%] Built target brotlienc
+make[1]: Leaving directory '/c/tb/build/brotli'
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE bzip2/blocksort.c -c -o build/bzip2/blocksort.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE bzip2/huffman.c -c -o build/bzip2/huffman.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE bzip2/crctable.c -c -o build/bzip2/crctable.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE bzip2/randtable.c -c -o build/bzip2/randtable.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE bzip2/compress.c -c -o build/bzip2/compress.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE bzip2/decompress.c -c -o build/bzip2/decompress.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE bzip2/bzlib.c -c -o build/bzip2/bzlib.o
+ar rcs build/bzip2/libbzip2.a build/bzip2/blocksort.o build/bzip2/huffman.o build/bzip2/crctable.o build/bzip2/randtable.o build/bzip2/compress.o build/bzip2/decompress.o build/bzip2/bzlib.o
+cmake -S bzip3 -B build/bzip3 -DBZIP3_BUILD_APPS=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_C_COMPILER="gcc" && make -C build/bzip3 
+-- The C compiler identification is GNU 16.2.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /ucrt64/bin/gcc.exe - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- Configuring done (1.4s)
+-- Generating done (0.1s)
+-- Build files have been written to: /c/tb/build/bzip3
+make[1]: Entering directory '/c/tb/build/bzip3'
+[ 50%] Building C object CMakeFiles/bz3.dir/src/libbz3.c.o
+[100%] Linking C static library libbzip3.a
+[100%] Built target bz3
+make[1]: Leaving directory '/c/tb/build/bzip3'
+cmake -S kanzi-cpp -B build/kanzi-cpp -DKANZI_ENABLE_NATIVE_OPTIMIZATIONS=OFF -DCMAKE_CXX_COMPILER="g++" -DCMAKE_C_COMPILER="gcc" && make -C build/kanzi-cpp
+-- The C compiler identification is GNU 16.2.0
+-- The CXX compiler identification is GNU 16.2.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /ucrt64/bin/gcc.exe - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /ucrt64/bin/g++.exe - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- Configuring done (2.5s)
+-- Generating done (0.4s)
+-- Build files have been written to: /c/tb/build/kanzi-cpp
+make[1]: Entering directory '/c/tb/build/kanzi-cpp'
+[  1%] Building CXX object CMakeFiles/libkanzi.dir/src/Global.cpp.o
+[  2%] Building CXX object CMakeFiles/libkanzi.dir/src/Event.cpp.o
+[  3%] Building CXX object CMakeFiles/libkanzi.dir/src/util/WallTimer.cpp.o
+[  4%] Building CXX object CMakeFiles/libkanzi.dir/src/entropy/EntropyUtils.cpp.o
+[  5%] Building CXX object CMakeFiles/libkanzi.dir/src/entropy/HuffmanCommon.cpp.o
+[  5%] Building CXX object CMakeFiles/libkanzi.dir/src/entropy/CMPredictor.cpp.o
+[  6%] Building CXX object CMakeFiles/libkanzi.dir/src/entropy/TPAQPredictor.cpp.o
+[  7%] Building CXX object CMakeFiles/libkanzi.dir/src/transform/AliasCodec.cpp.o
+[  8%] Building CXX object CMakeFiles/libkanzi.dir/src/transform/BWT.cpp.o
+[  9%] Building CXX object CMakeFiles/libkanzi.dir/src/transform/BWTS.cpp.o
+[ 10%] Building CXX object CMakeFiles/libkanzi.dir/src/transform/DivSufSort.cpp.o
+[ 11%] Building CXX object CMakeFiles/libkanzi.dir/src/transform/SBRT.cpp.o
+[ 12%] Building CXX object CMakeFiles/libkanzi.dir/src/transform/BWTBlockCodec.cpp.o
+[ 12%] Building CXX object CMakeFiles/libkanzi.dir/src/transform/LZCodec.cpp.o
+[ 13%] Building CXX object CMakeFiles/libkanzi.dir/src/transform/FSDCodec.cpp.o
+[ 14%] Building CXX object CMakeFiles/libkanzi.dir/src/transform/ROLZCodec.cpp.o
+[ 15%] Building CXX object CMakeFiles/libkanzi.dir/src/transform/RLT.cpp.o
+[ 16%] Building CXX object CMakeFiles/libkanzi.dir/src/transform/SRT.cpp.o
+[ 17%] Building CXX object CMakeFiles/libkanzi.dir/src/transform/TextCodec.cpp.o
+[ 18%] Building CXX object CMakeFiles/libkanzi.dir/src/transform/UTFCodec.cpp.o
+[ 18%] Building CXX object CMakeFiles/libkanzi.dir/src/transform/EXECodec.cpp.o
+[ 19%] Building CXX object CMakeFiles/libkanzi.dir/src/transform/ZRLT.cpp.o
+[ 20%] Building CXX object CMakeFiles/libkanzi.dir/src/api/Compressor.cpp.o
+[ 21%] Building CXX object CMakeFiles/libkanzi.dir/src/bitstream/DebugOutputBitStream.cpp.o
+[ 22%] Building CXX object CMakeFiles/libkanzi.dir/src/bitstream/DefaultOutputBitStream.cpp.o
+[ 23%] Building CXX object CMakeFiles/libkanzi.dir/src/io/CompressedOutputStream.cpp.o
+[ 24%] Building CXX object CMakeFiles/libkanzi.dir/src/entropy/ANSRangeEncoder.cpp.o
+[ 25%] Building CXX object CMakeFiles/libkanzi.dir/src/entropy/BinaryEntropyEncoder.cpp.o
+[ 25%] Building CXX object CMakeFiles/libkanzi.dir/src/entropy/ExpGolombEncoder.cpp.o
+[ 26%] Building CXX object CMakeFiles/libkanzi.dir/src/entropy/FPAQEncoder.cpp.o
+[ 27%] Building CXX object CMakeFiles/libkanzi.dir/src/entropy/HuffmanEncoder.cpp.o
+[ 28%] Building CXX object CMakeFiles/libkanzi.dir/src/entropy/RangeEncoder.cpp.o
+[ 29%] Building CXX object CMakeFiles/libkanzi.dir/src/api/Decompressor.cpp.o
+[ 30%] Building CXX object CMakeFiles/libkanzi.dir/src/bitstream/DebugInputBitStream.cpp.o
+[ 31%] Building CXX object CMakeFiles/libkanzi.dir/src/bitstream/DefaultInputBitStream.cpp.o
+[ 32%] Building CXX object CMakeFiles/libkanzi.dir/src/io/CompressedInputStream.cpp.o
+[ 32%] Building CXX object CMakeFiles/libkanzi.dir/src/entropy/ANSRangeDecoder.cpp.o
+[ 33%] Building CXX object CMakeFiles/libkanzi.dir/src/entropy/BinaryEntropyDecoder.cpp.o
+[ 34%] Building CXX object CMakeFiles/libkanzi.dir/src/entropy/ExpGolombDecoder.cpp.o
+[ 35%] Building CXX object CMakeFiles/libkanzi.dir/src/entropy/FPAQDecoder.cpp.o
+[ 36%] Building CXX object CMakeFiles/libkanzi.dir/src/entropy/HuffmanDecoder.cpp.o
+[ 37%] Building CXX object CMakeFiles/libkanzi.dir/src/entropy/RangeDecoder.cpp.o
+[ 38%] Linking CXX static library libkanzi.a
+[ 38%] Built target libkanzi
+[ 38%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/Global.cpp.o
+[ 39%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/Event.cpp.o
+[ 40%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/util/WallTimer.cpp.o
+[ 41%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/entropy/EntropyUtils.cpp.o
+[ 42%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/entropy/HuffmanCommon.cpp.o
+[ 43%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/entropy/CMPredictor.cpp.o
+[ 44%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/entropy/TPAQPredictor.cpp.o
+[ 45%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/transform/AliasCodec.cpp.o
+[ 45%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/transform/BWT.cpp.o
+[ 46%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/transform/BWTS.cpp.o
+[ 47%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/transform/DivSufSort.cpp.o
+[ 48%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/transform/SBRT.cpp.o
+[ 49%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/transform/BWTBlockCodec.cpp.o
+[ 50%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/transform/LZCodec.cpp.o
+[ 51%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/transform/FSDCodec.cpp.o
+[ 52%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/transform/ROLZCodec.cpp.o
+[ 52%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/transform/RLT.cpp.o
+[ 53%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/transform/SRT.cpp.o
+[ 54%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/transform/TextCodec.cpp.o
+[ 55%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/transform/UTFCodec.cpp.o
+[ 56%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/transform/EXECodec.cpp.o
+[ 57%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/transform/ZRLT.cpp.o
+[ 58%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/api/Compressor.cpp.o
+[ 58%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/bitstream/DebugOutputBitStream.cpp.o
+[ 59%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/bitstream/DefaultOutputBitStream.cpp.o
+[ 60%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/io/CompressedOutputStream.cpp.o
+[ 61%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/entropy/ANSRangeEncoder.cpp.o
+[ 62%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/entropy/BinaryEntropyEncoder.cpp.o
+[ 63%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/entropy/ExpGolombEncoder.cpp.o
+[ 64%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/entropy/FPAQEncoder.cpp.o
+[ 65%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/entropy/HuffmanEncoder.cpp.o
+[ 65%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/entropy/RangeEncoder.cpp.o
+[ 66%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/api/Decompressor.cpp.o
+[ 67%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/bitstream/DebugInputBitStream.cpp.o
+[ 68%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/bitstream/DefaultInputBitStream.cpp.o
+[ 69%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/io/CompressedInputStream.cpp.o
+[ 70%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/entropy/ANSRangeDecoder.cpp.o
+[ 71%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/entropy/BinaryEntropyDecoder.cpp.o
+[ 72%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/entropy/ExpGolombDecoder.cpp.o
+[ 72%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/entropy/FPAQDecoder.cpp.o
+[ 73%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/entropy/HuffmanDecoder.cpp.o
+[ 74%] Building CXX object CMakeFiles/libkanzi_shared.dir/src/entropy/RangeDecoder.cpp.o
+[ 75%] Linking CXX shared library msys-kanzi-1.dll
+[ 75%] Built target libkanzi_shared
+[ 76%] Building CXX object CMakeFiles/testBWT.dir/src/test/TestBWT.cpp.o
+[ 76%] Linking CXX executable testBWT.exe
+[ 76%] Built target testBWT
+[ 77%] Building CXX object CMakeFiles/testTransforms.dir/src/test/TestTransforms.cpp.o
+[ 78%] Linking CXX executable testTransforms.exe
+[ 78%] Built target testTransforms
+[ 79%] Building CXX object CMakeFiles/testEntropyCodec.dir/src/test/TestEntropyCodec.cpp.o
+[ 80%] Linking CXX executable testEntropyCodec.exe
+[ 80%] Built target testEntropyCodec
+[ 81%] Building CXX object CMakeFiles/testDefaultBitStream.dir/src/test/TestDefaultBitStream.cpp.o
+[ 82%] Linking CXX executable testDefaultBitStream.exe
+[ 82%] Built target testDefaultBitStream
+[ 83%] Building CXX object CMakeFiles/testFactories.dir/src/test/TestFactories.cpp.o
+[ 83%] Linking CXX executable testFactories.exe
+[ 83%] Built target testFactories
+[ 84%] Building CXX object CMakeFiles/testLZF.dir/src/test/TestLZF.cpp.o
+[ 85%] Linking CXX executable testLZF.exe
+[ 85%] Built target testLZF
+[ 86%] Building CXX object CMakeFiles/testMalformedStream.dir/src/test/TestMalformedStream.cpp.o
+[ 87%] Linking CXX executable testMalformedStream.exe
+[ 87%] Built target testMalformedStream
+[ 88%] Building CXX object CMakeFiles/testCompressedStream.dir/src/test/TestCompressedStream.cpp.o
+[ 89%] Linking CXX executable testCompressedStream.exe
+[ 89%] Built target testCompressedStream
+[ 90%] Building C object CMakeFiles/testAPI.dir/src/test/TestAPI.c.o
+[ 91%] Linking CXX executable testAPI.exe
+[ 91%] Built target testAPI
+[ 91%] Building CXX object CMakeFiles/kanzi.dir/src/app/Kanzi.cpp.o
+[ 92%] Building CXX object CMakeFiles/kanzi.dir/src/app/InfoPrinter.cpp.o
+[ 93%] Building CXX object CMakeFiles/kanzi.dir/src/app/BlockCompressor.cpp.o
+[ 94%] Building CXX object CMakeFiles/kanzi.dir/src/app/BlockDecompressor.cpp.o
+[ 95%] Linking CXX executable kanzi.exe
+[ 95%] Built target kanzi
+[ 96%] Building CXX object CMakeFiles/kanzi_static.dir/src/app/Kanzi.cpp.o
+[ 97%] Building CXX object CMakeFiles/kanzi_static.dir/src/app/InfoPrinter.cpp.o
+[ 97%] Building CXX object CMakeFiles/kanzi_static.dir/src/app/BlockCompressor.cpp.o
+[ 98%] Building CXX object CMakeFiles/kanzi_static.dir/src/app/BlockDecompressor.cpp.o
+[100%] Linking CXX executable kanzi_static.exe
+[100%] Built target kanzi_static
+make[1]: Leaving directory '/c/tb/build/kanzi-cpp'
+cmake -S libdeflate -B build/libdeflate -DLIBDEFLATE_BUILD_SHARED_LIB=OFF -DLIBDEFLATE_BUILD_GZIP=OFF -DCMAKE_C_COMPILER="gcc" && make -C build/libdeflate
+-- No build type selected; defaulting to Release
+-- The C compiler identification is GNU 16.2.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /ucrt64/bin/gcc.exe - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Performing Test HAVE_WDECLARATION_AFTER_STATEMENT
+-- Performing Test HAVE_WDECLARATION_AFTER_STATEMENT - Success
+-- Performing Test HAVE_WIMPLICIT_FALLTHROUGH
+-- Performing Test HAVE_WIMPLICIT_FALLTHROUGH - Success
+-- Performing Test HAVE_WMISSING_FIELD_INITIALIZERS
+-- Performing Test HAVE_WMISSING_FIELD_INITIALIZERS - Success
+-- Performing Test HAVE_WMISSING_PROTOTYPES
+-- Performing Test HAVE_WMISSING_PROTOTYPES - Success
+-- Performing Test HAVE_WPEDANTIC
+-- Performing Test HAVE_WPEDANTIC - Success
+-- Performing Test HAVE_WSHADOW
+-- Performing Test HAVE_WSHADOW - Success
+-- Performing Test HAVE_WSTRICT_PROTOTYPES
+-- Performing Test HAVE_WSTRICT_PROTOTYPES - Success
+-- Performing Test HAVE_WUNDEF
+-- Performing Test HAVE_WUNDEF - Success
+-- Performing Test HAVE_WVLA
+-- Performing Test HAVE_WVLA - Success
+-- Configuring done (5.2s)
+-- Generating done (0.1s)
+-- Build files have been written to: /c/tb/build/libdeflate
+make[1]: Entering directory '/c/tb/build/libdeflate'
+[  8%] Building C object CMakeFiles/libdeflate_static.dir/lib/arm/cpu_features.c.o
+[ 16%] Building C object CMakeFiles/libdeflate_static.dir/lib/utils.c.o
+[ 25%] Building C object CMakeFiles/libdeflate_static.dir/lib/x86/cpu_features.c.o
+[ 33%] Building C object CMakeFiles/libdeflate_static.dir/lib/deflate_compress.c.o
+[ 41%] Building C object CMakeFiles/libdeflate_static.dir/lib/deflate_decompress.c.o
+[ 50%] Building C object CMakeFiles/libdeflate_static.dir/lib/adler32.c.o
+[ 58%] Building C object CMakeFiles/libdeflate_static.dir/lib/zlib_compress.c.o
+[ 66%] Building C object CMakeFiles/libdeflate_static.dir/lib/zlib_decompress.c.o
+[ 75%] Building C object CMakeFiles/libdeflate_static.dir/lib/crc32.c.o
+[ 83%] Building C object CMakeFiles/libdeflate_static.dir/lib/gzip_compress.c.o
+[ 91%] Building C object CMakeFiles/libdeflate_static.dir/lib/gzip_decompress.c.o
+[100%] Linking C static library libdeflate.a
+[100%] Built target libdeflate_static
+make[1]: Leaving directory '/c/tb/build/libdeflate'
+g++ -O3 -D"UINT64_MAX=-1ull" -Ilzham_codec_devel/include -Ilzham_codec_devel/lzhamcomp -Ilzham_codec_devel/lzhamdecomp -Wno-deprecated-enum-enum-conversion -c lzham_codec_devel/lzhamcomp/lzham_lzbase.cpp -o build/lzham_codec_devel/lzhamcomp/lzham_lzbase.o
+g++ -O3 -D"UINT64_MAX=-1ull" -Ilzham_codec_devel/include -Ilzham_codec_devel/lzhamcomp -Ilzham_codec_devel/lzhamdecomp -Wno-deprecated-enum-enum-conversion -c lzham_codec_devel/lzhamcomp/lzham_lzcomp.cpp -o build/lzham_codec_devel/lzhamcomp/lzham_lzcomp.o
+g++ -O3 -D"UINT64_MAX=-1ull" -Ilzham_codec_devel/include -Ilzham_codec_devel/lzhamcomp -Ilzham_codec_devel/lzhamdecomp -Wno-deprecated-enum-enum-conversion -c lzham_codec_devel/lzhamcomp/lzham_lzcomp_internal.cpp -o build/lzham_codec_devel/lzhamcomp/lzham_lzcomp_internal.o
+g++ -O3 -D"UINT64_MAX=-1ull" -Ilzham_codec_devel/include -Ilzham_codec_devel/lzhamcomp -Ilzham_codec_devel/lzhamdecomp -Wno-deprecated-enum-enum-conversion -c lzham_codec_devel/lzhamcomp/lzham_lzcomp_state.cpp -o build/lzham_codec_devel/lzhamcomp/lzham_lzcomp_state.o
+g++ -O3 -D"UINT64_MAX=-1ull" -Ilzham_codec_devel/include -Ilzham_codec_devel/lzhamcomp -Ilzham_codec_devel/lzhamdecomp -Wno-deprecated-enum-enum-conversion -c lzham_codec_devel/lzhamcomp/lzham_match_accel.cpp -o build/lzham_codec_devel/lzhamcomp/lzham_match_accel.o
+lzham_codec_devel/lzhamcomp/lzham_match_accel.cpp: In member function 'void lzham::search_accelerator::find_all_matches_callback_st(lzham::uint64, void*)':
+lzham_codec_devel/lzhamcomp/lzham_match_accel.cpp:414:7: warning: '++' expression of 'volatile'-qualified type is deprecated [-Wvolatile]
+  414 |       m_num_completed_helper_threads++;
+      |       ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+g++ -O3 -D"UINT64_MAX=-1ull" -Ilzham_codec_devel/include -Ilzham_codec_devel/lzhamcomp -Ilzham_codec_devel/lzhamdecomp -Wno-deprecated-enum-enum-conversion -c lzham_codec_devel/lzhamcomp/lzham_pthreads_threading.cpp -o build/lzham_codec_devel/lzhamcomp/lzham_pthreads_threading.o
+g++ -O3 -D"UINT64_MAX=-1ull" -Ilzham_codec_devel/include -Ilzham_codec_devel/lzhamcomp -Ilzham_codec_devel/lzhamdecomp -Wno-deprecated-enum-enum-conversion -c lzham_codec_devel/lzhamcomp/lzham_win32_threading.cpp -o build/lzham_codec_devel/lzhamcomp/lzham_win32_threading.o
+g++ -O3 -D"UINT64_MAX=-1ull" -Ilzham_codec_devel/include -Ilzham_codec_devel/lzhamcomp -Ilzham_codec_devel/lzhamdecomp -Wno-deprecated-enum-enum-conversion -c lzham_codec_devel/lzhamdecomp/lzham_assert.cpp -o build/lzham_codec_devel/lzhamdecomp/lzham_assert.o
+g++ -O3 -D"UINT64_MAX=-1ull" -Ilzham_codec_devel/include -Ilzham_codec_devel/lzhamcomp -Ilzham_codec_devel/lzhamdecomp -Wno-deprecated-enum-enum-conversion -c lzham_codec_devel/lzhamdecomp/lzham_checksum.cpp -o build/lzham_codec_devel/lzhamdecomp/lzham_checksum.o
+g++ -O3 -D"UINT64_MAX=-1ull" -Ilzham_codec_devel/include -Ilzham_codec_devel/lzhamcomp -Ilzham_codec_devel/lzhamdecomp -Wno-deprecated-enum-enum-conversion -c lzham_codec_devel/lzhamdecomp/lzham_huffman_codes.cpp -o build/lzham_codec_devel/lzhamdecomp/lzham_huffman_codes.o
+g++ -O3 -D"UINT64_MAX=-1ull" -Ilzham_codec_devel/include -Ilzham_codec_devel/lzhamcomp -Ilzham_codec_devel/lzhamdecomp -Wno-deprecated-enum-enum-conversion -c lzham_codec_devel/lzhamdecomp/lzham_lzdecomp.cpp -o build/lzham_codec_devel/lzhamdecomp/lzham_lzdecomp.o
+g++ -O3 -D"UINT64_MAX=-1ull" -Ilzham_codec_devel/include -Ilzham_codec_devel/lzhamcomp -Ilzham_codec_devel/lzhamdecomp -Wno-deprecated-enum-enum-conversion -c lzham_codec_devel/lzhamdecomp/lzham_lzdecompbase.cpp -o build/lzham_codec_devel/lzhamdecomp/lzham_lzdecompbase.o
+g++ -O3 -D"UINT64_MAX=-1ull" -Ilzham_codec_devel/include -Ilzham_codec_devel/lzhamcomp -Ilzham_codec_devel/lzhamdecomp -Wno-deprecated-enum-enum-conversion -c lzham_codec_devel/lzhamdecomp/lzham_mem.cpp -o build/lzham_codec_devel/lzhamdecomp/lzham_mem.o
+g++ -O3 -D"UINT64_MAX=-1ull" -Ilzham_codec_devel/include -Ilzham_codec_devel/lzhamcomp -Ilzham_codec_devel/lzhamdecomp -Wno-deprecated-enum-enum-conversion -c lzham_codec_devel/lzhamdecomp/lzham_prefix_coding.cpp -o build/lzham_codec_devel/lzhamdecomp/lzham_prefix_coding.o
+g++ -O3 -D"UINT64_MAX=-1ull" -Ilzham_codec_devel/include -Ilzham_codec_devel/lzhamcomp -Ilzham_codec_devel/lzhamdecomp -Wno-deprecated-enum-enum-conversion -c lzham_codec_devel/lzhamdecomp/lzham_symbol_codec.cpp -o build/lzham_codec_devel/lzhamdecomp/lzham_symbol_codec.o
+g++ -O3 -D"UINT64_MAX=-1ull" -Ilzham_codec_devel/include -Ilzham_codec_devel/lzhamcomp -Ilzham_codec_devel/lzhamdecomp -Wno-deprecated-enum-enum-conversion -c lzham_codec_devel/lzhamdecomp/lzham_timer.cpp -o build/lzham_codec_devel/lzhamdecomp/lzham_timer.o
+g++ -O3 -D"UINT64_MAX=-1ull" -Ilzham_codec_devel/include -Ilzham_codec_devel/lzhamcomp -Ilzham_codec_devel/lzhamdecomp -Wno-deprecated-enum-enum-conversion -c lzham_codec_devel/lzhamdecomp/lzham_vector.cpp -o build/lzham_codec_devel/lzhamdecomp/lzham_vector.o
+g++ -O3 -D"UINT64_MAX=-1ull" -Ilzham_codec_devel/include -Ilzham_codec_devel/lzhamcomp -Ilzham_codec_devel/lzhamdecomp -Wno-deprecated-enum-enum-conversion -c lzham_codec_devel/lzhamlib/lzham_lib.cpp -o build/lzham_codec_devel/lzhamlib/lzham_lib.o
+ar rcs build/lzham_codec_devel/liblzham.a build/lzham_codec_devel/lzhamcomp/lzham_lzbase.o build/lzham_codec_devel/lzhamcomp/lzham_lzcomp.o build/lzham_codec_devel/lzhamcomp/lzham_lzcomp_internal.o build/lzham_codec_devel/lzhamcomp/lzham_lzcomp_state.o build/lzham_codec_devel/lzhamcomp/lzham_match_accel.o build/lzham_codec_devel/lzhamcomp/lzham_pthreads_threading.o build/lzham_codec_devel/lzhamcomp/lzham_win32_threading.o build/lzham_codec_devel/lzhamdecomp/lzham_assert.o build/lzham_codec_devel/lzhamdecomp/lzham_checksum.o build/lzham_codec_devel/lzhamdecomp/lzham_huffman_codes.o build/lzham_codec_devel/lzhamdecomp/lzham_lzdecomp.o build/lzham_codec_devel/lzhamdecomp/lzham_lzdecompbase.o build/lzham_codec_devel/lzhamdecomp/lzham_mem.o build/lzham_codec_devel/lzhamdecomp/lzham_prefix_coding.o build/lzham_codec_devel/lzhamdecomp/lzham_symbol_codec.o build/lzham_codec_devel/lzhamdecomp/lzham_timer.o build/lzham_codec_devel/lzhamdecomp/lzham_vector.o build/lzham_codec_devel/lzhamlib/lzham_lib.o
+cmake -S lzo -B build/lzo -DCMAKE_INSTALL_PREFIX=build -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_C_COMPILER="gcc" && make -C build/lzo
+CMake Warning (deprecated) at CMakeLists.txt:11 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+This warning is for project developers.  Use -Wno-author or -Wno-deprecated
+to suppress it.
+
+-- The C compiler identification is GNU 16.2.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /ucrt64/bin/gcc.exe - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Found PkgConfig: /usr/bin/pkg-config.exe (found version "3.0.10")
+-- Looking for assert.h
+-- Looking for assert.h - found
+-- Looking for ctype.h
+-- Looking for ctype.h - found
+-- Looking for dirent.h
+-- Looking for dirent.h - found
+-- Looking for errno.h
+-- Looking for errno.h - found
+-- Looking for fcntl.h
+-- Looking for fcntl.h - found
+-- Looking for float.h
+-- Looking for float.h - found
+-- Looking for limits.h
+-- Looking for limits.h - found
+-- Looking for malloc.h
+-- Looking for malloc.h - found
+-- Looking for memory.h
+-- Looking for memory.h - found
+-- Looking for setjmp.h
+-- Looking for setjmp.h - found
+-- Looking for signal.h
+-- Looking for signal.h - found
+-- Looking for stdarg.h
+-- Looking for stdarg.h - found
+-- Looking for stddef.h
+-- Looking for stddef.h - found
+-- Looking for stdint.h
+-- Looking for stdint.h - found
+-- Looking for stdio.h
+-- Looking for stdio.h - found
+-- Looking for stdlib.h
+-- Looking for stdlib.h - found
+-- Looking for string.h
+-- Looking for string.h - found
+-- Looking for strings.h
+-- Looking for strings.h - found
+-- Looking for time.h
+-- Looking for time.h - found
+-- Looking for unistd.h
+-- Looking for unistd.h - found
+-- Looking for utime.h
+-- Looking for utime.h - found
+-- Looking for sys/mman.h
+-- Looking for sys/mman.h - not found
+-- Looking for sys/resource.h
+-- Looking for sys/resource.h - not found
+-- Looking for sys/stat.h
+-- Looking for sys/stat.h - found
+-- Looking for sys/time.h
+-- Looking for sys/time.h - found
+-- Looking for sys/types.h
+-- Looking for sys/types.h - found
+-- Looking for sys/wait.h
+-- Looking for sys/wait.h - not found
+-- Looking for sys/types.h
+-- Looking for sys/types.h - found
+-- Looking for stdint.h
+-- Looking for stdint.h - found
+-- Looking for stddef.h
+-- Looking for stddef.h - found
+-- Check size of short
+-- Check size of short - done
+-- Check size of int
+-- Check size of int - done
+-- Check size of long
+-- Check size of long - done
+-- Check size of long long
+-- Check size of long long - done
+-- Check size of __int16
+-- Check size of __int16 - done
+-- Check size of __int32
+-- Check size of __int32 - done
+-- Check size of __int64
+-- Check size of __int64 - done
+-- Check size of void *
+-- Check size of void * - done
+-- Check size of size_t
+-- Check size of size_t - done
+-- Check size of ptrdiff_t
+-- Check size of ptrdiff_t - done
+-- Check size of intmax_t
+-- Check size of intmax_t - done
+-- Check size of uintmax_t
+-- Check size of uintmax_t - done
+-- Check size of intptr_t
+-- Check size of intptr_t - done
+-- Check size of uintptr_t
+-- Check size of uintptr_t - done
+-- Check size of float
+-- Check size of float - done
+-- Check size of double
+-- Check size of double - done
+-- Check size of long double
+-- Check size of long double - done
+-- Check size of dev_t
+-- Check size of dev_t - done
+-- Check size of fpos_t
+-- Check size of fpos_t - failed
+-- Check size of mode_t
+-- Check size of mode_t - done
+-- Check size of off_t
+-- Check size of off_t - done
+-- Check size of ssize_t
+-- Check size of ssize_t - done
+-- Check size of time_t
+-- Check size of time_t - done
+-- Looking for access
+-- Looking for access - found
+-- Looking for alloca
+-- Looking for alloca - not found
+-- Looking for atexit
+-- Looking for atexit - found
+-- Looking for atoi
+-- Looking for atoi - found
+-- Looking for atol
+-- Looking for atol - found
+-- Looking for chmod
+-- Looking for chmod - found
+-- Looking for chown
+-- Looking for chown - not found
+-- Looking for clock_getcpuclockid
+-- Looking for clock_getcpuclockid - not found
+-- Looking for clock_getres
+-- Looking for clock_getres - found
+-- Looking for clock_gettime
+-- Looking for clock_gettime - found
+-- Looking for ctime
+-- Looking for ctime - found
+-- Looking for difftime
+-- Looking for difftime - found
+-- Looking for fstat
+-- Looking for fstat - found
+-- Looking for getenv
+-- Looking for getenv - found
+-- Looking for getpagesize
+-- Looking for getpagesize - found
+-- Looking for getrusage
+-- Looking for getrusage - not found
+-- Looking for gettimeofday
+-- Looking for gettimeofday - found
+-- Looking for gmtime
+-- Looking for gmtime - found
+-- Looking for isatty
+-- Looking for isatty - found
+-- Looking for localtime
+-- Looking for localtime - found
+-- Looking for longjmp
+-- Looking for longjmp - found
+-- Looking for lstat
+-- Looking for lstat - not found
+-- Looking for memcmp
+-- Looking for memcmp - found
+-- Looking for memcpy
+-- Looking for memcpy - found
+-- Looking for memmove
+-- Looking for memmove - found
+-- Looking for memset
+-- Looking for memset - found
+-- Looking for mkdir
+-- Looking for mkdir - found
+-- Looking for mktime
+-- Looking for mktime - found
+-- Looking for mmap
+-- Looking for mmap - not found
+-- Looking for mprotect
+-- Looking for mprotect - found
+-- Looking for munmap
+-- Looking for munmap - not found
+-- Looking for qsort
+-- Looking for qsort - found
+-- Looking for raise
+-- Looking for raise - found
+-- Looking for rmdir
+-- Looking for rmdir - found
+-- Looking for setjmp
+-- Looking for setjmp - found
+-- Looking for signal
+-- Looking for signal - found
+-- Looking for snprintf
+-- Looking for snprintf - found
+-- Looking for strcasecmp
+-- Looking for strcasecmp - found
+-- Looking for strchr
+-- Looking for strchr - found
+-- Looking for strdup
+-- Looking for strdup - found
+-- Looking for strerror
+-- Looking for strerror - found
+-- Looking for strftime
+-- Looking for strftime - found
+-- Looking for stricmp
+-- Looking for stricmp - found
+-- Looking for strncasecmp
+-- Looking for strncasecmp - found
+-- Looking for strnicmp
+-- Looking for strnicmp - found
+-- Looking for strrchr
+-- Looking for strrchr - found
+-- Looking for strstr
+-- Looking for strstr - found
+-- Looking for time
+-- Looking for time - found
+-- Looking for umask
+-- Looking for umask - found
+-- Looking for utime
+-- Looking for utime - found
+-- Looking for vsnprintf
+-- Looking for vsnprintf - found
+-- CMAKE_BUILD_TYPE = Release
+-- Configuring done (48.6s)
+-- Generating done (0.7s)
+-- Build files have been written to: /c/tb/build/lzo
+make[1]: Entering directory '/c/tb/build/lzo'
+[  1%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1.c.o
+[  2%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1_99.c.o
+[  3%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1a.c.o
+[  4%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1a_99.c.o
+[  5%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1b_1.c.o
+[  7%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1b_2.c.o
+[  8%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1b_3.c.o
+[  9%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1b_4.c.o
+[ 10%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1b_5.c.o
+[ 11%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1b_6.c.o
+[ 12%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1b_7.c.o
+[ 14%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1b_8.c.o
+[ 15%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1b_9.c.o
+[ 16%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1b_99.c.o
+[ 17%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1b_9x.c.o
+[ 18%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1b_cc.c.o
+[ 20%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1b_d1.c.o
+[ 21%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1b_d2.c.o
+[ 22%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1b_rr.c.o
+[ 23%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1b_xx.c.o
+[ 24%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1c_1.c.o
+[ 25%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1c_2.c.o
+[ 27%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1c_3.c.o
+[ 28%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1c_4.c.o
+[ 29%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1c_5.c.o
+[ 30%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1c_6.c.o
+[ 31%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1c_7.c.o
+[ 32%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1c_8.c.o
+[ 34%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1c_9.c.o
+[ 35%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1c_99.c.o
+[ 36%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1c_9x.c.o
+[ 37%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1c_cc.c.o
+[ 38%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1c_d1.c.o
+[ 40%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1c_d2.c.o
+[ 41%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1c_rr.c.o
+[ 42%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1c_xx.c.o
+[ 43%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1f_1.c.o
+[ 44%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1f_9x.c.o
+[ 45%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1f_d1.c.o
+[ 47%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1f_d2.c.o
+[ 48%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1x_1.c.o
+[ 49%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1x_1k.c.o
+[ 50%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1x_1l.c.o
+[ 51%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1x_1o.c.o
+[ 52%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1x_9x.c.o
+[ 54%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1x_d1.c.o
+[ 55%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1x_d2.c.o
+[ 56%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1x_d3.c.o
+[ 57%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1x_o.c.o
+[ 58%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1y_1.c.o
+[ 60%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1y_9x.c.o
+[ 61%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1y_d1.c.o
+[ 62%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1y_d2.c.o
+[ 63%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1y_d3.c.o
+[ 64%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1y_o.c.o
+[ 65%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1z_9x.c.o
+[ 67%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1z_d1.c.o
+[ 68%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1z_d2.c.o
+[ 69%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo1z_d3.c.o
+[ 70%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo2a_9x.c.o
+[ 71%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo2a_d1.c.o
+[ 72%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo2a_d2.c.o
+[ 74%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo_crc.c.o
+[ 75%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo_init.c.o
+[ 76%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo_ptr.c.o
+[ 77%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo_str.c.o
+[ 78%] Building C object CMakeFiles/lzo_static_lib.dir/src/lzo_util.c.o
+[ 80%] Linking C static library liblzo2.a
+[ 80%] Built target lzo_static_lib
+[ 81%] Building C object CMakeFiles/lzotest.dir/lzotest/lzotest.c.o
+[ 82%] Linking C executable lzotest.exe
+[ 82%] Built target lzotest
+[ 83%] Building C object CMakeFiles/dict.dir/examples/dict.c.o
+[ 84%] Linking C executable dict.exe
+[ 84%] Built target dict
+[ 85%] Building C object CMakeFiles/lzopack.dir/examples/lzopack.c.o
+[ 87%] Linking C executable lzopack.exe
+[ 87%] Built target lzopack
+[ 88%] Building C object CMakeFiles/overlap.dir/examples/overlap.c.o
+[ 89%] Linking C executable overlap.exe
+[ 89%] Built target overlap
+[ 90%] Building C object CMakeFiles/precomp.dir/examples/precomp.c.o
+[ 91%] Linking C executable precomp.exe
+[ 91%] Built target precomp
+[ 92%] Building C object CMakeFiles/precomp2.dir/examples/precomp2.c.o
+[ 94%] Linking C executable precomp2.exe
+[ 94%] Built target precomp2
+[ 95%] Building C object CMakeFiles/simple.dir/examples/simple.c.o
+[ 96%] Linking C executable simple.exe
+[ 96%] Built target simple
+[ 97%] Building C object CMakeFiles/testmini.dir/minilzo/testmini.c.o
+[ 98%] Building C object CMakeFiles/testmini.dir/minilzo/minilzo.c.o
+[100%] Linking C executable testmini.exe
+[100%] Built target testmini
+make[1]: Leaving directory '/c/tb/build/lzo'
+make -C liblzraven WARN="-Wno-error=format-truncation" CC=gcc BUILD=/c/tb/build/liblzraven 
+make[1]: Entering directory '/c/tb/liblzraven'
+gcc -std=c11 -O2 -Wno-error=format-truncation -Iinclude -Isrc -c -o /c/tb/build/liblzraven/src/model.o src/model.c
+gcc -std=c11 -O2 -Wno-error=format-truncation -Iinclude -Isrc -c -o /c/tb/build/liblzraven/src/block.o src/block.c
+gcc -std=c11 -O2 -Wno-error=format-truncation -Iinclude -Isrc -c -o /c/tb/build/liblzraven/src/stream.o src/stream.c
+gcc -std=c11 -O2 -Wno-error=format-truncation -Iinclude -Isrc -c -o /c/tb/build/liblzraven/src/encode.o src/encode.c
+gcc -std=c11 -O2 -Wno-error=format-truncation -Iinclude -Isrc -c -o /c/tb/build/liblzraven/src/matchfind.o src/matchfind.c
+gcc -std=c11 -O2 -Wno-error=format-truncation -Iinclude -Isrc -c -o /c/tb/build/liblzraven/src/bcj.o src/bcj.c
+ar rcs /c/tb/build/liblzraven/liblzraven.a /c/tb/build/liblzraven/src/model.o /c/tb/build/liblzraven/src/block.o /c/tb/build/liblzraven/src/stream.o /c/tb/build/liblzraven/src/encode.o /c/tb/build/liblzraven/src/matchfind.o /c/tb/build/liblzraven/src/bcj.o
+gcc -std=c11 -O2 -Wno-error=format-truncation -Iinclude -Isrc -o /c/tb/build/liblzraven/lzraven_dec tests/c/lzraven_dec.c /c/tb/build/liblzraven/liblzraven.a 
+gcc -std=c11 -O2 -Wno-error=format-truncation -Iinclude -Isrc -o /c/tb/build/liblzraven/test_decode tests/c/test_decode.c /c/tb/build/liblzraven/liblzraven.a 
+gcc -std=c11 -O2 -Wno-error=format-truncation -Iinclude -Isrc -o /c/tb/build/liblzraven/test_encode tests/c/test_encode.c /c/tb/build/liblzraven/liblzraven.a 
+gcc -std=c11 -O2 -Wno-error=format-truncation -Iinclude -Isrc -o /c/tb/build/liblzraven/test_reject tests/c/test_reject.c /c/tb/build/liblzraven/liblzraven.a 
+gcc -std=c11 -O2 -Wno-error=format-truncation -Iinclude -Isrc -o /c/tb/build/liblzraven/test_boundary tests/c/test_boundary.c src/model.c src/block.c \
+    src/stream.c src/matchfind.c src/bcj.c 
+gcc -std=c11 -O2 -Wno-error=format-truncation -Iinclude -Isrc -o /c/tb/build/liblzraven/test_bcj tests/c/test_bcj.c /c/tb/build/liblzraven/liblzraven.a 
+gcc -std=c11 -O2 -Wno-error=format-truncation -Iinclude -Isrc -o /c/tb/build/liblzraven/test_matchfind tests/c/test_matchfind.c src/matchfind.c 
+make[1]: Leaving directory '/c/tb/liblzraven'
+cmake -S miniz -B build/miniz -DCMAKE_INSTALL_PREFIX=build -DPROJECT_NAME=tb -DCMAKE_C_COMPILER=gcc && make -C build/miniz
+CMake Warning (deprecated) at CMakeLists.txt:1 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+This warning is for project developers.  Use -Wno-author or -Wno-deprecated
+to suppress it.
+
+-- The C compiler identification is GNU 16.2.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /ucrt64/bin/gcc.exe - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Performing Test COMPILER_HAS_DEPRECATED_ATTR
+-- Performing Test COMPILER_HAS_DEPRECATED_ATTR - Success
+-- Configuring done (1.4s)
+-- Generating done (0.1s)
+-- Build files have been written to: /c/tb/build/miniz
+make[1]: Entering directory '/c/tb/build/miniz'
+/usr/bin/cmake.exe -S/c/tb/miniz -B/c/tb/build/miniz --check-build-system CMakeFiles/Makefile.cmake 0
+/usr/bin/cmake.exe -E cmake_progress_start /c/tb/build/miniz/CMakeFiles /c/tb/build/miniz//CMakeFiles/progress.marks
+make  -f CMakeFiles/Makefile2 all
+make[2]: Entering directory '/c/tb/build/miniz'
+make  -f CMakeFiles/miniz.dir/build.make CMakeFiles/miniz.dir/depend
+make[3]: Entering directory '/c/tb/build/miniz'
+cd /c/tb/build/miniz && /usr/bin/cmake.exe -E cmake_depends "Unix Makefiles" /c/tb/miniz /c/tb/miniz /c/tb/build/miniz /c/tb/build/miniz /c/tb/build/miniz/CMakeFiles/miniz.dir/DependInfo.cmake "--color=" miniz
+make[3]: Leaving directory '/c/tb/build/miniz'
+make  -f CMakeFiles/miniz.dir/build.make CMakeFiles/miniz.dir/build
+make[3]: Entering directory '/c/tb/build/miniz'
+[ 20%] Building C object CMakeFiles/miniz.dir/miniz.c.o
+/ucrt64/bin/gcc.exe -D_GNU_SOURCE -I/c/tb/miniz -I/c/tb/build/miniz -Wshadow -Wformat=2 -Wall -Wno-overlength-strings -pedantic -O3 -DNDEBUG -std=gnu90 -MD -MT CMakeFiles/miniz.dir/miniz.c.o -MF CMakeFiles/miniz.dir/miniz.c.o.d -o CMakeFiles/miniz.dir/miniz.c.o -c /c/tb/miniz/miniz.c
+[ 40%] Building C object CMakeFiles/miniz.dir/miniz_zip.c.o
+/ucrt64/bin/gcc.exe -D_GNU_SOURCE -I/c/tb/miniz -I/c/tb/build/miniz -Wshadow -Wformat=2 -Wall -Wno-overlength-strings -pedantic -O3 -DNDEBUG -std=gnu90 -MD -MT CMakeFiles/miniz.dir/miniz_zip.c.o -MF CMakeFiles/miniz.dir/miniz_zip.c.o.d -o CMakeFiles/miniz.dir/miniz_zip.c.o -c /c/tb/miniz/miniz_zip.c
+[ 60%] Building C object CMakeFiles/miniz.dir/miniz_tinfl.c.o
+/ucrt64/bin/gcc.exe -D_GNU_SOURCE -I/c/tb/miniz -I/c/tb/build/miniz -Wshadow -Wformat=2 -Wall -Wno-overlength-strings -pedantic -O3 -DNDEBUG -std=gnu90 -MD -MT CMakeFiles/miniz.dir/miniz_tinfl.c.o -MF CMakeFiles/miniz.dir/miniz_tinfl.c.o.d -o CMakeFiles/miniz.dir/miniz_tinfl.c.o -c /c/tb/miniz/miniz_tinfl.c
+[ 80%] Building C object CMakeFiles/miniz.dir/miniz_tdef.c.o
+/ucrt64/bin/gcc.exe -D_GNU_SOURCE -I/c/tb/miniz -I/c/tb/build/miniz -Wshadow -Wformat=2 -Wall -Wno-overlength-strings -pedantic -O3 -DNDEBUG -std=gnu90 -MD -MT CMakeFiles/miniz.dir/miniz_tdef.c.o -MF CMakeFiles/miniz.dir/miniz_tdef.c.o.d -o CMakeFiles/miniz.dir/miniz_tdef.c.o -c /c/tb/miniz/miniz_tdef.c
+[100%] Linking C static library libminiz.a
+/usr/bin/cmake.exe -P CMakeFiles/miniz.dir/cmake_clean_target.cmake
+/usr/bin/cmake.exe -E cmake_link_script CMakeFiles/miniz.dir/link.txt --verbose=1
+/ucrt64/bin/ar.exe qc libminiz.a CMakeFiles/miniz.dir/miniz.c.o CMakeFiles/miniz.dir/miniz_zip.c.o CMakeFiles/miniz.dir/miniz_tinfl.c.o CMakeFiles/miniz.dir/miniz_tdef.c.o
+/ucrt64/bin/ranlib.exe libminiz.a
+make[3]: Leaving directory '/c/tb/build/miniz'
+[100%] Built target miniz
+make[2]: Leaving directory '/c/tb/build/miniz'
+/usr/bin/cmake.exe -E cmake_progress_start /c/tb/build/miniz/CMakeFiles 0
+make[1]: Leaving directory '/c/tb/build/miniz'
+g++ -O3  -std=c++20 -Imisa77/include -Imisa77/src -c misa77/src/compress.cpp -o build/misa77/src/compress.o
+g++ -O3  -std=c++20 -Imisa77/include -Imisa77/src -c misa77/src/decompress.cpp -o build/misa77/src/decompress.o
+g++ -O3  -std=c++20 -Imisa77/include -Imisa77/src -c misa77/src/isa/target_portable.cpp -o build/misa77/src/isa/target_portable.o
+g++ -O3 -march=x86-64 -std=c++20 -Imisa77/include -Imisa77/src -c misa77/src/isa/target_sse2.cpp -o build/misa77/src/isa/target_sse2.o
+g++ -O3 -march=haswell -std=c++20 -Imisa77/include -Imisa77/src -c misa77/src/isa/target_avx2.cpp -o build/misa77/src/isa/target_avx2.o
+ar rcs build/misa77/libmisa77.a build/misa77/src/compress.o build/misa77/src/decompress.o build/misa77/src/isa/target_portable.o build/misa77/src/isa/target_sse2.o build/misa77/src/isa/target_avx2.o
+cmake -S openzl -B build/openzl -DCMAKE_BUILD_TYPE=Release -DOPENZL_ALLOW_INTROSPECTION=OFF -DOPENZL_INSTALL=OFF -DOPENZL_BUILD_TOOLS=OFF -DOPENZL_BUILD_EXAMPLES=OFF -DOPENZL_BUILD_CPP=OFF -DOPENZL_BUILD_CUSTOM_PARSERS=OFF -DOPENZL_BUILD_CLI=OFF
+-- The CXX compiler identification is GNU 16.2.0
+-- The C compiler identification is GNU 16.2.0
+-- The ASM compiler identification is GNU
+-- Found assembler: /ucrt64/bin/cc.exe
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /ucrt64/bin/c++.exe - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /ucrt64/bin/cc.exe - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- current platform: MSYS
+-- Build mode: none
+-- Performing Test OPENZL_HAVE_C_GNU_ZERO_VARIADIC_MACRO_ARGUMENTS
+-- Performing Test OPENZL_HAVE_C_GNU_ZERO_VARIADIC_MACRO_ARGUMENTS - Failed
+-- Performing Test OPENZL_HAVE_C_VARIADIC_MACROS
+-- Performing Test OPENZL_HAVE_C_VARIADIC_MACROS - Success
+-- Performing Test OPENZL_HAVE_CXX_GNU_ZERO_VARIADIC_MACRO_ARGUMENTS
+-- Performing Test OPENZL_HAVE_CXX_GNU_ZERO_VARIADIC_MACRO_ARGUMENTS - Failed
+-- Performing Test OPENZL_HAVE_CXX_VARIADIC_MACROS
+-- Performing Test OPENZL_HAVE_CXX_VARIADIC_MACROS - Success
+-- Attempting zstd dependency resolution...
+-- zstd dependency already present
+-- zstd dependency resolved successfully
+-- ZSTD VERSION: 1.5.7
+-- Performing Test C_FLAG_WALL
+-- Performing Test C_FLAG_WALL - Success
+-- Performing Test CXX_FLAG_WALL
+-- Performing Test CXX_FLAG_WALL - Success
+-- Performing Test C_FLAG_WEXTRA
+-- Performing Test C_FLAG_WEXTRA - Success
+-- Performing Test CXX_FLAG_WEXTRA
+-- Performing Test CXX_FLAG_WEXTRA - Success
+-- Performing Test C_FLAG_WUNDEF
+-- Performing Test C_FLAG_WUNDEF - Success
+-- Performing Test CXX_FLAG_WUNDEF
+-- Performing Test CXX_FLAG_WUNDEF - Success
+-- Performing Test C_FLAG_WSHADOW
+-- Performing Test C_FLAG_WSHADOW - Success
+-- Performing Test CXX_FLAG_WSHADOW
+-- Performing Test CXX_FLAG_WSHADOW - Success
+-- Performing Test C_FLAG_WCAST_ALIGN
+-- Performing Test C_FLAG_WCAST_ALIGN - Success
+-- Performing Test CXX_FLAG_WCAST_ALIGN
+-- Performing Test CXX_FLAG_WCAST_ALIGN - Success
+-- Performing Test C_FLAG_WCAST_QUAL
+-- Performing Test C_FLAG_WCAST_QUAL - Success
+-- Performing Test CXX_FLAG_WCAST_QUAL
+-- Performing Test CXX_FLAG_WCAST_QUAL - Success
+-- Performing Test C_FLAG_WSTRICT_PROTOTYPES
+-- Performing Test C_FLAG_WSTRICT_PROTOTYPES - Success
+-- Performing Test LD_FLAG_WL_Z_NOEXECSTACK
+-- Performing Test LD_FLAG_WL_Z_NOEXECSTACK - Failed
+-- Performing Test C_FLAG_QUNUSED_ARGUMENTS
+-- Performing Test C_FLAG_QUNUSED_ARGUMENTS - Failed
+-- Performing Test CXX_FLAG_QUNUSED_ARGUMENTS
+-- Performing Test CXX_FLAG_QUNUSED_ARGUMENTS - Failed
+-- Performing Test C_FLAG_WA_NOEXECSTACK
+-- Performing Test C_FLAG_WA_NOEXECSTACK - Failed
+-- Performing Test CXX_FLAG_WA_NOEXECSTACK
+-- Performing Test CXX_FLAG_WA_NOEXECSTACK - Failed
+-- CMAKE_INSTALL_PREFIX: /usr/local
+-- CMAKE_INSTALL_LIBDIR: lib
+-- ZSTD_LEGACY_SUPPORT not defined!
+-- ZSTD_MULTITHREAD_SUPPORT is enabled
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- Attempting lz4 dependency resolution...
+-- lz4 dependency resolved successfully
+CMake Warning (deprecated) at deps/lz4/build/cmake/CMakeLists.txt:11 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+This warning is for project developers.  Use -Wno-author or -Wno-deprecated
+to suppress it.
+
+-- Creating build script for LZ4 version: 1.10.0
+-- Performing Test CFLAG_pedantic_errors
+-- Performing Test CFLAG_pedantic_errors - Success
+-- Performing Test CFLAG_Wall
+-- Performing Test CFLAG_Wall - Success
+-- Performing Test CFLAG_Wextra
+-- Performing Test CFLAG_Wextra - Success
+-- Performing Test CFLAG_Wundef
+-- Performing Test CFLAG_Wundef - Success
+-- Performing Test CFLAG_Wcast_qual
+-- Performing Test CFLAG_Wcast_qual - Success
+-- Performing Test CFLAG_Wcast_align
+-- Performing Test CFLAG_Wcast_align - Success
+-- Performing Test CFLAG_Wshadow
+-- Performing Test CFLAG_Wshadow - Success
+-- Performing Test CFLAG_Wswitch_enum
+-- Performing Test CFLAG_Wswitch_enum - Success
+-- Performing Test CFLAG_Wdeclaration_after_statement
+-- Performing Test CFLAG_Wdeclaration_after_statement - Success
+-- Performing Test CFLAG_Wstrict_prototypes
+-- Performing Test CFLAG_Wstrict_prototypes - Success
+-- Performing Test CFLAG_Wpointer_arith
+-- Performing Test CFLAG_Wpointer_arith - Success
+-- Enabling x86-64 assembly
+-- Configuring done (16.2s)
+-- Generating done (0.7s)
+-- Build files have been written to: /c/tb/build/openzl
+cmake --build build/openzl --config Release
+make[1]: Entering directory '/c/tb/build/openzl'
+-- current platform: MSYS
+-- Build mode: none
+-- Attempting zstd dependency resolution...
+-- zstd dependency already present
+-- zstd dependency resolved successfully
+-- ZSTD VERSION: 1.5.7
+-- CMAKE_INSTALL_PREFIX: /usr/local
+-- CMAKE_INSTALL_LIBDIR: lib
+-- ZSTD_LEGACY_SUPPORT not defined!
+-- ZSTD_MULTITHREAD_SUPPORT is enabled
+-- Attempting lz4 dependency resolution...
+-- lz4 dependency resolved successfully
+CMake Warning (deprecated) at deps/lz4/build/cmake/CMakeLists.txt:11 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+This warning is for project developers.  Use -Wno-author or -Wno-deprecated
+to suppress it.
+
+-- Creating build script for LZ4 version: 1.10.0
+-- Enabling x86-64 assembly
+-- Configuring done (0.4s)
+-- Generating done (0.5s)
+-- Build files have been written to: /c/tb/build/openzl
+[  0%] Building C object lz4_build/CMakeFiles/lz4_static.dir/__/__/lib/lz4.c.o
+[  0%] Building C object lz4_build/CMakeFiles/lz4_static.dir/__/__/lib/lz4file.c.o
+[  1%] Building C object lz4_build/CMakeFiles/lz4_static.dir/__/__/lib/lz4frame.c.o
+[  1%] Building C object lz4_build/CMakeFiles/lz4_static.dir/__/__/lib/lz4hc.c.o
+[  1%] Building C object lz4_build/CMakeFiles/lz4_static.dir/__/__/lib/xxhash.c.o
+[  2%] Linking C static library liblz4.a
+[  2%] Built target lz4_static
+[  2%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/common/debug.c.o
+[  3%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/common/entropy_common.c.o
+[  3%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/common/error_private.c.o
+[  3%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/common/fse_decompress.c.o
+[  3%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/common/pool.c.o
+[  4%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/common/threading.c.o
+[  4%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/common/xxhash.c.o
+[  4%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/common/zstd_common.c.o
+[  5%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/compress/fse_compress.c.o
+[  5%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/compress/hist.c.o
+[  5%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/compress/huf_compress.c.o
+[  5%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/compress/zstd_compress.c.o
+[  6%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/compress/zstd_compress_literals.c.o
+[  6%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/compress/zstd_compress_sequences.c.o
+[  6%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/compress/zstd_compress_superblock.c.o
+[  7%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/compress/zstd_double_fast.c.o
+[  7%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/compress/zstd_fast.c.o
+[  7%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/compress/zstd_lazy.c.o
+[  7%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/compress/zstd_ldm.c.o
+[  8%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/compress/zstd_opt.c.o
+[  8%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/compress/zstd_preSplit.c.o
+[  8%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/compress/zstdmt_compress.c.o
+[  9%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/decompress/huf_decompress.c.o
+[  9%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/decompress/zstd_ddict.c.o
+[  9%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/decompress/zstd_decompress.c.o
+[  9%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/decompress/zstd_decompress_block.c.o
+[ 10%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/dictBuilder/cover.c.o
+[ 10%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/dictBuilder/divsufsort.c.o
+[ 10%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/dictBuilder/fastcover.c.o
+[ 11%] Building C object zstd_build/lib/CMakeFiles/libzstd_static.dir/__/__/__/lib/dictBuilder/zdict.c.o
+[ 11%] Linking C static library libzstd.a
+[ 11%] Built target libzstd_static
+[ 11%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/bitSplit/common_bitSplit_kernel.c.o
+[ 11%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/bitSplit/decode_bitSplit_binding.c.o
+[ 11%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/bitSplit/decode_bitSplit_kernel.c.o
+[ 12%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/bitSplit/encode_bitSplit_binding.c.o
+[ 12%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/bitSplit/encode_bitSplit_kernel.c.o
+[ 12%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/bitSplit/encode_bitsplit_bf16_binding.c.o
+[ 13%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/bitSplit/encode_bitsplit_fp_binding.c.o
+[ 13%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/bitSplit/encode_bitsplit_top8_binding.c.o
+[ 13%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/bitpack/common_bitpack_kernel.c.o
+[ 13%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/bitpack/decode_bitpack_binding.c.o
+[ 14%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/bitpack/encode_bitpack_binding.c.o
+[ 14%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/bitunpack/decode_bitunpack_binding.c.o
+[ 14%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/bitunpack/encode_bitunpack_binding.c.o
+[ 15%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/common/fast_table.c.o
+[ 15%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/common/fast_table16.c.o
+[ 15%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/common/fast_tag_table.c.o
+[ 15%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/common/window.c.o
+[ 16%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/concat/decode_concat_binding.c.o
+[ 16%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/concat/encode_concat_binding.c.o
+[ 16%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/constant/decode_constant_binding.c.o
+[ 17%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/constant/decode_constant_kernel.c.o
+[ 17%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/constant/encode_constant_binding.c.o
+[ 17%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/constant/encode_constant_kernel.c.o
+[ 17%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/conversion/decode_conversion_binding.c.o
+[ 18%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/conversion/encode_conversion_binding.c.o
+[ 18%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/conversion/encode_setStringSizes_binding.c.o
+[ 18%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/conversion/graph_conversion.c.o
+[ 19%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/decoder_registry.c.o
+[ 19%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/dedup/decode_dedup_binding.c.o
+[ 19%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/dedup/encode_dedup_binding.c.o
+[ 19%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/delta/decode_delta_binding.c.o
+[ 20%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/delta/decode_delta_kernel.c.o
+[ 20%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/delta/encode_delta_binding.c.o
+[ 20%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/delta/encode_delta_kernel.c.o
+[ 21%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/dispatchN_byTag/decode_dispatchN_byTag_binding.c.o
+[ 21%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/dispatchN_byTag/decode_dispatchN_byTag_kernel.c.o
+[ 21%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/dispatchN_byTag/encode_dispatchN_byTag_binding.c.o
+[ 21%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/dispatchN_byTag/encode_dispatchN_byTag_kernel.c.o
+[ 22%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/dispatch_by_tag/decode_dispatch_by_tag_kernel.c.o
+[ 22%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/dispatch_by_tag/encode_dispatch_by_tag_kernel.c.o
+[ 22%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/dispatch_string/decode_dispatch_string_binding.c.o
+[ 23%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/dispatch_string/decode_dispatch_string_kernel.c.o
+[ 23%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/dispatch_string/encode_dispatch_string_binding.c.o
+[ 23%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/dispatch_string/encode_dispatch_string_kernel.c.o
+[ 23%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/divide_by/decode_divide_by_binding.c.o
+[ 24%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/divide_by/decode_divide_by_kernel.c.o
+[ 24%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/divide_by/encode_divide_by_binding.c.o
+[ 24%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/divide_by/encode_divide_by_kernel.c.o
+[ 25%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/encoder_registry.c.o
+[ 25%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/entropy/decode_entropy_binding.c.o
+[ 25%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/entropy/decode_huffman_kernel.c.o
+[ 25%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/entropy/deprecated/decode_entropy_decompress.c.o
+[ 26%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/entropy/deprecated/decode_fse_kernel.c.o
+[ 26%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/entropy/deprecated/decode_huf_avx2_decompress.c.o
+[ 26%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/entropy/deprecated/encode_entropy_compress.c.o
+[ 27%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/entropy/deprecated/encode_fse_kernel.c.o
+[ 27%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/entropy/deprecated/encode_huf_avx2_compress.c.o
+[ 27%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/entropy/encode_entropy_binding.c.o
+[ 27%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/entropy/encode_entropy_selector.c.o
+[ 28%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/entropy/encode_huffman_kernel.c.o
+[ 28%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/flatpack/decode_flatpack_binding.c.o
+[ 28%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/flatpack/decode_flatpack_kernel.c.o
+[ 29%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/flatpack/encode_flatpack_binding.c.o
+[ 29%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/flatpack/encode_flatpack_kernel.c.o
+[ 29%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/float_deconstruct/decode_float_deconstruct_binding.c.o
+[ 29%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/float_deconstruct/decode_float_deconstruct_kernel.c.o
+[ 30%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/float_deconstruct/encode_float_deconstruct_binding.c.o
+[ 30%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/float_deconstruct/encode_float_deconstruct_kernel.c.o
+[ 30%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/interleave/decode_interleave_binding.c.o
+[ 31%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/interleave/encode_interleave_binding.c.o
+[ 31%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/lz/decode_field_lz.c.o
+[ 31%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/lz/decode_lz_binding.c.o
+[ 31%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/lz/decode_lz_kernel.c.o
+[ 32%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/lz/encode_field_lz.c.o
+[ 32%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/lz/encode_field_lz_literals_selector.c.o
+[ 32%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/lz/encode_field_lz_sequences.c.o
+[ 33%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/lz/encode_lz_binding.c.o
+[ 33%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/lz/encode_lz_kernel.c.o
+[ 33%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/lz/encode_match_finder_fast_field_lz.c.o
+[ 33%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/lz/encode_match_finder_greedy_field_lz.c.o
+[ 34%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/lz4/decode_lz4_binding.c.o
+[ 34%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/lz4/encode_lz4_binding.c.o
+[ 34%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/merge_sorted/decode_merge_sorted_binding.c.o
+[ 35%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/merge_sorted/decode_merge_sorted_kernel.c.o
+[ 35%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/merge_sorted/encode_merge_sorted_binding.c.o
+[ 35%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/merge_sorted/encode_merge_sorted_kernel.c.o
+[ 35%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/mux_lengths/decode_mux_lengths_binding.c.o
+[ 36%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/mux_lengths/decode_mux_lengths_kernel.c.o
+[ 36%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/mux_lengths/encode_mux_lengths_binding.c.o
+[ 36%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/mux_lengths/encode_mux_lengths_kernel.c.o
+[ 37%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/parse_int/decode_parse_int_binding.c.o
+[ 37%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/parse_int/decode_parse_int_kernel.c.o
+[ 37%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/parse_int/encode_parse_int_binding.c.o
+[ 37%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/parse_int/encode_parse_int_kernel.c.o
+[ 38%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/partition/common_partition.c.o
+[ 38%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/partition/decode_partition_binding.c.o
+[ 38%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/partition/decode_partition_bitpack_fusion.c.o
+[ 39%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/partition/decode_partition_kernel.c.o
+[ 39%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/partition/encode_partition_binding.c.o
+[ 39%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/partition/encode_partition_bitpack.c.o
+[ 39%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/partition/encode_partition_kernel.c.o
+[ 40%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/pivco_huffman/arch/decode_pivco_arch.c.o
+[ 40%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/pivco_huffman/arch/decode_pivco_arm.c.o
+[ 40%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/pivco_huffman/arch/decode_pivco_avx2.c.o
+[ 41%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/pivco_huffman/arch/decode_pivco_avx512.c.o
+[ 41%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/pivco_huffman/arch/encode_pivco_arch.c.o
+[ 41%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/pivco_huffman/arch/encode_pivco_arm.c.o
+[ 41%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/pivco_huffman/arch/encode_pivco_avx2.c.o
+[ 42%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/pivco_huffman/arch/encode_pivco_avx512.c.o
+[ 42%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/pivco_huffman/common_pivco_kernel.c.o
+[ 42%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/pivco_huffman/decode_pivco_binding.c.o
+[ 43%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/pivco_huffman/decode_pivco_kernel.c.o
+[ 43%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/pivco_huffman/encode_pivco_binding.c.o
+[ 43%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/pivco_huffman/encode_pivco_kernel.c.o
+[ 43%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/prefix/decode_prefix_binding.c.o
+[ 44%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/prefix/decode_prefix_kernel.c.o
+[ 44%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/prefix/encode_prefix_binding.c.o
+[ 44%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/prefix/encode_prefix_kernel.c.o
+[ 45%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/quantize/common_quantize.c.o
+[ 45%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/quantize/decode_quantize_binding.c.o
+[ 45%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/quantize/decode_quantize_kernel.c.o
+[ 45%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/quantize/encode_quantize_binding.c.o
+[ 46%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/quantize/encode_quantize_kernel.c.o
+[ 46%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/range_pack/decode_range_pack_binding.c.o
+[ 46%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/range_pack/decode_range_pack_kernel.c.o
+[ 47%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/range_pack/encode_range_pack_binding.c.o
+[ 47%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/range_pack/encode_range_pack_kernel.c.o
+[ 47%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/rolz/decode_experimental_dec.c.o
+[ 47%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/rolz/decode_fast_dec.c.o
+[ 48%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/rolz/decode_rolz_binding.c.o
+[ 48%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/rolz/decode_rolz_kernel.c.o
+[ 48%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/rolz/encode_experimental_enc.c.o
+[ 49%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/rolz/encode_fast_enc.c.o
+[ 49%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/rolz/encode_match_finder_double_fast_lc.c.o
+[ 49%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/rolz/encode_match_finder_lazy.c.o
+[ 49%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/rolz/encode_rolz_binding.c.o
+[ 50%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/rolz/encode_rolz_kernel.c.o
+[ 50%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/rolz/encode_rolz_sequences.c.o
+[ 50%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/sentinel/decode_sentinel_binding.c.o
+[ 51%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/sentinel/decode_sentinel_kernel.c.o
+[ 51%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/sentinel/encode_sentinel_binding.c.o
+[ 51%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/sentinel/encode_sentinel_kernel.c.o
+[ 51%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/sparse_num/decode_sparse_num_binding.c.o
+[ 52%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/sparse_num/decode_sparse_num_kernel.c.o
+[ 52%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/sparse_num/encode_sparse_num_binding.c.o
+[ 52%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/sparse_num/encode_sparse_num_kernel.c.o
+[ 53%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/splitByStruct/decode_splitByStruct_binding.c.o
+[ 53%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/splitByStruct/decode_splitByStruct_kernel.c.o
+[ 53%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/splitByStruct/encode_splitByStruct_binding.c.o
+[ 53%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/splitByStruct/encode_splitByStruct_kernel.c.o
+[ 54%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/splitN/decode_splitN_binding.c.o
+[ 54%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/splitN/decode_splitN_kernel.c.o
+[ 54%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/splitN/encode_splitN_binding.c.o
+[ 55%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/splitN/encode_split_byrange_binding.c.o
+[ 55%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/tokenize/decode_tokenize2to1_kernel.c.o
+[ 55%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/tokenize/decode_tokenize4to2_kernel.c.o
+[ 55%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/tokenize/decode_tokenizeVarto4_kernel.c.o
+[ 56%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/tokenize/decode_tokenize_binding.c.o
+[ 56%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/tokenize/decode_tokenize_kernel.c.o
+[ 56%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/tokenize/encode_tokenize2to1_kernel.c.o
+[ 57%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/tokenize/encode_tokenize4to2_kernel.c.o
+[ 57%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/tokenize/encode_tokenizeVarto4_kernel.c.o
+[ 57%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/tokenize/encode_tokenize_binding.c.o
+[ 57%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/tokenize/encode_tokenize_kernel.c.o
+[ 58%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/tokenize/encode_tokenize_kernel_sort.c.o
+[ 58%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/transpose/decode_transpose_binding.c.o
+[ 58%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/transpose/decode_transpose_kernel.c.o
+[ 59%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/transpose/encode_transpose_binding.c.o
+[ 59%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/transpose/encode_transpose_kernel.c.o
+[ 59%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/zigzag/decode_zigzag_binding.c.o
+[ 59%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/zigzag/decode_zigzag_kernel.c.o
+[ 60%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/zigzag/encode_zigzag_binding.c.o
+[ 60%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/zigzag/encode_zigzag_kernel.c.o
+[ 60%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/zstd/common_zstd.c.o
+[ 61%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/zstd/decode_zstd_binding.c.o
+[ 61%] Building C object CMakeFiles/openzl.dir/src/openzl/codecs/zstd/encode_zstd_binding.c.o
+[ 61%] Building C object CMakeFiles/openzl.dir/src/openzl/common/a1cbor_helpers.c.o
+[ 61%] Building C object CMakeFiles/openzl.dir/src/openzl/common/allocation.c.o
+[ 62%] Building C object CMakeFiles/openzl.dir/src/openzl/common/errors.c.o
+[ 62%] Building C object CMakeFiles/openzl.dir/src/openzl/common/limits.c.o
+[ 62%] Building C object CMakeFiles/openzl.dir/src/openzl/common/logging.c.o
+[ 63%] Building C object CMakeFiles/openzl.dir/src/openzl/common/materializer_ctx.c.o
+[ 63%] Building C object CMakeFiles/openzl.dir/src/openzl/common/opaque.c.o
+[ 63%] Building C object CMakeFiles/openzl.dir/src/openzl/common/operation_context.c.o
+[ 63%] Building C object CMakeFiles/openzl.dir/src/openzl/common/refcount.c.o
+[ 64%] Building C object CMakeFiles/openzl.dir/src/openzl/common/sha256.c.o
+[ 64%] Building C object CMakeFiles/openzl.dir/src/openzl/common/stream.c.o
+[ 64%] Building C object CMakeFiles/openzl.dir/src/openzl/common/unique_id.c.o
+[ 65%] Building C object CMakeFiles/openzl.dir/src/openzl/common/wire_format.c.o
+[ 65%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/cctx.c.o
+[ 65%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/cdictmgr.c.o
+[ 65%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/cgraph.c.o
+[ 66%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/cnode.c.o
+[ 66%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/cnodes.c.o
+[ 66%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/codec_output_cache.c.o
+[ 67%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/compress2.c.o
+[ 67%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/compressor_serialization.c.o
+[ 67%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/dyngraph_interface.c.o
+[ 67%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/enc_interface.c.o
+[ 68%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/encode_frameheader.c.o
+[ 68%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/gcparams.c.o
+[ 68%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/graph_registry.c.o
+[ 69%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/graphmgr.c.o
+[ 69%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/graphs/automated_compressor_explorer.c.o
+[ 69%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/graphs/generic_clustering_graph.c.o
+[ 69%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/graphs/sddl/simple_data_description_language.c.o
+[ 70%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/graphs/sddl/simple_data_description_language_source_code.c.o
+[ 70%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/graphs/sddl2/sddl2.c.o
+[ 70%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/graphs/sddl2/sddl2_disasm.c.o
+[ 71%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/graphs/sddl2/sddl2_interpreter.c.o
+[ 71%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/graphs/sddl2/sddl2_vm.c.o
+[ 71%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/graphs/small_lengths_graph.c.o
+[ 71%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/graphs/split_graph.c.o
+[ 72%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/implicit_conversion.c.o
+[ 72%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/localparams.c.o
+[ 72%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/name.c.o
+[ 73%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/nodemgr.c.o
+[ 73%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/rtgraphs.c.o
+[ 73%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/segmenter.c.o
+[ 73%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/segmenters/segmenter_numeric.c.o
+[ 74%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/segmenters/segmenter_serial.c.o
+[ 74%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selector.c.o
+[ 74%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selectors/ml/features.c.o
+[ 75%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selectors/ml/gbt.c.o
+[ 75%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selectors/ml/ml_selector_graph.c.o
+[ 75%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selectors/ml/mlselector.c.o
+[ 75%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selectors/selector_brute_force.c.o
+[ 76%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selectors/selector_compress.c.o
+[ 76%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selectors/selector_constant.c.o
+[ 76%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selectors/selector_genericLZ.c.o
+[ 77%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selectors/selector_numeric.c.o
+[ 77%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selectors/selector_store.c.o
+[ 77%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selectors/transformer/cardinality.c.o
+[ 77%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selectors/transformer/generated/score_numeric16.c.o
+[ 78%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selectors/transformer/generated/score_numeric32.c.o
+[ 78%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selectors/transformer/generated/score_numeric64.c.o
+[ 78%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selectors/transformer/generated/score_numeric8.c.o
+[ 79%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selectors/transformer/generic_numeric_decide16.c.o
+[ 79%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selectors/transformer/generic_numeric_decide32.c.o
+[ 79%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selectors/transformer/generic_numeric_decide64.c.o
+[ 79%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selectors/transformer/generic_numeric_decide8.c.o
+[ 80%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selectors/transformer/numeric_extract.c.o
+[ 80%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selectors/transformer/numeric_stats.c.o
+[ 80%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selectors/transformer/static_core_select.c.o
+[ 81%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selectors/transformer/static_fallback_select.c.o
+[ 81%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selectors/transformer/static_index_select.c.o
+[ 81%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/selectors/transformer/wide_arith.c.o
+[ 81%] Building C object CMakeFiles/openzl.dir/src/openzl/compress/trStates.c.o
+[ 82%] Building C object CMakeFiles/openzl.dir/src/openzl/decompress/decode_frameheader.c.o
+[ 82%] Building C object CMakeFiles/openzl.dir/src/openzl/decompress/decoder_fusion.c.o
+[ 82%] Building C object CMakeFiles/openzl.dir/src/openzl/decompress/decompress2.c.o
+C:/tb/openzl/src/openzl/decompress/decompress2.c: In function 'ZL_DCtx_decompressMultiTBuffer':
+C:/tb/openzl/src/openzl/decompress/decompress2.c:2177:12: warning: variable 'chunkIndex' set but not used [-Wunused-but-set-variable=]
+ 2177 |     size_t chunkIndex = 0;
+      |            ^~~~~~~~~~
+[ 83%] Building C object CMakeFiles/openzl.dir/src/openzl/decompress/dictx.c.o
+[ 83%] Building C object CMakeFiles/openzl.dir/src/openzl/decompress/dtransforms.c.o
+[ 83%] Building C object CMakeFiles/openzl.dir/src/openzl/decompress/gdparams.c.o
+[ 83%] Building C object CMakeFiles/openzl.dir/src/openzl/decompress/reflection.c.o
+[ 84%] Building C object CMakeFiles/openzl.dir/src/openzl/dict/bundle.c.o
+[ 84%] Building C object CMakeFiles/openzl.dir/src/openzl/dict/dict.c.o
+[ 84%] Building C object CMakeFiles/openzl.dir/src/openzl/dict/dictloader.c.o
+[ 85%] Building C object CMakeFiles/openzl.dir/src/openzl/dict/fatbundle_dictloader.c.o
+[ 85%] Building C object CMakeFiles/openzl.dir/src/openzl/fse/common/debug.c.o
+[ 85%] Building C object CMakeFiles/openzl.dir/src/openzl/fse/common/entropy_common.c.o
+[ 85%] Building C object CMakeFiles/openzl.dir/src/openzl/fse/common/error_private.c.o
+[ 86%] Building C object CMakeFiles/openzl.dir/src/openzl/fse/compress/fse_compress.c.o
+[ 86%] Building C object CMakeFiles/openzl.dir/src/openzl/fse/compress/hist.c.o
+[ 86%] Building C object CMakeFiles/openzl.dir/src/openzl/fse/compress/huf_compress.c.o
+[ 87%] Building C object CMakeFiles/openzl.dir/src/openzl/fse/decompress/fse_decompress.c.o
+[ 87%] Building C object CMakeFiles/openzl.dir/src/openzl/fse/decompress/huf_decompress.c.o
+[ 87%] Building C object CMakeFiles/openzl.dir/src/openzl/shared/a1cbor.c.o
+[ 87%] Building C object CMakeFiles/openzl.dir/src/openzl/shared/base64.c.o
+[ 88%] Building C object CMakeFiles/openzl.dir/src/openzl/shared/clustering_common.c.o
+[ 88%] Building C object CMakeFiles/openzl.dir/src/openzl/shared/clustering_compress.c.o
+[ 88%] Building C object CMakeFiles/openzl.dir/src/openzl/shared/data_stats.c.o
+[ 89%] Building C object CMakeFiles/openzl.dir/src/openzl/shared/detail/pdqsort1.c.o
+[ 89%] Building C object CMakeFiles/openzl.dir/src/openzl/shared/detail/pdqsort2.c.o
+[ 89%] Building C object CMakeFiles/openzl.dir/src/openzl/shared/detail/pdqsort4.c.o
+[ 89%] Building C object CMakeFiles/openzl.dir/src/openzl/shared/detail/pdqsort8.c.o
+[ 90%] Building C object CMakeFiles/openzl.dir/src/openzl/shared/estimate.c.o
+[ 90%] Building C object CMakeFiles/openzl.dir/src/openzl/shared/histogram.c.o
+[ 90%] Building C object CMakeFiles/openzl.dir/src/openzl/shared/numeric_operations.c.o
+[ 91%] Linking C static library libopenzl.a
+[ 91%] Built target openzl
+[ 91%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/common/debug.c.o
+[ 92%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/common/entropy_common.c.o
+[ 92%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/common/error_private.c.o
+[ 92%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/common/fse_decompress.c.o
+[ 93%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/common/pool.c.o
+[ 93%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/common/threading.c.o
+[ 93%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/common/xxhash.c.o
+[ 93%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/common/zstd_common.c.o
+[ 94%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/compress/fse_compress.c.o
+[ 94%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/compress/hist.c.o
+[ 94%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/compress/huf_compress.c.o
+[ 95%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/compress/zstd_compress.c.o
+[ 95%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/compress/zstd_compress_literals.c.o
+[ 95%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/compress/zstd_compress_sequences.c.o
+[ 95%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/compress/zstd_compress_superblock.c.o
+[ 96%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/compress/zstd_double_fast.c.o
+[ 96%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/compress/zstd_fast.c.o
+[ 96%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/compress/zstd_lazy.c.o
+[ 97%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/compress/zstd_ldm.c.o
+[ 97%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/compress/zstd_opt.c.o
+[ 97%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/compress/zstd_preSplit.c.o
+[ 97%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/compress/zstdmt_compress.c.o
+[ 98%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/decompress/huf_decompress.c.o
+[ 98%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/decompress/zstd_ddict.c.o
+[ 98%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/decompress/zstd_decompress.c.o
+[ 99%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/decompress/zstd_decompress_block.c.o
+[ 99%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/dictBuilder/cover.c.o
+[ 99%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/dictBuilder/divsufsort.c.o
+[ 99%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/dictBuilder/fastcover.c.o
+[100%] Building C object zstd_build/lib/CMakeFiles/libzstd_shared.dir/__/__/__/lib/dictBuilder/zdict.c.o
+[100%] Linking C shared library msys-zstd-1.dll
+[100%] Built target libzstd_shared
+[100%] Building C object tools/fileio/CMakeFiles/fileio.dir/fileio.c.o
+[100%] Linking C static library libfileio.a
+[100%] Built target fileio
+make[1]: Leaving directory '/c/tb/build/openzl'
+make -C Turbo-Range-Coder BUILD=/c/tb/build/Turbo-Range-Coder DEFS="-D_NQUANT" 
+make[1]: Entering directory '/c/tb/Turbo-Range-Coder'
+OpenMP enabled with -fopenmp and -fopenmp
+CC="gcc" CXX="g++"  CXL="g++"  CG="clang    " CCO="gcc" 
+gcc -DBUILD_VERSION="\"v20261107\""  -O3 -w  -falign-loops=32  -march=haswell -c bec_b.c -o /c/tb/build/Turbo-Range-Coder/bec_b.o
+gcc -DBUILD_VERSION="\"v20261107\""  -O3 -w  -falign-loops=32  -march=haswell -c cpu.c -o /c/tb/build/Turbo-Range-Coder/cpu.o
+gcc -DBUILD_VERSION="\"v20261107\""  -O3 -w  -falign-loops=32  -march=haswell -c rc_ss.c -o /c/tb/build/Turbo-Range-Coder/rc_ss.o
+gcc -DBUILD_VERSION="\"v20261107\""  -O3 -w  -falign-loops=32  -march=haswell -c rc_s.c -o /c/tb/build/Turbo-Range-Coder/rc_s.o
+gcc -DBUILD_VERSION="\"v20261107\""  -O3 -w  -falign-loops=32  -march=haswell -c rccdf.c -o /c/tb/build/Turbo-Range-Coder/rccdf.o
+gcc -DBUILD_VERSION="\"v20261107\""  -O3 -w  -falign-loops=32  -march=haswell -c rccmd_s.c -o /c/tb/build/Turbo-Range-Coder/rccmd_s.o
+gcc -DBUILD_VERSION="\"v20261107\""  -O3 -w  -falign-loops=32  -march=haswell -c rccmd_ss.c -o /c/tb/build/Turbo-Range-Coder/rccmd_ss.o
+gcc -DBUILD_VERSION="\"v20261107\""  -O3 -w  -falign-loops=32  -march=haswell -c rcutil.c -o /c/tb/build/Turbo-Range-Coder/rcutil.o
+clang     -fopenmp -Ilibsais/include  -O3 -w  -falign-loops=32  -mavx -mpopcnt -c rccmc_s.c -o /c/tb/build/Turbo-Range-Coder/rccmc_s.o
+clang     -fopenmp -Ilibsais/include  -O3 -w  -falign-loops=32  -mavx -mpopcnt -c rccmc_ss.c -o /c/tb/build/Turbo-Range-Coder/rccmc_ss.o
+clang     -fopenmp -Ilibsais/include  -O3 -w  -falign-loops=32  -mavx -mpopcnt -c anscdf.c -o /c/tb/build/Turbo-Range-Coder/anscdfs.o
+clang     -fopenmp -Ilibsais/include  -O3 -w  -falign-loops=32  -mavx -mpopcnt -c tp.c -o /c/tb/build/Turbo-Range-Coder/tp.o
+clang     -fopenmp -Ilibsais/include  -O3 -w  -falign-loops=32  -mavx -mpopcnt -c tp_.c -o /c/tb/build/Turbo-Range-Coder/tp_.o
+clang     -fopenmp -Ilibsais/include  -O3 -w  -falign-loops=32  -mavx -mpopcnt -c rcbwt.c -o /c/tb/build/Turbo-Range-Coder/rcbwt.o
+clang      -O3 -w  -falign-loops=32  -march=haswell -c rcqlfc_s.c -o /c/tb/build/Turbo-Range-Coder/rcqlfc_s.o
+clang      -O3 -w  -falign-loops=32  -march=haswell -c rcqlfc_ss.c -o /c/tb/build/Turbo-Range-Coder/rcqlfc_ss.o
+clang      -O3 -w  -falign-loops=32  -march=haswell -c rcqlfc_sf.c -o /c/tb/build/Turbo-Range-Coder/rcqlfc_sf.o
+clang      -O3 -w  -falign-loops=32  -march=haswell -c anscdf.c -o /c/tb/build/Turbo-Range-Coder/anscdfx.o
+clang      -O3 -w  -falign-loops=32  -march=haswell -c tp.c -o /c/tb/build/Turbo-Range-Coder/tp256.o
+ar rcs /c/tb/build/Turbo-Range-Coder/librc.a /c/tb/build/Turbo-Range-Coder/bec_b.o /c/tb/build/Turbo-Range-Coder/cpu.o /c/tb/build/Turbo-Range-Coder/rc_ss.o /c/tb/build/Turbo-Range-Coder/rc_s.o /c/tb/build/Turbo-Range-Coder/rccdf.o /c/tb/build/Turbo-Range-Coder/rccmd_s.o /c/tb/build/Turbo-Range-Coder/rccmd_ss.o /c/tb/build/Turbo-Range-Coder/rcutil.o /c/tb/build/Turbo-Range-Coder/rccmc_s.o /c/tb/build/Turbo-Range-Coder/rccmc_ss.o /c/tb/build/Turbo-Range-Coder/anscdfs.o /c/tb/build/Turbo-Range-Coder/tp.o /c/tb/build/Turbo-Range-Coder/tp_.o /c/tb/build/Turbo-Range-Coder/rcbwt.o /c/tb/build/Turbo-Range-Coder/rcqlfc_s.o /c/tb/build/Turbo-Range-Coder/rcqlfc_ss.o /c/tb/build/Turbo-Range-Coder/rcqlfc_sf.o /c/tb/build/Turbo-Range-Coder/anscdfx.o /c/tb/build/Turbo-Range-Coder/tp256.o
+gcc -DLIBSAIS_OPENMP -O3 -w  -falign-loops=32  -fopenmp -Ilibsais/include  -march=haswell -c libsais/src/libsais.c -o /c/tb/build/Turbo-Range-Coder/libsais.o
+gcc -DLIBSAIS_OPENMP -O3 -w  -falign-loops=32  -fopenmp -Ilibsais/include  -march=haswell -c libsais/src/libsais16.c -o /c/tb/build/Turbo-Range-Coder/libsais16.o
+clang     -O3 -w  -falign-loops=32   -D_NQUANT -D_BWT -D_LIBSAIS -D_LIBSAIS16 -D_ANS -D_TP -D_NCPUISA -c turborc.c -o /c/tb/build/Turbo-Range-Coder/turborc.o
+g++ /c/tb/build/Turbo-Range-Coder/bec_b.o /c/tb/build/Turbo-Range-Coder/cpu.o /c/tb/build/Turbo-Range-Coder/rc_ss.o /c/tb/build/Turbo-Range-Coder/rc_s.o /c/tb/build/Turbo-Range-Coder/rccdf.o /c/tb/build/Turbo-Range-Coder/rccmd_s.o /c/tb/build/Turbo-Range-Coder/rccmd_ss.o /c/tb/build/Turbo-Range-Coder/rcutil.o /c/tb/build/Turbo-Range-Coder/rccmc_s.o /c/tb/build/Turbo-Range-Coder/rccmc_ss.o /c/tb/build/Turbo-Range-Coder/anscdfs.o /c/tb/build/Turbo-Range-Coder/tp.o /c/tb/build/Turbo-Range-Coder/tp_.o /c/tb/build/Turbo-Range-Coder/rcbwt.o /c/tb/build/Turbo-Range-Coder/rcqlfc_s.o /c/tb/build/Turbo-Range-Coder/rcqlfc_ss.o /c/tb/build/Turbo-Range-Coder/rcqlfc_sf.o /c/tb/build/Turbo-Range-Coder/anscdfx.o /c/tb/build/Turbo-Range-Coder/tp256.o /c/tb/build/Turbo-Range-Coder/libsais.o /c/tb/build/Turbo-Range-Coder/libsais16.o /c/tb/build/Turbo-Range-Coder/librc.a /c/tb/build/Turbo-Range-Coder/turborc.o -Wl,--stack,33554432 -lpowrprof -fopenmp -static -o /c/tb/build/Turbo-Range-Coder/turborc
+make[1]: Leaving directory '/c/tb/Turbo-Range-Coder'
+cmake -S xz -B build/xz -DXZ_TOOL_XZDEC=OFF -DXZ_TOOL_LZMADEC=OFF -DXZ_TOOL_LZMAINFO=OFF -DXZ_TOOL_XZ=OFF -DXZ_TOOL_SCRIPTS=OFF -DXZ_DOC=OFF && make -C build/xz 
+-- The C compiler identification is GNU 16.2.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /ucrt64/bin/cc.exe - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Looking for __i386__
+-- Looking for __i386__ - not found
+-- Performing Test TUKLIB_LARGE_FILE_SUPPORT_BY_DEFAULT
+-- Performing Test TUKLIB_LARGE_FILE_SUPPORT_BY_DEFAULT - Failed
+-- Performing Test TUKLIB_LARGE_FILE_SUPPORT_WITH_FOB64
+-- Performing Test TUKLIB_LARGE_FILE_SUPPORT_WITH_FOB64 - Success
+-- Performing Test HAVE___BUILTIN_BSWAPXX
+-- Performing Test HAVE___BUILTIN_BSWAPXX - Success
+-- Check if unaligned memory access should be used
+-- Check if unaligned memory access should be used - yes
+-- Performing Test HAVE___BUILTIN_ASSUME_ALIGNED
+-- Performing Test HAVE___BUILTIN_ASSUME_ALIGNED - Success
+-- Looking for clock_gettime
+-- Looking for clock_gettime - found
+-- Looking for CLOCK_MONOTONIC
+-- Looking for CLOCK_MONOTONIC - found
+-- Failed to find Gettext libintl (missing: Intl_LIBRARY Intl_INCLUDE_DIR) 
+-- Found Gettext: /usr/bin/msgmerge.exe (found version "0.22.5")
+-- Performing Test HAVE_COMPILER_OPTION_-Wall
+-- Performing Test HAVE_COMPILER_OPTION_-Wall - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wextra
+-- Performing Test HAVE_COMPILER_OPTION_-Wextra - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wvla
+-- Performing Test HAVE_COMPILER_OPTION_-Wvla - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wformat_2
+-- Performing Test HAVE_COMPILER_OPTION_-Wformat_2 - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Winit-self
+-- Performing Test HAVE_COMPILER_OPTION_-Winit-self - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wmissing-include-dirs
+-- Performing Test HAVE_COMPILER_OPTION_-Wmissing-include-dirs - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wshift-overflow_2
+-- Performing Test HAVE_COMPILER_OPTION_-Wshift-overflow_2 - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wstrict-overflow_3
+-- Performing Test HAVE_COMPILER_OPTION_-Wstrict-overflow_3 - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Walloc-zero
+-- Performing Test HAVE_COMPILER_OPTION_-Walloc-zero - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wduplicated-cond
+-- Performing Test HAVE_COMPILER_OPTION_-Wduplicated-cond - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wfloat-equal
+-- Performing Test HAVE_COMPILER_OPTION_-Wfloat-equal - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wundef
+-- Performing Test HAVE_COMPILER_OPTION_-Wundef - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wshadow
+-- Performing Test HAVE_COMPILER_OPTION_-Wshadow - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wpointer-arith
+-- Performing Test HAVE_COMPILER_OPTION_-Wpointer-arith - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wbad-function-cast
+-- Performing Test HAVE_COMPILER_OPTION_-Wbad-function-cast - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wwrite-strings
+-- Performing Test HAVE_COMPILER_OPTION_-Wwrite-strings - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wdate-time
+-- Performing Test HAVE_COMPILER_OPTION_-Wdate-time - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wsign-conversion
+-- Performing Test HAVE_COMPILER_OPTION_-Wsign-conversion - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wfloat-conversion
+-- Performing Test HAVE_COMPILER_OPTION_-Wfloat-conversion - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wlogical-op
+-- Performing Test HAVE_COMPILER_OPTION_-Wlogical-op - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Waggregate-return
+-- Performing Test HAVE_COMPILER_OPTION_-Waggregate-return - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wstrict-prototypes
+-- Performing Test HAVE_COMPILER_OPTION_-Wstrict-prototypes - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wold-style-definition
+-- Performing Test HAVE_COMPILER_OPTION_-Wold-style-definition - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wmissing-prototypes
+-- Performing Test HAVE_COMPILER_OPTION_-Wmissing-prototypes - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wmissing-declarations
+-- Performing Test HAVE_COMPILER_OPTION_-Wmissing-declarations - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wredundant-decls
+-- Performing Test HAVE_COMPILER_OPTION_-Wredundant-decls - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wimplicit-fallthrough
+-- Performing Test HAVE_COMPILER_OPTION_-Wimplicit-fallthrough - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wimplicit-fallthrough_5
+-- Performing Test HAVE_COMPILER_OPTION_-Wimplicit-fallthrough_5 - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wc99-compat
+-- Performing Test HAVE_COMPILER_OPTION_-Wc99-compat - Failed
+-- Performing Test HAVE_COMPILER_OPTION_-Wc11-extensions
+-- Performing Test HAVE_COMPILER_OPTION_-Wc11-extensions - Failed
+-- Performing Test HAVE_COMPILER_OPTION_-Wc2x-compat
+-- Performing Test HAVE_COMPILER_OPTION_-Wc2x-compat - Failed
+-- Performing Test HAVE_COMPILER_OPTION_-Wc2x-extensions
+-- Performing Test HAVE_COMPILER_OPTION_-Wc2x-extensions - Failed
+-- Performing Test HAVE_COMPILER_OPTION_-Warray-bounds-pointer-arithmetic
+-- Performing Test HAVE_COMPILER_OPTION_-Warray-bounds-pointer-arithmetic - Failed
+-- Performing Test HAVE_COMPILER_OPTION_-Wassign-enum
+-- Performing Test HAVE_COMPILER_OPTION_-Wassign-enum - Failed
+-- Performing Test HAVE_COMPILER_OPTION_-Wconditional-uninitialized
+-- Performing Test HAVE_COMPILER_OPTION_-Wconditional-uninitialized - Failed
+-- Performing Test HAVE_COMPILER_OPTION_-Wdocumentation
+-- Performing Test HAVE_COMPILER_OPTION_-Wdocumentation - Failed
+-- Performing Test HAVE_COMPILER_OPTION_-Wduplicate-enum
+-- Performing Test HAVE_COMPILER_OPTION_-Wduplicate-enum - Failed
+-- Performing Test HAVE_COMPILER_OPTION_-Wempty-translation-unit
+-- Performing Test HAVE_COMPILER_OPTION_-Wempty-translation-unit - Failed
+-- Performing Test HAVE_COMPILER_OPTION_-Wextra-semi-stmt
+-- Performing Test HAVE_COMPILER_OPTION_-Wextra-semi-stmt - Failed
+-- Performing Test HAVE_COMPILER_OPTION_-Wflexible-array-extensions
+-- Performing Test HAVE_COMPILER_OPTION_-Wflexible-array-extensions - Failed
+-- Performing Test HAVE_COMPILER_OPTION_-Wmissing-variable-declarations
+-- Performing Test HAVE_COMPILER_OPTION_-Wmissing-variable-declarations - Success
+-- Performing Test HAVE_COMPILER_OPTION_-Wnewline-eof
+-- Performing Test HAVE_COMPILER_OPTION_-Wnewline-eof - Failed
+-- Performing Test HAVE_COMPILER_OPTION_-Wshift-sign-overflow
+-- Performing Test HAVE_COMPILER_OPTION_-Wshift-sign-overflow - Failed
+-- Performing Test HAVE_COMPILER_OPTION_-Wstring-conversion
+-- Performing Test HAVE_COMPILER_OPTION_-Wstring-conversion - Failed
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- Looking for pthread_condattr_setclock
+-- Looking for pthread_condattr_setclock - found
+-- Checking how to detect the number of available CPU cores
+-- Checking how to detect the amount of physical memory
+-- Performing Test HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR
+-- Performing Test HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR - Success
+-- Looking for cpuid.h
+-- Looking for cpuid.h - found
+-- Looking for immintrin.h
+-- Looking for immintrin.h - found
+-- Performing Test HAVE__MM_MOVEMASK_EPI8
+-- Performing Test HAVE__MM_MOVEMASK_EPI8 - Success
+-- Performing Test HAVE_USABLE_CLMUL
+-- Performing Test HAVE_USABLE_CLMUL - Success
+-- Performing Test HAVE_ARM64_CRC32
+-- Performing Test HAVE_ARM64_CRC32 - Failed
+-- Performing Test HAVE_LOONGARCH_CRC32
+-- Performing Test HAVE_LOONGARCH_CRC32 - Failed
+-- Looking for getopt_long
+-- Looking for getopt_long - found
+-- Looking for cap_rights_limit
+-- Looking for cap_rights_limit - not found
+-- Looking for pledge
+-- Looking for pledge - not found
+-- Performing Test HAVE_LINUX_LANDLOCK
+-- Performing Test HAVE_LINUX_LANDLOCK - Failed
+-- Configuring done (25.9s)
+-- Generating done (1.0s)
+-- Build files have been written to: /c/tb/build/xz
+make[1]: Entering directory '/c/tb/build/xz'
+[  1%] Building C object CMakeFiles/liblzma.dir/src/common/tuklib_physmem.c.o
+[  2%] Building C object CMakeFiles/liblzma.dir/src/liblzma/check/check.c.o
+[  3%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/block_util.c.o
+[  3%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/common.c.o
+[  4%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/easy_preset.c.o
+[  5%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/filter_common.c.o
+[  6%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/hardware_physmem.c.o
+[  7%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/index.c.o
+[  8%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/stream_flags_common.c.o
+[  9%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/string_conversion.c.o
+[  9%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/vli_size.c.o
+[ 10%] Building C object CMakeFiles/liblzma.dir/src/common/tuklib_cpucores.c.o
+[ 11%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/hardware_cputhreads.c.o
+[ 12%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/outqueue.c.o
+[ 13%] Building C object CMakeFiles/liblzma.dir/src/liblzma/check/crc32_fast.c.o
+[ 14%] Building C object CMakeFiles/liblzma.dir/src/liblzma/check/crc64_fast.c.o
+[ 15%] Building C object CMakeFiles/liblzma.dir/src/liblzma/check/sha256.c.o
+[ 15%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/alone_encoder.c.o
+[ 16%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/block_buffer_encoder.c.o
+[ 17%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/block_encoder.c.o
+[ 18%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/block_header_encoder.c.o
+[ 19%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/easy_buffer_encoder.c.o
+[ 20%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/easy_encoder.c.o
+[ 21%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/easy_encoder_memusage.c.o
+[ 22%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/filter_buffer_encoder.c.o
+[ 22%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/filter_encoder.c.o
+[ 23%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/filter_flags_encoder.c.o
+[ 24%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/index_encoder.c.o
+[ 25%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/stream_buffer_encoder.c.o
+[ 26%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/stream_encoder.c.o
+[ 27%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/stream_flags_encoder.c.o
+[ 28%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/vli_encoder.c.o
+[ 28%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/stream_encoder_mt.c.o
+[ 29%] Building C object CMakeFiles/liblzma.dir/src/liblzma/simple/simple_encoder.c.o
+[ 30%] Building C object CMakeFiles/liblzma.dir/src/liblzma/lzma/lzma_encoder.c.o
+[ 31%] Building C object CMakeFiles/liblzma.dir/src/liblzma/lzma/lzma_encoder_optimum_fast.c.o
+[ 32%] Building C object CMakeFiles/liblzma.dir/src/liblzma/lzma/lzma_encoder_optimum_normal.c.o
+[ 33%] Building C object CMakeFiles/liblzma.dir/src/liblzma/lz/lz_encoder.c.o
+[ 34%] Building C object CMakeFiles/liblzma.dir/src/liblzma/lz/lz_encoder_mf.c.o
+[ 34%] Building C object CMakeFiles/liblzma.dir/src/liblzma/rangecoder/price_table.c.o
+[ 35%] Building C object CMakeFiles/liblzma.dir/src/liblzma/lzma/fastpos_table.c.o
+[ 36%] Building C object CMakeFiles/liblzma.dir/src/liblzma/lzma/lzma2_encoder.c.o
+[ 37%] Building C object CMakeFiles/liblzma.dir/src/liblzma/delta/delta_encoder.c.o
+[ 38%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/alone_decoder.c.o
+[ 39%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/auto_decoder.c.o
+[ 40%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/block_buffer_decoder.c.o
+[ 40%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/block_decoder.c.o
+[ 41%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/block_header_decoder.c.o
+[ 42%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/easy_decoder_memusage.c.o
+[ 43%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/file_info.c.o
+[ 44%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/filter_buffer_decoder.c.o
+[ 45%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/filter_decoder.c.o
+[ 46%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/filter_flags_decoder.c.o
+[ 47%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/index_decoder.c.o
+[ 47%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/index_hash.c.o
+[ 48%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/stream_buffer_decoder.c.o
+[ 49%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/stream_decoder.c.o
+[ 50%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/stream_flags_decoder.c.o
+[ 51%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/vli_decoder.c.o
+[ 52%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/stream_decoder_mt.c.o
+[ 53%] Building C object CMakeFiles/liblzma.dir/src/liblzma/simple/simple_decoder.c.o
+[ 53%] Building C object CMakeFiles/liblzma.dir/src/liblzma/lzma/lzma_decoder.c.o
+[ 54%] Building C object CMakeFiles/liblzma.dir/src/liblzma/lz/lz_decoder.c.o
+[ 55%] Building C object CMakeFiles/liblzma.dir/src/liblzma/lzma/lzma2_decoder.c.o
+[ 56%] Building C object CMakeFiles/liblzma.dir/src/liblzma/delta/delta_decoder.c.o
+[ 57%] Building C object CMakeFiles/liblzma.dir/src/liblzma/lzma/lzma_encoder_presets.c.o
+[ 58%] Building C object CMakeFiles/liblzma.dir/src/liblzma/delta/delta_common.c.o
+[ 59%] Building C object CMakeFiles/liblzma.dir/src/liblzma/simple/simple_coder.c.o
+[ 59%] Building C object CMakeFiles/liblzma.dir/src/liblzma/simple/x86.c.o
+[ 60%] Building C object CMakeFiles/liblzma.dir/src/liblzma/simple/arm.c.o
+[ 61%] Building C object CMakeFiles/liblzma.dir/src/liblzma/simple/armthumb.c.o
+[ 62%] Building C object CMakeFiles/liblzma.dir/src/liblzma/simple/arm64.c.o
+[ 63%] Building C object CMakeFiles/liblzma.dir/src/liblzma/simple/powerpc.c.o
+[ 64%] Building C object CMakeFiles/liblzma.dir/src/liblzma/simple/ia64.c.o
+[ 65%] Building C object CMakeFiles/liblzma.dir/src/liblzma/simple/sparc.c.o
+[ 65%] Building C object CMakeFiles/liblzma.dir/src/liblzma/simple/riscv.c.o
+[ 66%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/microlzma_encoder.c.o
+[ 67%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/microlzma_decoder.c.o
+[ 68%] Building C object CMakeFiles/liblzma.dir/src/liblzma/common/lzip_decoder.c.o
+[ 69%] Linking C static library liblzma.a
+[ 69%] Built target liblzma
+[ 69%] Built target libgnu
+[ 69%] Built target tests_w32res
+[ 70%] Building C object CMakeFiles/test_alone_decoder.dir/tests/test_alone_decoder.c.o
+[ 71%] Linking C executable test_alone_decoder.exe
+[ 71%] Built target test_alone_decoder
+[ 72%] Building C object CMakeFiles/test_bcj_exact_size.dir/tests/test_bcj_exact_size.c.o
+[ 72%] Linking C executable test_bcj_exact_size.exe
+[ 72%] Built target test_bcj_exact_size
+[ 73%] Building C object CMakeFiles/test_block_header.dir/tests/test_block_header.c.o
+[ 74%] Linking C executable test_block_header.exe
+[ 74%] Built target test_block_header
+[ 75%] Building C object CMakeFiles/test_check.dir/tests/test_check.c.o
+[ 76%] Linking C executable test_check.exe
+[ 76%] Built target test_check
+[ 77%] Building C object CMakeFiles/test_filter_flags.dir/tests/test_filter_flags.c.o
+[ 78%] Linking C executable test_filter_flags.exe
+[ 78%] Built target test_filter_flags
+[ 78%] Building C object CMakeFiles/test_filter_str.dir/tests/test_filter_str.c.o
+[ 79%] Linking C executable test_filter_str.exe
+[ 79%] Built target test_filter_str
+[ 80%] Building C object CMakeFiles/test_hardware.dir/tests/test_hardware.c.o
+[ 81%] Linking C executable test_hardware.exe
+[ 81%] Built target test_hardware
+[ 82%] Building C object CMakeFiles/test_index.dir/tests/test_index.c.o
+[ 83%] Linking C executable test_index.exe
+[ 83%] Built target test_index
+[ 84%] Building C object CMakeFiles/test_index_hash.dir/tests/test_index_hash.c.o
+[ 84%] Linking C executable test_index_hash.exe
+[ 84%] Built target test_index_hash
+[ 85%] Building C object CMakeFiles/test_lzip_decoder.dir/tests/test_lzip_decoder.c.o
+[ 86%] Linking C executable test_lzip_decoder.exe
+[ 86%] Built target test_lzip_decoder
+[ 87%] Building C object CMakeFiles/test_memlimit.dir/tests/test_memlimit.c.o
+[ 88%] Linking C executable test_memlimit.exe
+[ 88%] Built target test_memlimit
+[ 88%] Building C object CMakeFiles/test_stream_buffer_decode.dir/tests/test_stream_buffer_decode.c.o
+[ 89%] Linking C executable test_stream_buffer_decode.exe
+[ 89%] Built target test_stream_buffer_decode
+[ 90%] Building C object CMakeFiles/test_stream_buffer_encode.dir/tests/test_stream_buffer_encode.c.o
+[ 91%] Linking C executable test_stream_buffer_encode.exe
+[ 91%] Built target test_stream_buffer_encode
+[ 92%] Building C object CMakeFiles/test_stream_flags.dir/tests/test_stream_flags.c.o
+[ 93%] Linking C executable test_stream_flags.exe
+[ 93%] Built target test_stream_flags
+[ 94%] Building C object CMakeFiles/test_vli.dir/tests/test_vli.c.o
+[ 95%] Linking C executable test_vli.exe
+[ 95%] Built target test_vli
+[ 96%] Building C object CMakeFiles/test_microlzma.dir/tests/test_microlzma.c.o
+[ 97%] Linking C executable test_microlzma.exe
+[ 97%] Built target test_microlzma
+[ 97%] Building C object CMakeFiles/create_compress_files.dir/tests/create_compress_files.c.o
+[ 98%] Linking C executable test_compress/create_compress_files.exe
+[ 98%] Built target create_compress_files
+[ 99%] Building C object CMakeFiles/decode_byte_by_byte.dir/tests/decode_byte_by_byte.c.o
+[100%] Linking C executable decode_byte_by_byte.exe
+[100%] Built target decode_byte_by_byte
+make[1]: Leaving directory '/c/tb/build/xz'
+cmake -S zlib-ng -B build/zlib-ng -DWITH_NEON=OFF -DBUILD_TESTING=OFF -DWITH_GTEST=OFF -DWITH_GZFILEOP=OFF
+-- Using CMake version 4.4.5
+-- ZLIB_HEADER_VERSION: 1.3.2
+-- ZLIBNG_HEADER_VERSION: 2.3.90
+-- The C compiler identification is GNU 16.2.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /ucrt64/bin/cc.exe - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Arch detected: 'x86_64'
+-- Basearch of 'x86_64' (64bit) has been detected as: 'x86'
+-- Performing Test FNO_LTO_AVAILABLE
+-- Performing Test FNO_LTO_AVAILABLE - Success
+-- Looking for arm_acle.h
+-- Looking for arm_acle.h - not found
+-- Looking for sys/auxv.h
+-- Looking for sys/auxv.h - not found
+-- Looking for sys/sdt.h
+-- Looking for sys/sdt.h - not found
+-- Looking for unistd.h
+-- Looking for unistd.h - found
+-- Looking for linux/auxvec.h
+-- Looking for linux/auxvec.h - not found
+-- Looking for asm/hwprobe.h
+-- Looking for asm/hwprobe.h - not found
+-- Looking for strerror
+-- Looking for strerror - found
+-- Looking for __cpuid_count
+-- Looking for __cpuid_count - found
+-- Performing Test HAVE_CPUID_MS
+-- Performing Test HAVE_CPUID_MS - Success
+-- Checking for sanitizer option
+--  sanitizer not enabled
+-- Performing Test HAVE_NO_INTERPOSITION
+-- Performing Test HAVE_NO_INTERPOSITION - Success
+-- Performing Test HAVE_ATTRIBUTE_VISIBILITY_HIDDEN
+-- Performing Test HAVE_ATTRIBUTE_VISIBILITY_HIDDEN - Failed
+-- Performing Test HAVE_ATTRIBUTE_VISIBILITY_INTERNAL
+-- Performing Test HAVE_ATTRIBUTE_VISIBILITY_INTERNAL - Failed
+-- Performing Test HAVE_ATTRIBUTE_ALIGNED
+-- Performing Test HAVE_ATTRIBUTE_ALIGNED - Success
+-- Performing Test HAVE_BUILTIN_ASSUME_ALIGNED
+-- Performing Test HAVE_BUILTIN_ASSUME_ALIGNED - Success
+-- Performing Test HAVE_XSAVE_INTRIN
+-- Performing Test HAVE_XSAVE_INTRIN - Success
+-- Performing Test HAVE_SSE2_INTRIN
+-- Performing Test HAVE_SSE2_INTRIN - Success
+-- Performing Test HAVE_SSSE3_INTRIN
+-- Performing Test HAVE_SSSE3_INTRIN - Success
+-- Performing Test HAVE_SSE41_INTRIN
+-- Performing Test HAVE_SSE41_INTRIN - Success
+-- Performing Test HAVE_SSE42_INTRIN
+-- Performing Test HAVE_SSE42_INTRIN - Success
+-- Performing Test HAVE_PCLMULQDQ_INTRIN
+-- Performing Test HAVE_PCLMULQDQ_INTRIN - Success
+-- Performing Test HAVE_AVX2_INTRIN
+-- Performing Test HAVE_AVX2_INTRIN - Success
+-- Performing Test HAVE_RAPTOR_LAKE
+-- Performing Test HAVE_RAPTOR_LAKE - Success
+-- Performing Test HAVE_AVX2VNNI_INTRIN
+-- Performing Test HAVE_AVX2VNNI_INTRIN - Success
+-- Performing Test HAVE_CASCADE_LAKE
+-- Performing Test HAVE_CASCADE_LAKE - Success
+-- Performing Test HAVE_AVX512_INTRIN
+-- Performing Test HAVE_AVX512_INTRIN - Success
+-- Performing Test HAVE_AVX512VNNI_INTRIN
+-- Performing Test HAVE_AVX512VNNI_INTRIN - Success
+-- Performing Test HAVE_VPCLMULQDQ_INTRIN
+-- Performing Test HAVE_VPCLMULQDQ_INTRIN - Success
+-- Architecture-specific source files: arch/x86/x86_features.c;arch/x86/chunkset_sse2.c;arch/x86/compare256_sse2.c;arch/x86/crc32_chorba_sse2.c;arch/x86/slide_hash_sse2.c;arch/x86/adler32_ssse3.c;arch/x86/chunkset_ssse3.c;arch/x86/crc32_chorba_sse41.c;arch/x86/adler32_sse42.c;arch/x86/crc32_pclmulqdq.c;arch/x86/slide_hash_avx2.c;arch/x86/chunkset_avx2.c;arch/x86/compare256_avx2.c;arch/x86/adler32_avx2.c;arch/x86/adler32_avx2_vnni.c;arch/x86/adler32_avx512.c;arch/x86/chunkset_avx512.c;arch/x86/compare256_avx512.c;arch/x86/adler32_avx512_vnni.c;arch/x86/crc32_vpclmulqdq_avx2.c;arch/x86/crc32_vpclmulqdq_avx512.c
+
+-- The following defines have been set (partial list):
+
+CURRENT_SOURCE_DIR: HAVE_ATTRIBUTE_ALIGNED HAVE_BUILTIN_ASSUME_ALIGNED HAVE_CPUID_GNU HAVE_CPUID_MS HAVE_SYMVER WITH_OPTIM X86_AVX2 X86_AVX2VNNI X86_AVX512 X86_AVX512VNNI X86_FEATURES X86_HAVE_XSAVE_INTRIN X86_PCLMULQDQ_CRC X86_SSE2 X86_SSE41 X86_SSE42 X86_SSSE3 X86_VPCLMULQDQ_AVX2 X86_VPCLMULQDQ_AVX512
+
+-- The following features have been enabled:
+
+ * CMAKE_BUILD_TYPE, Build type: Release (default)
+ * XSAVE, Support XSAVE intrinsics using "-mxsave"
+ * SSSE3_ADLER32, Support SSSE3-accelerated adler32, using "-mssse3"
+ * SSE42_CRC, Support SSE4.2 optimized adler32 hash generation, using "-msse4.2"
+ * PCLMUL_CRC, Support CRC hash generation using PCLMULQDQ, using "-msse4.2 -mpclmul"
+ * AVX2_SLIDEHASH, Support AVX2 optimized slide_hash, using "-mavx2 -mbmi -mbmi2"
+ * AVX2_CHUNKSET, Support AVX2 optimized chunkset, using "-mavx2 -mbmi -mbmi2"
+ * AVX2_COMPARE256, Support AVX2 optimized compare256, using "-mavx2 -mbmi -mbmi2"
+ * AVX2_ADLER32, Support AVX2-accelerated adler32, using "-mavx2 -mbmi -mbmi2"
+ * AVX2VNNI_ADLER32, Support AVX2VNNI adler32, using "-mavx2 -mavxvnni -mbmi -mbmi2 -mtune=raptorlake"
+ * AVX512_ADLER32, Support AVX512-accelerated adler32, using "-mavx512f -mavx512dq -mavx512bw -mavx512vl -mbmi -mbmi2 -mtune=cascadelake"
+ * AVX512_CHUNKSET, Support AVX512 optimized chunkset, using "-mavx512f -mavx512dq -mavx512bw -mavx512vl -mbmi -mbmi2 -mtune=cascadelake"
+ * AVX512_COMPARE256, Support AVX512 optimized compare256, using "-mavx512f -mavx512dq -mavx512bw -mavx512vl -mbmi -mbmi2 -mtune=cascadelake"
+ * AVX512VNNI_ADLER32, Support AVX512VNNI adler32, using "-mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vnni -mbmi -mbmi2 -mtune=cascadelake"
+ * VPCLMULQDQ_AVX2, Support CRC using VPCLMULQDQ (AVX2), using "-mpclmul -mvpclmulqdq -mavx2 -mbmi -mbmi2"
+ * VPCLMULQDQ_AVX512, Support CRC using VPCLMULQDQ (AVX-512), using "-mpclmul -mvpclmulqdq -mavx512f -mavx512dq -mavx512bw -mavx512vl -mbmi -mbmi2 -mtune=cascadelake"
+ * ZLIB_ALIASES, Compile with zlib compatible CMake targets
+ * WITH_OPTIM, Build with optimisation
+ * WITH_NEW_STRATEGIES, Use new strategies
+ * WITH_CRC32_CHORBA, Use optimized CRC32 algorithm Chorba
+ * WITH_RUNTIME_CPU_DETECTION, Build with runtime CPU detection
+ * WITH_AVX2, Build with AVX2
+ * WITH_AVX2VNNI, Build with AVX2VNNI
+ * WITH_AVX512, Build with AVX512
+ * WITH_AVX512VNNI, Build with AVX512 VNNI
+ * WITH_SSE2, Build with SSE2
+ * WITH_SSSE3, Build with SSSE3
+ * WITH_SSE41, Build with SSE41
+ * WITH_SSE42, Build with SSE42
+ * WITH_PCLMULQDQ, Build with PCLMULQDQ
+ * WITH_VPCLMULQDQ, Build with VPCLMULQDQ
+
+-- The following features have been disabled:
+
+ * ZLIB_SYMBOL_PREFIX, Publicly exported symbols DO NOT have a custom prefix
+ * WITH_GZFILEOP, Compile with support for gzFile related functions
+ * ZLIB_COMPAT, Compile with zlib compatible API
+ * BUILD_TESTING, Build test binaries
+ * WITH_SANITIZER, Enable sanitizer testing support
+ * WITH_GTEST, Build tests using Gtest framework
+ * WITH_FUZZERS, Build test/fuzz
+ * WITH_BENCHMARKS, Build benchmarks using Google Benchmark framework
+ * WITH_BENCHMARK_APPS, Build application benchmarks (currently libpng)
+ * WITH_ALL_FALLBACKS, Build all generic fallback functions
+ * WITH_NATIVE_INSTRUCTIONS, Instruct the compiler to use the full instruction set on this host (gcc/clang -march=native)
+ * WITH_MAINTAINER_WARNINGS, Build with project maintainer warnings
+ * WITH_CODE_COVERAGE, Enable code coverage reporting
+ * WITH_INFLATE_STRICT, Build with strict inflate distance checking
+ * WITH_INFLATE_ALLOW_INVALID_DIST, Build with zero fill for inflate invalid distances
+ * INSTALL_UTILS, Copy minigzip, minideflate and zran during install
+
+-- Configuring done (16.1s)
+-- Generating done (0.3s)
+CMake Warning (unused-cli):
+  Manually-specified variables were not used by the project:
+
+    WITH_NEON
+
+
+-- Build files have been written to: /c/tb/build/zlib-ng
+cmake --build build/zlib-ng --config Release 
+make[1]: Entering directory '/c/tb/build/zlib-ng'
+[  1%] Building C object CMakeFiles/zlib-ng.dir/arch/generic/adler32_c.c.o
+[  2%] Building C object CMakeFiles/zlib-ng.dir/arch/generic/chunkset_c.c.o
+[  2%] Building C object CMakeFiles/zlib-ng.dir/arch/generic/compare256_c.c.o
+[  3%] Building C object CMakeFiles/zlib-ng.dir/arch/generic/crc32_braid_c.c.o
+[  4%] Building C object CMakeFiles/zlib-ng.dir/arch/generic/crc32_chorba_c.c.o
+[  5%] Building C object CMakeFiles/zlib-ng.dir/arch/generic/slide_hash_c.c.o
+[  6%] Building C object CMakeFiles/zlib-ng.dir/adler32.c.o
+[  7%] Building C object CMakeFiles/zlib-ng.dir/compress.c.o
+[  8%] Building C object CMakeFiles/zlib-ng.dir/crc32.c.o
+[  8%] Building C object CMakeFiles/zlib-ng.dir/crc32_braid_comb.c.o
+[  9%] Building C object CMakeFiles/zlib-ng.dir/deflate.c.o
+[ 10%] Building C object CMakeFiles/zlib-ng.dir/deflate_fast.c.o
+[ 11%] Building C object CMakeFiles/zlib-ng.dir/deflate_huff.c.o
+[ 12%] Building C object CMakeFiles/zlib-ng.dir/deflate_medium.c.o
+[ 13%] Building C object CMakeFiles/zlib-ng.dir/deflate_quick.c.o
+[ 13%] Building C object CMakeFiles/zlib-ng.dir/deflate_rle.c.o
+[ 14%] Building C object CMakeFiles/zlib-ng.dir/deflate_slow.c.o
+[ 15%] Building C object CMakeFiles/zlib-ng.dir/deflate_stored.c.o
+[ 16%] Building C object CMakeFiles/zlib-ng.dir/functable.c.o
+[ 17%] Building C object CMakeFiles/zlib-ng.dir/infback.c.o
+[ 18%] Building C object CMakeFiles/zlib-ng.dir/inflate.c.o
+[ 19%] Building C object CMakeFiles/zlib-ng.dir/inftrees.c.o
+[ 19%] Building C object CMakeFiles/zlib-ng.dir/insert_string.c.o
+[ 20%] Building C object CMakeFiles/zlib-ng.dir/trees.c.o
+[ 21%] Building C object CMakeFiles/zlib-ng.dir/uncompr.c.o
+[ 22%] Building C object CMakeFiles/zlib-ng.dir/zutil.c.o
+[ 23%] Building C object CMakeFiles/zlib-ng.dir/cpu_features.c.o
+[ 24%] Building C object CMakeFiles/zlib-ng.dir/arch/x86/x86_features.c.o
+[ 24%] Building C object CMakeFiles/zlib-ng.dir/arch/x86/chunkset_sse2.c.o
+[ 25%] Building C object CMakeFiles/zlib-ng.dir/arch/x86/compare256_sse2.c.o
+[ 26%] Building C object CMakeFiles/zlib-ng.dir/arch/x86/crc32_chorba_sse2.c.o
+[ 27%] Building C object CMakeFiles/zlib-ng.dir/arch/x86/slide_hash_sse2.c.o
+[ 28%] Building C object CMakeFiles/zlib-ng.dir/arch/x86/adler32_ssse3.c.o
+[ 29%] Building C object CMakeFiles/zlib-ng.dir/arch/x86/chunkset_ssse3.c.o
+[ 30%] Building C object CMakeFiles/zlib-ng.dir/arch/x86/crc32_chorba_sse41.c.o
+[ 30%] Building C object CMakeFiles/zlib-ng.dir/arch/x86/adler32_sse42.c.o
+[ 31%] Building C object CMakeFiles/zlib-ng.dir/arch/x86/crc32_pclmulqdq.c.o
+[ 32%] Building C object CMakeFiles/zlib-ng.dir/arch/x86/slide_hash_avx2.c.o
+[ 33%] Building C object CMakeFiles/zlib-ng.dir/arch/x86/chunkset_avx2.c.o
+[ 34%] Building C object CMakeFiles/zlib-ng.dir/arch/x86/compare256_avx2.c.o
+[ 35%] Building C object CMakeFiles/zlib-ng.dir/arch/x86/adler32_avx2.c.o
+[ 36%] Building C object CMakeFiles/zlib-ng.dir/arch/x86/adler32_avx2_vnni.c.o
+[ 36%] Building C object CMakeFiles/zlib-ng.dir/arch/x86/adler32_avx512.c.o
+[ 37%] Building C object CMakeFiles/zlib-ng.dir/arch/x86/chunkset_avx512.c.o
+[ 38%] Building C object CMakeFiles/zlib-ng.dir/arch/x86/compare256_avx512.c.o
+[ 39%] Building C object CMakeFiles/zlib-ng.dir/arch/x86/adler32_avx512_vnni.c.o
+[ 40%] Building C object CMakeFiles/zlib-ng.dir/arch/x86/crc32_vpclmulqdq_avx2.c.o
+[ 41%] Building C object CMakeFiles/zlib-ng.dir/arch/x86/crc32_vpclmulqdq_avx512.c.o
+[ 41%] Building RC object CMakeFiles/zlib-ng.dir/win32/zlib-ng2.rc.obj
+[ 42%] Linking C shared library msys-z-ng.dll
+[ 42%] Built target zlib-ng
+[ 43%] Building C object CMakeFiles/zlib-ng-static.dir/arch/generic/adler32_c.c.o
+[ 44%] Building C object CMakeFiles/zlib-ng-static.dir/arch/generic/chunkset_c.c.o
+[ 45%] Building C object CMakeFiles/zlib-ng-static.dir/arch/generic/compare256_c.c.o
+[ 46%] Building C object CMakeFiles/zlib-ng-static.dir/arch/generic/crc32_braid_c.c.o
+[ 47%] Building C object CMakeFiles/zlib-ng-static.dir/arch/generic/crc32_chorba_c.c.o
+[ 47%] Building C object CMakeFiles/zlib-ng-static.dir/arch/generic/slide_hash_c.c.o
+[ 48%] Building C object CMakeFiles/zlib-ng-static.dir/adler32.c.o
+[ 49%] Building C object CMakeFiles/zlib-ng-static.dir/compress.c.o
+[ 50%] Building C object CMakeFiles/zlib-ng-static.dir/crc32.c.o
+[ 51%] Building C object CMakeFiles/zlib-ng-static.dir/crc32_braid_comb.c.o
+[ 52%] Building C object CMakeFiles/zlib-ng-static.dir/deflate.c.o
+[ 52%] Building C object CMakeFiles/zlib-ng-static.dir/deflate_fast.c.o
+[ 53%] Building C object CMakeFiles/zlib-ng-static.dir/deflate_huff.c.o
+[ 54%] Building C object CMakeFiles/zlib-ng-static.dir/deflate_medium.c.o
+[ 55%] Building C object CMakeFiles/zlib-ng-static.dir/deflate_quick.c.o
+[ 56%] Building C object CMakeFiles/zlib-ng-static.dir/deflate_rle.c.o
+[ 57%] Building C object CMakeFiles/zlib-ng-static.dir/deflate_slow.c.o
+[ 58%] Building C object CMakeFiles/zlib-ng-static.dir/deflate_stored.c.o
+[ 58%] Building C object CMakeFiles/zlib-ng-static.dir/functable.c.o
+[ 59%] Building C object CMakeFiles/zlib-ng-static.dir/infback.c.o
+[ 60%] Building C object CMakeFiles/zlib-ng-static.dir/inflate.c.o
+[ 61%] Building C object CMakeFiles/zlib-ng-static.dir/inftrees.c.o
+[ 62%] Building C object CMakeFiles/zlib-ng-static.dir/insert_string.c.o
+[ 63%] Building C object CMakeFiles/zlib-ng-static.dir/trees.c.o
+[ 63%] Building C object CMakeFiles/zlib-ng-static.dir/uncompr.c.o
+[ 64%] Building C object CMakeFiles/zlib-ng-static.dir/zutil.c.o
+[ 65%] Building C object CMakeFiles/zlib-ng-static.dir/cpu_features.c.o
+[ 66%] Building C object CMakeFiles/zlib-ng-static.dir/arch/x86/x86_features.c.o
+[ 67%] Building C object CMakeFiles/zlib-ng-static.dir/arch/x86/chunkset_sse2.c.o
+[ 68%] Building C object CMakeFiles/zlib-ng-static.dir/arch/x86/compare256_sse2.c.o
+[ 69%] Building C object CMakeFiles/zlib-ng-static.dir/arch/x86/crc32_chorba_sse2.c.o
+[ 69%] Building C object CMakeFiles/zlib-ng-static.dir/arch/x86/slide_hash_sse2.c.o
+[ 70%] Building C object CMakeFiles/zlib-ng-static.dir/arch/x86/adler32_ssse3.c.o
+[ 71%] Building C object CMakeFiles/zlib-ng-static.dir/arch/x86/chunkset_ssse3.c.o
+[ 72%] Building C object CMakeFiles/zlib-ng-static.dir/arch/x86/crc32_chorba_sse41.c.o
+[ 73%] Building C object CMakeFiles/zlib-ng-static.dir/arch/x86/adler32_sse42.c.o
+[ 74%] Building C object CMakeFiles/zlib-ng-static.dir/arch/x86/crc32_pclmulqdq.c.o
+[ 74%] Building C object CMakeFiles/zlib-ng-static.dir/arch/x86/slide_hash_avx2.c.o
+[ 75%] Building C object CMakeFiles/zlib-ng-static.dir/arch/x86/chunkset_avx2.c.o
+[ 76%] Building C object CMakeFiles/zlib-ng-static.dir/arch/x86/compare256_avx2.c.o
+[ 77%] Building C object CMakeFiles/zlib-ng-static.dir/arch/x86/adler32_avx2.c.o
+[ 78%] Building C object CMakeFiles/zlib-ng-static.dir/arch/x86/adler32_avx2_vnni.c.o
+[ 79%] Building C object CMakeFiles/zlib-ng-static.dir/arch/x86/adler32_avx512.c.o
+[ 80%] Building C object CMakeFiles/zlib-ng-static.dir/arch/x86/chunkset_avx512.c.o
+[ 80%] Building C object CMakeFiles/zlib-ng-static.dir/arch/x86/compare256_avx512.c.o
+[ 81%] Building C object CMakeFiles/zlib-ng-static.dir/arch/x86/adler32_avx512_vnni.c.o
+[ 82%] Building C object CMakeFiles/zlib-ng-static.dir/arch/x86/crc32_vpclmulqdq_avx2.c.o
+[ 83%] Building C object CMakeFiles/zlib-ng-static.dir/arch/x86/crc32_vpclmulqdq_avx512.c.o
+[ 84%] Linking C static library libz-ng.a
+[ 84%] Built target zlib-ng-static
+[ 85%] Building C object utils/CMakeFiles/minigzip.dir/minigzip.c.o
+[ 85%] Building C object utils/CMakeFiles/minigzip.dir/__/gzlib.c.o
+[ 86%] Building C object utils/CMakeFiles/minigzip.dir/__/gzread.c.o
+[ 87%] Building C object utils/CMakeFiles/minigzip.dir/__/gzwrite.c.o
+[ 88%] Linking C executable ../minigzip.exe
+[ 88%] Built target minigzip
+[ 89%] Building C object utils/CMakeFiles/minideflate.dir/minideflate.c.o
+[ 90%] Linking C executable ../minideflate.exe
+[ 90%] Built target minideflate
+[ 91%] Building C object utils/CMakeFiles/makefixed.dir/makefixed.c.o
+[ 92%] Building C object utils/CMakeFiles/makefixed.dir/__/inftrees.c.o
+[ 93%] Building C object utils/CMakeFiles/makefixed.dir/__/zutil.c.o
+[ 94%] Linking C executable ../makefixed.exe
+[ 94%] Built target makefixed
+[ 94%] Building C object utils/CMakeFiles/maketrees.dir/maketrees.c.o
+[ 95%] Building C object utils/CMakeFiles/maketrees.dir/__/trees.c.o
+[ 96%] Building C object utils/CMakeFiles/maketrees.dir/__/zutil.c.o
+[ 97%] Linking C executable ../maketrees.exe
+[ 97%] Built target maketrees
+[ 97%] Building C object utils/CMakeFiles/makecrct.dir/makecrct.c.o
+[ 98%] Linking C executable ../makecrct.exe
+[ 98%] Built target makecrct
+[ 99%] Building C object utils/CMakeFiles/zran.dir/zran.c.o
+[100%] Linking C executable ../zran.exe
+[100%] Built target zran
+make[1]: Leaving directory '/c/tb/build/zlib-ng'
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/common/debug.c -o build/zstd/lib/common/debug.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/common/entropy_common.c -o build/zstd/lib/common/entropy_common.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/common/error_private.c -o build/zstd/lib/common/error_private.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/common/fse_decompress.c -o build/zstd/lib/common/fse_decompress.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/common/pool.c -o build/zstd/lib/common/pool.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/common/threading.c -o build/zstd/lib/common/threading.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/common/xxhash.c -o build/zstd/lib/common/xxhash.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/common/zstd_common.c -o build/zstd/lib/common/zstd_common.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/compress/fse_compress.c -o build/zstd/lib/compress/fse_compress.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/compress/hist.c -o build/zstd/lib/compress/hist.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/compress/huf_compress.c -o build/zstd/lib/compress/huf_compress.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/compress/zstd_compress.c -o build/zstd/lib/compress/zstd_compress.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/compress/zstd_compress_literals.c -o build/zstd/lib/compress/zstd_compress_literals.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/compress/zstd_compress_sequences.c -o build/zstd/lib/compress/zstd_compress_sequences.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/compress/zstd_compress_superblock.c -o build/zstd/lib/compress/zstd_compress_superblock.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/compress/zstd_double_fast.c -o build/zstd/lib/compress/zstd_double_fast.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/compress/zstd_fast.c -o build/zstd/lib/compress/zstd_fast.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/compress/zstd_lazy.c -o build/zstd/lib/compress/zstd_lazy.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/compress/zstd_ldm.c -o build/zstd/lib/compress/zstd_ldm.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/compress/zstd_opt.c -o build/zstd/lib/compress/zstd_opt.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/compress/zstd_preSplit.c -o build/zstd/lib/compress/zstd_preSplit.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/compress/zstdmt_compress.c -o build/zstd/lib/compress/zstdmt_compress.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/decompress/huf_decompress.c -o build/zstd/lib/decompress/huf_decompress.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/decompress/zstd_ddict.c -o build/zstd/lib/decompress/zstd_ddict.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/decompress/zstd_decompress.c -o build/zstd/lib/decompress/zstd_decompress.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/decompress/zstd_decompress_block.c -o build/zstd/lib/decompress/zstd_decompress_block.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/dictBuilder/cover.c -o build/zstd/lib/dictBuilder/cover.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/dictBuilder/divsufsort.c -o build/zstd/lib/dictBuilder/divsufsort.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/dictBuilder/fastcover.c -o build/zstd/lib/dictBuilder/fastcover.o
+gcc -O3 -w -Izstd/lib -Izstd/lib/common -c zstd/lib/dictBuilder/zdict.c -o build/zstd/lib/dictBuilder/zdict.o
+ar rcs build/zstd/libzstd.a build/zstd/lib/common/debug.o build/zstd/lib/common/entropy_common.o build/zstd/lib/common/error_private.o build/zstd/lib/common/fse_decompress.o build/zstd/lib/common/pool.o build/zstd/lib/common/threading.o build/zstd/lib/common/xxhash.o build/zstd/lib/common/zstd_common.o build/zstd/lib/compress/fse_compress.o build/zstd/lib/compress/hist.o build/zstd/lib/compress/huf_compress.o build/zstd/lib/compress/zstd_compress.o build/zstd/lib/compress/zstd_compress_literals.o build/zstd/lib/compress/zstd_compress_sequences.o build/zstd/lib/compress/zstd_compress_superblock.o build/zstd/lib/compress/zstd_double_fast.o build/zstd/lib/compress/zstd_fast.o build/zstd/lib/compress/zstd_lazy.o build/zstd/lib/compress/zstd_ldm.o build/zstd/lib/compress/zstd_opt.o build/zstd/lib/compress/zstd_preSplit.o build/zstd/lib/compress/zstdmt_compress.o build/zstd/lib/decompress/huf_decompress.o build/zstd/lib/decompress/zstd_ddict.o build/zstd/lib/decompress/zstd_decompress.o build/zstd/lib/decompress/zstd_decompress_block.o build/zstd/lib/dictBuilder/cover.o build/zstd/lib/dictBuilder/divsufsort.o build/zstd/lib/dictBuilder/fastcover.o build/zstd/lib/dictBuilder/zdict.o
+cmake -S zxc -B build/zxc -DCMAKE_C_COMPILER=gcc -DZXC_BUILD_TESTS=0 -DZXC_BUILD_CLI=0 -DZXC_INSTALL=0  && make -C build/zxc
+-- The C compiler identification is GNU 16.2.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /ucrt64/bin/gcc.exe - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- zxc: no CMAKE_BUILD_TYPE given, defaulting to Release
+-- Using vendored rapidhash from /c/tb/zxc/src/lib/vendors
+-- Building x86_64 AVX2 and AVX512 variants...
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- 
+-- ZXC Configuration Summary:
+--   Version:        0.15.0
+--   Build Mode:     Standalone
+--   Library Type:   Static
+--   Native Arch:    ON
+--   Disable SIMD:   OFF
+--   LTO Enabled:    OFF
+--   PGO Mode:       OFF
+--   Build CLI:      0
+--   Build Tests:    0
+--   Install Rules:  0
+--   Rapidhash:      vendored
+-- 
+-- Could NOT find Doxygen (missing: DOXYGEN_EXECUTABLE) (Required is at least version "1.9.7")
+-- Doxygen >= 1.9.7 not found - the 'doc' target is unavailable
+-- Configuring done (1.5s)
+-- Generating done (0.3s)
+-- Build files have been written to: /c/tb/build/zxc
+make[1]: Entering directory '/c/tb/build/zxc'
+[  5%] Building C object CMakeFiles/zxc_compress_default.dir/src/lib/zxc_compress.c.o
+[  5%] Built target zxc_compress_default
+[ 11%] Building C object CMakeFiles/zxc_decompress_default.dir/src/lib/zxc_decompress.c.o
+[ 11%] Built target zxc_decompress_default
+[ 17%] Building C object CMakeFiles/zxc_huffman_default.dir/src/lib/zxc_huffman.c.o
+[ 17%] Built target zxc_huffman_default
+[ 23%] Building C object CMakeFiles/zxc_compress_avx2.dir/src/lib/zxc_compress.c.o
+[ 23%] Built target zxc_compress_avx2
+[ 29%] Building C object CMakeFiles/zxc_decompress_avx2.dir/src/lib/zxc_decompress.c.o
+[ 29%] Built target zxc_decompress_avx2
+[ 35%] Building C object CMakeFiles/zxc_huffman_avx2.dir/src/lib/zxc_huffman.c.o
+[ 35%] Built target zxc_huffman_avx2
+[ 41%] Building C object CMakeFiles/zxc_compress_avx512.dir/src/lib/zxc_compress.c.o
+[ 41%] Built target zxc_compress_avx512
+[ 47%] Building C object CMakeFiles/zxc_decompress_avx512.dir/src/lib/zxc_decompress.c.o
+[ 47%] Built target zxc_decompress_avx512
+[ 52%] Building C object CMakeFiles/zxc_huffman_avx512.dir/src/lib/zxc_huffman.c.o
+[ 52%] Built target zxc_huffman_avx512
+[ 58%] Building C object CMakeFiles/zxc_lib.dir/src/lib/zxc_common.c.o
+[ 64%] Building C object CMakeFiles/zxc_lib.dir/src/lib/zxc_pivco_tables.c.o
+[ 70%] Building C object CMakeFiles/zxc_lib.dir/src/lib/zxc_dict.c.o
+[ 76%] Building C object CMakeFiles/zxc_lib.dir/src/lib/zxc_driver.c.o
+[ 82%] Building C object CMakeFiles/zxc_lib.dir/src/lib/zxc_dispatch.c.o
+[ 88%] Building C object CMakeFiles/zxc_lib.dir/src/lib/zxc_pstream.c.o
+[ 94%] Building C object CMakeFiles/zxc_lib.dir/src/lib/zxc_seekable.c.o
+[100%] Linking C static library libzxc.a
+[100%] Built target zxc_lib
+make[1]: Leaving directory '/c/tb/build/zxc'
+g++ -O3  -D_AOCL -D_BCM -D_BROTLI -Ibrotli/c/include -D_BZIP2 -D_BZIP3 -D_GLZA -D_KANZI  -D_LIB -D_LIBBSC -D_LIBDEFLATE -D_LIBSLZ -D_LZ4 -D_LZAV -D_LZFSE -D_LZHAM -D_LZLIB -D_LZMA -D_LZO -Ilzo/include -D_LZSA -D_LZSSE -D_LZRAVEN -D_MEMLZ -D_MINIZ -Ibuild/miniz -D_MISA77 -D_OPENZL -Iopenzl/include -Iopenzl/src -D_OODLE -D_TAMP -D_TURBORC -D_WZIP -D_XZ -D_ZLIB -D_ZLIB_NG -Ibuild/zlib-ng -D_ZLIB_TURBO -D_ZOPFLI -D_ZSTD -D_ZPAQ -D_ZXC  -D_FASTAC -D_FASTHF -D_FPAQ0P -D_FPC -D_PIVCOHUF -Ipivco-huffman/include -D_SSERC -D_SUBOTIN -D_VECRC -D_TURBORLE -D_MRLE -D_FLZMA2 -D_FASTLZ -D_MSCOMPRESS -D_QUICKLZ  -w -Wall -fpermissive  -fno-rtti  -Izpaq -fopenmp  -std=c++20  plugin.cc -c -o build/plugin.o
+gcc -O2  -w -Wall  -fpermissive  -DNMEMSIZE turbobench.c -c -o build/turbobench.o
+gcc -O3  -w -Wall  -fpermissive  -DNMEMSIZE turbobench_/cpu.c -c -o build/turbobench_/cpu.o
+g++ build/turbobench_/bcm/bcm.o build/GLZA/GLZAmodel.o build/GLZA/GLZAcomp.o build/GLZA/GLZAencode.o build/GLZA/GLZAcompress.o build/GLZA/GLZAformat.o build/GLZA/GLZAdecode.o build/libbsc/libbsc/libbsc/libbsc.o build/libbsc/libbsc/coder/coder.o build/libbsc/libbsc/coder/qlfc/qlfc.o build/libbsc/libbsc/coder/qlfc/qlfc_model.o build/libbsc/libbsc/filters/detectors.o build/libbsc/libbsc/filters/preprocessing.o build/libbsc/libbsc/adler32/adler32.o build/libbsc/libbsc/bwt/bwt.o build/libbsc/libbsc/st/st.o build/libbsc/libbsc/lzp/lzp.o build/libbsc/libbsc/platform/platform.o build/libslz/src/slz.o build/libslz/src/uslz.o build/libslz/src/slz_common.o build/lizard/lib/lizard_compress.o build/lizard/lib/lizard_decompress.o build/lizard/lib/lizard_frame.o build/lizard/lib/entropy/entropy_common.o build/lizard/lib/entropy/fse_compress.o build/lizard/lib/entropy/fse_decompress.o build/lizard/lib/entropy/hist.o build/lizard/lib/entropy/huf_compress.o build/lizard/lib/entropy/huf_decompress.o build/lz4/lib/lz4hc.o build/lz4/lib/lz4.o build/lz4/lib/lz4frame.o build/lz4/lib/xxhash.o build/lzfse/src/lzfse_decode_base.o build/lzfse/src/lzfse_decode.o build/lzfse/src/lzfse_encode_base.o build/lzfse/src/lzfse_encode.o build/lzfse/src/lzfse_fse.o build/lzfse/src/lzvn_decode_base.o build/lzfse/src/lzvn_encode_base.o build/lzham_codec_devel/lzhamdecomp/lzham_platform.o build/lzlib/lzlib.o build/turbobench_/lzlib/bbexample.o build/lzma/C/Alloc.o build/lzma/C/CpuArch.o build/lzma/C/LzFind.o build/lzma/C/LzmaDec.o build/lzma/C/LzmaEnc.o build/lzma/C/LzmaLib.o build/lzma/C/Threads.o build/lzma/C/LzFindMt.o build/lzma/C/LzFindOpt.o build/lzsa/src/dictionary.o build/lzsa/src/expand_block_v1.o build/lzsa/src/expand_block_v2.o build/lzsa/src/expand_context.o build/lzsa/src/expand_inmem.o build/lzsa/src/expand_streaming.o build/lzsa/src/frame.o build/lzsa/src/matchfinder.o build/lzsa/src/shrink_block_v1.o build/lzsa/src/shrink_block_v2.o build/lzsa/src/shrink_context.o build/lzsa/src/shrink_inmem.o build/lzsa/src/shrink_streaming.o build/lzsa/src/stream.o build/lzsa/src/libdivsufsort/lib/divsufsort.o build/lzsa/src/libdivsufsort/lib/divsufsort_utils.o build/lzsa/src/libdivsufsort/lib/sssort.o build/lzsa/src/libdivsufsort/lib/trsort.o build/LZSSE/lzsse2/lzsse2.o build/LZSSE/lzsse4/lzsse4.o build/LZSSE/lzsse8/lzsse8.o build/memlz/memlz.o build/tamp/tamp/_c_src/tamp/common.o build/tamp/tamp/_c_src/tamp/compressor.o build/tamp/tamp/_c_src/tamp/decompressor.o build/wzip/src/WLZ4.o build/wzip/src/WZIP_L.o build/wzip/src/WZIP_M.o build/wzip/src/WZIP_wrapper.o build/wzip/src/Huffman_Compress.o build/wzip/src/Huffman_Decompress.o build/zlib/adler32.o build/zlib/crc32.o build/zlib/compress.o build/zlib/deflate.o build/zlib/infback.o build/zlib/inffast.o build/zlib/inflate.o build/zlib/inftrees.o build/zlib/trees.o build/zlib/uncompr.o build/zlib/zutil.o build/zlib-turbo/adler32.o build/zlib-turbo/compress.o build/zlib-turbo/crc32.o build/zlib-turbo/deflate.o build/zlib-turbo/infback.o build/zlib-turbo/inffast.o build/zlib-turbo/inflate.o build/zlib-turbo/inftrees.o build/zlib-turbo/trees.o build/zlib-turbo/uncompr.o build/zlib-turbo/zutil.o build/turbobench_/zlib_turbo.o build/zopfli/src/zopfli/blocksplitter.o build/zopfli/src/zopfli/cache.o build/zopfli/src/zopfli/deflate.o build/zopfli/src/zopfli/gzip_container.o build/zopfli/src/zopfli/hash.o build/zopfli/src/zopfli/katajainen.o build/zopfli/src/zopfli/lz77.o build/zopfli/src/zopfli/squeeze.o build/zopfli/src/zopfli/tree.o build/zopfli/src/zopfli/util.o build/zopfli/src/zopfli/zlib_container.o build/zopfli/src/zopfli/zopfli_lib.o zstd/lib/decompress/huf_decompress_amd64.S build/build/libzpaq_omp.o build/EC/fastac/arithmetic_codec.o build/EC/fasthf/binary_codec.o build/EC/fpaq0p/fpaq0p_sh.o build/EC/FPC/fpc.o build/pivco-huffman/libpivco_huffman_local.o build/EC/sserangecoding/sserangecoder.o build/EC/subotin_/subotin.o build/EC/vecrc/vector_rc.o build/Turbo-Run-Length-Encoding/trlec.o build/Turbo-Run-Length-Encoding/trled.o build/Turbo-Run-Length-Encoding/ext/mrle.o build/fast-lzma2/dict_buffer.o build/fast-lzma2/fl2_common.o build/fast-lzma2/fl2_compress.o build/fast-lzma2/fl2_decompress.o build/fast-lzma2/fl2_pool.o build/fast-lzma2/fl2_threading.o build/fast-lzma2/lzma2_dec.o build/fast-lzma2/lzma2_enc.o build/fast-lzma2/radix_bitpack.o build/fast-lzma2/radix_mf.o build/fast-lzma2/radix_struct.o build/fast-lzma2/range_enc.o build/fast-lzma2/util.o build/FastLZ/fastlz.o build/ms-compress/src/mscomp.o build/ms-compress/src/lznt1_compress.o build/ms-compress/src/lznt1_decompress.o build/ms-compress/src/xpress_compress.o build/ms-compress/src/xpress_decompress.o build/ms-compress/src/xpress_huff_compress.o build/ms-compress/src/xpress_huff_decompress.o build/turbobench_/quicklz/quicklz1.o build/turbobench_/quicklz/quicklz2.o build/turbobench_/quicklz/quicklz3.o build/plugin.o build/turbobench.o build/turbobench_/cpu.o build/aocl-compression/libaocl.a build/brotli/libbrotlienc.a build/brotli/libbrotlidec.a build/brotli/libbrotlicommon.a build/bzip2/libbzip2.a build/bzip3/libbzip3.a  build/kanzi-cpp/libkanzi.a build/libdeflate/libdeflate.a build/lzham_codec_devel/liblzham.a build/lzo/liblzo2.a build/liblzraven/liblzraven.a build/miniz/libminiz.a build/misa77/libmisa77.a build/openzl/libopenzl.a  build/Turbo-Range-Coder/librc.a  build/Turbo-Range-Coder/libsais.o build/Turbo-Range-Coder/libsais16.o build/xz/liblzma.a build/zlib-ng/libz-ng.a build/zstd/libzstd.a build/zxc/libzxc.a -Wl,--stack,33554432 -lpowrprof -static -fopenmp -lm -o turbobench
