@@ -1,0 +1,14 @@
+--- a/turbobench.c	2026-11-07 05:26:23.735881199 +0000
++++ b/turbobench.c	2026-11-07 05:26:23.743881184 +0000
+@@ -312,8 +312,9 @@
+ }
+ 
+ void *aligned_alloc(size_t alignment, size_t size) {
+-  if(!aligned_alloc) die("aligned_alloc");
+-  void *p = (*aligned_alloc)(alignment, size);
++  if(!mem_aligned_alloc) mem_init();
++  if(!mem_aligned_alloc) die("aligned_alloc");
++  void *p = (*mem_aligned_alloc)(alignment, size);
+   if(p) mem_add(malloc_usable_size(p));
+   return p;
+ }

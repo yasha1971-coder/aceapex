@@ -1,0 +1,93 @@
+# CRASH-3d (research branch crash-3 only): the deciding run on the full TurboBench, one SHA for every row.
+# TurboBench tag v2026.11.06.165 (2cc8b4f; aceapex b67c858, zstd 49bf1d1), ubuntu:26.10 (pinned digest).
+#   A gcc 16.2, their make (dynamic), no patch       B gcc 16.2, their make, research/crash1/crash3/tb-fix.patch
+#   C clang 22.1.8, their make, no patch             D clang 22.1.8, their make, tb-fix.patch
+#   E gcc 16.2, their make, no patch, aceapex compiled with -DACEAPEX_ENV_TUNING and run with AX_HUGE=0
+#     (a library build reads no environment without ACEAPEX_ENV_TUNING: ax_env.h)
+#   F gcc 16.2, `make STATIC=1 PHAZ=0` (the release command), no patch
+name: CRASH-3d deciding run
+on:
+  push:
+    branches: [crash-3]
+    paths: ['.github/workflows/crash3d.yml']
+permissions:
+  contents: read
+jobs:
+  d:
+    name: ${{ matrix.v }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 340
+    container: ubuntu:26.10@sha256:262df65c0ec6bf8d9dcc87454f4330a05fae4b97825f45854af3b136666584c2
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - {v: A, cc: gcc-16,   cxx: g++-16,     patch: no,  static: no,  huge0: no}
+        - {v: B, cc: gcc-16,   cxx: g++-16,     patch: yes, static: no,  huge0: no}
+        - {v: C, cc: clang-22, cxx: clang++-22, patch: no,  static: no,  huge0: no}
+        - {v: D, cc: clang-22, cxx: clang++-22, patch: yes, static: no,  huge0: no}
+        - {v: E, cc: gcc-16,   cxx: g++-16,     patch: no,  static: no,  huge0: yes}
+        - {v: F, cc: gcc-16,   cxx: g++-16,     patch: no,  static: yes, huge0: no}
+    env:
+      TB_TAG: v2026.11.06.165
+      TB_SHA: 2cc8b4f44d12147bb695784f9fdb99955c5de50d
+      ACEAPEX_PIN: b67c858b3b18d4d57aee1aa7bcaf0cf2c773d050
+      OUT: /__w/out
+    steps:
+    - name: tools
+      run: |
+        apt-get update -q
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -q git ca-certificates curl unzip file gdb build-essential nasm make cmake libomp-dev python3 patch gcc-16 g++-16 clang-22
+        mkdir -p $OUT
+        { grep -m1 "model name" /proc/cpuinfo; g++-16 --version | head -1; clang++-22 --version | head -1; } | tee $OUT/env.txt
+    - uses: actions/checkout@v5
+    - name: inputs
+      run: |
+        mkdir -p $GITHUB_WORKSPACE/in; cd $GITHUB_WORKSPACE/in
+        curl -fsSL -o silesia.tar.gz https://github.com/DataCompression/corpus-collection/raw/main/Silesia-Corpus/silesia.tar.gz && gzip -dc silesia.tar.gz > silesia.tar && rm silesia.tar.gz
+        for i in 1 2 3 4 5; do curl -fsSL --retry 3 -o enwik9.zip https://mattmahoney.net/dc/enwik9.zip && unzip -tq enwik9.zip && break; sleep 20; done
+        unzip -q enwik9.zip && rm enwik9.zip
+        echo "a667bac80089b3d04d5496772149e632f0758974b0579d743cd8d6e5e0d63eb2  silesia.tar" | sha256sum -c
+        echo "159b85351e5f76e60cbe32e04c677847a9ecba3adc79addab6f4c6c7aa3744bc  enwik9" | sha256sum -c
+    - name: source, patch
+      run: |
+        cd /tmp && git clone -q --branch $TB_TAG --recursive https://github.com/powturbo/TurboBench.git tb && cd tb
+        test "$(git rev-parse HEAD)" = "$TB_SHA" || { echo "FAIL: TurboBench HEAD $(git rev-parse HEAD)"; exit 1; }
+        test "$(git -C aceapex rev-parse HEAD)" = "$ACEAPEX_PIN" || { echo "FAIL: aceapex $(git -C aceapex rev-parse HEAD)"; exit 1; }
+        { echo "TurboBench $(git rev-parse HEAD) ($TB_TAG)"; echo "aceapex $(git -C aceapex rev-parse HEAD)"; } | tee $OUT/source.txt
+        if [ ${{ matrix.patch }} = yes ]; then patch -p1 < $GITHUB_WORKSPACE/research/crash1/crash3/tb-fix.patch | tee $OUT/patch.txt; git diff turbobench.c | tee $OUT/applied.diff; fi
+        if [ ${{ matrix.huge0 }} = yes ]; then sed -i 's|-DXXH_INLINE_ALL -Izstd/lib -I$(ACEAPEX_DIR) -c $< -o $@|-DXXH_INLINE_ALL -DACEAPEX_ENV_TUNING -Izstd/lib -I$(ACEAPEX_DIR) -c $< -o $@|' makefile; git diff makefile | tee $OUT/applied.diff; grep -q ACEAPEX_ENV_TUNING makefile || { echo "FAIL: sed"; exit 1; }; fi
+    - name: build
+      run: |
+        cd /tmp/tb; C=${{ matrix.cc }}; X=${{ matrix.cxx }}; BD=build-${{ matrix.v }}
+        S=""; [ ${{ matrix.static }} = yes ] && S="STATIC=1 PHAZ=0"
+        echo "make CC=$C CXX=$X CG=clang-22 BUILD=$BD BLOSC=0 OPENZL=0 PIVCO=0 RUST=0 $S" | tee $OUT/make-cmd.txt
+        : > $OUT/removed-codecs.txt; ok=0
+        for try in 1 2 3 4 5 6 7 8; do
+          if make CC=$C CXX=$X CG=clang-22 BUILD=$BD BLOSC=0 OPENZL=0 PIVCO=0 RUST=0 $S > $OUT/make-$try.log 2>&1; then ok=1; cp $OUT/make-$try.log $OUT/make.log; break; fi
+          t=$(grep -E "^make: \*\*\* \[makefile:[0-9]+: $BD/" $OUT/make-$try.log | tail -1 | sed -E "s#.*: $BD/([^/]+)/.*#\1#")
+          echo "try $try failed at: $t"; tail -12 $OUT/make-$try.log
+          if [ -z "$t" ] || [ "$t" = aceapex ] || [ "$t" = zstd ] || [ ! -d "$t" ]; then echo "FAIL: cannot continue ($t)"; exit 1; fi
+          echo "$t (try $try): $(grep -m1 -E 'error' $OUT/make-$try.log | cut -c1-200)" >> $OUT/removed-codecs.txt; rm -rf "$t"
+        done
+        [ $ok = 1 ] || exit 1
+        grep -E "aceapex_api\.cpp" $OUT/make.log | tee $OUT/aceapex-compile-line.txt
+        grep -E "turbobench\.c " $OUT/make.log | head -1 | tee $OUT/turbobench-compile-line.txt
+        { sha256sum turbobench; file turbobench; ./turbobench -l2 2>&1 | grep -i aceapex; nm turbobench | grep -E " T (aligned_alloc|malloc)$" || echo "no interposers in the binary"; } | tee $OUT/binary.txt
+    - name: runs
+      run: |
+        X=""; [ ${{ matrix.huge0 }} = yes ] && X="AX_HUGE=0"
+        bash research/crash1/crash3/run3d.sh /tmp/tb/turbobench ${{ matrix.v }} $OUT/runs "$X"
+        cat $OUT/runs/summary.tsv
+    - name: backtrace of one crash (A and C)
+      if: always() && (matrix.v == 'A' || matrix.v == 'C')
+      run: |
+        cd $GITHUB_WORKSPACE/in
+        gdb -q --batch -ex run -ex "bt 5" --args /tmp/tb/turbobench silesia.tar -C4 -v2 -eaceapex,1 > $OUT/gdb.txt 2>&1 || true
+        grep -E "^#|signal" $OUT/gdb.txt | head -8
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: crash3d-${{ matrix.v }}
+        path: /__w/out
+        retention-days: 30
