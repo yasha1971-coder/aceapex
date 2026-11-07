@@ -15,7 +15,8 @@ and calls itself instead of the libc function it saved:
 Any `aligned_alloc` call in the process recurses until the stack overflows (SIGSEGV). The interposers are compiled only
 in builds WITHOUT `STATIC=1`: the makefile sets `NMEMSIZE=1` / `-DNMEMSIZE` under `STATIC`, and `#if defined(NMEMSIZE)`
 drops the block (`turbobench-v164-makefile-STATIC.txt`, `turbobench-v164-interposers.c.txt`). Release binaries are
-built with `STATIC=1`, so they work; a self-built TurboBench (`make` without `STATIC=1`, as powturbo's) has the bug.
+built with `STATIC=1`, so they work; we reproduced the failure in a dynamic build (`make` without `STATIC=1`), which is
+consistent with powturbo's description (his build command is not known).
 
 aceapex calls `aligned_alloc` in one place: `ax_big_malloc` (src/aceapex_main.cpp), Linux only, for decode buffers of
 64 MiB and more (2 MiB aligned for transparent huge pages). Hence "large files" and "at decompression"; aceapex_fast
@@ -38,14 +39,19 @@ aceapex calls `aligned_alloc` in one place: `ax_big_malloc` (src/aceapex_main.cp
 - `mini/` (ace-core, gcc 11.4): `interp_tb.c` = that interposer body + one 256 MiB aligned_alloc: SIGSEGV at -O0, -O2,
   -O3; `fixed_tb.c` (`mem_aligned_alloc`): rc 0. Compiler-independent.
 
-H1 (preregistered: an exact GCC 16.2 / Clang 22 build reproduces) held for GCC 16, but the toolchain is not the cause:
-the reproducing build differs from the release binary by the missing `STATIC=1`, not by the compiler.
+Reproduction and cause, separately: the preregistered prediction H1 (a GCC 16 build reproduces the crash) held; the causal
+hypothesis behind it (toolchain / AVX-512) was wrong; the factor is the enabled memory interposer (a build without
+`STATIC=1`). Clang "22.1.18" from the report is an unconfirmed version: 22.1.8 is the last release of LLVM 22.1.x
+(a typo is likely); 22.1.8 was used.
 
-## Fix (TurboBench, one line; not ours)
+## Fix (TurboBench; not ours): the pointer check and the call
 
+    (tb-fix.patch)
     -  if(!aligned_alloc) die("aligned_alloc");
     -  void *p = (*aligned_alloc)(alignment, size);
+    +  if(!mem_aligned_alloc) mem_init();
     +  if(!mem_aligned_alloc) die("aligned_alloc");
     +  void *p = (*mem_aligned_alloc)(alignment, size);
 
-No change in aceapex, API/ABI or release is needed for this crash.
+No change in aceapex, API/ABI or release is needed for this crash. The deciding run on the full TurboBench (A-F,
+`tb-fix.patch`) is CRASH-3d.
