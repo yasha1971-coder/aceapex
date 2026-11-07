@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [official-v164, gcc16, clang22]
+        variant: [clang22]   # run 2: clang only; run 42334817999 covers official-v164 and gcc16
     env:
       IMAGE: ubuntu:26.10@sha256:262df65c0ec6bf8d9dcc87454f4330a05fae4b97825f45854af3b136666584c2
       TB_TAG: v2026.11.06.164
@@ -50,7 +50,9 @@ jobs:
         else
           DEBIAN_FRONTEND=noninteractive apt-get install -y -q clang-22 libomp-22-dev || DEBIAN_FRONTEND=noninteractive apt-get install -y -q clang-22
           { clang-22 --version | head -1; clang++-22 --version | head -1; } | tee compilers.txt
-          clang++-22 --version | head -1 | grep -q "22\.1\.18" || { echo "FAIL: clang++-22 is not 22.1.18"; exit 1; }
+          # powturbo wrote "clang 22.1.18"; LLVM has no 22.1.18 (tags end at llvmorg-22.1.8, checked 2026-11-07) and Ubuntu 26.10
+          # ships 22.1.8: taken as the reporter's version (run 42334817999 failed this check against 22.1.18).
+          clang++-22 --version | head -1 | grep -q "version 22\.1\.8 " || { echo "FAIL: clang++-22 is not 22.1.8"; exit 1; }
         fi
     - name: inputs (fixed size and SHA-256)
       run: |
