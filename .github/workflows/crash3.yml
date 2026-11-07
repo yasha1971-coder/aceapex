@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [clang22]   # run 2: clang only; run 42334817999 covers official-v164 and gcc16
+        variant: [official-v164, gcc16, clang22]
     env:
       IMAGE: ubuntu:26.10@sha256:262df65c0ec6bf8d9dcc87454f4330a05fae4b97825f45854af3b136666584c2
       TB_TAG: v2026.11.06.164
@@ -59,7 +59,8 @@ jobs:
         mkdir -p $GITHUB_WORKSPACE/in; cd $GITHUB_WORKSPACE/in
         curl -sSL -o silesia.tar.gz https://github.com/DataCompression/corpus-collection/raw/main/Silesia-Corpus/silesia.tar.gz
         gzip -dc silesia.tar.gz > silesia.tar; rm silesia.tar.gz
-        curl -sSL -o enwik9.zip https://mattmahoney.net/dc/enwik9.zip; unzip -q enwik9.zip; rm enwik9.zip
+        for i in 1 2 3 4 5; do curl -fsSL --retry 3 -o enwik9.zip https://mattmahoney.net/dc/enwik9.zip && unzip -tq enwik9.zip && break; echo "enwik9.zip download attempt $i failed"; sleep 20; done
+        unzip -q enwik9.zip; rm enwik9.zip
         sha256sum silesia.tar enwik9 | tee $OUT/inputs.txt; stat -c '%n %s' silesia.tar enwik9 | tee -a $OUT/inputs.txt
         echo "a667bac80089b3d04d5496772149e632f0758974b0579d743cd8d6e5e0d63eb2  silesia.tar" | sha256sum -c
         echo "159b85351e5f76e60cbe32e04c677847a9ecba3adc79addab6f4c6c7aa3744bc  enwik9" | sha256sum -c
@@ -80,8 +81,9 @@ jobs:
         git submodule status --recursive > $OUT/submodules.txt
         test "$(git -C aceapex rev-parse HEAD)" = "$ACEAPEX_PIN" || { echo "FAIL: aceapex submodule is $(git -C aceapex rev-parse HEAD)"; exit 1; }
         if [ "${{ matrix.variant }}" = gcc16 ]; then C=gcc-16; X=g++-16; BD=build-gcc16; else C=clang-22; X=clang++-22; BD=build-clang22; fi
-        echo "make CC=$C CXX=$X BUILD=$BD BLOSC=0 OPENZL=0 PIVCO=0 RUST=0 -j$(nproc)" | tee $OUT/make-cmd.txt
-        make CC=$C CXX=$X BUILD=$BD BLOSC=0 OPENZL=0 PIVCO=0 RUST=0 -j$(nproc) > $OUT/make.log 2>&1 || { tail -60 $OUT/make.log; exit 1; }
+        # serial make, as TurboBench's own CI: with -j its makefile builds brotli three times at once (ar race, run 42334817999)
+        echo "make CC=$C CXX=$X BUILD=$BD BLOSC=0 OPENZL=0 PIVCO=0 RUST=0" | tee $OUT/make-cmd.txt
+        make CC=$C CXX=$X BUILD=$BD BLOSC=0 OPENZL=0 PIVCO=0 RUST=0 > $OUT/make.log 2>&1 || { tail -60 $OUT/make.log; exit 1; }
         grep -E "aceapex_api\.cpp" $OUT/make.log | tee $OUT/aceapex-compile-line.txt
         grep -E " -o turbobench( |$)" $OUT/make.log | tail -1 | tee $OUT/link-line.txt
         B=/tmp/tb/turbobench
@@ -91,7 +93,7 @@ jobs:
       run: bash research/crash1/crash3/run.sh "$TB" ${{ matrix.variant }} $OUT/runs
     - name: summary
       if: always()
-      run: column -t -s "$(printf '\t')" $OUT/runs/summary.tsv || true
+      run: cat $OUT/runs/summary.tsv || true
     - uses: actions/upload-artifact@v4
       if: always()
       with:
