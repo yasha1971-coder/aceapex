@@ -1,0 +1,89 @@
+# TB-1 (research branch tb-1 only, never merged): why TurboBench v2026.11.06.165 windows-x86_64 has no aceapex /
+# aceapex-fast. Its release job: windows-latest, MSYS2 UCRT64, `make STATIC=1 PHAZ=0`. Two builds of tag v165:
+#   as-is     - the makefile unchanged;
+#   no-guard  - the same with only the line `ifneq ($(OS), Windows)  # not compiling for windows in CI.` and its
+#               matching `endif` removed around the aceapex block (makefile lines 186-198).
+name: TB-1 TurboBench Windows build
+on:
+  push:
+    branches: [tb-1]
+    paths: ['.github/workflows/tb1.yml']
+permissions:
+  contents: read
+jobs:
+  win:
+    name: ${{ matrix.variant }}
+    runs-on: windows-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [as-is, no-guard]
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+    - name: git LF
+      shell: bash
+      run: |
+        git config --global core.autocrlf false
+        git config --global core.eol lf
+    - uses: msys2/setup-msys2@v2
+      with:
+        msystem: UCRT64
+        update: true
+        install: >-
+          git zip make cmake rsync
+          mingw-w64-ucrt-x86_64-gcc
+          mingw-w64-ucrt-x86_64-clang
+          mingw-w64-ucrt-x86_64-libgomp
+          mingw-w64-ucrt-x86_64-llvm-openmp
+    - name: clone v2026.11.06.165
+      run: |
+        mkdir -p /c/out
+        git clone -q --branch v2026.11.06.165 --recursive https://github.com/powturbo/TurboBench.git /c/tb
+        cd /c/tb
+        { git rev-parse HEAD; git -C aceapex rev-parse HEAD; ls aceapex/src | head -5; } | tee /c/out/source.txt
+        git submodule status --recursive > /c/out/submodules.txt
+        { gcc --version | head -1; clang --version | head -1; uname -a; } | tee /c/out/env.txt
+    - name: remove the Windows guard around aceapex (no-guard only)
+      if: matrix.variant == 'no-guard'
+      run: |
+        cd /c/tb
+        awk 'BEGIN{skip=0}
+             /^ifneq \(\$\(OS\), Windows\)  # not compiling for windows in CI\.$/ {skip=1; next}
+             skip==1 && /^OB \+= \$\(BUILD\)\/\$\(ACEAPEX_DIR\)\/aceapex_api\.o/ {print; skip=2; next}
+             skip==2 && /^endif/ {skip=0; next}
+             {print}' makefile > makefile.new
+        diff makefile makefile.new | tee /c/out/makefile.diff || true
+        mv makefile.new makefile
+    - name: build (release command)
+      run: |
+        cd /c/tb
+        echo "make STATIC=1 PHAZ=0" > /c/out/make-cmd.txt
+        make STATIC=1 PHAZ=0 > /c/out/make.log 2>&1; rc=$?
+        echo "make rc $rc" | tee /c/out/make-rc.txt
+        grep -n -E "aceapex" /c/out/make.log | tee /c/out/make-aceapex-lines.txt | head -20
+        grep -n -E "error|Error [0-9]" /c/out/make.log | head -40 | tee /c/out/make-errors.txt
+        exit $rc
+    - name: binary and codecs
+      if: always()
+      run: |
+        cd /c/tb
+        { sha256sum turbobench.exe; ./turbobench.exe -l2 2>&1 | grep -i -E "aceapex|misa77 v"; } | tee /c/out/binary.txt || true
+    - name: smoke (silesia.tar, -C4)
+      if: matrix.variant == 'no-guard'
+      run: |
+        cd /c/tb
+        curl -fsSL -o silesia.tar.gz https://github.com/DataCompression/corpus-collection/raw/main/Silesia-Corpus/silesia.tar.gz
+        gunzip silesia.tar.gz; sha256sum silesia.tar | tee /c/out/input.txt
+        for E in aceapex,1 aceapex,2 aceapex,3 aceapex,4 aceapex-fast,1; do
+          ./turbobench.exe silesia.tar -C4 -v2 -e$E > out.txt 2> err.txt; rc=$?
+          echo "-e$E rc $rc | $(grep -E 'aceapex' out.txt | tail -1 | tr -s ' ')" | tee -a /c/out/smoke.txt
+        done
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: tb1-${{ matrix.variant }}
+        path: C:\out
+        retention-days: 14
