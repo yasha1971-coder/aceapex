@@ -1,0 +1,83 @@
+# CRASH-3c (research branch crash-3 only): the GCC 16.2 TurboBench build crashes (44/44) while the same aceapex library
+# alone does not (CRASH-3b). Locate it in the linked binary: gdb backtrace at the crash, which archives define the
+# ZSTD_/HUF_/FSE_ symbols aceapex calls, and a relink with a link map and --trace-symbol.
+name: CRASH-3c link-level narrowing
+on:
+  push:
+    branches: [crash-3]
+    paths: ['.github/workflows/crash3c.yml']
+permissions:
+  contents: read
+jobs:
+  link:
+    name: gcc16
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    container: ubuntu:26.10@sha256:262df65c0ec6bf8d9dcc87454f4330a05fae4b97825f45854af3b136666584c2
+    env:
+      TB_TAG: v2026.11.06.164
+      ACEAPEX_PIN: b67c858b3b18d4d57aee1aa7bcaf0cf2c773d050
+      OUT: /__w/out
+    steps:
+    - name: tools
+      run: |
+        apt-get update -q
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -q git ca-certificates curl unzip file gdb build-essential nasm make cmake libomp-dev python3 binutils gcc-16 g++-16 clang-22
+        mkdir -p $OUT; grep -m1 "model name" /proc/cpuinfo | tee $OUT/cpu.txt
+    - name: input
+      run: |
+        cd /tmp && curl -fsSL -o silesia.tar.gz https://github.com/DataCompression/corpus-collection/raw/main/Silesia-Corpus/silesia.tar.gz && gzip -dc silesia.tar.gz > silesia.tar
+        echo "a667bac80089b3d04d5496772149e632f0758974b0579d743cd8d6e5e0d63eb2  silesia.tar" | sha256sum -c
+    - name: build TurboBench v164 with its makefile
+      run: |
+        cd /tmp && git clone -q --branch $TB_TAG --recursive https://github.com/powturbo/TurboBench.git tb && cd tb
+        { git rev-parse HEAD; git describe --tags; } | tee $OUT/turbobench-sha.txt
+        git submodule status --recursive > $OUT/submodules.txt
+        test "$(git -C aceapex rev-parse HEAD)" = "$ACEAPEX_PIN" || { echo "FAIL: aceapex submodule is $(git -C aceapex rev-parse HEAD)"; exit 1; }
+        C=gcc-16; X=g++-16; BD=build-gcc16
+        # serial make, as TurboBench's own CI: with -j its makefile builds brotli three times at once (ar race, run 42334817999).
+        # CG (the makefile's "clang faster" compiler for some codecs) = clang-22 in both builds: TurboBench's CI runners have clang.
+        # A third-party codec that does not build with this compiler is removed from the clone (logged in removed-codecs.txt);
+        # aceapex failing to build is a FAIL.
+        echo "make CC=$C CXX=$X CG=clang-22 BUILD=$BD BLOSC=0 OPENZL=0 PIVCO=0 RUST=0" | tee $OUT/make-cmd.txt
+        : > $OUT/removed-codecs.txt; ok=0
+        for try in 1 2 3 4 5 6 7 8; do
+          if make CC=$C CXX=$X CG=clang-22 BUILD=$BD BLOSC=0 OPENZL=0 PIVCO=0 RUST=0 > $OUT/make-$try.log 2>&1; then ok=1; cp $OUT/make-$try.log $OUT/make.log; break; fi
+          t=$(grep -E "^make: \*\*\* \[makefile:[0-9]+: $BD/" $OUT/make-$try.log | tail -1 | sed -E "s#.*: $BD/([^/]+)/.*#\1#")
+          echo "try $try failed at codec dir: $t"; tail -15 $OUT/make-$try.log
+          if [ -z "$t" ] || [ "$t" = aceapex ] || [ "$t" = zstd ] || [ ! -d "$t" ]; then echo "FAIL: cannot continue (dir '$t')"; exit 1; fi
+          echo "$t (try $try): $(grep -m1 -E 'error' $OUT/make-$try.log | cut -c1-200)" >> $OUT/removed-codecs.txt; rm -rf "$t"
+        done
+        [ $ok = 1 ] || { echo "FAIL: build did not finish"; exit 1; }
+        cat $OUT/removed-codecs.txt
+        grep -E "aceapex_api\.cpp" $OUT/make.log | tee $OUT/aceapex-compile-line.txt
+        grep -E " -o turbobench( |$)" $OUT/make.log | tail -1 | tee $OUT/link-line.txt
+        B=/tmp/tb/turbobench
+        { sha256sum $B; file $B; ldd $B || true; $B -l2 2>&1 | grep -i aceapex; } | tee $OUT/binary.txt
+        echo "TB=$B" >> $GITHUB_ENV
+    - name: crash backtrace
+      run: |
+        cd /tmp && ln -sf /tmp/tb/turbobench tb
+        gdb -q --batch -ex run -ex "bt 30" -ex "info registers rip rsp" -ex "x/8i \$pc-16" -ex "info symbol \$pc" --args ./tb silesia.tar -C4 -v2 -eaceapex,1 > $OUT/gdb.txt 2>&1 || true
+        tail -70 $OUT/gdb.txt
+    - name: symbols
+      run: |
+        cd /tmp/tb
+        nm aceapex/../build-gcc16/aceapex/src/aceapex_api.o 2>/dev/null | grep -E " U (ZSTD_|HUF_|FSE_|XXH)" | tee $OUT/aceapex-undefined.txt
+        for a in $(find build-gcc16 -name "*.a"); do nm -A --defined-only $a 2>/dev/null | grep -E " [TW] (ZSTD_decompress|ZSTD_decompressDCtx|ZSTD_createDCtx|ZSTD_DCtx_|ZSTD_getFrameContentSize|ZSTD_compress2|ZSTD_createCCtx|HUF_decompress|FSE_decompress)" ; done > $OUT/defs-in-archives.txt
+        cut -d: -f1 $OUT/defs-in-archives.txt | sort | uniq -c | tee $OUT/defs-per-archive.txt
+        nm turbobench | grep -E " [TtWw] ZSTD_decompressDCtx$| [TtWw] ZSTD_createDCtx$" | tee $OUT/defs-in-binary.txt
+    - name: relink with map and trace
+      run: |
+        cd /tmp/tb
+        L=$(grep -E " -o turbobench( |$)" $OUT/make.log | tail -1)
+        echo "$L" > $OUT/link-line.txt
+        $L -Wl,-Map=$OUT/link.map -Wl,--trace-symbol=ZSTD_decompressDCtx -Wl,--trace-symbol=ZSTD_createDCtx -Wl,--trace-symbol=ZSTD_decompress -Wl,--trace-symbol=ZSTD_DCtx_setParameter -o turbobench-relink > $OUT/relink.txt 2>&1 || true
+        cat $OUT/relink.txt | head -40
+        grep -n -E "ZSTD_decompressDCtx|ZSTD_createDCtx" $OUT/link.map | head -20 | tee $OUT/map-zstd.txt
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: crash3c-gcc16
+        path: /__w/out
+        retention-days: 14
