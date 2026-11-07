@@ -21,12 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-        - {v: A, cc: gcc-16,   cxx: g++-16,     patch: no,  static: no,  huge0: no}
-        - {v: B, cc: gcc-16,   cxx: g++-16,     patch: yes, static: no,  huge0: no}
-        - {v: C, cc: clang-22, cxx: clang++-22, patch: no,  static: no,  huge0: no}
-        - {v: D, cc: clang-22, cxx: clang++-22, patch: yes, static: no,  huge0: no}
-        - {v: E, cc: gcc-16,   cxx: g++-16,     patch: no,  static: no,  huge0: yes}
+        include:   # run 2: F only (A-E: run of 8474b89)
         - {v: F, cc: gcc-16,   cxx: g++-16,     patch: no,  static: yes, huge0: no}
     env:
       TB_TAG: v2026.11.06.165
@@ -60,7 +55,9 @@ jobs:
     - name: build
       run: |
         cd /tmp/tb; C=${{ matrix.cc }}; X=${{ matrix.cxx }}; BD=build-${{ matrix.v }}
-        S=""; [ ${{ matrix.static }} = yes ] && S="STATIC=1 PHAZ=0"
+        # STATIC=1 makes the makefile link with plain `g++`/`gcc` (CXL:=g++, CCO:=gcc); the system g++ differs from g++-16 and the
+        # static libstdc++ link fails (run 1 of CRASH-3d, std::vformat): link with the same compiler
+        S=""; [ ${{ matrix.static }} = yes ] && S="STATIC=1 PHAZ=0 CXL=${{ matrix.cxx }} CCO=${{ matrix.cc }}"
         echo "make CC=$C CXX=$X CG=clang-22 BUILD=$BD BLOSC=0 OPENZL=0 PIVCO=0 RUST=0 $S" | tee $OUT/make-cmd.txt
         : > $OUT/removed-codecs.txt; ok=0
         for try in 1 2 3 4 5 6 7 8; do
