@@ -21,8 +21,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:   # run 2: F only (A-E: run of 8474b89)
-        - {v: F, cc: gcc-16,   cxx: g++-16,     patch: no,  static: yes, huge0: no}
+        include:   # run 3: C only, each run capped at 900 s (C in run 8474b89 hung > 4 h); A, B, D, E: 8474b89; F: e42b724
+        - {v: C, cc: clang-22, cxx: clang++-22, patch: no,  static: no,  huge0: no}
     env:
       TB_TAG: v2026.11.06.165
       TB_SHA: 2cc8b4f44d12147bb695784f9fdb99955c5de50d
@@ -80,7 +80,7 @@ jobs:
       if: always() && (matrix.v == 'A' || matrix.v == 'C')
       run: |
         cd $GITHUB_WORKSPACE/in
-        gdb -q --batch -ex run -ex "bt 5" --args /tmp/tb/turbobench silesia.tar -C4 -v2 -eaceapex,1 > $OUT/gdb.txt 2>&1 || true
+        timeout -s INT 120 gdb -q --batch -ex run -ex "bt 5" --args /tmp/tb/turbobench silesia.tar -C4 -v2 -eaceapex,1 > $OUT/gdb.txt 2>&1 || true
         grep -E "^#|signal" $OUT/gdb.txt | head -8
     - uses: actions/upload-artifact@v4
       if: always()

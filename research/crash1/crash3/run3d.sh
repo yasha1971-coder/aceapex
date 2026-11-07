@@ -7,8 +7,8 @@ for f in silesia.tar enwik9; do for t in 1 4; do for e in aceapex,1 aceapex,2 ac
   E=$e; [ $t != 1 ] && E="$e:t$t"
   D=$OUT/$f-${e/,/-}-t$t; mkdir -p $D; cd $D; ln -sf $GITHUB_WORKSPACE/in/$f $f
   echo "${XENV:+env $XENV }$TB $f -C4 -v2 -U -e$E" > cmd.txt
-  env $XENV $TB $f -C4 -v2 -U -e$E > stdout.txt 2> stderr.txt; rc=$?
-  sig=-; [ $rc -gt 128 ] && sig="$((rc-128)) $(kill -l $((rc-128)))"
+  timeout -s KILL 900 env $XENV $TB $f -C4 -v2 -U -e$E > stdout.txt 2> stderr.txt; rc=$?   # 900 s cap: a run that hangs is a result (C run 1 hung for hours)
+  sig=-; [ $rc -gt 128 ] && sig="$((rc-128)) $(kill -l $((rc-128)))"; [ $rc = 137 ] && sig="9 KILL (timeout 900 s: hang)"
   name="${e/,/ }"; [ $t != 1 ] && name="$name:t$t"
   row=$(sed 's/\x1b\[[0-9;]*m//g' stdout.txt | grep -E " $name +$f\$" | tail -1)
   # final table row: C_size ratio% C_MB/s D_MB/s rank C_MEM D_MEM C_STACK D_STACK name file
