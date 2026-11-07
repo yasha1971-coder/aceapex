@@ -1,0 +1,351 @@
+# WATCH-1 v2: daily watch of the "judges" (TurboBench, lzbench, threads, external mentions). Extracts values, compares
+# them with the last successful state kept in the issue "Watch: judges (auto)", and on a significant change writes ONE
+# comment there. A comment is a notice for Yakiv; it only suggests a check. The workflow never declares an unfreeze.
+# dry_run: every check runs, the diff and the would-be comment go to the job summary, nothing is written.
+# Delivery: the comment is posted first and the state saved after it (a failed comment leaves the state, the next run
+# sends it again); a 'change-key' line stops a duplicate when the state save failed after a posted comment. A comment
+# every 30 days at the latest ("still running") shows the schedule is alive. actionlint was not run (not available).
+name: Watch judges
+on:
+  schedule:
+    - cron: '23 6 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'print the diff and the comment, write nothing'
+        type: boolean
+        default: true
+permissions: {}
+concurrency:
+  group: watch-judges
+  cancel-in-progress: false
+jobs:
+  watch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      issues: write
+      discussions: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+      # THREADS: extend by editing this list
+      THREADS: 'powturbo/TurboBench#65 inikep/lzbench#357'
+      OURS: 'yasha1971-coder'
+    steps:
+    - name: watch
+      run: |
+        set -euo pipefail
+        python3 - <<'PY'
+        import hashlib, json, os, re, subprocess, sys, datetime
+
+        REPO = os.environ.get("REPO", "yasha1971-coder/aceapex")
+        DRY = os.environ.get("DRY_RUN", "true").lower() == "true"
+        OURS = set(os.environ.get("OURS", "yasha1971-coder").split())
+        THREADS = os.environ.get("THREADS", "powturbo/TurboBench#65 inikep/lzbench#357").split()
+        SUMMARY = os.environ.get("GITHUB_STEP_SUMMARY", "/dev/stdout")
+        TITLE = "Watch: judges (auto)"
+        MARK_A, MARK_B = "<!-- watch-state", "-->"
+        D_TOL = 0.10        # TB-TABLE: |D / D_ref - 1| above this is significant; D_ref moves only when a notice is sent
+        SEEN_MAX = 1000     # EXT: URLs remembered (merged, oldest dropped)
+        PULSE_DAYS = 30     # no comment for this long -> one "still running" comment
+
+
+        # ------------------------------------------------------------------ I/O (the only functions that touch the network)
+        def gh(*args):
+            r = subprocess.run(["gh", "api", *args], capture_output=True, text=True)
+            if r.returncode != 0:
+                raise RuntimeError(f"gh api {' '.join(args[:3])}: {r.stderr.strip()[:300]}")
+            return json.loads(r.stdout) if r.stdout.strip() else None
+
+        def raw(path):
+            r = subprocess.run(["gh", "api", path, "-H", "Accept: application/vnd.github.raw"], capture_output=True, text=True)
+            if r.returncode != 0:
+                raise RuntimeError(f"raw {path}: {r.stderr.strip()[:200]}")
+            return r.stdout
+
+        def paginate(path):
+            out, page = [], 1
+            sep = "&" if "?" in path else "?"
+            while True:
+                part = gh(f"{path}{sep}per_page=100&page={page}") or []
+                out += part
+                if len(part) < 100: return out
+                page += 1
+
+        def find_issue():
+            for i in paginate(f"repos/{REPO}/issues?state=all"):
+                if i["title"] == TITLE and "pull_request" not in i: return i
+            return None
+
+        def create_issue(body): return gh(f"repos/{REPO}/issues", "-X", "POST", "-f", f"title={TITLE}", "-f", f"body={body}")
+        def patch_issue(n, body): gh(f"repos/{REPO}/issues/{n}", "-X", "PATCH", "-f", f"body={body}")
+        def post_comment(n, body): gh(f"repos/{REPO}/issues/{n}/comments", "-X", "POST", "-f", f"body={body}")
+        def bot_comments(n): return [c for c in paginate(f"repos/{REPO}/issues/{n}/comments") if c["user"].get("type") == "Bot"]
+        def now_utc(): return datetime.datetime.now(datetime.timezone.utc)
+
+
+        # ------------------------------------------------------------------ helpers
+        def human(login, typ=""):
+            return bool(login) and login not in OURS and typ != "Bot" and not login.endswith("[bot]")
+
+        def fl(x):
+            try: return float(x.rstrip("%").replace(",", ""))
+            except (ValueError, AttributeError): return None
+
+        def cell(x): return re.sub(r"\$\\color\{green\}\{\\textbf\{([^}]*)\}\}\$", r"\1", x).strip()
+
+
+        # ------------------------------------------------------------------ 1 PIN
+        def item_pin():
+            sha = gh("repos/powturbo/TurboBench/contents/aceapex?ref=master")["sha"]
+            tag = gh(f"repos/{REPO}/releases/latest")["tag_name"]
+            st = gh(f"repos/{REPO}/compare/{tag}...{sha}")["status"]
+            return {"sha": sha, "release": tag, "status": st, "released_code": st in ("identical", "behind")}
+
+        def pin_notices(o, n):
+            if not o: return []
+            ch = [f"{k} {o.get(k)} -> {n[k]}" for k in ("sha", "release", "released_code") if o.get(k) != n[k]]
+            if not ch: return []
+            return [f"PIN: {', '.join(ch)} (код в TurboBench: {'выпущенный' if n['released_code'] else 'НЕВЫПУЩЕННЫЙ, впереди ' + n['release']})"]
+
+
+        # ------------------------------------------------------------------ 2 TB-TABLE
+        def item_tb():
+            md = raw("repos/powturbo/TurboBench/contents/benchmark.md?ref=master")
+            secs = re.split(r"\n(?=## Platform)", md)[1:]
+            if not secs: raise RuntimeError("benchmark.md: no '## Platform' section")
+            out = {}
+            for sec in secs:
+                plat = sec.splitlines()[0].split(":", 1)[1].strip()
+                for ti, tab in enumerate(re.split(r"\n(?=#### )", sec)[1:]):
+                    rows = []
+                    for l in tab.splitlines():
+                        if re.match(r"\|\d+\|", l):
+                            c = [cell(v) for v in l.split("|")[1:-1]]
+                            if len(c) >= 6:
+                                rows.append({"name": c[5], "ratio": c[1], "C": fl(c[2]), "D": fl(c[3]), "rank": c[4]})
+                    key = f"{plat} #{ti + 1}"
+                    if not any(r["name"] == "memcpy" for r in rows):
+                        raise RuntimeError(f"benchmark.md: table {key} has no memcpy row (broken markup?)")
+                    ace = [r for r in rows if r["name"].startswith("aceapex")]
+                    if not ace: continue
+                    oth = [r for r in rows if not r["name"].startswith("aceapex") and r["name"] != "memcpy" and r["D"]]
+                    out[key] = {"aceapex": ace, "best_other": max(oth, key=lambda r: r["D"]) if oth else None,
+                                "memcpy": next(r for r in rows if r["name"] == "memcpy")}
+            return out
+
+        def tb_notices(old, new, ref):
+            """old/new: tables; ref: {'table|name': D_ref} (updated in place for rows that notify or appear)."""
+            ch = []
+            for k in sorted(set(old or {}) | set(new)):
+                o, n = (old or {}).get(k), new.get(k)
+                if old is not None and o is None: ch.append(f"{k}: новая таблица со строками aceapex")
+                if n is None: ch.append(f"{k}: строки aceapex исчезли"); continue
+                on = {r["name"]: r for r in (o or {}).get("aceapex", [])}
+                for r in n["aceapex"]:
+                    rk = f"{k}|{r['name']}"
+                    a = on.get(r["name"])
+                    if rk not in ref:
+                        ref[rk] = r["D"]
+                        if old is not None and o is not None and a is None: ch.append(f"{k}: добавлена {r['name']}")
+                        continue
+                    if a is not None:
+                        if a["ratio"] != r["ratio"]: ch.append(f"{k}: {r['name']} ratio {a['ratio']} -> {r['ratio']}")
+                        if a["rank"] != r["rank"]: ch.append(f"{k}: {r['name']} rank {a['rank']} -> {r['rank']}")
+                    if r["D"] and ref[rk] and abs(r["D"] / ref[rk] - 1) > D_TOL:
+                        ch.append(f"{k}: {r['name']} D {ref[rk]} -> {r['D']} MB/s ({(r['D'] / ref[rk] - 1) * 100:+.1f} % к опорному)")
+                        ref[rk] = r["D"]
+                for name in sorted(set(on) - {r["name"] for r in n["aceapex"]}): ch.append(f"{k}: убрана {name}")
+                if o is not None:
+                    ob, nb = (o.get("best_other") or {}).get("name"), (n.get("best_other") or {}).get("name")
+                    if ob != nb: ch.append(f"{k}: лучший другой кодек {ob} -> {nb}")
+                    def lead(t):
+                        f = [x["D"] for x in t["aceapex"] if x["D"]]
+                        return bool(f and t.get("best_other") and max(f) > t["best_other"]["D"])
+                    if lead(o) != lead(n): ch.append(f"{k}: aceapex — самая быстрая распаковка: {lead(o)} -> {lead(n)}")
+            return [("TB-TABLE: " + "; ".join(ch))] if ch else []
+
+
+        # ------------------------------------------------------------------ 3 LZB
+        def item_lzb():
+            tag = gh("repos/inikep/lzbench/releases/latest")["tag_name"]
+            lines = raw("repos/inikep/lzbench/contents/README.md").splitlines()
+            def heading(i):
+                m = re.match(r"^(#+)\s+(.*)", lines[i])
+                if m: return len(m.group(1)), m.group(2).strip()
+                if i + 1 < len(lines) and lines[i].strip() and not lines[i].startswith("|") and re.match(r"^(=+|-{3,})\s*$", lines[i + 1]):
+                    return (1 if lines[i + 1].startswith("=") else 2), lines[i].strip()
+                return None
+            rows, table_rows, lvl = [], 0, None
+            for i, l in enumerate(lines):
+                h = heading(i)
+                if h and lvl is None and h[1].startswith("Benchmarks"): lvl = h[0]; continue
+                if h and lvl is not None and h[0] <= lvl: break
+                if lvl is not None and l.startswith("|"):
+                    table_rows += 1
+                    if l.startswith("| aceapex"): rows.append(re.sub(r"\s+", " ", l.strip()))
+            if lvl is None: raise RuntimeError("README: no Benchmarks heading")
+            if table_rows < 5: raise RuntimeError(f"README: only {table_rows} table rows in Benchmarks (broken markup?)")
+            return {"release": tag, "rows": rows}
+
+        def lzb_notices(o, n):
+            if not o or (o["release"] == n["release"] and o["rows"] == n["rows"]): return []
+            return [f"LZB: выпуск {o['release']} -> {n['release']}; строки aceapex в README: {' / '.join(n['rows']) or 'нет'} — проверь P-LZB-1 и условие §8(а)"]
+
+
+        # ------------------------------------------------------------------ 4 THREADS
+        def item_threads(prev):
+            out, notes = {}, []
+            for t in THREADS:
+                repo, n = t.split("#")
+                i = gh(f"repos/{repo}/issues/{n}")
+                cur = {"updated_at": i["updated_at"], "comments": i["comments"]}
+                old = (prev or {}).get(t)
+                if old and (old["updated_at"], old["comments"]) != (cur["updated_at"], cur["comments"]):
+                    for c in paginate(f"repos/{repo}/issues/{n}/comments?since={old['updated_at']}"):
+                        if c["created_at"] > old["updated_at"] and human(c["user"]["login"], c["user"].get("type", "")):
+                            notes.append(f"THREADS: {t}: новый комментарий {c['user']['login']} {c['created_at']} {c['html_url']}")
+                out[t] = cur
+            return out, notes
+
+
+        # ------------------------------------------------------------------ 5 EXT (sample-based detection: GitHub search is not exhaustive)
+        def item_ext(prev):
+            prev = prev or {}
+            first = not prev
+            seen = dict(prev.get("seen", {}))
+            res = gh("-X", "GET", "search/issues", "-f", "q=aceapex in:title,body,comments", "-f", "sort=updated", "-f", "per_page=100")
+            notes = []
+            for it in res["items"]:
+                if it["title"] == TITLE: continue
+                u, up = it["html_url"], it["updated_at"]
+                old = seen.get(u)
+                seen[u] = up
+                if first or old == up: continue
+                parts = u.split("/"); repo, n = f"{parts[3]}/{parts[4]}", parts[6]
+                since = old or "1970-01-01T00:00:00Z"
+                if old is None and human(it["user"]["login"], it["user"].get("type", "")):
+                    notes.append(f"{u}: новый, автор {it['user']['login']} ({it['title'][:80]})")
+                cs = paginate(f"repos/{repo}/issues/{n}/comments?since={since}")
+                if "pull_request" in it: cs += paginate(f"repos/{repo}/pulls/{n}/comments?since={since}")
+                for c in cs:
+                    if c["created_at"] > since and human(c["user"]["login"], c["user"].get("type", "")):
+                        notes.append(f"{u}: комментарий {c['user']['login']} {c['created_at']}")
+            if len(seen) > SEEN_MAX:
+                seen = dict(sorted(seen.items(), key=lambda kv: kv[1])[-SEEN_MAX:])
+            owner, name = REPO.split("/")
+            q = ("query($o:String!,$n:String!){repository(owner:$o,name:$n){discussions(first:20,orderBy:{field:UPDATED_AT,direction:DESC})"
+                 "{nodes{url updatedAt author{login} comments(last:50){nodes{author{login} createdAt replies(last:20){nodes{author{login} createdAt}}}}}}}}")
+            d = gh("graphql", "-f", f"query={q}", "-f", f"o={owner}", "-f", f"n={name}")
+            disc = dict(prev.get("discussions", {}))
+            for nd in d["data"]["repository"]["discussions"]["nodes"]:
+                old = disc.get(nd["url"]); disc[nd["url"]] = nd["updatedAt"]
+                if first or old == nd["updatedAt"]: continue
+                since = old or "1970-01-01T00:00:00Z"
+                if old is None and human((nd.get("author") or {}).get("login")):
+                    notes.append(f"{nd['url']}: новое обсуждение, автор {nd['author']['login']}")
+                for c in nd["comments"]["nodes"]:
+                    for x in [c] + (c.get("replies") or {}).get("nodes", []):
+                        if x["createdAt"] > since and human((x.get("author") or {}).get("login")):
+                            notes.append(f"{nd['url']}: сообщение {x['author']['login']} {x['createdAt']}")
+            note = [("EXT (выборочное обнаружение упоминаний): внешнее упоминание — проверь, запрос ли это (§8б): " + "; ".join(notes))] if notes else []
+            return {"seen": seen, "discussions": disc}, note
+
+
+        # ------------------------------------------------------------------ run
+        def parse_state(issue):
+            b = (issue or {}).get("body") or ""
+            if MARK_A in b:
+                return json.loads(b.split(MARK_A, 1)[1].split(MARK_B, 1)[0])
+            return {}
+
+        def body_of(state, now):
+            return (f"Ежедневное слежение за TurboBench, lzbench, нитями и внешними упоминаниями (.github/workflows/watch-judges.yml).\n"
+                    f"Комментарии здесь — уведомления мейнтейнеру; решения принимает человек. Last check: {now}.\n\n{MARK_A}\n"
+                    + json.dumps(state, indent=1, sort_keys=True) + f"\n{MARK_B}\n")
+
+        def main():
+            t = now_utc(); now = t.strftime("%Y-%m-%d %H:%M UTC")
+            issue = find_issue()
+            state = parse_state(issue)
+            first = not state.get("items")
+            items, errs = state.get("items", {}), dict(state.get("errors", {}))
+            new, notices, report = json.loads(json.dumps(items)), [], []
+
+            def run(key, fn):
+                try:
+                    v = fn(); errs[key] = 0; return v
+                except Exception as e:
+                    errs[key] = errs.get(key, 0) + 1
+                    report.append(f"- {key}: ОШИБКА ({e}); сохранено последнее удачное значение; ошибок подряд {errs[key]}")
+                    if errs[key] == 3: notices.append(f"пункт {key} не читается 3 запуска подряд: {e}")
+                    return None
+
+            v = run("PIN", item_pin)
+            if v is not None:
+                notices += pin_notices(items.get("PIN"), v); new["PIN"] = v
+                report.append(f"- PIN: {v['sha']} — {v['status']} относительно {v['release']} ({'выпущенный' if v['released_code'] else 'невыпущенный'} код)")
+            v = run("TB-TABLE", item_tb)
+            if v is not None:
+                old = items.get("TB-TABLE"); ref = dict(old.get("ref", {})) if old else {}
+                notices += tb_notices(old.get("tables") if old else None, v, ref)
+                new["TB-TABLE"] = {"tables": v, "ref": ref}
+                for k, tb in v.items():
+                    rows = ", ".join(f"{r['name']} {r['ratio']} C {r['C']} D {r['D']} rank {r['rank']}" for r in tb["aceapex"])
+                    bo = tb["best_other"]
+                    report.append(f"- TB-TABLE {k}: {rows}" + (f" | лучший другой {bo['name']} D {bo['D']}" if bo else ""))
+            v = run("LZB", item_lzb)
+            if v is not None:
+                notices += lzb_notices(items.get("LZB"), v); new["LZB"] = v
+                report.append(f"- LZB: выпуск {v['release']}; строки README: " + (" / ".join(v["rows"]) or "нет"))
+            v = run("THREADS", lambda: item_threads(items.get("THREADS")))
+            if v is not None:
+                new["THREADS"], n = v; notices += n
+                report.append("- THREADS: " + "; ".join(f"{k} updated {x['updated_at']} comments {x['comments']}" for k, x in v[0].items()))
+            v = run("EXT", lambda: item_ext(items.get("EXT")))
+            if v is not None:
+                new["EXT"], n = v; notices += n
+                report.append(f"- EXT (выборочное обнаружение упоминаний): {len(v[0]['seen'])} URL в памяти, {len(v[0]['discussions'])} обсуждений")
+
+            last_c = state.get("last_comment")
+            if first:
+                comment = f"Начальное состояние ({now}).\n\n" + "\n".join(report)
+            elif notices:
+                comment = (f"Watch {now}: проверь.\n\n" + "\n".join(f"- {x}" for x in notices)
+                           + "\n\nЭто только уведомление; решения (§8, P-LZB-1, ответы людям) принимает человек.")
+            elif last_c and (t - datetime.datetime.fromisoformat(last_c)).days >= PULSE_DAYS:
+                comment = f"Работает, значимых изменений за {PULSE_DAYS} дней нет ({now})."
+            else:
+                comment = None
+            # the key includes the time of the last successful check: after a failed state save "checked" is unchanged, so a
+            # duplicate is caught; after a successful run the key is new (repeated pulses / identical notices are not suppressed)
+            kind = notices if notices else [comment.split("(")[0] if comment else ""]
+            key = hashlib.sha1((json.dumps(kind, ensure_ascii=False) + state.get("checked", "")).encode()).hexdigest()
+            if comment: comment += f"\n\nchange-key: {key}"
+            new_state = {"items": new, "errors": errs, "checked": now,
+                         "last_comment": t.isoformat() if comment else last_c}
+
+            with open(SUMMARY, "a") as f:
+                f.write(f"## Watch judges — {'DRY RUN' if DRY else 'run'} {now}\n\n" + "\n".join(report) + "\n\n")
+                f.write("### Будущий комментарий\n\n" + (comment or "_нет (значимых изменений нет)_") + "\n")
+            if DRY:
+                print("dry run: nothing written"); return "dry"
+            # delivery: comment first, state second. A failed comment raises (job red) and leaves the state where it was, so the
+            # next run sends it again; a failed PATCH after a delivered comment is caught next time by the change-key.
+            if issue is None:
+                issue = create_issue(body_of(state, now))
+            sent = "none"
+            if comment:
+                last_bot = bot_comments(issue["number"])
+                if last_bot and f"change-key: {key}" in (last_bot[-1]["body"] or ""):
+                    sent = "skipped (same change-key already posted)"
+                else:
+                    post_comment(issue["number"], comment); sent = "posted"
+            patch_issue(issue["number"], body_of(new_state, now))
+            print("comment:", sent); return sent
+
+        if __name__ == "__main__":
+            main()
+        PY
