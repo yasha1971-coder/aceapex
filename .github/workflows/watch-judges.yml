@@ -1,0 +1,261 @@
+# WATCH-1 v2: daily watch of the "judges" (TurboBench, lzbench, threads, external mentions). Extracts values, compares
+# them with the last successful state kept in the issue "Watch: judges (auto)", and on a significant change writes ONE
+# comment there. A comment is a notice for Yakiv; it only suggests a check. The workflow never declares an unfreeze.
+# dry_run: every check runs, the diff and the would-be comment go to the job summary, nothing is written.
+name: Watch judges
+on:
+  schedule:
+    - cron: '23 6 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'print the diff and the comment, write nothing'
+        type: boolean
+        default: true
+permissions: {}
+concurrency:
+  group: watch-judges
+  cancel-in-progress: false
+jobs:
+  watch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      issues: write
+      discussions: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+      # THREADS: extend by editing this list
+      THREADS: 'powturbo/TurboBench#65 inikep/lzbench#357'
+      OURS: 'yasha1971-coder'
+    steps:
+    - name: watch
+      run: |
+        set -euo pipefail
+        python3 - <<'PY'
+        import json, os, re, subprocess, sys, datetime
+
+        REPO = os.environ["REPO"]; DRY = os.environ["DRY_RUN"].lower() == "true"
+        OURS = set(os.environ["OURS"].split()); TITLE = "Watch: judges (auto)"
+        MARK_A, MARK_B = "<!-- watch-state", "-->"
+        SUMMARY = os.environ.get("GITHUB_STEP_SUMMARY", "/dev/stdout")
+        D_TOL = 0.10   # TB-TABLE: D MB/s changes below 10 % are run-to-run noise (tables are re-measured every build)
+
+        def gh(*args, inp=None):
+            r = subprocess.run(["gh", "api", *args], capture_output=True, text=True, input=inp)
+            if r.returncode != 0:
+                raise RuntimeError(f"gh api {' '.join(args[:3])}: {r.stderr.strip()[:300]}")
+            return json.loads(r.stdout) if r.stdout.strip() else None
+
+        def human(login, typ=""):
+            return login and login not in OURS and typ != "Bot" and not login.endswith("[bot]")
+
+        # ---------------------------------------------------------------- 1 PIN
+        def item_pin():
+            sha = gh("repos/powturbo/TurboBench/contents/aceapex?ref=master")["sha"]
+            tag = gh(f"repos/{REPO}/releases/latest")["tag_name"]
+            st = gh(f"repos/{REPO}/compare/{tag}...{sha}")["status"]
+            return {"sha": sha, "release": tag, "status": st,
+                    "released_code": st in ("identical", "behind")}
+
+        # ---------------------------------------------------------------- 2 TB-TABLE
+        def num(x):
+            x = re.sub(r"\$\\color\{green\}\{\\textbf\{([^}]*)\}\}\$", r"\1", x).strip()
+            return x
+        def fl(x):
+            try: return float(x.rstrip("%").replace(",", ""))
+            except ValueError: return None
+        def item_tb():
+            md = subprocess.run(["gh", "api", "repos/powturbo/TurboBench/contents/benchmark.md?ref=master",
+                                 "-H", "Accept: application/vnd.github.raw"], capture_output=True, text=True)
+            if md.returncode != 0: raise RuntimeError("benchmark.md: " + md.stderr[:200])
+            out = {}
+            for sec in re.split(r"\n(?=## Platform)", md.stdout)[1:]:
+                plat = sec.splitlines()[0].split(":", 1)[1].strip()
+                for ti, tab in enumerate(re.split(r"\n(?=#### )", sec)[1:]):
+                    rows = []
+                    for l in tab.splitlines():
+                        if re.match(r"\|\d+\|", l):
+                            c = [num(v) for v in l.split("|")[1:-1]]
+                            if len(c) >= 6: rows.append({"name": c[5], "ratio": c[1], "C": fl(c[2]), "D": fl(c[3]),
+                                                         "rank": c[4], "pareto": "textbf" in l.split("|")[6]})
+                    ace = [r for r in rows if r["name"].startswith("aceapex")]
+                    if not ace: continue
+                    oth = [r for r in rows if not r["name"].startswith("aceapex") and r["name"] != "memcpy" and r["D"]]
+                    best = max(oth, key=lambda r: r["D"]) if oth else None
+                    mem = next((r for r in rows if r["name"] == "memcpy"), None)
+                    out[f"{plat} #{ti+1}"] = {"aceapex": ace, "best_other": best, "memcpy": mem}
+            return out
+        def tb_significant(old, new):
+            ch = []
+            for k in sorted(set(old) | set(new)):
+                o, n = old.get(k), new.get(k)
+                if o is None: ch.append(f"{k}: new table with aceapex rows"); continue
+                if n is None: ch.append(f"{k}: aceapex rows gone"); continue
+                on = {r["name"]: r for r in o["aceapex"]}; nn = {r["name"]: r for r in n["aceapex"]}
+                for name in sorted(set(on) | set(nn)):
+                    a, b = on.get(name), nn.get(name)
+                    if a is None or b is None: ch.append(f"{k}: {name} {'added' if b else 'removed'}"); continue
+                    if a["ratio"] != b["ratio"]: ch.append(f"{k}: {name} ratio {a['ratio']} -> {b['ratio']}")
+                    if a["rank"] != b["rank"]: ch.append(f"{k}: {name} rank {a['rank']} -> {b['rank']}")
+                    if a["D"] and b["D"] and abs(b["D"] / a["D"] - 1) > D_TOL:
+                        ch.append(f"{k}: {name} D {a['D']} -> {b['D']} MB/s")
+                ob, nb = (o.get("best_other") or {}).get("name"), (n.get("best_other") or {}).get("name")
+                if ob != nb: ch.append(f"{k}: best other codec {ob} -> {nb}")
+                def lead(t):
+                    f = [r for r in t["aceapex"] if r["D"]]
+                    return bool(f and t.get("best_other") and max(r["D"] for r in f) > t["best_other"]["D"])
+                if lead(o) != lead(n): ch.append(f"{k}: aceapex fastest decode {lead(o)} -> {lead(n)}")
+            return ch
+
+        # ---------------------------------------------------------------- 3 LZB
+        def item_lzb():
+            tag = gh("repos/inikep/lzbench/releases/latest")["tag_name"]
+            r = subprocess.run(["gh", "api", "repos/inikep/lzbench/contents/README.md", "-H", "Accept: application/vnd.github.raw"],
+                               capture_output=True, text=True)
+            if r.returncode != 0: raise RuntimeError("README: " + r.stderr[:200])
+            # headings: ATX ("## X") or setext ("X" over a line of '=' (level 1) or '-' (level 2))
+            lines = r.stdout.splitlines(); rows = []; lvl = None
+            def heading(i):
+                m = re.match(r"^(#+)\s+(.*)", lines[i])
+                if m: return len(m.group(1)), m.group(2).strip()
+                if i + 1 < len(lines) and lines[i].strip() and not lines[i].startswith("|") and re.match(r"^(=+|-{3,})\s*$", lines[i + 1]):
+                    return (1 if lines[i + 1].startswith("=") else 2), lines[i].strip()
+                return None
+            for i, l in enumerate(lines):
+                h = heading(i)
+                if h and lvl is None and h[1].startswith("Benchmarks"): lvl = h[0]; continue
+                if h and lvl is not None and h[0] <= lvl: break
+                if lvl is not None and l.startswith("| aceapex"): rows.append(re.sub(r"\s+", " ", l.strip()))
+            if lvl is None: raise RuntimeError("README: no Benchmarks heading")
+            return {"release": tag, "rows": rows}
+
+        # ---------------------------------------------------------------- 4 THREADS
+        def item_threads(prev):
+            out, notes = {}, []
+            for t in os.environ["THREADS"].split():
+                repo, n = t.split("#")
+                i = gh(f"repos/{repo}/issues/{n}")
+                cur = {"updated_at": i["updated_at"], "comments": i["comments"]}
+                old = (prev or {}).get(t)
+                if old and (old["updated_at"], old["comments"]) != (cur["updated_at"], cur["comments"]):
+                    cs = gh(f"repos/{repo}/issues/{n}/comments?since={old['updated_at']}&per_page=100") or []
+                    for c in cs:
+                        if c["created_at"] > old["updated_at"] and human(c["user"]["login"], c["user"].get("type", "")):
+                            notes.append(f"{t}: new comment by {c['user']['login']} {c['created_at']} {c['html_url']}")
+                out[t] = cur
+            return out, notes
+
+        # ---------------------------------------------------------------- 5 EXT
+        def item_ext(prev):
+            res = gh("-X", "GET", "search/issues", "-f", "q=aceapex in:title,body,comments", "-f", "sort=updated", "-f", "per_page=30")
+            out, notes = {}, []
+            for it in res["items"]:
+                u, up = it["html_url"], it["updated_at"]
+                if "Watch: judges" in it["title"]: continue
+                out[u] = up
+                old = (prev or {}).get("search", {}).get(u)
+                if prev is None or old == up: continue
+                parts = u.split("/"); repo, n = f"{parts[3]}/{parts[4]}", parts[6]
+                since = old or "1970-01-01T00:00:00Z"
+                if old is None and human(it["user"]["login"], it["user"].get("type", "")):
+                    notes.append(f"{u}: new by {it['user']['login']} ({it['title'][:80]})")
+                for c in gh(f"repos/{repo}/issues/{n}/comments?since={since}&per_page=100") or []:
+                    if c["created_at"] > since and human(c["user"]["login"], c["user"].get("type", "")):
+                        notes.append(f"{u}: comment by {c['user']['login']} {c['created_at']}")
+            owner, name = REPO.split("/")
+            q = ('query($o:String!,$n:String!){repository(owner:$o,name:$n){discussions(first:20,orderBy:{field:UPDATED_AT,direction:DESC})'
+                 '{nodes{url updatedAt author{login} comments(last:20){totalCount nodes{author{login} createdAt}}}}}}')
+            d = gh("graphql", "-f", f"query={q}", "-f", f"o={owner}", "-f", f"n={name}")
+            disc = {}
+            for nd in d["data"]["repository"]["discussions"]["nodes"]:
+                disc[nd["url"]] = nd["updatedAt"]
+                old = (prev or {}).get("discussions", {}).get(nd["url"])
+                if prev is None or old == nd["updatedAt"]: continue
+                since = old or "1970-01-01T00:00:00Z"
+                if old is None and human((nd.get("author") or {}).get("login")):
+                    notes.append(f"{nd['url']}: new discussion by {nd['author']['login']}")
+                for c in nd["comments"]["nodes"]:
+                    if c["createdAt"] > since and human((c.get("author") or {}).get("login")):
+                        notes.append(f"{nd['url']}: comment by {c['author']['login']} {c['createdAt']}")
+            return {"search": out, "discussions": disc}, notes
+
+        # ---------------------------------------------------------------- state
+        issues = gh(f"repos/{REPO}/issues?state=all&per_page=100&sort=created&direction=desc") or []
+        issue = next((i for i in issues if i["title"] == TITLE and "pull_request" not in i), None)
+        state = {}
+        if issue:
+            b = issue["body"] or ""
+            if MARK_A in b: state = json.loads(b.split(MARK_A, 1)[1].split(MARK_B, 1)[0])
+        first = issue is None
+        items = state.get("items", {}); errs = state.get("errors", {})
+        new_items, notices, report = dict(items), [], []
+
+        def run(key, fn):
+            try:
+                v = fn(); errs[key] = 0; return v
+            except Exception as e:
+                errs[key] = errs.get(key, 0) + 1
+                report.append(f"- {key}: ERROR ({e}); kept the last successful value; consecutive errors {errs[key]}")
+                if errs[key] == 3: notices.append(f"item {key} cannot be read (3 runs in a row): {e}")
+                return None
+
+        v = run("PIN", item_pin)
+        if v is not None:
+            o = items.get("PIN")
+            if o and o["sha"] != v["sha"]:
+                notices.append(f"PIN: TurboBench aceapex submodule {o['sha'][:10]} -> {v['sha'][:10]} "
+                               f"({'released code' if v['released_code'] else 'UNRELEASED code: ahead of ' + v['release']})")
+            new_items["PIN"] = v
+            report.append(f"- PIN: {v['sha']} — {v['status']} vs {v['release']} ({'released' if v['released_code'] else 'unreleased'})")
+        v = run("TB-TABLE", item_tb)
+        if v is not None:
+            if "TB-TABLE" in items:
+                ch = tb_significant(items["TB-TABLE"], v)
+                if ch: notices.append("TB-TABLE: " + "; ".join(ch))
+            new_items["TB-TABLE"] = v
+            for k, t in v.items():
+                rows = ", ".join(f"{r['name']} {r['ratio']} C {r['C']} D {r['D']} rank {r['rank']}" for r in t["aceapex"])
+                bo = t["best_other"]; report.append(f"- TB-TABLE {k}: {rows} | best other {bo['name']} D {bo['D']}" if bo else f"- TB-TABLE {k}: {rows}")
+        v = run("LZB", item_lzb)
+        if v is not None:
+            o = items.get("LZB")
+            if o and (o["release"] != v["release"] or o["rows"] != v["rows"]):
+                notices.append(f"LZB: release {o['release']} -> {v['release']}, aceapex rows changed: check P-LZB-1 and condition §8(a)")
+            new_items["LZB"] = v
+            report.append(f"- LZB: release {v['release']}; README rows: " + (" / ".join(v["rows"]) or "none"))
+        v = run("THREADS", lambda: item_threads(items.get("THREADS")))
+        if v is not None:
+            new_items["THREADS"], n = v; notices += n
+            report.append("- THREADS: " + "; ".join(f"{k} updated {x['updated_at']} comments {x['comments']}" for k, x in v[0].items()))
+        v = run("EXT", lambda: item_ext(items.get("EXT")))
+        if v is not None:
+            new_items["EXT"], n = v
+            if n: notices.append("EXT: external mention — check whether it is a request (§8b): " + "; ".join(n))
+            report.append(f"- EXT: {len(v[0]['search'])} search results, {len(v[0]['discussions'])} discussions")
+
+        now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        if first: comment = f"Initial state ({now}).\n\n" + "\n".join(report)
+        elif notices: comment = f"Watch {now}: please check.\n\n" + "\n".join(f"- {x}" for x in notices) + \
+            "\n\nThis is a notice only; any decision (§8, P-LZB-1, replies) is a human one."
+        else: comment = None
+        new_state = {"items": new_items, "errors": errs, "checked": now}
+        body = (f"Daily watch of TurboBench, lzbench, threads and external mentions (.github/workflows/watch-judges.yml).\n"
+                f"Comments here are notices for the maintainer. Last check: {now}.\n\n{MARK_A}\n"
+                + json.dumps(new_state, indent=1, sort_keys=True) + f"\n{MARK_B}\n")
+
+        with open(SUMMARY, "a") as f:
+            f.write(f"## Watch judges — {'DRY RUN' if DRY else 'run'} {now}\n\n" + "\n".join(report) + "\n\n")
+            f.write("### Would comment\n\n" + (comment or "_nothing (no significant change)_") + "\n")
+        if DRY:
+            print("dry run: nothing written"); sys.exit(0)
+        if first:
+            issue = gh(f"repos/{REPO}/issues", "-X", "POST", "-f", f"title={TITLE}", "-f", f"body={body}")
+        else:
+            gh(f"repos/{REPO}/issues/{issue['number']}", "-X", "PATCH", "-f", f"body={body}")
+        if comment:
+            gh(f"repos/{REPO}/issues/{issue['number']}/comments", "-X", "POST", "-f", f"body={comment}")
+        print("done; comment" if comment else "done; no comment")
+        PY
