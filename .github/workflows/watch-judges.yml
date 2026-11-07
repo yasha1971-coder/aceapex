@@ -319,7 +319,10 @@ jobs:
                 comment = f"Работает, значимых изменений за {PULSE_DAYS} дней нет ({now})."
             else:
                 comment = None
-            key = hashlib.sha1(json.dumps(notices if notices else [comment.split("(")[0] if comment else ""], ensure_ascii=False).encode()).hexdigest()
+            # the key includes the time of the last successful check: after a failed state save "checked" is unchanged, so a
+            # duplicate is caught; after a successful run the key is new (repeated pulses / identical notices are not suppressed)
+            kind = notices if notices else [comment.split("(")[0] if comment else ""]
+            key = hashlib.sha1((json.dumps(kind, ensure_ascii=False) + state.get("checked", "")).encode()).hexdigest()
             if comment: comment += f"\n\nchange-key: {key}"
             new_state = {"items": new, "errors": errs, "checked": now,
                          "last_comment": t.isoformat() if comment else last_c}
