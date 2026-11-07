@@ -57,10 +57,11 @@ jobs:
         echo "TB=$B" >> $GITHUB_ENV
     - name: crash backtrace
       run: |
-        cd /tmp && ln -sf /tmp/tb/turbobench tb
-        gdb -q --batch -ex run -ex "bt 30" -ex "info registers rip rsp" -ex "x/8i \$pc-16" -ex "info symbol \$pc" --args ./tb silesia.tar -C4 -v2 -eaceapex,1 > $OUT/gdb.txt 2>&1 || true
+        cd /tmp
+        gdb -q --batch -ex run -ex "bt 30" -ex "info registers rip rsp" -ex "x/8i \$pc-16" -ex "info symbol \$pc" --args /tmp/tb/turbobench silesia.tar -C4 -v2 -eaceapex,1 > $OUT/gdb.txt 2>&1 || true
         tail -70 $OUT/gdb.txt
     - name: symbols
+      if: always()
       run: |
         cd /tmp/tb
         nm aceapex/../build-gcc16/aceapex/src/aceapex_api.o 2>/dev/null | grep -E " U (ZSTD_|HUF_|FSE_|XXH)" | tee $OUT/aceapex-undefined.txt
@@ -68,6 +69,7 @@ jobs:
         cut -d: -f1 $OUT/defs-in-archives.txt | sort | uniq -c | tee $OUT/defs-per-archive.txt
         nm turbobench | grep -E " [TtWw] ZSTD_decompressDCtx$| [TtWw] ZSTD_createDCtx$" | tee $OUT/defs-in-binary.txt
     - name: relink with map and trace
+      if: always()
       run: |
         cd /tmp/tb
         L=$(grep -E " -o turbobench( |$)" $OUT/make.log | tail -1)
