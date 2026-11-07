@@ -1,0 +1,1 @@
+clang-22 -O2  -w -Wall  -fpermissive  turbobench.c -c -o build-D/turbobench.o

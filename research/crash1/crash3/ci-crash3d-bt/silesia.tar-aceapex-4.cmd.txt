@@ -1,0 +1,1 @@
+timeout -s INT 300 gdb -batch -ex run -ex 'info threads' -ex 'thread apply all bt 8' -ex kill --args /tmp/tb/turbobench silesia.tar -C4 -v2 -U -eaceapex,4

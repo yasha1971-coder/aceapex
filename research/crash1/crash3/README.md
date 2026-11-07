@@ -55,3 +55,30 @@ hypothesis behind it (toolchain / AVX-512) was wrong; the factor is the enabled 
 
 No change in aceapex, API/ABI or release is needed for this crash. The deciding run on the full TurboBench (A-F,
 `tb-fix.patch`) is CRASH-3d.
+
+## CRASH-3d — the deciding run on the full TurboBench (one SHA for every row)
+
+TurboBench tag v2026.11.06.165 = 2cc8b4f, aceapex b67c858, zstd 49bf1d1, ubuntu:26.10 (pinned digest); GCC 16.2.0
+(Ubuntu 16.2.0-3ubuntu1), Clang 22.1.8 (Ubuntu 1:22.1.8-1ubuntu1). Their makefile: `make CC=… CXX=… CG=clang-22
+BUILD=… BLOSC=0 OPENZL=0 PIVCO=0 RUST=0` (Clang 22 does not build lzsa: left out). silesia.tar and enwik9, aceapex 1-4
+and aceapex-fast 1/8, t1 and t4, `-C4 -v2 -U`, each run its own process (24 per build). Runs: 42358… A, B, D, E
+(8474b89), F (e42b724), C-bt (4820dce). `ci-crash3d/<row>/`, `ci-crash3d-bt/`.
+
+| row | build | result | silesia t1 decompression MB/s, aceapex 1 / aceapex-fast 1 | CPU of the runner |
+|---|---|---|---|---|
+| A | GCC 16.2, their make, no patch | aceapex 1-4 SIGSEGV 16/16 (gdb: `aligned_alloc` recursing); aceapex-fast 8/8 ok | - / 8 624 | EPYC 7763 |
+| B | GCC 16.2, their make, `tb-fix.patch` | 24/24 ok, -C4 clean | 950 / 9 158 | EPYC 7763 |
+| C | Clang 22.1.8, their make, no patch | aceapex 1 silesia, aceapex 1 enwik9, aceapex 4 silesia: hang, stopped by SIGINT at 300 s, bt `#0 aligned_alloc` (one frame: a loop) <- `ax_entropy_decode` <- `aceapex_decompress_mt` <- `coddecomp`; aceapex-fast 1 ok in 7 s (C-bt; the full C row hung > 4 h and was cancelled) | - / 15 674 | EPYC 9V45 |
+| D | Clang 22.1.8, their make, `tb-fix.patch` | 24/24 ok, -C4 clean | 807 / 5 877 | Xeon 8573C |
+| E | GCC 16.2, no patch, aceapex with `-DACEAPEX_ENV_TUNING`, run with `AX_HUGE=0` | 24/24 ok (aligned_alloc not called) | 802 / 9 085 | EPYC 7763 |
+| F | GCC 16.2, `make STATIC=1 PHAZ=0` (linked with g++-16/gcc-16), no patch | 24/24 ok (no wrappers: `-DNMEMSIZE`) | 1 006 / 6 837 | Xeon 6973P |
+
+Speeds come from different runner CPUs and are not comparable across rows. Ratio in every row that ran: aceapex 1
+32.56 % (silesia), aceapex-fast 1 61.57 %, aceapex-fast 8 39.21 %.
+
+Kill criterion (B or D fails) not met: B and D 0 failures. TurboBench's memory counter works in B/D (it is compiled out
+in the STATIC release builds): aceapex 1 silesia C MEM 1.87 GB / D MEM 108 MB, enwik9 D MEM 581 MB (its C MEM prints
+negative, -952 466 152: apparently a 32-bit counter overflow in TurboBench's output); aceapex-fast 1 C 2.2 MB / D 1.8 KB.
+
+`mem_init` sets `mem_aligned_alloc` through `dlsym(RTLD_NEXT, "aligned_alloc")` under `__STDC_VERSION__ >= 201112L`;
+turbobench.c is compiled as C (`gcc-16 -O2 ... turbobench.c`, default gnu17), so the condition holds.

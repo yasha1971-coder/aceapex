@@ -1,0 +1,14 @@
+warning: Error disabling address space randomization: Operation not permitted
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/usr/lib/x86_64-linux-gnu/libthread_db.so.1".
+silesia.tar,0
+'silesia.tar'
+   130490328  61.57%       966.76                     aceapex-fast 1  silesia.tar   966.72  1.1   966.72  2.1   968.98  3.2                15571.21  1.1 15673.91  2.2 15673.91  3.2      
+$silesia.tar	211947520	130490328	0.013522	0.218732	aceapex-fast	1	2026-11-07.10:23:14	2174976	1752	1062568	99768
+plugprts:'silesia.tar' k=1
+TurboBench: 2026.11.07 10:23 - AMD EPYC 9V45 96-Core Processor
+      C Size  ratio%      C MB/s    D MB/s Rank        C MEM     D MEM   C STACK   D STACK Name            File
+   130490328  61.57%   [1;32m   968.98[0m [1;32m 15674.27[0m [1;32m  1👑[0m     2174976      1752   1062568     99768 [1;32maceapex-fast 1  [0msilesia.tar
+[Inferior 1 (process 13592) exited normally]
+No threads.
+The program is not being run.

@@ -1,0 +1,1 @@
+g++-16 -O3 -std=c++17 -march=haswell -DXXH_INLINE_ALL -DACEAPEX_ENV_TUNING -Izstd/lib -Iaceapex/src -c aceapex/src/aceapex_api.cpp -o build-E/aceapex/src/aceapex_api.o

@@ -1,0 +1,1 @@
+gcc-16 -O2  -w -Wall  -fpermissive  -DNMEMSIZE turbobench.c -c -o build-F/turbobench.o

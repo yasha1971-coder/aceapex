@@ -1,0 +1,1 @@
+make CC=gcc-16 CXX=g++-16 CG=clang-22 BUILD=build-F BLOSC=0 OPENZL=0 PIVCO=0 RUST=0 STATIC=1 PHAZ=0 CXL=g++-16 CCO=gcc-16

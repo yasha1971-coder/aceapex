@@ -1,0 +1,25 @@
+build	file	codec	t	rc	signal	C_MB/s	D_MB/s	C_MEM	D_MEM	ratio
+A	silesia.tar	aceapex,1	1	139	11 SEGV	-	-	-	-	-
+A	silesia.tar	aceapex,2	1	139	11 SEGV	-	-	-	-	-
+A	silesia.tar	aceapex,3	1	139	11 SEGV	-	-	-	-	-
+A	silesia.tar	aceapex,4	1	139	11 SEGV	-	-	-	-	-
+A	silesia.tar	aceapex-fast,1	1	0	-	574.82	8624.17	2174976	1752	61.57%
+A	silesia.tar	aceapex-fast,8	1	0	-	0.75	5235.08	37281456	1752	39.21%
+A	silesia.tar	aceapex,1	4	139	11 SEGV	-	-	-	-	-
+A	silesia.tar	aceapex,2	4	139	11 SEGV	-	-	-	-	-
+A	silesia.tar	aceapex,3	4	139	11 SEGV	-	-	-	-	-
+A	silesia.tar	aceapex,4	4	139	11 SEGV	-	-	-	-	-
+A	silesia.tar	aceapex-fast,1	4	0	-	-	-	-	-	-
+A	silesia.tar	aceapex-fast,8	4	0	-	-	-	-	-	-
+A	enwik9	aceapex,1	1	139	11 SEGV	-	-	-	-	-
+A	enwik9	aceapex,2	1	139	11 SEGV	-	-	-	-	-
+A	enwik9	aceapex,3	1	139	11 SEGV	-	-	-	-	-
+A	enwik9	aceapex,4	1	139	11 SEGV	-	-	-	-	-
+A	enwik9	aceapex-fast,1	1	0	-	483.77	9639.02	2174976	1752	71.52%
+A	enwik9	aceapex-fast,8	1	0	-	0.81	4461.16	37281456	1752	40.62%
+A	enwik9	aceapex,1	4	139	11 SEGV	-	-	-	-	-
+A	enwik9	aceapex,2	4	139	11 SEGV	-	-	-	-	-
+A	enwik9	aceapex,3	4	139	11 SEGV	-	-	-	-	-
+A	enwik9	aceapex,4	4	139	11 SEGV	-	-	-	-	-
+A	enwik9	aceapex-fast,1	4	0	-	-	-	-	-	-
+A	enwik9	aceapex-fast,8	4	0	-	-	-	-	-	-

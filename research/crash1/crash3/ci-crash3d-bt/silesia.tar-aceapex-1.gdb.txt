@@ -1,0 +1,22 @@
+warning: Error disabling address space randomization: Operation not permitted
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/usr/lib/x86_64-linux-gnu/libthread_db.so.1".
+silesia.tar,0
+'silesia.tar'
+    69009396  32.56%        78.97                     aceapex 1       silesia.tar    78.97  1.1    79.20  2.2    79.20  3.2               
+Program received signal SIGINT, Interrupt.
+0x000055ca8880e040 in aligned_alloc ()
+  Id   Target Id                                      Frame 
+* 1    Thread 0x7fb7acc277c0 (LWP 13526) "turbobench" 0x000055ca8880e040 in aligned_alloc ()
+
+Thread 1 (Thread 0x7fb7acc277c0 (LWP 13526) "turbobench"):
+#0  0x000055ca8880e040 in aligned_alloc ()
+#1  0x000055ca885e69b0 in ax_entropy_decode(void const*, unsigned long, int, AxStreams&, bool)::$_0::operator()(void*) const ()
+#2  0x000055ca885d61b6 in ax_entropy_decode(void const*, unsigned long, int, AxStreams&, bool) ()
+#3  0x000055ca885d4a8d in aceapex_decompress_mt ()
+#4  0x000055ca8880a805 in coddecomp ()
+#5  0x000055ca88815416 in bedecomp ()
+#6  0x000055ca888168aa in plugfile ()
+#7  0x000055ca88817bdc in main ()
+Kill the program being debugged? (y or n) [answered Y; input not from terminal]
+[Inferior 1 (process 13526) killed]

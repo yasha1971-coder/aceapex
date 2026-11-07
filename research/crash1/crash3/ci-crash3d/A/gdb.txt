@@ -1,0 +1,13 @@
+warning: Error disabling address space randomization: Operation not permitted
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/usr/lib/x86_64-linux-gnu/libthread_db.so.1".
+silesia.tar,0
+'silesia.tar'
+    69009396  32.56%        46.07                     aceapex 1       silesia.tar    46.07  1.1    46.62  2.2    46.62  3.2               
+Program received signal SIGSEGV, Segmentation fault.
+0x000055d50d9206fd in aligned_alloc ()
+#0  0x000055d50d9206fd in aligned_alloc ()
+#1  0x000055d50d920702 in aligned_alloc ()
+#2  0x000055d50d920702 in aligned_alloc ()
+#3  0x000055d50d920702 in aligned_alloc ()
+#4  0x000055d50d920702 in aligned_alloc ()

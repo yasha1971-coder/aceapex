@@ -1,0 +1,22 @@
+warning: Error disabling address space randomization: Operation not permitted
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/usr/lib/x86_64-linux-gnu/libthread_db.so.1".
+enwik9,0
+'enwik9'
+   331986405  33.20%        65.94                     aceapex 1       enwik9    65.94  1.1    66.56  2.2    66.56  3.2               
+Program received signal SIGINT, Interrupt.
+0x000055cabbc53040 in aligned_alloc ()
+  Id   Target Id                                      Frame 
+* 1    Thread 0x7f4ae7d667c0 (LWP 13548) "turbobench" 0x000055cabbc53040 in aligned_alloc ()
+
+Thread 1 (Thread 0x7f4ae7d667c0 (LWP 13548) "turbobench"):
+#0  0x000055cabbc53040 in aligned_alloc ()
+#1  0x000055cabba2b9b0 in ax_entropy_decode(void const*, unsigned long, int, AxStreams&, bool)::$_0::operator()(void*) const ()
+#2  0x000055cabba1b1b6 in ax_entropy_decode(void const*, unsigned long, int, AxStreams&, bool) ()
+#3  0x000055cabba19a8d in aceapex_decompress_mt ()
+#4  0x000055cabbc4f805 in coddecomp ()
+#5  0x000055cabbc5a416 in bedecomp ()
+#6  0x000055cabbc5b8aa in plugfile ()
+#7  0x000055cabbc5cbdc in main ()
+Kill the program being debugged? (y or n) [answered Y; input not from terminal]
+[Inferior 1 (process 13548) killed]

@@ -1,0 +1,1 @@
+lzsa (try 1): lzsa/src/expand_streaming.c:72:14: error: assigning to 'lzsa_status_t' (aka 'enum _lzsa_status_t') from incompatible type 'int'

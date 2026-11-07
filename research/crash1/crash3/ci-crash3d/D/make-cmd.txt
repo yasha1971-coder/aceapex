@@ -1,0 +1,1 @@
+make CC=clang-22 CXX=clang++-22 CG=clang-22 BUILD=build-D BLOSC=0 OPENZL=0 PIVCO=0 RUST=0 

@@ -1,0 +1,16 @@
+diff --git a/turbobench.c b/turbobench.c
+index f8a6652..9a30b16 100755
+--- a/turbobench.c
++++ b/turbobench.c
+@@ -312,8 +312,9 @@ int posix_memalign(void **memptr, size_t alignment, size_t size) {
+ }
+ 
+ void *aligned_alloc(size_t alignment, size_t size) {
+-  if(!aligned_alloc) die("aligned_alloc");
+-  void *p = (*aligned_alloc)(alignment, size);
++  if(!mem_aligned_alloc) mem_init();
++  if(!mem_aligned_alloc) die("aligned_alloc");
++  void *p = (*mem_aligned_alloc)(alignment, size);
+   if(p) mem_add(malloc_usable_size(p));
+   return p;
+ }
