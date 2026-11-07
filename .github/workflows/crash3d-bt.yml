@@ -73,6 +73,7 @@ jobs:
         grep -E "turbobench\.c " $OUT/make.log | head -1 | tee $OUT/turbobench-compile-line.txt
         { sha256sum turbobench; file turbobench; ./turbobench -l2 2>&1 | grep -i aceapex; nm turbobench | grep -E " T (aligned_alloc|malloc)$" || echo "no interposers in the binary"; } | tee $OUT/binary.txt
     - name: runs under gdb, 300 s cap, backtrace on timeout
+      shell: bash
       run: |
         cd $GITHUB_WORKSPACE/in; mkdir -p $OUT/bt
         for spec in "silesia.tar aceapex,1" "enwik9 aceapex,1" "silesia.tar aceapex,4" "silesia.tar aceapex-fast,1"; do
