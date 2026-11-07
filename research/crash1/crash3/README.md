@@ -61,8 +61,8 @@ No change in aceapex, API/ABI or release is needed for this crash. The deciding 
 TurboBench tag v2026.11.06.165 = 2cc8b4f, aceapex b67c858, zstd 49bf1d1, ubuntu:26.10 (pinned digest); GCC 16.2.0
 (Ubuntu 16.2.0-3ubuntu1), Clang 22.1.8 (Ubuntu 1:22.1.8-1ubuntu1). Their makefile: `make CC=… CXX=… CG=clang-22
 BUILD=… BLOSC=0 OPENZL=0 PIVCO=0 RUST=0` (Clang 22 does not build lzsa: left out). silesia.tar and enwik9, aceapex 1-4
-and aceapex-fast 1/8, t1 and t4, `-C4 -v2 -U`, each run its own process (24 per build). Runs: 42358… A, B, D, E
-(8474b89), F (e42b724), C-bt (4820dce). `ci-crash3d/<row>/`, `ci-crash3d-bt/`.
+and aceapex-fast 1/8, t1 and t4, `-C4 -v2 -U`, each run its own process (24 per build). Runs: A, B, D, E
+42342802185 (8474b89); F 42355339922 (e42b724); C-bt 42362170293 (4820dce). `ci-crash3d/<row>/`, `ci-crash3d-bt/`.
 
 | row | build | result | silesia t1 decompression MB/s, aceapex 1 / aceapex-fast 1 | CPU of the runner |
 |---|---|---|---|---|
