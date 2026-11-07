@@ -1,0 +1,73 @@
+# CRASH-3b (research branch crash-3 only): the reproduced GCC 16.2 crash, narrowed to the library. aceapex b67c858 +
+# zstd 49bf1d1 (TurboBench's submodules), TurboBench's flags (-O3 -march=haswell -DXXH_INLINE_ALL), the calls of its
+# plugin (research/crash1/crash3/tbshape.cpp: compress into 1.3 n + 10 MB, decompress into exactly n), silesia.tar.
+# Per compiler: a gdb backtrace of the optimized build (-g -fno-omit-frame-pointer kept at -O3), then variants that
+# separate the defect class: -O2, -O3 -fno-strict-aliasing, UBSan at -O3, ASan+UBSan at -O1.
+name: CRASH-3b library narrowing
+on:
+  push:
+    branches: [crash-3]
+    paths: ['.github/workflows/crash3b.yml', 'research/crash1/crash3/tbshape.cpp']
+permissions:
+  contents: read
+jobs:
+  lib:
+    name: ${{ matrix.cc }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    container: ubuntu:26.10@sha256:262df65c0ec6bf8d9dcc87454f4330a05fae4b97825f45854af3b136666584c2
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc16, clang22]
+    env:
+      OUT: /__w/out
+    steps:
+    - name: tools
+      run: |
+        apt-get update -q
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -q git ca-certificates curl file gdb make gcc-16 g++-16 clang-22
+    - uses: actions/checkout@v5
+    - name: sources and input
+      run: |
+        mkdir -p $OUT; cd /tmp
+        git clone -q https://github.com/yasha1971-coder/aceapex.git ace && git -C ace checkout -q b67c858b3b18d4d57aee1aa7bcaf0cf2c773d050
+        git init -q zstd && git -C zstd fetch -q --depth 1 https://github.com/facebook/zstd.git 49bf1d14c8ffc6a25c32667ce878c4148f43ac4f && git -C zstd checkout -q FETCH_HEAD
+        curl -fsSL -o silesia.tar.gz https://github.com/DataCompression/corpus-collection/raw/main/Silesia-Corpus/silesia.tar.gz
+        gzip -dc silesia.tar.gz > silesia.tar
+        echo "a667bac80089b3d04d5496772149e632f0758974b0579d743cd8d6e5e0d63eb2  silesia.tar" | sha256sum -c
+        { grep -m1 "model name" /proc/cpuinfo; g++-16 --version | head -1; clang++-22 --version | head -1; } | tee $OUT/env.txt
+    - name: builds and runs
+      run: |
+        if [ ${{ matrix.cc }} = gcc16 ]; then CC=gcc-16; CXX=g++-16; else CC=clang-22; CXX=clang++-22; fi
+        H=$GITHUB_WORKSPACE/research/crash1/crash3/tbshape.cpp
+        cd /tmp
+        make -s -C zstd/lib libzstd.a CC=$CC CFLAGS="-O3 -march=haswell" > /dev/null 2>&1; cp zstd/lib/libzstd.a libzstd-plain.a
+        make -s -C zstd/lib clean > /dev/null 2>&1
+        make -s -C zstd/lib libzstd.a CC=$CC CFLAGS="-O1 -g -fsanitize=address,undefined" > /dev/null 2>&1; cp zstd/lib/libzstd.a libzstd-asan.a
+        run() { # name cxxflags zstdlib
+          n=$1; f="$2"; z=$3
+          echo "== $n: $CXX $f" | tee -a $OUT/variants.txt
+          $CXX $f -std=c++17 -DXXH_INLINE_ALL -Izstd/lib -Iace/src $H ace/src/aceapex_api.cpp $z -lpthread -o h-$n 2> $OUT/build-$n.txt || { echo "  build failed" | tee -a $OUT/variants.txt; return; }
+          ./h-$n silesia.tar 1 1 2 3 4 > $OUT/run-$n.txt 2>&1; rc=$?
+          echo "  rc $rc $( [ $rc -gt 128 ] && echo "signal $((rc-128))") | $(grep -c ' ok$' $OUT/run-$n.txt) ok | $(grep -m1 -E 'runtime error|ERROR: AddressSanitizer' $OUT/run-$n.txt | cut -c1-200)" | tee -a $OUT/variants.txt
+        }
+        run O3 "-O3 -march=haswell" libzstd-plain.a
+        run O3g "-O3 -g -fno-omit-frame-pointer -march=haswell" libzstd-plain.a
+        run O2 "-O2 -march=haswell" libzstd-plain.a
+        run O3-nsa "-O3 -fno-strict-aliasing -march=haswell" libzstd-plain.a
+        run O3-avx2only "-O3 -mavx2 -mpopcnt" libzstd-plain.a
+        run O3-noarch "-O3" libzstd-plain.a
+        run O3-ubsan "-O3 -g -march=haswell -fsanitize=undefined -fno-sanitize-recover=all" libzstd-plain.a
+        run O1-asan "-O1 -g -fno-omit-frame-pointer -march=haswell -fsanitize=address,undefined -fno-sanitize-recover=all" libzstd-asan.a
+        if [ -x h-O3g ]; then
+          gdb -q --batch -ex "run silesia.tar 1 1" -ex "bt 40" -ex "info registers rip" -ex "x/6i \$pc-12" -ex "frame 1" -ex "info locals" -ex "frame 2" -ex "info locals" --args ./h-O3g > $OUT/gdb-O3g.txt 2>&1 || true
+          tail -80 $OUT/gdb-O3g.txt
+        fi
+        cat $OUT/variants.txt
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: crash3b-${{ matrix.cc }}
+        path: /__w/out
+        retention-days: 14
