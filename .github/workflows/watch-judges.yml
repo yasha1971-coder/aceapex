@@ -96,6 +96,11 @@ jobs:
 
         def cell(x): return re.sub(r"\$\\color\{green\}\{\\textbf\{([^}]*)\}\}\$", r"\1", x).strip()
 
+        def norm(name):
+            """codec name for comparison and keys: no markdown escapes, '-' -> '_', lower case (TurboBench renamed
+            aceapex-fast -> aceapex_fast and escapes '_' as \\_)"""
+            return (name or "").replace("\\", "").replace("-", "_").lower().strip()
+
 
         # ------------------------------------------------------------------ 1 PIN
         def item_pin():
@@ -125,7 +130,7 @@ jobs:
                         if re.match(r"\|\d+\|", l):
                             c = [cell(v) for v in l.split("|")[1:-1]]
                             if len(c) >= 6:
-                                rows.append({"name": c[5], "ratio": c[1], "C": fl(c[2]), "D": fl(c[3]), "rank": c[4]})
+                                rows.append({"name": norm(c[5]), "ratio": c[1], "C": fl(c[2]), "D": fl(c[3]), "rank": c[4]})
                     key = f"{plat} #{ti + 1}"
                     if not any(r["name"] == "memcpy" for r in rows):
                         raise RuntimeError(f"benchmark.md: table {key} has no memcpy row (broken markup?)")
@@ -143,7 +148,7 @@ jobs:
                 o, n = (old or {}).get(k), new.get(k)
                 if old is not None and o is None: ch.append(f"{k}: новая таблица со строками aceapex")
                 if n is None: ch.append(f"{k}: строки aceapex исчезли"); continue
-                on = {r["name"]: r for r in (o or {}).get("aceapex", [])}
+                on = {norm(r["name"]): r for r in (o or {}).get("aceapex", [])}
                 for r in n["aceapex"]:
                     rk = f"{k}|{r['name']}"
                     a = on.get(r["name"])
@@ -159,7 +164,7 @@ jobs:
                         ref[rk] = r["D"]
                 for name in sorted(set(on) - {r["name"] for r in n["aceapex"]}): ch.append(f"{k}: убрана {name}")
                 if o is not None:
-                    ob, nb = (o.get("best_other") or {}).get("name"), (n.get("best_other") or {}).get("name")
+                    ob, nb = norm((o.get("best_other") or {}).get("name")), norm((n.get("best_other") or {}).get("name"))
                     if ob != nb: ch.append(f"{k}: лучший другой кодек {ob} -> {nb}")
                     def lead(t):
                         f = [x["D"] for x in t["aceapex"] if x["D"]]
@@ -271,15 +276,15 @@ jobs:
             issue = find_issue()
             state = parse_state(issue)
             first = not state.get("items")
-            items, errs = state.get("items", {}), dict(state.get("errors", {}))
+            items, errs, ok_at = state.get("items", {}), dict(state.get("errors", {})), dict(state.get("ok_at", {}))
             new, notices, report = json.loads(json.dumps(items)), [], []
 
             def run(key, fn):
                 try:
-                    v = fn(); errs[key] = 0; return v
+                    v = fn(); errs[key] = 0; ok_at[key] = now; return v
                 except Exception as e:
                     errs[key] = errs.get(key, 0) + 1
-                    report.append(f"- {key}: ОШИБКА ({e}); сохранено последнее удачное значение; ошибок подряд {errs[key]}")
+                    report.append(f"- {key}: ОШИБКА ({e}); сохранено последнее удачное значение от {ok_at.get(key, '(нет)')}; ошибок подряд {errs[key]}")
                     if errs[key] == 3: notices.append(f"пункт {key} не читается 3 запуска подряд: {e}")
                     return None
 
@@ -289,7 +294,8 @@ jobs:
                 report.append(f"- PIN: {v['sha']} — {v['status']} относительно {v['release']} ({'выпущенный' if v['released_code'] else 'невыпущенный'} код)")
             v = run("TB-TABLE", item_tb)
             if v is not None:
-                old = items.get("TB-TABLE"); ref = dict(old.get("ref", {})) if old else {}
+                old = items.get("TB-TABLE")
+                ref = {k.split("|", 1)[0] + "|" + norm(k.split("|", 1)[1]): d for k, d in (old.get("ref", {}) if old else {}).items()}
                 notices += tb_notices(old.get("tables") if old else None, v, ref)
                 new["TB-TABLE"] = {"tables": v, "ref": ref}
                 for k, tb in v.items():
@@ -324,7 +330,7 @@ jobs:
             kind = notices if notices else [comment.split("(")[0] if comment else ""]
             key = hashlib.sha1((json.dumps(kind, ensure_ascii=False) + state.get("checked", "")).encode()).hexdigest()
             if comment: comment += f"\n\nchange-key: {key}"
-            new_state = {"items": new, "errors": errs, "checked": now,
+            new_state = {"items": new, "errors": errs, "ok_at": ok_at, "checked": now,
                          "last_comment": t.isoformat() if comment else last_c}
 
             print("\n".join(report)); print("--- would comment ---"); print(comment or "(none)")   # the same in the job log (summaries are UI-only)

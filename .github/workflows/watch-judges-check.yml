@@ -1,0 +1,22 @@
+# Checks watch-judges.yml on every change to it: the embedded script compiles, and its benchmark.md parser handles a
+# normal, a renamed (aceapex-fast -> aceapex\_fast) and a broken table (research/watch/check_watch.py). No network,
+# no token. Protocol §9: a workflow change is merged only when CI checks that workflow.
+name: Watch judges check
+on:
+  pull_request:
+    paths: ['.github/workflows/watch-judges.yml', '.github/workflows/watch-judges-check.yml', 'research/watch/**']
+  push:
+    branches: [main]
+    paths: ['.github/workflows/watch-judges.yml', '.github/workflows/watch-judges-check.yml', 'research/watch/**']
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@v5
+    - name: compile the embedded script and test the parser on three saved tables
+      run: |
+        set -euo pipefail
+        python3 research/watch/check_watch.py
