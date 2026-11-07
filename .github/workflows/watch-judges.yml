@@ -327,7 +327,8 @@ jobs:
             new_state = {"items": new, "errors": errs, "checked": now,
                          "last_comment": t.isoformat() if comment else last_c}
 
-            with open(SUMMARY, "a") as f:
+            print("\n".join(report)); print("--- would comment ---"); print(comment or "(none)")   # the same in the job log (summaries are UI-only)
+        with open(SUMMARY, "a") as f:
                 f.write(f"## Watch judges — {'DRY RUN' if DRY else 'run'} {now}\n\n" + "\n".join(report) + "\n\n")
                 f.write("### Будущий комментарий\n\n" + (comment or "_нет (значимых изменений нет)_") + "\n")
             if DRY:
