@@ -1,0 +1,16 @@
+== O3: g++-16 -O3 -march=haswell
+  rc 0  | 4 ok | 
+== O3g: g++-16 -O3 -g -fno-omit-frame-pointer -march=haswell
+  rc 0  | 4 ok | 
+== O2: g++-16 -O2 -march=haswell
+  rc 0  | 4 ok | 
+== O3-nsa: g++-16 -O3 -fno-strict-aliasing -march=haswell
+  rc 0  | 4 ok | 
+== O3-avx2only: g++-16 -O3 -mavx2 -mpopcnt
+  rc 0  | 4 ok | 
+== O3-noarch: g++-16 -O3
+  rc 0  | 4 ok | 
+== O3-ubsan: g++-16 -O3 -g -march=haswell -fsanitize=undefined -fno-sanitize-recover=all
+  rc 0  | 4 ok | 
+== O1-asan: g++-16 -O1 -g -fno-omit-frame-pointer -march=haswell -fsanitize=address,undefined -fno-sanitize-recover=all
+  rc 0  | 4 ok | 

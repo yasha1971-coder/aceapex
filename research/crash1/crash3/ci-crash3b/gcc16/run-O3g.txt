@@ -1,0 +1,25 @@
+silesia.tar L1 t1: bound 238441984 cap 285531776 zs 69009396 dec 211947520 ok
+  compress into 69009395: -1 error (ok)
+  compress into 34504698: -1 error (ok)
+  compress into 64: -1 error (ok)
+  decompress into 211947519: -1 error (ok)
+  decompress into 105973760: -1 error (ok)
+silesia.tar L2 t1: bound 238441984 cap 285531776 zs 68626422 dec 211947520 ok
+  compress into 68626421: -1 error (ok)
+  compress into 34313211: -1 error (ok)
+  compress into 64: -1 error (ok)
+  decompress into 211947519: -1 error (ok)
+  decompress into 105973760: -1 error (ok)
+silesia.tar L3 t1: bound 238441984 cap 285531776 zs 66632815 dec 211947520 ok
+  compress into 66632814: -1 error (ok)
+  compress into 33316407: -1 error (ok)
+  compress into 64: -1 error (ok)
+  decompress into 211947519: -1 error (ok)
+  decompress into 105973760: -1 error (ok)
+silesia.tar L4 t1: bound 238441984 cap 285531776 zs 68626422 dec 211947520 ok
+  compress into 68626421: -1 error (ok)
+  compress into 34313211: -1 error (ok)
+  compress into 64: -1 error (ok)
+  decompress into 211947519: -1 error (ok)
+  decompress into 105973760: -1 error (ok)
+tbshape: 0 failures

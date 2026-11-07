@@ -1,0 +1,49 @@
+warning: Error disabling address space randomization: Operation not permitted
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/usr/lib/x86_64-linux-gnu/libthread_db.so.1".
+silesia.tar,0
+'silesia.tar'
+    69009396  32.56%        75.74                     aceapex 1       silesia.tar    75.74  1.1    75.78  2.2    75.80  3.3               
+Program received signal SIGSEGV, Segmentation fault.
+0x00005591edab56fd in aligned_alloc ()
+#0  0x00005591edab56fd in aligned_alloc ()
+#1  0x00005591edab5702 in aligned_alloc ()
+#2  0x00005591edab5702 in aligned_alloc ()
+#3  0x00005591edab5702 in aligned_alloc ()
+#4  0x00005591edab5702 in aligned_alloc ()
+#5  0x00005591edab5702 in aligned_alloc ()
+#6  0x00005591edab5702 in aligned_alloc ()
+#7  0x00005591edab5702 in aligned_alloc ()
+#8  0x00005591edab5702 in aligned_alloc ()
+#9  0x00005591edab5702 in aligned_alloc ()
+#10 0x00005591edab5702 in aligned_alloc ()
+#11 0x00005591edab5702 in aligned_alloc ()
+#12 0x00005591edab5702 in aligned_alloc ()
+#13 0x00005591edab5702 in aligned_alloc ()
+#14 0x00005591edab5702 in aligned_alloc ()
+#15 0x00005591edab5702 in aligned_alloc ()
+#16 0x00005591edab5702 in aligned_alloc ()
+#17 0x00005591edab5702 in aligned_alloc ()
+#18 0x00005591edab5702 in aligned_alloc ()
+#19 0x00005591edab5702 in aligned_alloc ()
+#20 0x00005591edab5702 in aligned_alloc ()
+#21 0x00005591edab5702 in aligned_alloc ()
+#22 0x00005591edab5702 in aligned_alloc ()
+#23 0x00005591edab5702 in aligned_alloc ()
+#24 0x00005591edab5702 in aligned_alloc ()
+#25 0x00005591edab5702 in aligned_alloc ()
+#26 0x00005591edab5702 in aligned_alloc ()
+#27 0x00005591edab5702 in aligned_alloc ()
+#28 0x00005591edab5702 in aligned_alloc ()
+#29 0x00005591edab5702 in aligned_alloc ()
+rip            0x5591edab56fd      0x5591edab56fd <aligned_alloc+13>
+rsp            0x7ffee07f7000      0x7ffee07f7000
+   0x5591edab56ed <posix_memalign+77>:	pop    %rbx
+   0x5591edab56ee <posix_memalign+78>:	ret
+   0x5591edab56ef:	nop
+   0x5591edab56f0 <aligned_alloc>:	endbr64
+   0x5591edab56f4 <aligned_alloc+4>:	sub    $0x18,%rsp
+   0x5591edab56f8 <aligned_alloc+8>:	mov    %rbp,0x8(%rsp)
+=> 0x5591edab56fd <aligned_alloc+13>:	call   0x5591edab56f0 <aligned_alloc>
+   0x5591edab5702 <aligned_alloc+18>:	mov    %rax,%rbp
+aligned_alloc + 13 in section .text of /tmp/tb/turbobench

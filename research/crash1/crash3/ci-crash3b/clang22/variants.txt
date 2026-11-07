@@ -1,0 +1,16 @@
+== O3: clang++-22 -O3 -march=haswell
+  rc 0  | 4 ok | 
+== O3g: clang++-22 -O3 -g -fno-omit-frame-pointer -march=haswell
+  rc 0  | 4 ok | 
+== O2: clang++-22 -O2 -march=haswell
+  rc 0  | 4 ok | 
+== O3-nsa: clang++-22 -O3 -fno-strict-aliasing -march=haswell
+  rc 0  | 4 ok | 
+== O3-avx2only: clang++-22 -O3 -mavx2 -mpopcnt
+  rc 0  | 4 ok | 
+== O3-noarch: clang++-22 -O3
+  rc 0  | 4 ok | 
+== O3-ubsan: clang++-22 -O3 -g -march=haswell -fsanitize=undefined -fno-sanitize-recover=all
+  rc 0  | 4 ok | 
+== O1-asan: clang++-22 -O1 -g -fno-omit-frame-pointer -march=haswell -fsanitize=address,undefined -fno-sanitize-recover=all
+  rc 0  | 4 ok | 

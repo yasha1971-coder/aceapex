@@ -1,0 +1,7 @@
+model name	: Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz
+4
+avx2 avx512_bitalg avx512_vbmi2 avx512_vnni avx512_vpopcntdq avx512bw avx512cd avx512dq avx512f avx512ifma avx512vbmi avx512vl bmi2 popcnt 
+               total        used        free      shared  buff/cache   available
+Mem:              15           1          13           0           1          14
+Swap:              2           0           2
+AVX512=yes

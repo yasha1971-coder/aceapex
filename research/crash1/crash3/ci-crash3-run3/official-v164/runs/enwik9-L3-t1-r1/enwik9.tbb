@@ -1,0 +1,2 @@
+dataset	size	csize	dtime	ctime	codec	level	param	cmem	dmem	cstack	dstack	time
+enwik9	1000000000	314309338	0.986474	9.800352	aceapex	3	?	0	0	982504	100012	2026-11-07.03:56:54

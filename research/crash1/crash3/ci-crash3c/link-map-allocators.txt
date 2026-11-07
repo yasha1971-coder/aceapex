@@ -1,0 +1,24 @@
+7004:                0x0000000000202e40                zcalloc
+7005-                0x0000000000202e50                zcfree
+--
+7107:                0x000000000021edf0                z_zcalloc
+7108-                0x000000000021ee00                z_zcfree
+--
+7953:                0x00000000002bf450                malloc
+7954-                0x00000000002bf530                _valloc
+7955:                0x00000000002bf550                calloc
+7956:                0x00000000002bf650                memalign
+7957:                0x00000000002bf6a0                posix_memalign
+7958:                0x00000000002bf6f0                aligned_alloc
+7959:                0x00000000002bf850                realloc
+7960:                0x00000000002bf8d0                free
+7961-                0x00000000002bf930                _vfree
+--
+8518:                0x0000000000374fd0                AOCLLZB_zcalloc
+8519-                0x0000000000374fe0                AOCLLZB_zcfree
+--
+12652:                0x00000000007815f2                lzma_index_prealloc
+12653-                0x000000000078163b                lzma_index_memusage
+--
+12928:                0x00000000007a7d00                zng_zcalloc
+12929-                0x00000000007a7d20                zng_zcfree

@@ -1,0 +1,7 @@
+/usr/bin/x86_64-linux-gnu-ld.bfd: build-gcc16/aceapex/src/aceapex_api.o: reference to ZSTD_decompress
+/usr/bin/x86_64-linux-gnu-ld.bfd: build-gcc16/plugin.o: reference to ZSTD_createDCtx
+/usr/bin/x86_64-linux-gnu-ld.bfd: build-gcc16/plugin.o: reference to ZSTD_decompress
+/usr/bin/x86_64-linux-gnu-ld.bfd: build-gcc16/zstd/libzstd.a(zstd_decompress.o): definition of ZSTD_createDCtx
+/usr/bin/x86_64-linux-gnu-ld.bfd: build-gcc16/zstd/libzstd.a(zstd_decompress.o): definition of ZSTD_decompressDCtx
+/usr/bin/x86_64-linux-gnu-ld.bfd: build-gcc16/zstd/libzstd.a(zstd_decompress.o): definition of ZSTD_decompress
+/usr/bin/x86_64-linux-gnu-ld.bfd: build-gcc16/zstd/libzstd.a(zstd_decompress.o): definition of ZSTD_DCtx_setParameter

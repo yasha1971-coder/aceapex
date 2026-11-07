@@ -1,0 +1,18 @@
+warning: Error disabling address space randomization: Operation not permitted
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/usr/lib/x86_64-linux-gnu/libthread_db.so.1".
+silesia.tar L1 t1: bound 238441984 cap 285531776 zs 69009396 dec 211947520 ok
+  compress into 69009395: -1 error (ok)
+  compress into 34504698: -1 error (ok)
+  compress into 64: -1 error (ok)
+  decompress into 211947519: -1 error (ok)
+  decompress into 105973760: -1 error (ok)
+tbshape: 0 failures
+[Inferior 1 (process 4353) exited normally]
+No stack.
+The program has no registers now.
+No registers.
+No registers.
+No frame selected.
+No registers.
+No frame selected.

@@ -1,0 +1,9 @@
+endif
+
+ifdef STATIC
+LDFLAGS+=-static
+NMEMSIZE=1
+endif
+
+ifdef NMEMSIZE
+CFLAGS+=-DNMEMSIZE

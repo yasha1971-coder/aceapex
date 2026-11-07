@@ -1,0 +1,8 @@
+                 U ZSTD_CCtx_setParameter
+                 U ZSTD_compress
+                 U ZSTD_compress2
+                 U ZSTD_compressBound
+                 U ZSTD_createCCtx
+                 U ZSTD_decompress
+                 U ZSTD_freeCCtx
+                 U ZSTD_isError
