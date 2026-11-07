@@ -75,6 +75,7 @@ jobs:
     - name: runs under gdb, 300 s cap, backtrace on timeout
       shell: bash
       run: |
+        set +e   # Actions runs bash with -e: timeout's 124 must not end the step
         cd $GITHUB_WORKSPACE/in; mkdir -p $OUT/bt
         for spec in "silesia.tar aceapex,1" "enwik9 aceapex,1" "silesia.tar aceapex,4" "silesia.tar aceapex-fast,1"; do
           set -- $spec; f=$1; e=$2; n=$OUT/bt/$f-${e/,/-}
