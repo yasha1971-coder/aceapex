@@ -1,0 +1,98 @@
+# CRASH-3 (research branch crash-3 only, never merged): TurboBench #65 "aceapex crashes at decompression" on the reporter's
+# toolchain - Ubuntu 26.10, GCC 16.2.0 and Clang 22.1.18, TurboBench tag v2026.11.06.164 (aceapex submodule b67c858)
+# built with its unmodified makefile; plus the official v164 release binary on the same kind of runner.
+name: CRASH-3 toolchain reproduction
+on:
+  push:
+    branches: [crash-3]
+    paths: ['.github/workflows/crash3.yml', 'research/crash1/crash3/run.sh']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  repro:
+    name: ${{ matrix.variant }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 340
+    container: ubuntu:26.10@sha256:262df65c0ec6bf8d9dcc87454f4330a05fae4b97825f45854af3b136666584c2
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [official-v164, gcc16, clang22]
+    env:
+      IMAGE: ubuntu:26.10@sha256:262df65c0ec6bf8d9dcc87454f4330a05fae4b97825f45854af3b136666584c2
+      TB_TAG: v2026.11.06.164
+      ACEAPEX_PIN: b67c858b3b18d4d57aee1aa7bcaf0cf2c773d050
+      OUT: /__w/out
+    steps:
+    - name: base tools
+      run: |
+        apt-get update -q
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -q git ca-certificates curl unzip file gdb build-essential nasm make cmake libomp-dev python3
+    - uses: actions/checkout@v5
+    - name: environment, CPU
+      run: |
+        mkdir -p $OUT; cd $OUT
+        { echo "image $IMAGE"; uname -a; cat /etc/os-release; ldd --version | head -1; } > env.txt
+        grep -m1 "model name" /proc/cpuinfo > cpu.txt; nproc >> cpu.txt
+        grep -m1 "^flags" /proc/cpuinfo | tr ' ' '\n' | grep -E "^(avx2|avx512[a-z0-9_]*|bmi2|popcnt)$" | sort | tr '\n' ' ' >> cpu.txt; echo >> cpu.txt
+        free -g >> cpu.txt
+        cat env.txt cpu.txt
+        if grep -q avx512 cpu.txt; then echo "AVX512=yes" | tee -a cpu.txt; else echo "AVX512=no" | tee -a cpu.txt; fi
+    - name: compilers (exact versions or FAIL)
+      if: matrix.variant != 'official-v164'
+      run: |
+        cd $OUT
+        if [ "${{ matrix.variant }}" = gcc16 ]; then
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -q gcc-16 g++-16
+          { gcc-16 --version | head -1; g++-16 --version | head -1; } | tee compilers.txt
+          g++-16 -dumpfullversion | grep -qx "16.2.0" || { echo "FAIL: g++-16 is $(g++-16 -dumpfullversion), not 16.2.0"; exit 1; }
+        else
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -q clang-22 libomp-22-dev || DEBIAN_FRONTEND=noninteractive apt-get install -y -q clang-22
+          { clang-22 --version | head -1; clang++-22 --version | head -1; } | tee compilers.txt
+          clang++-22 --version | head -1 | grep -q "22\.1\.18" || { echo "FAIL: clang++-22 is not 22.1.18"; exit 1; }
+        fi
+    - name: inputs (fixed size and SHA-256)
+      run: |
+        mkdir -p $GITHUB_WORKSPACE/in; cd $GITHUB_WORKSPACE/in
+        curl -sSL -o silesia.tar.gz https://github.com/DataCompression/corpus-collection/raw/main/Silesia-Corpus/silesia.tar.gz
+        gzip -dc silesia.tar.gz > silesia.tar; rm silesia.tar.gz
+        curl -sSL -o enwik9.zip https://mattmahoney.net/dc/enwik9.zip; unzip -q enwik9.zip; rm enwik9.zip
+        sha256sum silesia.tar enwik9 | tee $OUT/inputs.txt; stat -c '%n %s' silesia.tar enwik9 | tee -a $OUT/inputs.txt
+        echo "a667bac80089b3d04d5496772149e632f0758974b0579d743cd8d6e5e0d63eb2  silesia.tar" | sha256sum -c
+        echo "159b85351e5f76e60cbe32e04c677847a9ecba3adc79addab6f4c6c7aa3744bc  enwik9" | sha256sum -c
+    - name: official v164 binary
+      if: matrix.variant == 'official-v164'
+      run: |
+        cd /tmp && curl -sSL -o tb.tar.gz https://github.com/powturbo/TurboBench/releases/download/$TB_TAG/turbobench-linux-x86_64.tar.gz
+        echo "984b07abd5bfe1e0c63bbf005f9ae30014ab30d6b4e68f89328d53e5de91fda4  tb.tar.gz" | sha256sum -c
+        tar xzf tb.tar.gz; B=/tmp/turbobench-linux-x86_64/turbobench
+        echo "d0bcfc9dccf307377e7c27950dd4f00cf9791846d4c851cdf68c013d1e1da1d8  $B" | sha256sum -c
+        { sha256sum $B; file $B; ldd $B || true; $B -l2 2>&1 | grep -i aceapex; } | tee $OUT/binary.txt
+        echo "TB=$B" >> $GITHUB_ENV
+    - name: build TurboBench v164 with its makefile
+      if: matrix.variant != 'official-v164'
+      run: |
+        cd /tmp && git clone -q --branch $TB_TAG --recursive https://github.com/powturbo/TurboBench.git tb && cd tb
+        { git rev-parse HEAD; git describe --tags; } | tee $OUT/turbobench-sha.txt
+        git submodule status --recursive > $OUT/submodules.txt
+        test "$(git -C aceapex rev-parse HEAD)" = "$ACEAPEX_PIN" || { echo "FAIL: aceapex submodule is $(git -C aceapex rev-parse HEAD)"; exit 1; }
+        if [ "${{ matrix.variant }}" = gcc16 ]; then C=gcc-16; X=g++-16; BD=build-gcc16; else C=clang-22; X=clang++-22; BD=build-clang22; fi
+        echo "make CC=$C CXX=$X BUILD=$BD BLOSC=0 OPENZL=0 PIVCO=0 RUST=0 -j$(nproc)" | tee $OUT/make-cmd.txt
+        make CC=$C CXX=$X BUILD=$BD BLOSC=0 OPENZL=0 PIVCO=0 RUST=0 -j$(nproc) > $OUT/make.log 2>&1 || { tail -60 $OUT/make.log; exit 1; }
+        grep -E "aceapex_api\.cpp" $OUT/make.log | tee $OUT/aceapex-compile-line.txt
+        grep -E " -o turbobench( |$)" $OUT/make.log | tail -1 | tee $OUT/link-line.txt
+        B=/tmp/tb/turbobench
+        { sha256sum $B; file $B; ldd $B || true; $B -l2 2>&1 | grep -i aceapex; } | tee $OUT/binary.txt
+        echo "TB=$B" >> $GITHUB_ENV
+    - name: runs
+      run: bash research/crash1/crash3/run.sh "$TB" ${{ matrix.variant }} $OUT/runs
+    - name: summary
+      if: always()
+      run: column -t -s "$(printf '\t')" $OUT/runs/summary.tsv || true
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: crash3-${{ matrix.variant }}
+        path: /__w/out
+        retention-days: 14
