@@ -1,0 +1,48 @@
+XXH-NS - xxHash private to the library (2026-11-08, ace-core, AMD EPYC 4344P, gcc 11)
+Change: src/aceapex_main.cpp, src/aceapex_main_depth.cpp - XXH_INLINE_ALL instead of XXH_IMPLEMENTATION (unless
+ACEAPEX_NO_XXH or XXH_INLINE_ALL is already defined). Before = main c0d2dd1, after = branch xxh-ns.
+Cause: inikep/lzbench#366 builds lz4's xxhash with XXH_NAMESPACE=LZ4_ "as aceapex exports unprefixed XXH32/XXH64".
+
+1. Global XXH* symbols (nm -g --defined-only)
+   src/aceapex_api.o (make, -DACEAPEX_CLI)          before 49   after 0
+   aceapex (CLI binary)                              before 49   after 0
+   src/aceapex_api.cpp, library flags (no -D)        before 49   after 0
+   src/aceapex_main_depth.cpp                        before 49   after 0
+   TurboBench line (-DXXH_INLINE_ALL, already used)  after 0, no redefinition warning
+   aceapex-fast axfast.o: only axfast_* (axfast_xxh3 is its own code) - no change needed
+
+2. Archives, silesia.tar (sha256 a667bac8...), --threads 8, sha256 before == after: 12/12
+   L1  69435720 e25283accea9f6eb10b5a89ab29553dfad482cea996ebcf804d6fa87c5bed26f
+   L2  69034607 1bdb86c0c2e67bd522f6d3da6a232d44e619167bf3de1b19fa2a47f2b2fe3ad7
+   L3  67208532 ce98083a7ceeb96e549a83a18bb8b130c583704b314016bcf9e315b9bae92e21
+   L4  69034607 1bdb86c0c2e67bd522f6d3da6a232d44e619167bf3de1b19fa2a47f2b2fe3ad7 (= L2, as before)
+   L11 130490328 801e27b7957ada04298ac6a7a179745c5d545fbcb7019991dddabf4d2e715c94
+   L12 114728299 72070221aac6edff4e21460f0e851d7c49621113a221cbd66fe574218ba4a193
+   L13 95266170 ce9e4719a1f817cf364fd659a10fb93109ee2d5af0517db2423901b225bf851a
+   L14 86234053 159ba4b01f6d8df8169a2235cde09cfcfae88044030751710c7ce9963104e209
+   L15 117347683 6a80f9cd1c8287aebcd85a743ad20a9a6c8fd91ef38ecae8ea8859779ee43848
+   L16 103552607 9854df0c39fc1f454bbf0270410692677d32aaa5cad002a02bbac4639a6667cd
+   L17 88580614 deb9db8652e1ad231be9823b14548723c32203ad60760695068abc1b0c582930
+   L18 83113789 11da37c0360053829c6fa8531e104ec5225d006f0b36c72b022ec296a9d865ec
+   Cross round trip (after decodes before's archives and vice versa): 12/12 bit-perfect.
+
+3. Speed, silesia.tar, 1 thread, before/after interleaved, load1 < 0.5 at start (medians)
+   L2  encode  7 rounds   38.31 -> 38.42 MB/s   +0.29 %
+   L11 encode  7 rounds   642.05 -> 643.56 MB/s +0.24 %
+   L11 decode  7 rounds   10747.4 -> 10888.1 MB/s +1.31 % (spread 0.9 / 1.8 %); repeated:
+   L11 decode 21 rounds   10834.8 -> 10883.8 MB/s +0.45 % (spread 1.3 / 1.9 %, after faster in 17/21 pairs)
+   L2  decode  7 rounds   t1 0.1895 -> 0.1900 s -0.26 %; t8 0.0754 -> 0.0749 s +0.73 %
+
+4. Integration builds
+   lzbench, PR #366 head d028224 with mk/lz4.mk -DXXH_NAMESPACE=LZ4_ removed (lz4 xxhash unprefixed),
+   make BUILD_ONLY="ZSTD LZ4 ACEAPEX":
+     bundled aceapex 2.6.1 (negative control): link fails, 19 "multiple definition" (XXH_versionNumber, XXH32, ...)
+     scripts/lzbench_sync.sh from this branch:  link ok, aceapex_lzbench.o 0 global XXH*; lzbench -eaceapex,1,2,3/
+       aceapex_fast,1,8/lz4frame,1/lz4 on silesia.tar runs (aceapex_fast -1 130490328, -8 83113789)
+   TurboBench powturbo master 96af359, submodule aceapex c0d2dd1 + these two files:
+     aceapex_api.o built by their makefile line (g++ -O3 -std=c++17 -march=haswell -DXXH_INLINE_ALL ...): 0 global XXH*
+     link of that object + their build/lz4/lib/xxhash.o (19 global XXH*) + a test main: 0 "multiple definition",
+       round trip ok, lz4 XXH32 called; the same with main's object built without -DXXH_INLINE_ALL: 19
+     full TurboBench binary NOT built on ace-core: no clang (iguana, Turbo-Range-Coder need it), system cmake 3.22
+       too old for brotli/pivco (cmake 4.4.4 from a venv used), no rule for build/Turbo-Range-Coder/libsais.o with
+       CG=gcc, openzl cmake_check_build_system fails - all outside aceapex

@@ -41,8 +41,8 @@
 #include <algorithm>
 #include <zstd.h>
 #define XXH_STATIC_LINKING_ONLY
-#ifndef ACEAPEX_NO_XXH
-#define XXH_IMPLEMENTATION
+#if !defined(ACEAPEX_NO_XXH) && !defined(XXH_INLINE_ALL)
+#define XXH_INLINE_ALL      // xxHash private to aceapex (static): no global XXH* to clash with a host's copy (lzbench #366)
 #endif
 #include "xxhash.h"
 #define OUR_CHECKSUM(buf,sz) XXH3_64bits(buf,sz)
