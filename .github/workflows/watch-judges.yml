@@ -97,9 +97,11 @@ jobs:
         def cell(x): return re.sub(r"\$\\color\{green\}\{\\textbf\{([^}]*)\}\}\$", r"\1", x).strip()
 
         def norm(name):
-            """codec name for comparison and keys: no markdown escapes, '-' -> '_', lower case (TurboBench renamed
-            aceapex-fast -> aceapex_fast and escapes '_' as \\_)"""
+            """codec name for comparison and keys: every backslash removed (any number, markdown escapes), '-' -> '_',
+            lower case (TurboBench renamed aceapex-fast -> aceapex_fast and escapes '_' as \\_ or \\\\_)"""
             return (name or "").replace("\\", "").replace("-", "_").lower().strip()
+
+        NAME = re.compile(r"[a-z][a-z0-9_.+]*( [0-9][0-9a-z.]*)?")   # after norm: "<codec>" or "<codec> <level>"
 
 
         # ------------------------------------------------------------------ 1 PIN
@@ -132,6 +134,9 @@ jobs:
                             if len(c) >= 6:
                                 rows.append({"name": norm(c[5]), "ratio": c[1], "C": fl(c[2]), "D": fl(c[3]), "rank": c[4]})
                     key = f"{plat} #{ti + 1}"
+                    bad = [r["name"] for r in rows if r["name"] != "memcpy" and not NAME.fullmatch(r["name"])]
+                    if bad:
+                        raise RuntimeError(f"benchmark.md: table {key}: {len(bad)} names not '<codec> <level>' (broken markup?), e.g. {bad[:3]}")
                     if not any(r["name"] == "memcpy" for r in rows):
                         raise RuntimeError(f"benchmark.md: table {key} has no memcpy row (broken markup?)")
                     ace = [r for r in rows if r["name"].startswith("aceapex")]

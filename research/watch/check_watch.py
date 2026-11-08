@@ -3,8 +3,11 @@
 1) it is extracted (text between the "python3 - <<'PY'" line and the closing "PY" line, 8-space indent removed) and
    compiled; 2) its TB-TABLE parser runs on three saved benchmark.md files, with no network:
    normal  (be36e1d, names "aceapex-fast"), renamed (1c02a50, the same numbers, names "aceapex\\_fast"),
-   broken  (7f0ad5b, every codec name replaced by escaped underscores);
-3) normal -> renamed gives no notice (name normalization), broken raises (the item keeps its last value).
+   broken  (7f0ad5b, every codec name replaced by escaped underscores),
+   broken2 (87f1f88, names overwritten by fragments: "zlib 1urbo 12", "memcpyx\\\\_fast 1", "aceapex\\\\_fast");
+3) normal -> renamed gives no notice (name normalization), broken and broken2 raise (an item error: the item keeps
+   its last value and sends no notice); a normal table with one name "lzav 1x_fast 8" raises (name form guard);
+   norm() removes any number of backslashes.
 Exit 1 on any failure."""
 import ast, os, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -20,8 +23,9 @@ print("1 embedded script: extracted and compiled,", len(src.splitlines()), "line
 
 ns = {"__name__": "watch_check"}
 exec(compile(src, "watch-judges.yml", "exec"), ns)
-def load(name):
-    md = open(os.path.join(FX, name)).read()
+def load(name, edit=None):
+    md = open(os.path.join(FX, name), encoding="utf-8").read()
+    if edit: md = edit(md)
     ns["raw"] = lambda path: md
     return ns["item_tb"]()
 
@@ -45,10 +49,19 @@ notes = ns["tb_notices"](old_style, renamed, ref)
 if notes: fails.append(f"normal (old names) -> renamed: unexpected notice {notes}")
 print(f"3 old names in the state -> renamed table: notices {notes or 'none'}")
 
-try:
-    load("benchmark-broken-7f0ad5b.md"); fails.append("broken: no error raised")
-except RuntimeError as e:
-    print(f"4 broken markup: RuntimeError ({e})")
+for n, (label, name, edit) in enumerate([
+        ("broken markup 7f0ad5b", "benchmark-broken-7f0ad5b.md", None),
+        ("broken markup 87f1f88", "benchmark-broken2-87f1f88.md", None),
+        ("negative control: normal table, one name 'lzav 1x_fast 8'", "benchmark-normal-be36e1d.md",
+         lambda md: md.replace("|lzav 1|", "|lzav 1x_fast 8|", 1))], 4):
+    try:
+        load(name, edit); fails.append(f"{label}: no error raised")
+    except RuntimeError as e:
+        print(f"{n} {label}: RuntimeError ({e})")
+
+got = [ns["norm"](x) for x in ("aceapex-fast 1", "aceapex\\_fast 1", "aceapex\\\\_fast 1", "aceapex\\\\\\_fast 1")]
+if set(got) != {"aceapex_fast 1"}: fails.append(f"norm: {got}")
+print(f"7 norm with 0-3 backslashes: {sorted(set(got))}")
 
 if fails:
     print("FAIL:\n- " + "\n- ".join(fails)); sys.exit(1)
