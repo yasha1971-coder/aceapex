@@ -12,6 +12,10 @@ Every number below is reproduced by `make test && ./verify.sh` on the tagged com
 - Streaming decoder: a corrupt literal chunk size no longer drives a huge allocation (bounded by the literal stream,
   overflow-checked sums, the archive must reach its declared end); found by CI API fuzzing, seed 42064533943
   (`results/fuzzfix-api-fuzz-2026-11-05.txt`).
+- xxHash is private to the library (`XXH_INLINE_ALL` instead of `XXH_IMPLEMENTATION`): no global `XXH*` symbols, so a
+  host with its own unprefixed xxHash (lz4 in lzbench, inikep/lzbench#366) links without `multiple definition`. Archives
+  unchanged (silesia levels 1–4 and 11–18 byte-identical); `ACEAPEX_NO_XXH` still uses the host's xxHash
+  (`results/xxhns-2026-11-08.txt`).
 
 ## v2.6.1 — 2026-11-03
 
