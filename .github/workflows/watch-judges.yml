@@ -33,16 +33,19 @@ jobs:
       # THREADS: extend by editing this list
       THREADS: 'powturbo/TurboBench#65 inikep/lzbench#357'
       OURS: 'yasha1971-coder'
+      OURS_HN: 'EMPTYCONTOUR'
     steps:
     - name: watch
       run: |
         set -euo pipefail
         python3 - <<'PY'
-        import hashlib, json, os, re, subprocess, sys, datetime
+        import hashlib, json, os, re, subprocess, sys, datetime, urllib.parse, urllib.request
 
         REPO = os.environ.get("REPO", "yasha1971-coder/aceapex")
         DRY = os.environ.get("DRY_RUN", "true").lower() == "true"
         OURS = set(os.environ.get("OURS", "yasha1971-coder").split())
+        OURS_HN = set(os.environ.get("OURS_HN", "EMPTYCONTOUR").split())
+        KEYWORDS = ["aceapex", "aceapex_fast", "aceapex-fast", "hw-apex-bench", "panvram"]   # EXT: GitHub search and HN
         THREADS = os.environ.get("THREADS", "powturbo/TurboBench#65 inikep/lzbench#357").split()
         SUMMARY = os.environ.get("GITHUB_STEP_SUMMARY", "/dev/stdout")
         TITLE = "Watch: judges (auto)"
@@ -84,6 +87,12 @@ jobs:
         def post_comment(n, body): gh(f"repos/{REPO}/issues/{n}/comments", "-X", "POST", "-f", f"body={body}")
         def bot_comments(n): return [c for c in paginate(f"repos/{REPO}/issues/{n}/comments") if c["user"].get("type") == "Bot"]
         def now_utc(): return datetime.datetime.now(datetime.timezone.utc)
+
+        def hn(q):
+            """HN stories and comments by date (hn.algolia.com, no key); typoTolerance=false, exact match checked by the caller"""
+            u = "https://hn.algolia.com/api/v1/search_by_date?" + urllib.parse.urlencode({"query": q, "typoTolerance": "false", "hitsPerPage": 50})
+            with urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": "watch-judges"}), timeout=30) as r:
+                return json.load(r)["hits"]
 
 
         # ------------------------------------------------------------------ helpers
@@ -226,13 +235,20 @@ jobs:
             prev = prev or {}
             first = not prev
             seen = dict(prev.get("seen", {}))
-            res = gh("-X", "GET", "search/issues", "-f", "q=aceapex in:title,body,comments", "-f", "sort=updated", "-f", "per_page=100")
+            # the query set changed (keywords, is:issue/is:pr): new URLs are remembered without a notice for one run
+            base = first or prev.get("keywords") != KEYWORDS
+            items = {}
+            for kw in KEYWORDS:
+                for kind in ("is:issue", "is:pr"):   # GITHUB_TOKEN search without a type returned no PRs (14 URLs vs 82, 08.11)
+                    res = gh("-X", "GET", "search/issues", "-f", f'q="{kw}" in:title,body,comments {kind}', "-f", "sort=updated", "-f", "per_page=100")
+                    for it in res["items"]: items.setdefault(it["html_url"], it)
             notes = []
-            for it in res["items"]:
+            for it in items.values():
                 if it["title"] == TITLE: continue
                 u, up = it["html_url"], it["updated_at"]
                 old = seen.get(u)
                 seen[u] = up
+                if base and old is None: continue
                 if first or old == up: continue
                 parts = u.split("/"); repo, n = f"{parts[3]}/{parts[4]}", parts[6]
                 since = old or "1970-01-01T00:00:00Z"
@@ -260,8 +276,22 @@ jobs:
                     for x in [c] + (c.get("replies") or {}).get("nodes", []):
                         if x["createdAt"] > since and human((x.get("author") or {}).get("login")):
                             notes.append(f"{nd['url']}: сообщение {x['author']['login']} {x['createdAt']}")
+            hn_first = "hn" not in prev                      # first run with HN: remember, no notice
+            hn_seen = dict(prev.get("hn", {}))
+            for kw in KEYWORDS:
+                for h in hn(kw):
+                    text = " ".join(str(h.get(f) or "") for f in ("title", "story_text", "comment_text", "url")).lower()
+                    if kw not in text: continue
+                    oid = str(h["objectID"])
+                    if oid in hn_seen: continue
+                    hn_seen[oid] = h["created_at"]
+                    if not hn_first and h.get("author") and h["author"] not in OURS_HN:
+                        kind = "комментарий" if "comment" in (h.get("_tags") or []) else "пост"
+                        notes.append(f"https://news.ycombinator.com/item?id={oid}: HN {kind}, автор {h['author']} {h['created_at']} ({kw})")
+            if len(hn_seen) > SEEN_MAX:
+                hn_seen = dict(sorted(hn_seen.items(), key=lambda kv: kv[1])[-SEEN_MAX:])
             note = [("EXT (выборочное обнаружение упоминаний): внешнее упоминание — проверь, запрос ли это (§8б): " + "; ".join(notes))] if notes else []
-            return {"seen": seen, "discussions": disc}, note
+            return {"seen": seen, "discussions": disc, "hn": hn_seen, "keywords": KEYWORDS}, note
 
 
         # ------------------------------------------------------------------ run
@@ -318,7 +348,7 @@ jobs:
             v = run("EXT", lambda: item_ext(items.get("EXT")))
             if v is not None:
                 new["EXT"], n = v; notices += n
-                report.append(f"- EXT (выборочное обнаружение упоминаний): {len(v[0]['seen'])} URL в памяти, {len(v[0]['discussions'])} обсуждений")
+                report.append(f"- EXT (выборочное обнаружение упоминаний): {len(v[0]['seen'])} URL в памяти, {len(v[0]['discussions'])} обсуждений, {len(v[0]['hn'])} HN")
 
             last_c = state.get("last_comment")
             if first:
