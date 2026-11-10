@@ -31,16 +31,23 @@ namespace axf {
 
 enum : uint32_t { LL_EXT = 63, ML_EXT = 63, D_MAX = (1u << 20) - 1, WIN = AXF_BLOCK_MAX };
 static const double LAMBDA = 2.0;        // optimal parse: decode cost of a token, in bytes
-static const int    DEPTH_GREEDY = 8, DEPTH_OPT = 512;   // greedy: candidate budget = bucket width (E2-ENC S1; was a chain walk of 64)
+static const int    DEPTH_GREEDY = 8, DEPTH_OPT = 512;
+   // greedy: candidate budget = bucket width (E2-ENC S1; was a chain walk of 64)
 
-struct Params { uint32_t mm; int depth; bool lazy, optimal; };
+// greedy levels 12-14 (E2-ENC): bw = bucket width, depth = candidate budget, all_ins = every position of a match enters the
+// table (level 14, the density level) instead of its edges only
+struct Params { uint32_t mm; int depth; bool lazy, optimal; uint32_t bw; bool all_ins; };
 // fast-profile level 1..8 -> parameters; 0 = unknown level
 static inline bool level_params(int level, Params& p) {
     static const uint32_t MM[8] = {16, 12, 8, 5, 16, 12, 8, 5};
     if (level < 1 || level > 8) return false;
-    static const int BUDGET[3] = {DEPTH_GREEDY, DEPTH_GREEDY, DEPTH_GREEDY};   // levels 12, 13, 14: candidates per position
+    // levels 12, 13, 14: candidates per position and bucket width. Level 14 (silesia, E2-ENC): width 16 41.95 % at 82 MB/s,
+    // 32 40.93 % at 61, 64 40.25 % at 45 (chain of 64 before: 40.69 % at 24); 32 keeps it within 0.5 pp of the chain
+    static const int BUDGET[3] = {DEPTH_GREEDY, DEPTH_GREEDY, 32};
     p.mm = MM[level - 1]; p.optimal = level >= 5; p.lazy = true;
     p.depth = p.optimal ? DEPTH_OPT : level >= 2 && level <= 4 ? BUDGET[level - 2] : DEPTH_GREEDY;
+    static const uint32_t BWL[3] = {8, 8, 32};
+    p.bw = level >= 2 && level <= 4 ? BWL[level - 2] : 8; p.all_ins = level == 4;
     return true;
 }
 // bytes a block of n input bytes can take in the worst case. Every token carries a match of at least mm >= 4 bytes, so
@@ -115,24 +122,29 @@ struct Out {
 // compare), so at most P.depth (the candidate budget) match lengths are measured per position. The longest wins; a longer
 // match one byte later wins (lazy).
 static size_t enc_greedy(const uint8_t* in, uint32_t n, uint8_t* out, const Params& P, Enc& e, Out& o) {
-    enum : uint32_t { HB = 14, BW = 8 };
+    enum : uint32_t { HB = 14 }; const uint32_t BW = P.bw;
     const uint32_t mm = P.mm, kb = mm < 8 ? mm : 8; const uint64_t KM = kb == 8 ? ~0ull : (1ull << (8 * kb)) - 1;
     // (S4b tried an epoch in the entries instead of this reset per block: the extra mask in the candidate loop cost 7 % on
     // silesia level 13, more than the 512 KiB reset per 1 MiB block saves; dropped)
     e.head.assign((size_t)BW << HB, 0xffffffffu); uint32_t* B = e.head.data();
-    const int budget = P.depth < (int)BW ? P.depth : (int)BW;
-    auto H = [&](uint32_t p) { return (uint32_t)(((rd64(in + p) & KM) * 0x9E3779B185EBCA87ull) >> (64 - HB)); };
+    const int budget = P.depth < (int)BW ? P.depth : (int)BW;   // level 14: budget = its bucket width
+    // hash: the top HB bits pick the bucket, the next 12 bits are a tag kept in the entry beside the position (positions <
+    // 2^20): a candidate with another tag is skipped without reading its bytes (most entries of a bucket are other keys)
+    auto HT = [&](uint32_t p) { return ((rd64(in + p) & KM) * 0x9E3779B185EBCA87ull) >> (64 - HB - 12); };
+    auto H = [&](uint32_t p) { return (uint32_t)HT(p); };   // bucket << 12 | tag
     // (S2 tried: a position closer than AXF_MIN_DIST to the newest of its bucket replaces it - ratio worse on dev slices, dropped)
-    auto ins = [&](uint32_t p, uint32_t h) { uint32_t* b = B + (size_t)h * BW;
+    auto ins = [&](uint32_t p, uint32_t ht) { uint32_t* b = B + (size_t)(ht >> 12) * BW; p |= (ht & 0xfffu) << 20;
         memmove(b + 1, b, (BW - 1) * 4); b[0] = p; };
     // E2-ENC S2: the budget counts measured candidates only; d < AXF_MIN_DIST is lifted to the first legal multiple of d
     // (the same bytes on a run of that period, as in level 11) and verified; a candidate is first checked at the byte
     // that would make it longer than the best so far
-    auto longest = [&](uint32_t pos, uint32_t h, uint32_t& bd) {
-        const uint32_t* b = B + (size_t)h * BW; uint32_t best = 0; const uint32_t lim = n - pos - 8; const uint64_t k = rd64(in + pos);
+    auto longest = [&](uint32_t pos, uint32_t ht, uint32_t& bd) {
+        const uint32_t* b = B + (size_t)(ht >> 12) * BW; const uint32_t tg = (ht & 0xfffu) << 20; uint32_t best = 0; const uint32_t lim = n - pos - 8; const uint64_t k = rd64(in + pos);
         int spent = 0;
         for (uint32_t i = 0; i < BW && spent < budget; i++) {
-            uint32_t cand = b[i]; if (cand == 0xffffffffu) break;
+            if (b[i] == 0xffffffffu) break;
+            if ((b[i] & 0xfff00000u) != tg) continue;   // another key: no read
+            uint32_t cand = b[i] & 0xfffffu;
             uint32_t d = pos - cand;
             if (d > D_MAX + AXF_MIN_DIST || d > WIN) break;
             if ((rd64(in + cand) ^ k) & KM) continue;
@@ -155,7 +167,8 @@ static size_t enc_greedy(const uint8_t* in, uint32_t n, uint8_t* out, const Para
             o.lit.insert(o.lit.end(), in + anchor, in + pos);
             // a match longer than AXF_COPY is one escaped token (the decoder copies it in 64-byte steps)
             o.put(pos - anchor, best, bd, mm);
-            {   // E2-ENC S4a: only the edges of the match enter the table (its first 2 and last 2 positions); the inside is
+            if (P.all_ins) { for (uint32_t p = pos; p < pos + best && p + 12 < n; p++) ins(p, H(p)); }   // level 14: every position
+            else {   // E2-ENC S4a: only the edges of the match enter the table (its first 2 and last 2 positions); the inside is
                 // covered by its source, and consecutive inside positions would fill a bucket with one match
                 const uint32_t end = pos + best, ed[4] = {pos, pos + 1, end - 2, end - 1};
                 for (int i = 0; i < 4; i++) { const uint32_t p = ed[i]; if (p >= pos && p < end && p + 12 < n && (i < 2 || p > pos + 1)) ins(p, H(p)); }
