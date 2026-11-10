@@ -119,14 +119,23 @@ static size_t enc_greedy(const uint8_t* in, uint32_t n, uint8_t* out, const Para
     e.head.assign((size_t)BW << HB, 0xffffffffu); uint32_t* B = e.head.data();
     const int budget = P.depth < (int)BW ? P.depth : (int)BW;
     auto H = [&](uint32_t p) { return (uint32_t)(((rd64(in + p) & KM) * 0x9E3779B185EBCA87ull) >> (64 - HB)); };
-    auto ins = [&](uint32_t p, uint32_t h) { uint32_t* b = B + (size_t)h * BW; memmove(b + 1, b, (BW - 1) * 4); b[0] = p; };
+    // (S2 tried: a position closer than AXF_MIN_DIST to the newest of its bucket replaces it - ratio worse on dev slices, dropped)
+    auto ins = [&](uint32_t p, uint32_t h) { uint32_t* b = B + (size_t)h * BW;
+        memmove(b + 1, b, (BW - 1) * 4); b[0] = p; };
+    // E2-ENC S2: the budget counts measured candidates only; d < AXF_MIN_DIST is lifted to the first legal multiple of d
+    // (the same bytes on a run of that period, as in level 11) and verified; a candidate is first checked at the byte
+    // that would make it longer than the best so far
     auto longest = [&](uint32_t pos, uint32_t h, uint32_t& bd) {
         const uint32_t* b = B + (size_t)h * BW; uint32_t best = 0; const uint32_t lim = n - pos - 8; const uint64_t k = rd64(in + pos);
-        for (int i = 0; i < budget; i++) {
-            const uint32_t cand = b[i]; if (cand == 0xffffffffu) break;
-            const uint32_t d = pos - cand;
+        int spent = 0;
+        for (uint32_t i = 0; i < BW && spent < budget; i++) {
+            uint32_t cand = b[i]; if (cand == 0xffffffffu) break;
+            uint32_t d = pos - cand;
             if (d > D_MAX + AXF_MIN_DIST || d > WIN) break;
-            if (d < AXF_MIN_DIST || ((rd64(in + cand) ^ k) & KM)) continue;
+            if ((rd64(in + cand) ^ k) & KM) continue;
+            if (d < AXF_MIN_DIST) { d *= (AXF_MIN_DIST + d - 1) / d; if (d > pos || ((rd64(in + pos - d) ^ k) & KM)) continue; cand = pos - d; }
+            if (best && (best >= lim || in[cand + best] != in[pos + best])) continue;
+            spent++;
             const uint32_t l = match_len(in, pos, cand, lim);
             if (l > best) { best = l; bd = d; if (l >= 512) break; }
         }
