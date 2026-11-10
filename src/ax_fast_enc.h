@@ -52,7 +52,8 @@ static inline size_t enc_bound(size_t n, uint32_t mm) {
 }
 
 struct Enc { std::vector<uint32_t> head, chain; std::vector<uint32_t> bl, bd; std::vector<double> price; std::vector<uint32_t> from, mlen, mdist;
-             std::vector<uint32_t> stab, stok; std::vector<uint8_t> slit, sext; std::vector<uint8_t> out; };
+             std::vector<uint32_t> stab, stok; std::vector<uint8_t> slit, sext; std::vector<uint8_t> out;
+};
 
 // little-endian on every host (axf_le32/64 in ax_fast.h): the hash keys, the 8-byte XOR compares (ctz counts matching
 // bytes from the lower address, clz from the higher one) and every written field give the same archive bytes on
@@ -116,6 +117,8 @@ struct Out {
 static size_t enc_greedy(const uint8_t* in, uint32_t n, uint8_t* out, const Params& P, Enc& e, Out& o) {
     enum : uint32_t { HB = 14, BW = 8 };
     const uint32_t mm = P.mm, kb = mm < 8 ? mm : 8; const uint64_t KM = kb == 8 ? ~0ull : (1ull << (8 * kb)) - 1;
+    // (S4b tried an epoch in the entries instead of this reset per block: the extra mask in the candidate loop cost 7 % on
+    // silesia level 13, more than the 512 KiB reset per 1 MiB block saves; dropped)
     e.head.assign((size_t)BW << HB, 0xffffffffu); uint32_t* B = e.head.data();
     const int budget = P.depth < (int)BW ? P.depth : (int)BW;
     auto H = [&](uint32_t p) { return (uint32_t)(((rd64(in + p) & KM) * 0x9E3779B185EBCA87ull) >> (64 - HB)); };
@@ -300,6 +303,7 @@ static size_t enc_optimal(const uint8_t* in, uint32_t n, uint8_t* out, const Par
 // one block -> out (at least enc_bound(n, P.mm) bytes); returns the block's size, pad included
 static size_t enc_block(const uint8_t* in, uint32_t n, uint8_t* out, const Params& P, Enc& e) {
     if (!P.optimal && P.mm == 16) return enc_sparse(in, n, out, P, e);
+    // (S4b tried keeping Out's buffers in Enc between blocks: same bytes, 1.5-2.5 % slower on silesia level 13; dropped)
     Out o; o.lit.reserve(n); o.tok.reserve(n / 8 + 1);
     return P.optimal ? enc_optimal(in, n, out, P, e, o) : enc_greedy(in, n, out, P, e, o);
 }
