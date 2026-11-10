@@ -31,7 +31,7 @@ namespace axf {
 
 enum : uint32_t { LL_EXT = 63, ML_EXT = 63, D_MAX = (1u << 20) - 1, WIN = AXF_BLOCK_MAX };
 static const double LAMBDA = 2.0;        // optimal parse: decode cost of a token, in bytes
-static const int    DEPTH_GREEDY = 64, DEPTH_OPT = 512;
+static const int    DEPTH_GREEDY = 8, DEPTH_OPT = 512;   // greedy: candidate budget = bucket width (E2-ENC S1; was a chain walk of 64)
 
 struct Params { uint32_t mm; int depth; bool lazy, optimal; };
 // fast-profile level 1..8 -> parameters; 0 = unknown level
@@ -107,37 +107,43 @@ struct Out {
     }
 };
 
-// greedy / lazy parse: hash head + chain, the longest match among `depth` candidates, a longer match one byte later wins
+// greedy / lazy parse (levels 12-14). E2-ENC S1: a bucket of BW positions per hash (one 32-byte line, newest first)
+// instead of head + chain; the hash covers min(mm, 8) bytes and a candidate is taken only if those bytes are equal (the key
+// compare), so at most P.depth (the candidate budget) match lengths are measured per position. The longest wins; a longer
+// match one byte later wins (lazy).
 static size_t enc_greedy(const uint8_t* in, uint32_t n, uint8_t* out, const Params& P, Enc& e, Out& o) {
-    const uint32_t HB = 15, HN = 1u << HB, mm = P.mm; e.head.assign(HN, 0xffffffffu); e.chain.assign(n + 1, 0xffffffffu);
-    auto H = [&](uint32_t p) { return (rd32(in + p) * 0x9E3779B1u) >> (32 - HB); };
-    auto longest = [&](uint32_t pos, uint32_t& bd) {
-        uint32_t cand = e.head[H(pos)], best = 0; int dep = P.depth; const uint32_t lim = n - pos - 8;
-        while (cand != 0xffffffffu && dep-- > 0) {
+    enum : uint32_t { HB = 14, BW = 8 };
+    const uint32_t mm = P.mm, kb = mm < 8 ? mm : 8; const uint64_t KM = kb == 8 ? ~0ull : (1ull << (8 * kb)) - 1;
+    e.head.assign((size_t)BW << HB, 0xffffffffu); uint32_t* B = e.head.data();
+    const int budget = P.depth < (int)BW ? P.depth : (int)BW;
+    auto H = [&](uint32_t p) { return (uint32_t)(((rd64(in + p) & KM) * 0x9E3779B185EBCA87ull) >> (64 - HB)); };
+    auto ins = [&](uint32_t p, uint32_t h) { uint32_t* b = B + (size_t)h * BW; memmove(b + 1, b, (BW - 1) * 4); b[0] = p; };
+    auto longest = [&](uint32_t pos, uint32_t h, uint32_t& bd) {
+        const uint32_t* b = B + (size_t)h * BW; uint32_t best = 0; const uint32_t lim = n - pos - 8; const uint64_t k = rd64(in + pos);
+        for (int i = 0; i < budget; i++) {
+            const uint32_t cand = b[i]; if (cand == 0xffffffffu) break;
             const uint32_t d = pos - cand;
             if (d > D_MAX + AXF_MIN_DIST || d > WIN) break;
-            if (d >= AXF_MIN_DIST && rd32(in + cand) == rd32(in + pos)) {
-                const uint32_t l = match_len(in, pos, cand, lim);
-                if (l > best) { best = l; bd = d; if (l >= 512) break; }
-            }
-            cand = e.chain[cand];
+            if (d < AXF_MIN_DIST || ((rd64(in + cand) ^ k) & KM)) continue;
+            const uint32_t l = match_len(in, pos, cand, lim);
+            if (l > best) { best = l; bd = d; if (l >= 512) break; }
         }
         return best;
     };
     uint32_t pos = 0, anchor = 0;
     while (pos + 12 < n) {
-        const uint32_t h = H(pos); uint32_t bd = 0, best = longest(pos, bd);
+        const uint32_t h = H(pos); uint32_t bd = 0, best = longest(pos, h, bd);
         if (best >= mm && P.lazy && pos + 13 < n) {
-            uint32_t b2d = 0; const uint32_t b2 = longest(pos + 1, b2d);
-            if (b2 > best + 1) { e.chain[pos] = e.head[h]; e.head[h] = pos; pos++; continue; }
+            uint32_t b2d = 0; const uint32_t b2 = longest(pos + 1, H(pos + 1), b2d);
+            if (b2 > best + 1) { ins(pos, h); pos++; continue; }
         }
         if (best >= mm) {
             o.lit.insert(o.lit.end(), in + anchor, in + pos);
             // a match longer than AXF_COPY is one escaped token (the decoder copies it in 64-byte steps)
             o.put(pos - anchor, best, bd, mm);
-            for (uint32_t p = pos; p < pos + best && p + 12 < n; p++) { const uint32_t hh = H(p); e.chain[p] = e.head[hh]; e.head[hh] = p; }
+            for (uint32_t p = pos; p < pos + best && p + 12 < n; p++) ins(p, H(p));
             pos += best; anchor = pos;
-        } else { e.chain[pos] = e.head[h]; e.head[h] = pos; pos += 1 + ((pos - anchor) >> 6); }   // skip faster in incompressible runs
+        } else { ins(pos, h); pos += 1 + ((pos - anchor) >> 6); }   // skip faster in incompressible runs
     }
     o.lit.insert(o.lit.end(), in + anchor, in + n);
     return o.write(out, n - anchor);
