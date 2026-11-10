@@ -33,13 +33,13 @@ enum : uint32_t { LL_EXT = 63, ML_EXT = 63, D_MAX = (1u << 20) - 1, WIN = AXF_BL
 static const double LAMBDA = 2.0;        // optimal parse: decode cost of a token, in bytes
 static const int    DEPTH_GREEDY = 8, DEPTH_OPT = 512;   // greedy: candidate budget = bucket width (E2-ENC S1; was a chain walk of 64)
 
-struct Params { uint32_t mm; int depth; bool lazy, optimal, probe; };   // probe: S3 end probe instead of lazy (levels 12-13)
+struct Params { uint32_t mm; int depth; bool lazy, optimal; };
 // fast-profile level 1..8 -> parameters; 0 = unknown level
 static inline bool level_params(int level, Params& p) {
     static const uint32_t MM[8] = {16, 12, 8, 5, 16, 12, 8, 5};
     if (level < 1 || level > 8) return false;
     static const int BUDGET[3] = {DEPTH_GREEDY, DEPTH_GREEDY, DEPTH_GREEDY};   // levels 12, 13, 14: candidates per position
-    p.mm = MM[level - 1]; p.optimal = level >= 5; p.lazy = true; p.probe = level == 2 || level == 3;   // 14 keeps lazy (density level)
+    p.mm = MM[level - 1]; p.optimal = level >= 5; p.lazy = true;
     p.depth = p.optimal ? DEPTH_OPT : level >= 2 && level <= 4 ? BUDGET[level - 2] : DEPTH_GREEDY;
     return true;
 }
@@ -112,7 +112,7 @@ struct Out {
 // greedy / lazy parse (levels 12-14). E2-ENC S1: a bucket of BW positions per hash (one 32-byte line, newest first)
 // instead of head + chain; the hash covers min(mm, 8) bytes and a candidate is taken only if those bytes are equal (the key
 // compare), so at most P.depth (the candidate budget) match lengths are measured per position. The longest wins; a longer
-// match found by one probe near the end of the current one cuts it (S3).
+// match one byte later wins (lazy).
 static size_t enc_greedy(const uint8_t* in, uint32_t n, uint8_t* out, const Params& P, Enc& e, Out& o) {
     enum : uint32_t { HB = 14, BW = 8 };
     const uint32_t mm = P.mm, kb = mm < 8 ? mm : 8; const uint64_t KM = kb == 8 ? ~0ull : (1ull << (8 * kb)) - 1;
@@ -141,39 +141,24 @@ static size_t enc_greedy(const uint8_t* in, uint32_t n, uint8_t* out, const Para
         }
         return best;
     };
-    // edges of a match [a, a + l) into the table (E2-ENC S4a): its first 2 and last 2 positions; the inside is covered by its
-    // source, and consecutive inside positions would fill a bucket with one match
-    auto edges = [&](uint32_t a, uint32_t l) {
-        const uint32_t end = a + l, ed[4] = {a, a + 1, end - 2, end - 1};
-        for (int i = 0; i < 4; i++) { const uint32_t p = ed[i]; if (p >= a && p < end && p + 12 < n && (i < 2 || p > a + 1)) ins(p, H(p)); }
-    };
     uint32_t pos = 0, anchor = 0;
     while (pos + 12 < n) {
         const uint32_t h = H(pos); uint32_t bd = 0, best = longest(pos, h, bd);
-        if (best >= mm && !P.probe && P.lazy && pos + 13 < n) {   // level 14: a longer match one byte later wins
+        if (best >= mm && P.lazy && pos + 13 < n) {
             uint32_t b2d = 0; const uint32_t b2 = longest(pos + 1, H(pos + 1), b2d);
             if (b2 > best + 1) { ins(pos, h); pos++; continue; }
         }
-        if (best < mm) { ins(pos, h); pos += 1 + ((pos - anchor) >> 6); continue; }   // skip faster in incompressible runs
-        o.lit.insert(o.lit.end(), in + anchor, in + pos);
-        uint32_t ll = pos - anchor;
-        for (;;) {
-            // E2-ENC S3 (instead of lazy evaluation): one probe 2 bytes before the end of the match. A match found there is
-            // extended backward (not below pos + mm); if it reaches at least 4 bytes past the end, the first match is cut where
-            // the second begins and the second is taken in the same way. A match longer than AXF_COPY is one escaped token.
-            const uint32_t end = pos + best, q = end - 2;
-            uint32_t nd = 0, nb = 0, q2 = q;
-            if (P.probe && q >= pos + mm && q + 13 < n) {
-                nb = longest(q, H(q), nd);
-                if (nb >= mm) { while (q2 > pos + mm && q2 > nd && in[q2 - 1] == in[q2 - 1 - nd]) { q2--; nb++; } }
+        if (best >= mm) {
+            o.lit.insert(o.lit.end(), in + anchor, in + pos);
+            // a match longer than AXF_COPY is one escaped token (the decoder copies it in 64-byte steps)
+            o.put(pos - anchor, best, bd, mm);
+            {   // E2-ENC S4a: only the edges of the match enter the table (its first 2 and last 2 positions); the inside is
+                // covered by its source, and consecutive inside positions would fill a bucket with one match
+                const uint32_t end = pos + best, ed[4] = {pos, pos + 1, end - 2, end - 1};
+                for (int i = 0; i < 4; i++) { const uint32_t p = ed[i]; if (p >= pos && p < end && p + 12 < n && (i < 2 || p > pos + 1)) ins(p, H(p)); }
             }
-            if (nb >= mm && q2 + nb >= end + 4) {
-                o.put(ll, q2 - pos, bd, mm); edges(pos, q2 - pos); ll = 0;
-                pos = q2; best = nb; bd = nd; continue;
-            }
-            o.put(ll, best, bd, mm); edges(pos, best);
-            pos = end; anchor = end; break;
-        }
+            pos += best; anchor = pos;
+        } else { ins(pos, h); pos += 1 + ((pos - anchor) >> 6); }   // skip faster in incompressible runs
     }
     o.lit.insert(o.lit.end(), in + anchor, in + n);
     return o.write(out, n - anchor);
