@@ -58,7 +58,7 @@ static inline size_t enc_bound(size_t n, uint32_t mm) {
     return AXF_BHDR + AXF_PAD + n + n / 32 + 16;
 }
 
-struct Enc { std::vector<uint32_t> head, chain; std::vector<uint32_t> bl, bd; std::vector<double> price; std::vector<uint32_t> from, mlen, mdist;
+struct Enc { std::vector<uint32_t> head, chain; std::vector<uint32_t> bl, bd; std::vector<uint64_t> price; std::vector<uint32_t> from, mlen, mdist;
              std::vector<uint32_t> stab, stok; std::vector<uint8_t> slit, sext; std::vector<uint8_t> out;
 };
 
@@ -102,10 +102,11 @@ static inline uint32_t match_len(const uint8_t* in, uint32_t a, uint32_t b, uint
 struct Out {
     std::vector<uint32_t> tok; std::vector<uint8_t> ext, lit;
     void leb(uint32_t r) { while (r >= 255) { ext.push_back(255); r -= 255; } ext.push_back((uint8_t)r); }
-    // one token: ll literals then a match of ml bytes at distance d (>= AXF_MIN_DIST); matches above AXF_COPY use the escape
+    // one token: ll literals then a match of ml bytes at distance d (>= AXF_MIN_DIST). E2-ENC S5: a direct code up to
+    // mm + 62 (mc <= 62, which every decoder since 2.4.0 accepts, FORMAT_FAST.md section 2); longer matches use the escape
     void put(uint32_t ll, uint32_t ml, uint32_t d, uint32_t mm) {
         uint32_t llf = ll; if (ll >= LL_EXT) { llf = LL_EXT; leb(ll - LL_EXT); }
-        uint32_t mlf; if (ml <= AXF_COPY) mlf = ml - mm; else { mlf = ML_EXT; leb(ml - AXF_COPY - 1); }
+        uint32_t mlf; if (ml <= mm + 62) mlf = ml - mm; else { mlf = ML_EXT; leb(ml - AXF_COPY - 1); }
         tok.push_back(llf | mlf << 6 | (d - AXF_MIN_DIST) << 12);
     }
     size_t write(uint8_t* out, uint32_t tail) const {
@@ -288,17 +289,20 @@ static size_t enc_optimal(const uint8_t* in, uint32_t n, uint8_t* out, const Par
             pos += skip;
         }
     }
-    const double TOKB = 4.0;
-    e.price.assign(n + 1, 1e300); e.from.assign(n + 1, 0); e.mlen.assign(n + 1, 0); e.mdist.assign(n + 1, 0);
+    // E2-ENC S5: integer prices, K per byte and 1 per token (LAMBDA -> epsilon: the fewest bytes, then the fewest tokens);
+    // a token is 4 bytes plus its match escape (1 + (ml - 65) / 255 bytes above the direct range mm + 62)
+    const uint64_t K = 256, TOK = 4 * K + 1; const uint32_t DIR = mm + 62;
+    e.price.assign(n + 1, ~0ull); e.from.assign(n + 1, 0); e.mlen.assign(n + 1, 0); e.mdist.assign(n + 1, 0);
     e.price[0] = 0;
     for (uint32_t i = 0; i < n; i++) {
-        const double pi = e.price[i];
-        if (pi + 1.0 < e.price[i + 1]) { e.price[i + 1] = pi + 1.0; e.from[i + 1] = i; e.mlen[i + 1] = 0; }
+        const uint64_t pi = e.price[i];
+        if (pi + K < e.price[i + 1]) { e.price[i + 1] = pi + K; e.from[i + 1] = i; e.mlen[i + 1] = 0; }
         const uint32_t L = e.bl[i]; if (!L) continue;
-        const double c = pi + TOKB + LAMBDA;
-        const uint32_t top = L < AXF_COPY ? L : AXF_COPY;
+        const uint64_t c = pi + TOK;
+        const uint32_t top = L < DIR ? L : DIR;
         for (uint32_t l = mm; l <= top; l++) { const uint32_t j = i + l; if (c < e.price[j]) { e.price[j] = c; e.from[j] = i; e.mlen[j] = l; e.mdist[j] = e.bd[i]; } }
-        if (L > AXF_COPY) { const uint32_t j = i + L; if (c < e.price[j]) { e.price[j] = c; e.from[j] = i; e.mlen[j] = L; e.mdist[j] = e.bd[i]; } }
+        if (L > DIR) { const uint64_t c2 = c + K * (1 + (L - AXF_COPY - 1) / 255); const uint32_t j = i + L;
+                       if (c2 < e.price[j]) { e.price[j] = c2; e.from[j] = i; e.mlen[j] = L; e.mdist[j] = e.bd[i]; } }
     }
     std::vector<uint32_t> ms, ml, md;
     for (uint32_t j = n; j > 0; ) { const uint32_t i = e.from[j]; if (e.mlen[j]) { ms.push_back(i); ml.push_back(e.mlen[j]); md.push_back(e.mdist[j]); } j = i; }

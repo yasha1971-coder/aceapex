@@ -3,7 +3,8 @@
 # load1 < 0.5 before every run, N runs, median. Per corpus and level: archive (aceapex c --threads 1) -> size, sha256;
 # ratio = size / original; compression and decompression MB/s from `aceapex t --threads 1` (decode = median of 7 inside).
 # Judge: our decoder round trip of every archive (sha256 of the output == original) and the v2.6.1 release binary
-# (82e62e56..., from aceapex-2.6.1-linux-x86_64.tar.gz 34705ace...) decoding every archive of levels 12-14 the same way.
+# (82e62e56..., from aceapex-2.6.1-linux-x86_64.tar.gz 34705ace...) decoding every archive of levels 12-14 the same way
+# (12..REL_MAX; S5 changes 15-18 too: REL_MAX=18).
 # Usage: bash research/e2enc/bench.sh <step> <outdir> [levels] [runs] [corpora...]
 #   defaults: levels "12 13 14", runs 5, corpora silesia.tar enwik8 chr1 (dev). Writes <outdir>/<step>.tsv and judge.tsv.
 set -euo pipefail
@@ -34,7 +35,7 @@ for f in "${CORP[@]}"; do
     taskset -c "$CPU" "$BIN" c --in "$f" --out "$a" --threads 1 --level "$L" > /dev/null 2>&1
     sz=$(stat -c %s "$a"); ash=$(sha256sum "$a" | cut -d' ' -f1)
     "$BIN" d --in "$a" --out "$TMP/rt" > /dev/null 2>&1; ours=$([ "$(sha256sum "$TMP/rt" | cut -d' ' -f1)" = "$osha" ] && echo ok || echo FAIL)
-    rel=-; if [ "$L" -ge 12 ] && [ "$L" -le 14 ]; then "$REL" d --in "$a" --out "$TMP/rt" > /dev/null 2>&1 || true
+    rel=-; if [ "$L" -ge 12 ] && [ "$L" -le "${REL_MAX:-14}" ]; then "$REL" d --in "$a" --out "$TMP/rt" > /dev/null 2>&1 || true
       rel=$([ "$(sha256sum "$TMP/rt" | cut -d' ' -f1)" = "$osha" ] && echo ok || echo FAIL); fi
     rm -f "$TMP/rt"; echo -e "$STEP\t$c\t$L\t$ours\t$rel" >> "$J"
     { [ "$ours" = ok ] && [ "$rel" != FAIL ]; } || { echo "STOP: judge $c L$L ours=$ours v2.6.1=$rel"; exit 3; }
