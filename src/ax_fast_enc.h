@@ -38,7 +38,9 @@ struct Params { uint32_t mm; int depth; bool lazy, optimal; };
 static inline bool level_params(int level, Params& p) {
     static const uint32_t MM[8] = {16, 12, 8, 5, 16, 12, 8, 5};
     if (level < 1 || level > 8) return false;
-    p.mm = MM[level - 1]; p.optimal = level >= 5; p.lazy = true; p.depth = p.optimal ? DEPTH_OPT : DEPTH_GREEDY;
+    static const int BUDGET[3] = {DEPTH_GREEDY, DEPTH_GREEDY, DEPTH_GREEDY};   // levels 12, 13, 14: candidates per position
+    p.mm = MM[level - 1]; p.optimal = level >= 5; p.lazy = true;
+    p.depth = p.optimal ? DEPTH_OPT : level >= 2 && level <= 4 ? BUDGET[level - 2] : DEPTH_GREEDY;
     return true;
 }
 // bytes a block of n input bytes can take in the worst case. Every token carries a match of at least mm >= 4 bytes, so
@@ -141,7 +143,11 @@ static size_t enc_greedy(const uint8_t* in, uint32_t n, uint8_t* out, const Para
             o.lit.insert(o.lit.end(), in + anchor, in + pos);
             // a match longer than AXF_COPY is one escaped token (the decoder copies it in 64-byte steps)
             o.put(pos - anchor, best, bd, mm);
-            for (uint32_t p = pos; p < pos + best && p + 12 < n; p++) ins(p, H(p));
+            {   // E2-ENC S4a: only the edges of the match enter the table (its first 2 and last 2 positions); the inside is
+                // covered by its source, and consecutive inside positions would fill a bucket with one match
+                const uint32_t end = pos + best, ed[4] = {pos, pos + 1, end - 2, end - 1};
+                for (int i = 0; i < 4; i++) { const uint32_t p = ed[i]; if (p >= pos && p < end && p + 12 < n && (i < 2 || p > pos + 1)) ins(p, H(p)); }
+            }
             pos += best; anchor = pos;
         } else { ins(pos, h); pos += 1 + ((pos - anchor) >> 6); }   // skip faster in incompressible runs
     }
