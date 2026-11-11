@@ -1,7 +1,7 @@
 # Encode scaling + MAX_DIST sweep (breakthrough 8)
 
 ## Что доказывает
-LZ77 encode phase = 95% времени, масштабируется 11.5x на 16 ядрах.
+LZ77 encode phase = 95% времени, масштабируется 7.3x на 16 ядрах (42 -> 307 MB/s).
 MAX_DIST 128M->64K: encode +15%, ratio неизменен (окно не bottleneck).
 
 ## Воспроизведение
@@ -16,5 +16,5 @@ MAX_DIST 128M->64K: encode +15%, ratio неизменен (окно не bottlen
 2. Scaling: aceapex_depth c --in enwik9 --threads {1,2,4,8,16}, читать "Phase LZ77:"
 
 ## Результаты (H100 pod, EPYC, enwik9)
-threads 1->2->4->8->16 = 42->77->134->216->307 MB/s (11.5x)
+threads 1->2->4->8->16 = 42->77->134->216->307 MB/s (7.3x; было записано 11.5x - ошибка счёта, исправлено 11.11.2026)
 MAX_DIST 128M/64K: fastq 507/566, enwik9 217/255 MB/s, ratio неизменен
