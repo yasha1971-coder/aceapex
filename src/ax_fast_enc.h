@@ -36,18 +36,26 @@ static const int    DEPTH_GREEDY = 8, DEPTH_OPT = 512;
 
 // greedy levels 12-14 (E2-ENC): bw = bucket width, depth = candidate budget, all_ins = every position of a match enters the
 // table (level 14, the density level) instead of its edges only
-struct Params { uint32_t mm; int depth; bool lazy, optimal; uint32_t bw; bool all_ins; };
+// dir = longest match of a direct code (E2-ENC S5: mm + 62; levels 17-18 keep 64, S0's parse and archives); tok = price of a
+// token in 1/256 bytes in the optimal parse (S5: 4 bytes + epsilon for 15-16; 4 + LAMBDA for 17-18); esc = escape bytes priced
+struct Params { uint32_t mm; int depth; bool lazy, optimal; uint32_t bw; bool all_ins; uint32_t dir; uint64_t tok; bool esc; };
 // fast-profile level 1..8 -> parameters; 0 = unknown level
 static inline bool level_params(int level, Params& p) {
     static const uint32_t MM[8] = {16, 12, 8, 5, 16, 12, 8, 5};
     if (level < 1 || level > 8) return false;
     // levels 12, 13, 14: candidates per position and bucket width. Level 14 (silesia, E2-ENC): width 16 41.95 % at 82 MB/s,
     // 32 40.93 % at 61, 64 40.25 % at 45 (chain of 64 before: 40.69 % at 24); 32 keeps it within 0.5 pp of the chain
-    static const int BUDGET[3] = {DEPTH_GREEDY, DEPTH_GREEDY, 32};
+    static const int BUDGET[3] = {12, 12, 32};
     p.mm = MM[level - 1]; p.optimal = level >= 5; p.lazy = true;
     p.depth = p.optimal ? DEPTH_OPT : level >= 2 && level <= 4 ? BUDGET[level - 2] : DEPTH_GREEDY;
-    static const uint32_t BWL[3] = {8, 8, 32};
+    // levels 12-13 (silesia, E2-ENC sweep, one run): width 8 55.57 / 46.53 % at 172 MB/s, 12 54.89 / 45.82 % at 141,
+    // 16 54.53 / 45.46 % at 125; 12 keeps both within 1.0 pp of the chain of 64 (54.13 / 44.95 % at 24 MB/s)
+    static const uint32_t BWL[3] = {12, 12, 32};
     p.bw = level >= 2 && level <= 4 ? BWL[level - 2] : 8; p.all_ins = level == 4;
+    // levels 17-18 (silesia): epsilon gave -0.27 / -1.09 pp at -5.0 / -5.9 % decode; LAMBDA 0.25-2.0 none within -3 % decode
+    // with a better ratio than the chain parse - they keep S0's parse and bytes (Yakiv 11.11)
+    const bool s0 = level >= 7;
+    p.dir = s0 ? AXF_COPY : p.mm + 62; p.tok = s0 ? (uint64_t)(256 * (4 + LAMBDA)) : 4 * 256 + 1; p.esc = !s0;
     return true;
 }
 // bytes a block of n input bytes can take in the worst case. Every token carries a match of at least mm >= 4 bytes, so
@@ -104,9 +112,9 @@ struct Out {
     void leb(uint32_t r) { while (r >= 255) { ext.push_back(255); r -= 255; } ext.push_back((uint8_t)r); }
     // one token: ll literals then a match of ml bytes at distance d (>= AXF_MIN_DIST). E2-ENC S5: a direct code up to
     // mm + 62 (mc <= 62, which every decoder since 2.4.0 accepts, FORMAT_FAST.md section 2); longer matches use the escape
-    void put(uint32_t ll, uint32_t ml, uint32_t d, uint32_t mm) {
+    void put(uint32_t ll, uint32_t ml, uint32_t d, uint32_t mm, uint32_t dir) {
         uint32_t llf = ll; if (ll >= LL_EXT) { llf = LL_EXT; leb(ll - LL_EXT); }
-        uint32_t mlf; if (ml <= mm + 62) mlf = ml - mm; else { mlf = ML_EXT; leb(ml - AXF_COPY - 1); }
+        uint32_t mlf; if (ml <= dir) mlf = ml - mm; else { mlf = ML_EXT; leb(ml - AXF_COPY - 1); }
         tok.push_back(llf | mlf << 6 | (d - AXF_MIN_DIST) << 12);
     }
     size_t write(uint8_t* out, uint32_t tail) const {
@@ -167,7 +175,7 @@ static size_t enc_greedy(const uint8_t* in, uint32_t n, uint8_t* out, const Para
         if (best >= mm) {
             o.lit.insert(o.lit.end(), in + anchor, in + pos);
             // a match longer than AXF_COPY is one escaped token (the decoder copies it in 64-byte steps)
-            o.put(pos - anchor, best, bd, mm);
+            o.put(pos - anchor, best, bd, mm, P.dir);
             if (P.all_ins) { for (uint32_t p = pos; p < pos + best && p + 12 < n; p++) ins(p, H(p)); }   // level 14: every position
             else {   // E2-ENC S4a: only the edges of the match enter the table (its first 2 and last 2 positions); the inside is
                 // covered by its source, and consecutive inside positions would fill a bucket with one match
@@ -291,7 +299,7 @@ static size_t enc_optimal(const uint8_t* in, uint32_t n, uint8_t* out, const Par
     }
     // E2-ENC S5: integer prices, K per byte and 1 per token (LAMBDA -> epsilon: the fewest bytes, then the fewest tokens);
     // a token is 4 bytes plus its match escape (1 + (ml - 65) / 255 bytes above the direct range mm + 62)
-    const uint64_t K = 256, TOK = 4 * K + 1; const uint32_t DIR = mm + 62;
+    const uint64_t K = 256, TOK = P.tok; const uint32_t DIR = P.dir;
     e.price.assign(n + 1, ~0ull); e.from.assign(n + 1, 0); e.mlen.assign(n + 1, 0); e.mdist.assign(n + 1, 0);
     e.price[0] = 0;
     for (uint32_t i = 0; i < n; i++) {
@@ -301,7 +309,7 @@ static size_t enc_optimal(const uint8_t* in, uint32_t n, uint8_t* out, const Par
         const uint64_t c = pi + TOK;
         const uint32_t top = L < DIR ? L : DIR;
         for (uint32_t l = mm; l <= top; l++) { const uint32_t j = i + l; if (c < e.price[j]) { e.price[j] = c; e.from[j] = i; e.mlen[j] = l; e.mdist[j] = e.bd[i]; } }
-        if (L > DIR) { const uint64_t c2 = c + K * (1 + (L - AXF_COPY - 1) / 255); const uint32_t j = i + L;
+        if (L > DIR) { const uint64_t c2 = P.esc ? c + K * (1 + (L - AXF_COPY - 1) / 255) : c; const uint32_t j = i + L;
                        if (c2 < e.price[j]) { e.price[j] = c2; e.from[j] = i; e.mlen[j] = L; e.mdist[j] = e.bd[i]; } }
     }
     std::vector<uint32_t> ms, ml, md;
@@ -311,7 +319,7 @@ static size_t enc_optimal(const uint8_t* in, uint32_t n, uint8_t* out, const Par
     for (size_t k = ms.size(); k-- > 0; ) {
         const uint32_t st = ms[k], l = ml[k], d = md[k];
         o.lit.insert(o.lit.end(), in + anchor, in + st);
-        o.put(st - anchor, l, d, mm); anchor = st + l;
+        o.put(st - anchor, l, d, mm, P.dir); anchor = st + l;
     }
     o.lit.insert(o.lit.end(), in + anchor, in + n);
     return o.write(out, n - anchor);
