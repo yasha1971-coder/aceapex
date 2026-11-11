@@ -1503,7 +1503,7 @@ static size_t lit_chunk_size(){
     // для регионального доступа чанкование обязательно на любых данных
     // (без него seek 46 мс против 0.082).
     // the open literal profile has no 4-part zstd layout: it always writes tagged chunks
-    return (g_input_is_dna == 1 || ax_lit_open()) ? 65536 : 0;
+    return (g_input_is_dna == 1 || ax_lit_open()) ? 65536 : g_input_is_dna == -1 ? 1048576 : 0;   // W5: non-DNA in 1 MiB chunks
 }
 #define LIT_CHUNK lit_chunk_size()
 
