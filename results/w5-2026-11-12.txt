@@ -1,0 +1,58 @@
+W5 - non-DNA literals of levels 1-2 in 1 MiB chunks (2.6.2), 12.11.2026
+Decision of Yakiv 12.11 (variant g): levels 1-2 only; levels 3-4 keep the 4-part layout; level 14 as v2.6.1.
+Change: src/aceapex_main.cpp lit_chunk_size (+ the level of the encode_file call on the thread), branch w5-l12 7cbdd57;
+C = main b7455cd, W = branch w5 46f0e91 (W5 for every non-DNA level, the experiment build).
+Measured with lzbench 987a6bd (flags by default, BUILD_ONLY=ACEAPEX, bundled zstd 1.5.7), -t8,8, interleaved C/W or C/K,
+load1 < 0.5 before every run; -I1 on one core, -I8 on 8 different physical cores.
+
+1. W5 on ace-core (AMD EPYC 4344P, Zen 4), C vs W, 9 rounds, decompression MB/s median (W/C):
+   silesia -I8  L1 6 491 -> 7 749 (x1.194), L2 6 523 -> 7 834 (x1.201); min W > max C
+   enwik9 [1e8,1e9) -I8  L1 6 185 -> 7 357 (x1.190), L2 6 168 -> 7 369 (x1.195)
+   -I1 decompression x0.999-1.006, compression x0.998-1.001; chr1 (DNA) archives C == W byte for byte
+2. MT-3 part 1 on c4d-standard-64 (AMD EPYC 9B45, Zen 5, 32 cores), C vs W, 9 rounds:
+   silesia -I8 L1 6 619 -> 8 180 (x1.236), L2 6 563 -> 8 150 (x1.242); min W > max C
+   enwik9 tail -I8 L1 x1.207, L2 x1.214; -I1 x0.996-1.006
+   -I32 (observation, 4-5 rounds): silesia x2.81 / x2.75 (C 9 470 -> W 26 621 MB/s), tail x2.84 / x2.80
+   level 3 (not shipped with W5): CLI size W/C +1.35 % silesia, +1.67 % tail, +1.53 % enwik8; speed not measured
+3. Candidate K (7cbdd57) on ace-core, 12.11:
+   A) CLI with static zstd 1.4.8: K archives levels 1-4 x silesia / enwik9 tail / enwik8 / chr1 (--threads 8):
+      levels 1-2 == W, levels 3-4 == C (sha256 of MT-3 / W5): 16/16
+   B) release build line of scripts/package_linux.sh (-O3 -march=x86-64-v2 -static, zstd 1.5.7 eb33e51f...), C, W, K:
+      K levels 1-2 == W, levels 3-4 == C: 16/16. Sizes (B):
+  corpus        level  C (main)      W (all levels)  K (candidate)  K/C
+  silesia.tar   1        69,009,396    69,391,151      69,391,151   +0.55 %
+  silesia.tar   2        68,626,422    68,987,186      68,987,186   +0.53 %
+  silesia.tar   3        66,632,815    67,601,075      66,632,815   +0.00 %
+  silesia.tar   4        68,626,422    68,987,186      68,626,422   +0.00 %
+  enwik8        1        37,885,199    38,159,708      38,159,708   +0.72 %
+  enwik8        2        37,834,611    38,098,507      38,098,507   +0.70 %
+  enwik8        3        35,525,349    36,093,056      35,525,349   +0.00 %
+  enwik8        4        37,834,611    38,098,507      37,834,611   +0.00 %
+  enwik9_tail   1       294,121,011   296,041,322     296,041,322   +0.65 %
+  enwik9_tail   2       293,378,016   295,245,692     295,245,692   +0.64 %
+  enwik9_tail   3       278,797,434   283,685,235     278,797,434   +0.00 %
+  enwik9_tail   4       293,378,016   295,245,692     293,378,016   +0.00 %
+  chr1.fa       1        59,414,445    59,414,445      59,414,445   +0.00 %
+  chr1.fa       2        59,414,445    59,414,445      59,414,445   +0.00 %
+  chr1.fa       3        59,414,445    59,414,445      59,414,445   +0.00 %
+  chr1.fa       4        59,414,445    59,414,445      59,414,445   +0.00 %
+      Level 4 no longer has the bytes of level 2 (silesia L4 68 626 422 = C, L2 68 987 186).
+   C) every K archive (both zstd builds) decodes byte for byte with K's decoder; aceapex_fast 1 and 3 (levels 11, 13) on
+      silesia and enwik8 decode byte for byte (fast-profile bytes unchanged)
+   D) v2.6.1 (package 34705ace...c761c679, binary 82e62e56...) decodes K's archives of levels 1-2: 16/16
+   E) lzbench C vs K, 9 rounds, decompression MB/s median (K/C):
+      silesia.tar  aceapex 1: I1 1 556 -> 1 563 (x1.005); I8 6 483 -> 7 732 (x1.193  min K > max C)
+      silesia.tar  aceapex 2: I1 1 576 -> 1 582 (x1.004); I8 6 533 -> 7 808 (x1.195  min K > max C)
+      silesia.tar  aceapex_fast 1: I1 11 221 -> 11 140 (x0.993); I8 16 338 -> 16 339 (x1.000)
+      silesia.tar  aceapex_fast 3: I1 9 236 -> 9 242 (x1.001); I8 17 713 -> 17 719 (x1.000)
+      enwik8       aceapex 1: I1 1 030 -> 1 041 (x1.010); I8 3 824 -> 5 031 (x1.315  min K > max C)
+      enwik8       aceapex 2: I1 1 036 -> 1 044 (x1.008); I8 3 853 -> 5 039 (x1.308  min K > max C)
+      enwik8       aceapex_fast 1: I1 13 352 -> 13 357 (x1.000); I8 15 133 -> 15 455 (x1.021)
+      enwik8       aceapex_fast 3: I1 7 979 -> 7 906 (x0.991); I8 17 850 -> 17 837 (x0.999)
+      compression -I1 K/C x0.988-1.001 (all rows), -I8 main levels x1.07-1.10
+   F) internal threads in decompression of K: lzbench -I8 / -I1 = aceapex 1-2 x4.94-4.95 (silesia), x4.83 (enwik8);
+      aceapex_fast 1 x1.47 / x1.16, aceapex_fast 3 x1.92 / x2.26. CLI `d --threads 8` under /usr/bin/time -v (CPUs 0-7):
+      silesia.tar: --threads 8: L1 358%, L2 355%, L11 219%, L13 239%; --threads 1: L1 100%, L2 98%, L11 100%, L13 100% (runs of 0.03-0.18 s incl. file I/O)
+      enwik8: --threads 8: L1 353%, L2 362%, L11 196%, L13 222%; --threads 1: L1 100%, L2 99%, L11 98%, L13 97% (runs of 0.03-0.18 s incl. file I/O)
+   -I32: not run (ace-core has 8 physical cores; on c4d only by a separate word of Yakiv)
+   judge: make test on w5-l12 7cbdd57, ace-core: HEAD 77 pass / 0 fail / 3 skipped
