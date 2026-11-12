@@ -59,17 +59,18 @@
 // wrong bytes on 22). A thread started inside a call inherits its caller's state through ax_thread.
 static thread_local size_t g_block_size = BLOCK_SIZE; // runtime adaptive, set in encode_file
 extern thread_local int g_input_is_dna;
+extern thread_local int g_enc_level;
 static thread_local std::atomic<int> t_dec_err_own{0};
 static thread_local std::atomic<int>* t_dec_err = nullptr;
 static inline std::atomic<int>& ax_dec_err(){ return t_dec_err ? *t_dec_err : t_dec_err_own; }
 #define g_dec_err (ax_dec_err())
-struct AxSpawn { void* (*fn)(void*); void* arg; std::atomic<int>* err; size_t bs; int dna; };
+struct AxSpawn { void* (*fn)(void*); void* arg; std::atomic<int>* err; size_t bs; int dna, lvl; };
 static void* ax_tramp(void* p){ AxSpawn s=*(AxSpawn*)p; delete (AxSpawn*)p;
-    t_dec_err=s.err; g_block_size=s.bs; g_input_is_dna=s.dna; return s.fn(s.arg); }
+    t_dec_err=s.err; g_block_size=s.bs; g_input_is_dna=s.dna; g_enc_level=s.lvl; return s.fn(s.arg); }
 static std::atomic<long> g_ax_spawned{0};             // threads started by the codec (claim head_enc_threads)
 static int ax_thread(pthread_t* t, void* (*fn)(void*), void* arg){
     g_ax_spawned.fetch_add(1);
-    return pthread_create(t,nullptr,ax_tramp,new AxSpawn{fn,arg,&ax_dec_err(),g_block_size,g_input_is_dna}); }
+    return pthread_create(t,nullptr,ax_tramp,new AxSpawn{fn,arg,&ax_dec_err(),g_block_size,g_input_is_dna,g_enc_level}); }
 // Encoder thread budget of the current call (2.2.1): encode_file sets it from its `threads`; the entropy
 // stage (literal lanes, the three token streams) keeps to it. Before 2.2.1 that stage started up to
 // 3 + CPU-count threads whatever the budget (lzbench -I1: 146 % CPU). 0 = not set (no cap).
@@ -1085,6 +1086,7 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
 {
     g_enc_threads = threads > 0 ? threads : 1;              // entropy stage keeps to this (2.2.1)
     g_block_size = compute_block_size(src_size, threads);
+    g_enc_level = level;                                    // lit_chunk_size(): W5 only for levels 1-2 (2.6.2)
     // Подсказка для lit_chunk_size(): проверяем сам вход, не литералы.
     if(!ax_getenv("LIT_CHUNK"))
         g_input_is_dna = dna_worth(src, src_size < (1u<<22) ? src_size : (1u<<22)) ? 1 : -1;
@@ -1489,6 +1491,10 @@ static uint8_t* lit_compress_legacy(const uint8_t* src, size_t sz, size_t& out_s
 // Выставляется один раз в encode_file по выборке из входа.
 // 0 = не проверяли, 1 = входные данные проходят dna_worth, -1 = нет.
 thread_local int g_input_is_dna = 0;
+// Level of the encode_file call on this thread (2.6.2): non-DNA literals of levels 1-2 go in 1 MiB chunks, which the
+// decoder reads in parallel (W5: decode -I8 x1.19-1.24 on Zen 4 and Zen 5 at +0.40..+0.63 % size, results/w5-2026-11-12.txt);
+// levels 3-4 keep the 4-part layout (level 3: +1.35..+1.67 % size, speed not measured).
+thread_local int g_enc_level = 0;
 
 static size_t lit_chunk_size(){
     const char* e=ax_getenv("LIT_CHUNK");
@@ -1503,7 +1509,8 @@ static size_t lit_chunk_size(){
     // для регионального доступа чанкование обязательно на любых данных
     // (без него seek 46 мс против 0.082).
     // the open literal profile has no 4-part zstd layout: it always writes tagged chunks
-    return (g_input_is_dna == 1 || ax_lit_open()) ? 65536 : 0;
+    if (g_input_is_dna == 1 || ax_lit_open()) return 65536;
+    return g_input_is_dna == -1 && (g_enc_level == 1 || g_enc_level == 2) ? 1048576 : 0;
 }
 #define LIT_CHUNK lit_chunk_size()
 

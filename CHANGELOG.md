@@ -6,6 +6,13 @@ Every number below is reproduced by `make test && ./verify.sh` on the tagged com
 
 ## Unreleased
 
+- Levels 1–2 of the default profile cut the literals of non-DNA input into 1 MiB chunks (the chunked layout of
+  FORMAT_ACEPX2 §3.2.2, which every decoder since 2.3 reads in parallel) instead of 4 equal parts: decompression with
+  8 threads ×1.19–1.20 on Zen 4 (ace-core) and ×1.21–1.24 on Zen 5 (c4d-standard-64), silesia and the enwik9 tail,
+  1 thread unchanged; archives +0.40–0.63 % (CLI with zstd 1.4.8; lzbench with zstd 1.5.7 +0.53–0.65 %). Archives of
+  levels 1–2 differ from 2.6.1 and are read by 2.6.1. DNA input and levels 3–4 are unchanged. **Level 4 no longer has the
+  bytes of level 2**: it keeps the 4-part layout (`results/w5-2026-11-12.txt`).
+
 - Levels 15–18 (optimal parse) stop the chain walk at a 256-byte match: 5.7–5.9 MB/s on short-period data (was 0.197),
   silesia 1.35–1.40 MB/s (was 1.07), ratio +0.007 pp; archives at levels 15–18 differ from 2.6.1, still valid and readable
   by any 2.4+ reader; levels 1–3 and 11–14 unchanged (`results/lvl18-2026-11-05.txt`).
