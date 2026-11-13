@@ -133,6 +133,13 @@ head_level_tls, исправление sink AX_LINEMODEL, исправление
 после исправления прошли только seed 2 и 4 по 900 с. TurboBench 13.11 собран на изменённой копии (перенесены c-blosc2,
 openzl, подменён turbobench.c) — как ворота не засчитывается. Дальше: PRECHECK-262 -> один SHA кандидата -> preflight ->
 основные ворота на том же SHA.
+13.11 PRECHECK-262: кандидат 0aa31abe7db598f571a39bd2afdf628e0c3895e7 — preflight FAIL (4 из 6), основные ворота не
+запускались. P1 судья 79/0, P2 самопроверка, P3 два повреждённых архива (ASan+UBSan, MemoryMax 8G), P4 4 seed × 60 с — PASS.
+P5 FAIL: upstream TurboBench 8a0ec42 требует C++20 <format> (plugin.cc), на ace-core gcc 11.4. P6 FAIL: ~/golden/mixed/
+silesia.tar = 211 957 760 B (sha 3eee8566), не стандартный a667bac8 (211 947 520 B, /tmp/hwref/corpus). CI на 0aa31ab: красные
+build-and-test (обязательный набор требовал class_<корпус>_* без корпуса — исправлено в dd6f9c1) и windows-msys2 (CLI не
+собирается под Windows: faidx/region через mmap с 02.10, так же в v2.6.1). Ждёт решения Якова: объём ворот Windows,
+компилятор для TurboBench, какой silesia.tar эталон.
 05.11 FREEZE-4 (без тега): CLI `d --out FILE` атомарный (временный файл + rename только при совпадении XXH3; претензия
 head_cli_atomic; 200 порч: exit 1 200, FILE создан 0, временных 0; старый CLI: создан 200); судья 77/0. ClusterFuzzLite в
 aceapex (fuzz/fuzz_api.cpp) и aceapex-fast (fuzz/fuzz_axfast.c): сырой путь — ASan/UBSan, VERIFY-путь — «успех => байты ==
