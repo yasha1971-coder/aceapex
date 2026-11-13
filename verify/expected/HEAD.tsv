@@ -1,5 +1,6 @@
 # claim_id	condition - the claims verify.sh HEAD requires (13.11.2026, 93 on ace-core). always: every run;
-# golden: when $GOLDEN/genome/chr1.fa exists (the paper-5 contract rows and the chr1 emulations of cdec_test.sh).
+# golden: when $GOLDEN/genome/chr1.fa exists (the paper-5 contract rows and the chr1 emulations of cdec_test.sh);
+# golden:<path>: when $GOLDEN/<path> exists (class_<corpus>_* rows; without the corpus the contract writes class_<corpus> skipped).
 # A new claim is added here in the commit that adds it.
 chr1_md5	golden
 chr1_baseline_ratio	golden
@@ -9,14 +10,14 @@ min_match16_ratio	golden
 default_chr1_ratio	golden
 class_chr1_aceapex	golden
 class_chr1_zstd3_16k	golden
-class_enwik8_aceapex	golden
-class_enwik8_zstd3_16k	golden
-class_enwik9_aceapex	golden
-class_enwik9_zstd3_16k	golden
-class_silesia_aceapex	golden
-class_silesia_zstd3_16k	golden
-class_fastq_aceapex	golden
-class_fastq_zstd3_16k	golden
+class_enwik8_aceapex	golden:text/enwik8
+class_enwik8_zstd3_16k	golden:text/enwik8
+class_enwik9_aceapex	golden:text/enwik9
+class_enwik9_zstd3_16k	golden:text/enwik9
+class_silesia_aceapex	golden:mixed/silesia.tar
+class_silesia_zstd3_16k	golden:mixed/silesia.tar
+class_fastq_aceapex	golden:genome/ERR194147_1gb.fastq
+class_fastq_zstd3_16k	golden:genome/ERR194147_1gb.fastq
 parse_chained_percent	golden
 parse_run_median	golden
 wf_build	golden

@@ -5,7 +5,7 @@
 # carrying provenance and one record per claim (claim_id, level, expected, tolerance,
 # measured, verdict, command). Usage: ./verify.sh [tag ...]   (default: verify/manifest.tsv)
 # A tag passes only when its judge exits 0, every claim_id of verify/expected/<tag>.tsv is present (rows marked golden
-# only when $GOLDEN/genome/chr1.fa exists) and no record fails; only then results/<tag>.json is written, otherwise
+# only when $GOLDEN/genome/chr1.fa exists, golden:<path> when $GOLDEN/<path> exists) and no record fails; only then results/<tag>.json is written, otherwise
 # results/<tag>.failed.json (and results/<tag>.json is removed). scripts/verify_selftest.sh checks these rules
 # (JUDGE_DIR / EXPECT_DIR point it at its own judges).
 set -uo pipefail
@@ -64,7 +64,9 @@ if os.path.exists(exp):
     for line in open(exp):
         if line.startswith("#") or not line.strip(): continue
         cid,cond=(line.rstrip("\n").split("\t")+["always"])[:2]
-        if (cond=="always" or (cond=="golden" and golden)) and cid not in have: missing.append(cid)
+        g=os.environ.get("GOLDEN","")   # golden:<path> = required when $GOLDEN/<path> exists (a corpus of the contract)
+        need=cond=="always" or (cond=="golden" and golden) or (cond.startswith("golden:") and os.path.exists(g+"/"+cond[7:]))
+        if need and cid not in have: missing.append(cid)
 prov["missing"]=missing
 json.dump({"provenance":prov,"result":body},open(out,"w"),indent=1)
 print("%-14s %5d %5d %8d %9d %8d %6d"%(tag,prov["pass"],prov["fail"],prov["skipped"],prov["declared"],prov["unjudged"],prov["known"]))
