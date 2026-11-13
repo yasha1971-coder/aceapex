@@ -144,6 +144,10 @@ build-and-test (обязательный набор требовал class_<ко
 повторе после ошибки обвязки), G1 FAIL: seed 20261113001 убит OOM при MemoryMax 8G — потоковый декодер основного
 профиля выделяет буферы по block_size из заголовка (≈2 GiB на поток, src/aceapex_api.cpp:636; так же в v2.6.1). Формат не
 ограничивает block_size сверху. HOLD, ждёт решения Якова.
+13.11 Кандидат 2.6.2 = 4947cb7579d36cbf5ac0730ff8ec22582aa179aa (G1 вариант г: буферы потокового декодера растут по
+записи, не по block_size; head_stream_alloc). Preflight PASS 6/6, основные ворота G1–G9 все PASS (G1 4 × 900 с под
+MemoryMax 8G 4/4; CI push и dispatch с verify-tags success). Дальше — только по слову Якова: вливание в main вместе с
+выпуском (тег на этом SHA), release fast-forward, наблюдение за ежедневной сборкой TurboBench (при падении — откат).
 05.11 FREEZE-4 (без тега): CLI `d --out FILE` атомарный (временный файл + rename только при совпадении XXH3; претензия
 head_cli_atomic; 200 порч: exit 1 200, FILE создан 0, временных 0; старый CLI: создан 200); судья 77/0. ClusterFuzzLite в
 aceapex (fuzz/fuzz_api.cpp) и aceapex-fast (fuzz/fuzz_axfast.c): сырой путь — ASan/UBSan, VERIFY-путь — «успех => байты ==
