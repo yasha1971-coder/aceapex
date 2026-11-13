@@ -16,6 +16,16 @@ Every number below is reproduced by `make test && ./verify.sh` on the tagged com
 - Levels 15–18 (optimal parse) stop the chain walk at a 256-byte match: 5.7–5.9 MB/s on short-period data (was 0.197),
   silesia 1.35–1.40 MB/s (was 1.07), ratio +0.007 pp; archives at levels 15–18 differ from 2.6.1, still valid and readable
   by any 2.4+ reader; levels 1–3 and 11–14 unchanged (`results/lvl18-2026-11-05.txt`).
+- CLI `aceapex d --out FILE` is atomic: it decodes into `FILE.aceapex-tmp.<pid>` and renames it to FILE only when the
+  XXH3 of the output matches the header; otherwise the temporary file is removed, an existing FILE is left as it was,
+  exit 1. Output to stdout unchanged. Claim `head_cli_atomic`: 200 one-bit-flip archives (levels 1, 2, 3, 11, 14) give
+  exit 1, FILE created 0, temporary files left 0 (2.6.1: FILE created 200; `results/freeze4-cli-atomic-2026-11-05.txt`).
+- The CLI checks every `fread`: a short read of the input or of an archive prints a message and exits 1.
+- Streaming decoder (`aceapex_decompress_stream`) reads the 4-part literal layout of the default profile on non-DNA
+  data, refused by 2.6.1; its chunks are decoded once and shared by the groups (claim `head_stream`: 24 MiB text at
+  levels 1-3 byte for byte). README section Integrity: the raw API guarantees memory safety, the checked paths (CLI,
+  stream with `ACEAPEX_STREAM_VERIFY`, Python `decompress`) also the bytes, through XXH3; api_fuzz under ASan + UBSan:
+  0 verified-silent (`results/freeze3-api-fuzz-2026-11-05.txt`, `results/freeze3-cli-verify-2026-11-05.txt`).
 - Streaming decoder: a corrupt literal chunk size no longer drives a huge allocation (bounded by the literal stream,
   overflow-checked sums, the archive must reach its declared end); found by CI API fuzzing, seed 42064533943
   (`results/fuzzfix-api-fuzz-2026-11-05.txt`).
