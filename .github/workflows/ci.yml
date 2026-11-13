@@ -169,6 +169,48 @@ jobs:
     - name: Judge
       run: bash scripts/windows_test.sh
 
+  # TurboBench gate (2.6.2, decision of Yakiv 13.11): clean upstream powturbo/TurboBench 8a0ec42, its aceapex submodule
+  # switched to the commit under test, codecs off only by the upstream make flags RUST=0 BLOSC=0 OPENZL=0; make and
+  # make STATIC=1 with the runner's gcc; silesia.tar (211 947 520 B, sha256 a667bac8..., the source upstream's CI uses)
+  # through aceapex 1-4 and aceapex_fast 1, 3 in both builds: no error, the same sizes.
+  turbobench:
+    runs-on: ubuntu-24.04
+    env:
+      TB_SHA: 8a0ec42f1e0cec9965407655d4ce2eb367948f7c
+      ACE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      SIL_SHA: a667bac80089b3d04d5496772149e632f0758974b0579d743cd8d6e5e0d63eb2
+    steps:
+    - name: Dependencies (as upstream's CI)
+      run: sudo apt-get update && sudo apt-get install -y nasm libomp-dev
+    - uses: actions/cache@v5
+      with: {path: ~/corpus/silesia.tar, key: silesia-a667bac80089b3d0}
+    - name: silesia.tar
+      run: |
+        mkdir -p ~/corpus
+        [ -s ~/corpus/silesia.tar ] || curl -sL https://github.com/DataCompression/corpus-collection/raw/main/Silesia-Corpus/silesia.tar.gz | gunzip -c > ~/corpus/silesia.tar
+        echo "$SIL_SHA  $HOME/corpus/silesia.tar" | sha256sum -c -
+    - name: Upstream TurboBench, aceapex submodule on the commit under test
+      run: |
+        git clone -q https://github.com/powturbo/TurboBench.git tb && cd tb && git checkout -q $TB_SHA
+        git submodule update --init --recursive -q
+        git -C aceapex fetch -q origin $ACE_SHA && git -C aceapex checkout -q $ACE_SHA
+        echo "TurboBench $(git rev-parse HEAD); aceapex $(git -C aceapex rev-parse HEAD); $(gcc --version | head -1)"
+        echo "aceapex block of the makefile: $(sed -n '/^# aceapex/,/^endif/p' makefile | md5sum | cut -c1-32)"
+        git status --short | grep -v '^ M aceapex$' || true
+    - name: make (dynamic)
+      run: cd tb && { make -j4 RUST=0 BLOSC=0 OPENZL=0 || make -j1 RUST=0 BLOSC=0 OPENZL=0; } && mv turbobench ../tb_dyn
+    - name: make STATIC=1
+      run: |
+        cd tb && { make -j4 STATIC=1 RUST=0 BLOSC=0 OPENZL=0 BUILD=build-static || make -j1 STATIC=1 RUST=0 BLOSC=0 OPENZL=0 BUILD=build-static; } && mv turbobench ../tb_static
+        file ../tb_static
+    - name: Run both builds on silesia.tar
+      run: |
+        mkdir run && cp ~/corpus/silesia.tar run/
+        for b in dyn static; do ( cd run && ../tb_$b -eaceapex,1,2,3,4/aceapex_fast,1,3 -i1,1 silesia.tar ) > tb_$b.log 2>&1; echo "$b rc $?"; done
+        for b in dyn static; do grep -E '^ +[0-9]+ .*aceapex' tb_$b.log | head -6 | awk '{print $1, $4, $5}' > sizes_$b.txt; echo "== $b"; cat sizes_$b.txt; done
+        ! grep -qiE 'error|mismatch' tb_dyn.log tb_static.log
+        [ "$(wc -l < sizes_dyn.txt)" = 6 ] && cmp sizes_dyn.txt sizes_static.txt
+
   verify-tags:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
