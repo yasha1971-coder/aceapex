@@ -55,4 +55,7 @@ load1 < 0.5 before every run; -I1 on one core, -I8 on 8 different physical cores
       silesia.tar: --threads 8: L1 358%, L2 355%, L11 219%, L13 239%; --threads 1: L1 100%, L2 98%, L11 100%, L13 100% (runs of 0.03-0.18 s incl. file I/O)
       enwik8: --threads 8: L1 353%, L2 362%, L11 196%, L13 222%; --threads 1: L1 100%, L2 99%, L11 98%, L13 97% (runs of 0.03-0.18 s incl. file I/O)
    -I32: not run (ace-core has 8 physical cores; on c4d only by a separate word of Yakiv)
-   judge: make test on w5-l12 7cbdd57, ace-core: HEAD 77 pass / 0 fail / 3 skipped
+   judge (corrected 13.11): the 77 / 0 given for 7cbdd57 was the records file of 08.11 - the judge's parser died on a
+      head_linemodel failure line with tabs, and verify.sh kept the old file. head_linemodel failed on W5 (AX_LINEMODEL,
+      tuning builds only: sink skipped on the non-tiled path, also on main with LIT_CHUNK >= 512 KiB); fixed, verify.sh
+      no longer keeps old records. make test on w5-l12 with the fix and claim head_level_tls: HEAD 78 pass / 0 fail / 3 skipped
