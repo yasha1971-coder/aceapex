@@ -26,10 +26,11 @@ Every number below is reproduced by `make test && ./verify.sh` on the tagged com
   levels 1-3 byte for byte). README section Integrity: the raw API guarantees memory safety, the checked paths (CLI,
   stream with `ACEAPEX_STREAM_VERIFY`, Python `decompress`) also the bytes, through XXH3; api_fuzz under ASan + UBSan:
   0 verified-silent (`results/freeze3-api-fuzz-2026-11-05.txt`, `results/freeze3-cli-verify-2026-11-05.txt`).
-- Fast streaming decoder (`aceapex_decompress_stream` on a version-3 archive): the block table and each group's
-  compressed bytes are read into buffers that grow with the bytes that arrive (16 MiB steps), so a corrupt block count or
-  block table no longer makes it allocate and zero-fill memory the archive does not have; found by api_fuzz under ASan
-  (two of four 900 s seeds, also in 2.6.1); format and validation unchanged (`results/fuzz262-2026-11-13.txt`).
+- Reliability fix, affects versions <= 2.6.1: the fast streaming decoder (`aceapex_decompress_stream` on a version-3
+  archive) sized its buffers from the block count and the block table of the archive, so a corrupt archive could make it
+  allocate and zero-fill memory the archive does not have (2^59 B in the fuzz case). The block table and each group's
+  compressed bytes are now read into buffers that grow with the bytes that arrive (16 MiB steps). Found by api_fuzz under
+  ASan (two of four 900 s seeds); format and validation unchanged (`results/fuzz262-2026-11-13.txt`).
 - Streaming decoder: a corrupt literal chunk size no longer drives a huge allocation (bounded by the literal stream,
   overflow-checked sums, the archive must reach its declared end); found by CI API fuzzing, seed 42064533943
   (`results/fuzzfix-api-fuzz-2026-11-05.txt`).
