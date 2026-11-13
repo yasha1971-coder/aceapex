@@ -120,10 +120,13 @@ static int64_t ax_entropy_decode(const void* src, size_t src_size, int threads, 
     if ((uint64_t)hdr.num_blocks * (uint64_t)hdr.block_size < hdr.orig_size)
         return ACEAPEX_ERR_DATA;
     {
-        uint64_t need = (uint64_t)sizeof(hdr)
-                      + (uint64_t)hdr.num_blocks * sizeof(BlockOffsets)
-                      + hdr.zlit_sz + hdr.zoff_sz + hdr.zlen_sz + hdr.zcmd_sz;
+        // sum the four u64 stream sizes one by one against the remaining bytes so the total cannot wrap (2.6.2; affects <= 2.6.1)
+        uint64_t need = (uint64_t)sizeof(hdr) + (uint64_t)hdr.num_blocks * sizeof(BlockOffsets);
         if (need > src_size) return ACEAPEX_ERR_DATA;
+        for (uint64_t z : {hdr.zlit_sz, hdr.zoff_sz, hdr.zlen_sz, hdr.zcmd_sz}) {
+            if (z > src_size - need) return ACEAPEX_ERR_DATA;
+            need += z;
+        }
     }
     p+=sizeof(hdr);
     const double t_a = ax_pt() ? ax_now() : 0;

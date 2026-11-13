@@ -106,6 +106,12 @@ else printf 'head_level_tls\tfail\tbuild failed: %s\n' "$(head -c 150 $T/ltt.err
 if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/fsa_test scripts/fast_stream_alloc_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/fsa.err; then
   $T/fsa_test 2>/dev/null || true
 else printf 'head_fast_stream_alloc\tfail\tbuild failed: %s\n' "$(head -c 150 $T/fsa.err | tr '\n\t' '  ')"; fi
+# 2.6.2: aceapex_decompress_mt's header check sums the four u64 stream sizes without the total wrapping past src_size;
+# built under ASan+UBSan - the fix returns ACEAPEX_ERR_DATA, <= 2.6.1 reads out of bounds in fse_stream_size
+HSO_SAN="-O1 -g -std=c++17 -fsanitize=address,undefined -fno-sanitize-recover=all"
+if ${CXX:-g++} $HSO_SAN -Isrc -o $T/hso_test scripts/hdr_sum_overflow_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/hso.err; then
+  ASAN_OPTIONS=allocator_may_return_null=1 $T/hso_test 2>/dev/null || printf 'head_hdr_sum_overflow\tfail\taborted or non-zero (see ASan)\n'
+else printf 'head_hdr_sum_overflow\tfail\tbuild failed: %s\n' "$(head -c 150 $T/hso.err | tr '\n\t' '  ')"; fi
 # 2.6.2: the streaming decoder of the default profile does not size worker buffers from block_size (0x80040000 in a
 # one-block text and DNA archive); v2.6.1 (DNA) and 47f2386 fail it (2 147 745 856 B requested)
 if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/sat_test scripts/stream_alloc_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/sat.err; then

@@ -30,6 +30,12 @@ Every number below is reproduced by `make test && ./verify.sh` on the tagged com
   levels 1-3 byte for byte). README section Integrity: the raw API guarantees memory safety, the checked paths (CLI,
   stream with `ACEAPEX_STREAM_VERIFY`, Python `decompress`) also the bytes, through XXH3; api_fuzz under ASan + UBSan:
   0 verified-silent (`results/freeze3-api-fuzz-2026-11-05.txt`, `results/freeze3-cli-verify-2026-11-05.txt`).
+- Reliability fix, affects versions <= 2.6.1: `aceapex_decompress_mt`'s header check added the four 64-bit stream sizes
+  in one expression, so a crafted sum near 2^64 wrapped past the `need <= src_size` guard and the stream pointers ran
+  past the archive (an out-of-bounds read in the lzbench / TurboBench decompress path). The sizes are now added one at a
+  time against the bytes left. Claim `head_hdr_sum_overflow` (a 132-byte archive with zcmd_sz 2^64-150: ASan reads out of
+  bounds on <= 2.6.1, the fix returns ACEAPEX_ERR_DATA). The streaming decoder already checked this.
+  (`results/hdr-sum-overflow-2026-11-13.txt`)
 - Reliability fix, affects versions <= 2.6.1: the streaming decoder of the default profile (`aceapex_decompress_stream`
   on a version-2 archive) sized each worker's output and tile from the header's block_size and zero-filled them, so a
   corrupt block_size made it allocate ~2 GiB per worker (api_fuzz under ASan, seed 20261113001, killed by the OOM killer

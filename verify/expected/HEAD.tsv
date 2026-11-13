@@ -74,6 +74,7 @@ head_dec_budget	always
 head_level_tls	always
 head_fast_stream_alloc	always
 head_stream_alloc	always
+head_hdr_sum_overflow	always
 head_env_ignored	always
 head_stream	always
 head_gpu_stress_emu	golden
