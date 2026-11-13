@@ -125,6 +125,13 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+13.11 2.6.2-кандидат = ветка w5-l12 (042f15c, запушена, без PR, в main — только по слову Якова): W5 для уровней 1–2
+(уровни 3–4 и 14 как в 2.6.1, уровень 4 больше не даёт байтов уровня 2), head_level_tls, исправление sink AX_LINEMODEL,
+судья не держит старые записи (78/0), исправление надёжности быстрого потокового декодера (≤ 2.6.1; только в 2.6.2,
+2.6.1.x не делать), CHANGELOG дописан. TurboBench make / make STATIC=1 ok, api_fuzz 4 × 900 с после исправления pass.
+Дальше — ворота 2.6.2 к 17.11: полный silesia + enwik9, t1 / t4, MemoryMax 8G, CPU без AVX-512, Windows / MSYS2;
+версии 2.6.2 в c/aceapex_decode.h, python/aceapex/__init__.py, CITATION.cff, ACEAPEX_VERSION_STRING. Вливание — вместе с
+выпуском, по слову.
 05.11 FREEZE-4 (без тега): CLI `d --out FILE` атомарный (временный файл + rename только при совпадении XXH3; претензия
 head_cli_atomic; 200 порч: exit 1 200, FILE создан 0, временных 0; старый CLI: создан 200); судья 77/0. ClusterFuzzLite в
 aceapex (fuzz/fuzz_api.cpp) и aceapex-fast (fuzz/fuzz_axfast.c): сырой путь — ASan/UBSan, VERIFY-путь — «успех => байты ==
