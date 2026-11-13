@@ -626,14 +626,24 @@ struct StCtx {
     bool four = false;                                                          // the 4-chunk literal layout (bit 62 without 61): chunks decoded once by the main thread
     std::mutex m; std::condition_variable cv_q, cv_w; std::deque<std::shared_ptr<StGroup>> q; bool done = false; size_t qcap;
     uint64_t next_write = 0; std::atomic<int> err{0}; XXH3_state_t* xs = nullptr; unsigned flags;
-    size_t tile_max = 0, out_max = 0, rbuf_max = 0;                             // buffers sized once per worker (no realloc garbage in the arenas)
+};
+// A worker's buffer: not zero-filled, grown only to what a group really needs (2.6.2: until 2.6.2 the worker sized its
+// output and tile from the header's block_size, ~2 GiB per worker for a corrupt archive - api_fuzz under MemoryMax 8G).
+// Growth: to the requested size, at most doubling and at most 16 MiB at a time; `keep` copies the bytes already there.
+struct StBuf {
+    std::unique_ptr<uint8_t[]> p; size_t n = 0;
+    uint8_t* data() { return p.get(); }
+    void need(size_t k, bool keep = false) {
+        if (k <= n) return;
+        const size_t m = std::max(k, std::min(n + std::min(n, (size_t)16 << 20), (size_t)SIZE_MAX - 64));
+        std::unique_ptr<uint8_t[]> q(new uint8_t[m]); if (keep && n) memcpy(q.get(), p.get(), n); p.swap(q); n = m; }
 };
 static bool st_read(StCtx& c, uint64_t off, void* buf, size_t len) {
     while (len) { const int64_t r = c.rd(c.rctx, off, buf, len); if (r <= 0) return false; off += (uint64_t)r; buf = (uint8_t*)buf + r; len -= (size_t)r; }
     return true;
 }
 static void* st_worker(void* v) {
-    StCtx& c = *(StCtx*)v; std::vector<uint8_t> tile(c.tile_max + 64), rbuf(c.rbuf_max + 64), out(c.out_max + 64), tw[4];
+    StCtx& c = *(StCtx*)v; StBuf tile, rbuf, out; std::vector<uint8_t> tw[4];
     for (;;) {
         std::shared_ptr<StGroup> g;
         { std::unique_lock<std::mutex> lk(c.m); c.cv_q.wait(lk, [&] { return !c.q.empty() || c.done || c.err; });
@@ -642,20 +652,19 @@ static void* st_worker(void* v) {
         c.cv_q.notify_all();
         uint64_t t0 = g->k0 * c.csz, tsz = std::min((g->k1 + 1) * c.csz, (uint64_t)c.lch.empty() ? 0 : c.lch.back().off + c.lch.back().raw) - t0;
         if (c.four) { t0 = g->llo; tsz = g->lhi - g->llo; }                     // the group's literals copied out of the shared decoded chunks
-        if (tile.size() < tsz + 64) tile.resize(tsz + 64);
+        tile.need(tsz + 64);
         bool bad = false;
         if (c.four) for (const auto& lb : g->lit) {
             const uint64_t a = std::max(t0, lb->off0), e = std::min(t0 + tsz, lb->off0 + lb->d.size());
             if (a < e) memcpy(tile.data() + (a - t0), lb->d.data() + (a - lb->off0), (size_t)(e - a)); }
         for (uint64_t k = g->k0; k <= g->k1 && !bad && !c.four; k++) {
             const StChunk& ch = c.lch[k];
-            if (rbuf.size() < ch.csz + 64) rbuf.resize(ch.csz + 64);
+            rbuf.need(ch.csz + 64);
             if (ch.csz && !st_read(c, ch.pos, rbuf.data(), ch.csz)) { bad = true; break; }
             const AxLitChunk d{(size_t)ch.off, (size_t)ch.raw, rbuf.data(), (size_t)ch.csz, ch.tg};
             if (!ax_lit_chunk_decode(d, tile.data() + (ch.off - t0))) bad = true;
         }
         const uint64_t osz = std::min((g->b1) * c.bs, c.orig) - g->b0 * c.bs;
-        if (out.size() < osz + 64) out.resize(osz + 64);
         for (int st = 1; st < 4; st++) {                                   // the group's token chunks, contiguous (a block's slice may cross a chunk)
             size_t n = 0; for (auto& b : g->tok[st]) n += b->d.size();
             if (tw[st].size() < n + 64) tw[st].resize(n + 64);
@@ -671,6 +680,7 @@ static void* st_worker(void* v) {
                 tp[st] = tw[st].data() + (so[st] - g->t0[st]);
             }
             if (bad) break;
+            out.need((size_t)(bstart - g->b0 * c.bs + bsize) + 64, true);   // up to this block's end: the output as it is written
             decompress_streams(out.data() + (bstart - g->b0 * c.bs), (size_t)bsize, tile.data() + (bo.lit_sz ? bo.lit_off - t0 : 0), (size_t)bo.lit_sz,
                                tp[1], (size_t)ss[1], tp[2], (size_t)ss[2], tp[3], (size_t)ss[3]);
         }
@@ -740,10 +750,6 @@ int64_t aceapex_decompress_stream(aceapex_read_fn rd, void* rctx, aceapex_write_
     static const uint64_t G = [] { const char* e = ax_getenv("AX_TILE_CHUNKS"); uint64_t v = e ? strtoull(e, 0, 10) : 8; return v ? v : 1; }();
     static const uint64_t MAXB = [] { const char* e = ax_getenv("AX_STREAM_BLOCKS"); uint64_t v = e ? strtoull(e, 0, 10) : 0; return v ? v : 0; }();
     const uint64_t maxb = MAXB ? MAXB : std::max<uint64_t>(1, ((uint64_t)1 << 20) / c.bs);
-    c.out_max = (size_t)(maxb * c.bs);
-    if (c.four) c.tile_max = c.out_max;                                         // a group's literals: at most its output
-    else { c.tile_max = (size_t)std::min<uint64_t>((G + 1) * c.csz, c.lch.empty() ? 0 : c.lch.back().off + c.lch.back().raw);   // a tile never exceeds the literal stream (cz comes from the archive)
-           for (const StChunk& ch : c.lch) c.rbuf_max = std::max(c.rbuf_max, (size_t)ch.csz); }
     if (flags & ACEAPEX_STREAM_VERIFY) { c.xs = XXH3_createState(); XXH3_64bits_reset(c.xs); }
     std::vector<pthread_t> th((size_t)T);
     for (int t = 0; t < T; t++) ax_thread(&th[(size_t)t], st_worker, &c);

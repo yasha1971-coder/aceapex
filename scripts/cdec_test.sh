@@ -106,6 +106,11 @@ else printf 'head_level_tls\tfail\tbuild failed: %s\n' "$(head -c 150 $T/ltt.err
 if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/fsa_test scripts/fast_stream_alloc_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/fsa.err; then
   $T/fsa_test 2>/dev/null || true
 else printf 'head_fast_stream_alloc\tfail\tbuild failed: %s\n' "$(head -c 150 $T/fsa.err | tr '\n\t' '  ')"; fi
+# 2.6.2: the streaming decoder of the default profile does not size worker buffers from block_size (0x80040000 in a
+# one-block text and DNA archive); v2.6.1 (DNA) and 47f2386 fail it (2 147 745 856 B requested)
+if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/sat_test scripts/stream_alloc_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/sat.err; then
+  $T/sat_test 2>/dev/null || true
+else printf 'head_stream_alloc\tfail\tbuild failed: %s\n' "$(head -c 150 $T/sat.err | tr '\n\t' '  ')"; fi
 # lzbench #336: the library built without ACEAPEX_ENV_TUNING ignores the environment - five rows of tuning variables
 # give the same bytes at level 1 / one thread (text + silesia/xml when ~/CORPORA/silesia.tar is there), and no thread
 # is started at threads=1 (strace: no clone)

@@ -30,6 +30,14 @@ Every number below is reproduced by `make test && ./verify.sh` on the tagged com
   levels 1-3 byte for byte). README section Integrity: the raw API guarantees memory safety, the checked paths (CLI,
   stream with `ACEAPEX_STREAM_VERIFY`, Python `decompress`) also the bytes, through XXH3; api_fuzz under ASan + UBSan:
   0 verified-silent (`results/freeze3-api-fuzz-2026-11-05.txt`, `results/freeze3-cli-verify-2026-11-05.txt`).
+- Reliability fix, affects versions <= 2.6.1: the streaming decoder of the default profile (`aceapex_decompress_stream`
+  on a version-2 archive) sized each worker's output and tile from the header's block_size and zero-filled them, so a
+  corrupt block_size made it allocate ~2 GiB per worker (api_fuzz under ASan, seed 20261113001, killed by the OOM killer
+  under MemoryMax 8G). Worker buffers are now not zero-filled and grow only to what a group really writes (to the end of
+  the block being decoded, at most doubling and 16 MiB per step). Claim `head_stream_alloc` (block_size 0x80040000 in a
+  one-block text and DNA archive: 2.6.1 and the earlier 2.6.2 candidate request 2 147 745 856 B; now at most 200 064 B,
+  the valid archive decodes, the corrupt one gives ACEAPEX_ERR_DATA). Format unchanged: archives with blocks of 2-64 MiB
+  (ACEAPEX_BS in a tuning build) still stream byte for byte (`results/stream-alloc-2026-11-13.txt`).
 - Reliability fix, affects versions <= 2.6.1: the fast streaming decoder (`aceapex_decompress_stream` on a version-3
   archive) sized its buffers from the block count and the block table of the archive, so a corrupt archive could make it
   allocate and zero-fill memory the archive does not have (2^59 B in the fuzz case). The block table and each group's
