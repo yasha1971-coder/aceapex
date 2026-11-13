@@ -1028,7 +1028,13 @@ static inline void ax_block_out(uint8_t* dst, size_t bstart, size_t bsize, const
 static void* dec_worker(void* arg) {
     DecArgs* a = (DecArgs*)arg;
     std::vector<uint8_t> nbuf;
+#ifdef ACEAPEX_ENV_TUNING
+    // AX_LINEMODEL's sink takes every block: chunked literals above the tile limit (W5's 1 MiB chunks, or LIT_CHUNK
+    // >= 512 KiB) decode here, not on the tile path, and the direct loop below wrote them to dst + bstart
+    if (a->nt || g_ax_out_sink) {
+#else
     if (a->nt) {
+#endif
         for (size_t b = a->bid_start; b < a->bid_end; b++) {
             const BlockOffsets& bo = a->boffs[b]; const size_t bstart = b * a->block_size;
             const size_t bsize = a->dst_size > bstart ? std::min<size_t>((size_t)a->block_size, a->dst_size - bstart) : 0;

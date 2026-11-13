@@ -16,8 +16,10 @@ for T in $TAGS; do
   if [ "$T" = HEAD ]; then D="$ROOT"; R="$WT/HEAD_records.json"; else
     git worktree remove --force "$D" >/dev/null 2>&1 || true
     git worktree add --detach -q "$D" "$T"; fi
+  rm -f "$R"   # records of an earlier run must not stand in for this one (HEAD_records.json of 08.11 did until 13.11)
   ( cd "$D" && ROOT="$ROOT" RECORDS="$R" GOLDEN="${GOLDEN:-$HOME/golden}" bash "$ROOT/$J" ) >"$WT/$T.log" 2>&1 || echo "judge exit $? (see $WT/$T.log)"
-  [ -s "$R" ] || echo '{"records":[]}' >"$R"
+  if [ ! -s "$R" ]; then echo '{"records":[]}' >"$R"
+    [ "$T" = HEAD ] && { echo "HEAD judge wrote no records (see $WT/$T.log)"; FAILS=$((FAILS+1)); }; fi
   python3 - "$T" "$(git rev-parse "$T^{commit}")" "$R" "$OUT/$T.json" <<'PY'
 import sys,json,subprocess,datetime,platform
 tag,sha,rec,out=sys.argv[1:]
