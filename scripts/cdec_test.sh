@@ -96,6 +96,11 @@ else printf 'head_dna_err\tfail\tbuild failed: %s\n' "$(head -c 150 $T/dna.err |
 if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/dec_budget_test scripts/dec_budget_test.cpp src/aceapex_api.cpp -Wl,--wrap=pthread_create -lzstd -lpthread 2>$T/dbt.err; then
   $T/dec_budget_test 2>/dev/null || true
 else printf 'head_dec_budget\tfail\tbuild failed: %s\n' "$(head -c 150 $T/dbt.err | tr '\n\t' '  ')"; fi
+# 2.6.2: the level that picks the literal layout is per call - levels 2 and 4 compressed at once in two threads give each
+# level's own bytes (a global level variable fails it: 12 of 28 archives wrong)
+if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/level_tls_test scripts/level_tls_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/ltt.err; then
+  $T/level_tls_test 2>/dev/null || true
+else printf 'head_level_tls\tfail\tbuild failed: %s\n' "$(head -c 150 $T/ltt.err | tr '\n\t' '  ')"; fi
 # lzbench #336: the library built without ACEAPEX_ENV_TUNING ignores the environment - five rows of tuning variables
 # give the same bytes at level 1 / one thread (text + silesia/xml when ~/CORPORA/silesia.tar is there), and no thread
 # is started at threads=1 (strace: no clone)
