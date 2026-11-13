@@ -6,6 +6,10 @@ Every number below is reproduced by `make test && ./verify.sh` on the tagged com
 
 ## v2.6.2 — 2026-11-17
 
+- Platforms: the CLI builds on Linux and macOS only (`aceapex faidx` maps the archive with `mmap`, since 02.10.2026, so
+  2.6.1 is the same - not a regression). On Windows the library builds and is checked by the new CI job `windows-msys2`
+  (MSYS2 UCRT64 gcc: 27 conformance fixtures through `aceapex_decompress_stream` + VERIFY and `aceapex_decompress_mt`,
+  24 round trips through the API at levels 1-4, 11, 14 and 1 / 4 threads; `scripts/windows_test.sh`).
 - Levels 1–2 of the default profile cut the literals of non-DNA input into 1 MiB chunks (the chunked layout of
   FORMAT_ACEPX2 §3.2.2, which every decoder since 2.3 reads in parallel) instead of 4 equal parts: decompression with
   8 threads ×1.19–1.20 on Zen 4 (ace-core) and ×1.21–1.24 on Zen 5 (c4d-standard-64), silesia and the enwik9 tail,

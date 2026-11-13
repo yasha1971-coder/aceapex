@@ -14,6 +14,13 @@ jobs:
   build-and-test:
     runs-on: ubuntu-24.04
     steps:
+    # Release gate "CPU without AVX-512" (2.6.2): on a runner without avx512f (e.g. EPYC 7763) this job's round trips
+    # (make test) are the AVX2 path on real hardware; the line below says which case this run is.
+    - name: CPU of the runner
+      run: |
+        lscpu | grep -E 'Model name|^CPU\(s\)|Flags' | sed 's/Flags:.*/&/' | cut -c1-200
+        if grep -qw avx512f /proc/cpuinfo; then echo "AVX512: present (this run does not count as the no-AVX-512 check)"
+        else echo "AVX512: absent; avx2: $(grep -qw avx2 /proc/cpuinfo && echo yes || echo no) -> make test below runs the AVX2 path without AVX-512"; fi
     - uses: actions/checkout@v5
 
     - name: Install dependencies
@@ -143,8 +150,9 @@ jobs:
         ZSTD_INC=/tmp/zstd/lib bash scripts/portability_test.sh | tee /tmp/port.tsv
         grep -q $'\tpass\t' /tmp/port.tsv
 
-  # The CLI on Windows itself (not a cross build): MSYS2 UCRT64 gcc + zstd; conformance fixtures, round trips at levels
-  # 1-4, 11, 14 and t1 / t4, atomic --out (scripts/windows_test.sh). A release gate: 0 failures.
+  # The library on Windows itself (not a cross build): MSYS2 UCRT64 gcc + zstd; conformance fixtures through the library,
+  # round trips through the API at levels 1-4, 11, 14 and t1 / t4 (scripts/windows_test.sh). The CLI is Linux / macOS only.
+  # A release gate: 0 failures.
   windows-msys2:
     runs-on: windows-2022
     defaults:
@@ -157,7 +165,7 @@ jobs:
       with:
         msystem: UCRT64
         update: false
-        install: mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-zstd mingw-w64-ucrt-x86_64-python diffutils
+        install: mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-zstd
     - name: Judge
       run: bash scripts/windows_test.sh
 

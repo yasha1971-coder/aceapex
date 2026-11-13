@@ -266,6 +266,11 @@ g++ -O3 -march=native -funroll-loops -std=c++17 \
     -o aceapex src/aceapex_main.cpp -lpthread -lzstd
 ```
 
+**Platforms (2.6.2).** The command-line tool `aceapex` builds on Linux and macOS (POSIX: it maps archives with `mmap`;
+macOS is not covered by CI). On Windows it does not build (`aceapex faidx` maps the archive with `mmap`, since 02.10.2026; 2.6.1 is the
+same): Windows gets the library (`src/aceapex_api.cpp`, as lzbench and TurboBench build it), checked by the CI job
+`windows-msys2` (MSYS2 UCRT64: conformance fixtures and round trips through the API).
+
 **Byte order (2.6.1).** The fast profile (levels 11-18, header version 3) runs on big-endian hosts too and writes the
 same archive bytes there (checked under qemu-s390x). The default levels 1-3 (header version 2) support only
 little-endian hosts (x86, ARM, RISC-V in their usual modes).
