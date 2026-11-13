@@ -145,8 +145,14 @@ static int64_t ax_fast_stream(aceapex_read_fn rd, void* rctx, aceapex_write_fn w
     if (a.payload > ((uint64_t)1 << 62)) return -2;
     const uint64_t need = 68 + 8ull * ((uint64_t)a.nb + 1);
     if (need > (uint64_t)SIZE_MAX) return -3;
-    std::vector<uint8_t> hd((size_t)need);
-    for (uint64_t o = 0; o < need; ) { const int64_t r = rd(rctx, o, hd.data() + o, (size_t)(need - o)); if (r <= 0) return -2; o += (uint64_t)r; }
+    // buffers grow with the bytes that arrive (16 MiB steps): a corrupt header or table cannot make the reader allocate
+    // and zero-fill memory the archive does not have (api_fuzz 13.11: a table claiming 2^59 B, a header 2^32 - 1 blocks)
+    auto rdv = [&](std::vector<uint8_t>& v, uint64_t at, uint64_t n) -> bool {
+        for (uint64_t o = 0; o < n; ) { const uint64_t k = std::min<uint64_t>(n - o, (uint64_t)1 << 24);
+            if (v.size() < o + k) v.resize((size_t)(o + k));
+            const int64_t r = rd(rctx, at + o, v.data() + o, (size_t)k); if (r <= 0) return false; o += (uint64_t)r; }
+        return true; };
+    std::vector<uint8_t> hd; if (!rdv(hd, 0, need)) return -2;
     if (axf_open64(hd.data(), need + a.payload, &a) != 0) return -2;   // header + table; the payload is not touched
     const int T = std::max(1, ax_decode_budget(threads, a.orig));
     std::vector<uint8_t> zb, ob((size_t)T * a.bs); int64_t rc = 0;
@@ -154,9 +160,8 @@ static int64_t ax_fast_stream(aceapex_read_fn rd, void* rctx, aceapex_write_fn w
     try {
         for (uint32_t b0 = 0; b0 < a.nb && rc == 0; ) {
             const uint32_t b1 = std::min<uint32_t>(a.nb, b0 + (uint32_t)T);
-            const uint64_t z0 = axf_boff(&a, b0), z1 = axf_boff(&a, b1); zb.resize((size_t)(z1 - z0));
-            for (uint64_t o = 0; o < z1 - z0; ) { const int64_t r = rd(rctx, need + z0 + o, zb.data() + o, (size_t)(z1 - z0 - o)); if (r <= 0) { rc = -2; break; } o += (uint64_t)r; }
-            if (rc) break;
+            const uint64_t z0 = axf_boff(&a, b0), z1 = axf_boff(&a, b1);
+            if (!rdv(zb, need + z0, z1 - z0)) { rc = -2; break; }
             axf_arc_t g = a; g.data = zb.data() - z0;   // block b of the group at zb + (boff[b] - z0)
             if (!ax_fast_decode_blocks(g, b0, b1, ob.data(), T)) { rc = -2; break; }
             const size_t n = (size_t)(std::min<uint64_t>((uint64_t)b1 * a.bs, a.orig) - (uint64_t)b0 * a.bs);

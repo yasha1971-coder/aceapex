@@ -1,0 +1,40 @@
+# 2.6.2 candidate w5-l12 (13.11.2026, ace-core): TurboBench make / make STATIC=1, fuzzing of corrupted archives
+## TurboBench: copy of the tree 96af359 (fork worktree tbxxh), aceapex = export of w5-l12 c3154b2, turbobench.c from upstream
+   2fda0a9 (a ternary typo in 96af359; the aceapex block of the makefile is identical in both). System gcc 11.4, RUST=0,
+   c-blosc2 and openzl left out (cmake 3.22 / no cargo on ace-core; not aceapex). make: ok; make STATIC=1: ok (static ELF;
+   -j8 races in the brotli rule, -j1 builds). turbobench -eaceapex,1,2,3,4/aceapex_fast,1,3 -i1,1, CPU 2, every decode
+   checked by turbobench, no error; sizes equal in both builds:
+   enwik8       aceapex 1        38159708 B
+   enwik8       aceapex 2        38098507 B
+   enwik8       aceapex 3        35525349 B
+   enwik8       aceapex 4        37834611 B
+   enwik8       aceapex_fast 1   83368659 B
+   enwik8       aceapex_fast 3   51956468 B
+   silesia.tar  aceapex 1        69391151 B
+   silesia.tar  aceapex 2        68987186 B
+   silesia.tar  aceapex 3        66632815 B
+   silesia.tar  aceapex 4        68626422 B
+   silesia.tar  aceapex_fast 1   130490328 B
+   silesia.tar  aceapex_fast 3   95266170 B
+   silesia level 2 68 987 186 B (W5) and level 4 68 626 422 B (4-part layout) = the CLI with zstd 1.5.7 (w5-2026-11-12.txt)
+## api_fuzz (scripts/api_fuzz.cpp, ASan + UBSan, -fno-sanitize-recover=all), 4 seeds x 900 s on c3154b2:
+   api_fuzz default levels 1-3: 46800 mutants | decompress_mt: 27006 errors, 9320 ok, 10474 SILENT (success + wrong bytes), 0 bad rc | stream+VERIFY: 37154 errors, 9646 ok, 0 verified-silent
+   api_fuzz fast levels 11-18: 131160 mutants | decompress_mt: 71305 errors, 29550 ok, 30305 SILENT (success + wrong bytes), 0 bad rc | stream+VERIFY: 101966 errors, 29194 ok, 0 verified-silent
+   api_fuzz: 2966 seed archives in 900 s; gate (verified-silent 0, bad rc 0): pass
+   api_fuzz default levels 1-3: 44100 mutants | decompress_mt: 25120 errors, 8734 ok, 10246 SILENT (success + wrong bytes), 0 bad rc | stream+VERIFY: 35058 errors, 9042 ok, 0 verified-silent
+   api_fuzz fast levels 11-18: 126840 mutants | decompress_mt: 69170 errors, 28410 ok, 29260 SILENT (success + wrong bytes), 0 bad rc | stream+VERIFY: 98823 errors, 28017 ok, 0 verified-silent
+   api_fuzz: 2849 seed archives in 900 s; gate (verified-silent 0, bad rc 0): pass
+   seeds 2026111300 2 and 4: AddressSanitizer allocation-size-too-big (0x80000000000009a, 0x4000000000053 B) in
+   ax_fast_stream (src/ax_fast_glue.h:157, zb.resize(z1 - z0)): the fast streaming reader sized its buffer from the
+   block table of a corrupt archive (also the table itself from the header's block count). Same code in v2.6.1 and
+   main. Without ASan bad_alloc gave ACEAPEX_ERR_MEMORY, but a claim below the allocator limit zero-fills that
+   memory (OOM). Fix: both buffers grow with the bytes that arrive, 16 MiB steps; validation and format unchanged.
+   After the fix, same seeds, 900 s each:
+   api_fuzz default levels 1-3: 48180 mutants | decompress_mt: 28113 errors, 9306 ok, 10761 SILENT (success + wrong bytes), 0 bad rc | stream+VERIFY: 38641 errors, 9539 ok, 0 verified-silent
+   api_fuzz fast levels 11-18: 140280 mutants | decompress_mt: 75665 errors, 31504 ok, 33111 SILENT (success + wrong bytes), 0 bad rc | stream+VERIFY: 109196 errors, 31084 ok, 0 verified-silent
+   api_fuzz: 3141 seed archives in 900 s; gate (verified-silent 0, bad rc 0): pass
+   api_fuzz default levels 1-3: 50700 mutants | decompress_mt: 29064 errors, 10081 ok, 11555 SILENT (success + wrong bytes), 0 bad rc | stream+VERIFY: 40260 errors, 10440 ok, 0 verified-silent
+   api_fuzz fast levels 11-18: 133320 mutants | decompress_mt: 72446 errors, 29893 ok, 30981 SILENT (success + wrong bytes), 0 bad rc | stream+VERIFY: 103826 errors, 29494 ok, 0 verified-silent
+   api_fuzz: 3067 seed archives in 900 s; gate (verified-silent 0, bad rc 0): pass
+   negative control (a buffer one byte short): caught by ASan
+## judge with the fix: make test HEAD 78 pass / 0 fail / 3 skipped
