@@ -140,6 +140,10 @@ silesia.tar = 211 957 760 B (sha 3eee8566), не стандартный a667bac8
 build-and-test (обязательный набор требовал class_<корпус>_* без корпуса — исправлено в dd6f9c1) и windows-msys2 (CLI не
 собирается под Windows: faidx/region через mmap с 02.10, так же в v2.6.1). Ждёт решения Якова: объём ворот Windows,
 компилятор для TurboBench, какой silesia.tar эталон.
+13.11 Кандидат 47f238608cbf33c5fee2aabe6bf780c01370207b: preflight PASS 6/6; основные ворота G2–G9 PASS (G4 — при
+повторе после ошибки обвязки), G1 FAIL: seed 20261113001 убит OOM при MemoryMax 8G — потоковый декодер основного
+профиля выделяет буферы по block_size из заголовка (≈2 GiB на поток, src/aceapex_api.cpp:636; так же в v2.6.1). Формат не
+ограничивает block_size сверху. HOLD, ждёт решения Якова.
 05.11 FREEZE-4 (без тега): CLI `d --out FILE` атомарный (временный файл + rename только при совпадении XXH3; претензия
 head_cli_atomic; 200 порч: exit 1 200, FILE создан 0, временных 0; старый CLI: создан 200); судья 77/0. ClusterFuzzLite в
 aceapex (fuzz/fuzz_api.cpp) и aceapex-fast (fuzz/fuzz_axfast.c): сырой путь — ASan/UBSan, VERIFY-путь — «успех => байты ==
