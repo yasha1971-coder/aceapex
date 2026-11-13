@@ -4,7 +4,7 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
-## Unreleased
+## v2.6.2 — 2026-11-17
 
 - Levels 1–2 of the default profile cut the literals of non-DNA input into 1 MiB chunks (the chunked layout of
   FORMAT_ACEPX2 §3.2.2, which every decoder since 2.3 reads in parallel) instead of 4 equal parts: decompression with
@@ -30,7 +30,9 @@ Every number below is reproduced by `make test && ./verify.sh` on the tagged com
   archive) sized its buffers from the block count and the block table of the archive, so a corrupt archive could make it
   allocate and zero-fill memory the archive does not have (2^59 B in the fuzz case). The block table and each group's
   compressed bytes are now read into buffers that grow with the bytes that arrive (16 MiB steps). Found by api_fuzz under
-  ASan (two of four 900 s seeds); format and validation unchanged (`results/fuzz262-2026-11-13.txt`).
+  ASan (two of four 900 s seeds); claim `head_fast_stream_alloc` (a header with nb = UINT32_MAX and a table claiming
+  2^59 B: 2.6.1 requests 32 GiB and 2^59 B, 2.6.2 at most 32 MiB, both ACEAPEX_ERR_DATA); format and validation unchanged
+  (`results/fuzz262-2026-11-13.txt`).
 - Streaming decoder: a corrupt literal chunk size no longer drives a huge allocation (bounded by the literal stream,
   overflow-checked sums, the archive must reach its declared end); found by CI API fuzzing, seed 42064533943
   (`results/fuzzfix-api-fuzz-2026-11-05.txt`).

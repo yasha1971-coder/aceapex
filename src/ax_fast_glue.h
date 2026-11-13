@@ -63,18 +63,23 @@ static inline size_t ax_fast_bound(size_t n) {
 }
 
 // ---- decode -------------------------------------------------------------------------------------------------
-struct AxFastDec { axf_arc_t a; uint8_t* dst; uint32_t b0, b1; std::atomic<uint32_t> next; std::atomic<int> err; };
+// gbase: when set, the compressed bytes of the blocks are at gbase + (boff[b] - gz0) (a streamed group), not at a.data
+struct AxFastDec { axf_arc_t a; uint8_t* dst; uint32_t b0, b1; const uint8_t* gbase; uint64_t gz0; std::atomic<uint32_t> next; std::atomic<int> err; };
 static void* ax_fast_dec_worker(void* arg) {
     AxFastDec* j = (AxFastDec*)arg;
     for (;;) {
         const uint32_t b = j->next.fetch_add(1); if (b >= j->b1 || j->err.load()) break;
-        if (!axf_dec_block_of(&j->a, b, j->dst + (size_t)(b - j->b0) * j->a.bs)) j->err = 1;
+        uint8_t* d = j->dst + (size_t)(b - j->b0) * j->a.bs;
+        if (j->gbase) { const uint64_t o = axf_boff(&j->a, b) - j->gz0, e = axf_boff(&j->a, b + 1) - j->gz0;
+            if (!axf_dec_block(j->gbase + o, (size_t)(e - o), d, axf_block_len(&j->a, b), j->a.mm)) j->err = 1; }
+        else if (!axf_dec_block_of(&j->a, b, d)) j->err = 1;
     }
     return nullptr;
 }
 // blocks [b0, b1) of an opened archive into dst (contiguous, block b at (b - b0) * bs), on `threads` threads
-static bool ax_fast_decode_blocks(const axf_arc_t& a, uint32_t b0, uint32_t b1, uint8_t* dst, int threads) {
-    AxFastDec j; j.a = a; j.dst = dst; j.b0 = b0; j.b1 = b1; j.next = b0; j.err = 0;
+static bool ax_fast_decode_blocks(const axf_arc_t& a, uint32_t b0, uint32_t b1, uint8_t* dst, int threads,
+                                  const uint8_t* gbase = nullptr, uint64_t gz0 = 0) {
+    AxFastDec j; j.a = a; j.dst = dst; j.b0 = b0; j.b1 = b1; j.gbase = gbase; j.gz0 = gz0; j.next = b0; j.err = 0;
     const int T = std::max(1, std::min<int>(threads, (int)(b1 - b0)));
     ax_run_pool(T, ax_fast_dec_worker, &j);
     return j.err.load() == 0;
@@ -150,7 +155,7 @@ static int64_t ax_fast_stream(aceapex_read_fn rd, void* rctx, aceapex_write_fn w
     auto rdv = [&](std::vector<uint8_t>& v, uint64_t at, uint64_t n) -> bool {
         for (uint64_t o = 0; o < n; ) { const uint64_t k = std::min<uint64_t>(n - o, (uint64_t)1 << 24);
             if (v.size() < o + k) v.resize((size_t)(o + k));
-            const int64_t r = rd(rctx, at + o, v.data() + o, (size_t)k); if (r <= 0) return false; o += (uint64_t)r; }
+            const int64_t r = rd(rctx, at + o, v.data() + o, (size_t)k); if (r <= 0 || (uint64_t)r > k) return false; o += (uint64_t)r; }
         return true; };
     std::vector<uint8_t> hd; if (!rdv(hd, 0, need)) return -2;
     if (axf_open64(hd.data(), need + a.payload, &a) != 0) return -2;   // header + table; the payload is not touched
@@ -162,8 +167,7 @@ static int64_t ax_fast_stream(aceapex_read_fn rd, void* rctx, aceapex_write_fn w
             const uint32_t b1 = std::min<uint32_t>(a.nb, b0 + (uint32_t)T);
             const uint64_t z0 = axf_boff(&a, b0), z1 = axf_boff(&a, b1);
             if (!rdv(zb, need + z0, z1 - z0)) { rc = -2; break; }
-            axf_arc_t g = a; g.data = zb.data() - z0;   // block b of the group at zb + (boff[b] - z0)
-            if (!ax_fast_decode_blocks(g, b0, b1, ob.data(), T)) { rc = -2; break; }
+            if (!ax_fast_decode_blocks(a, b0, b1, ob.data(), T, zb.data(), z0)) { rc = -2; break; }   // block b at zb + (boff[b] - z0)
             const size_t n = (size_t)(std::min<uint64_t>((uint64_t)b1 * a.bs, a.orig) - (uint64_t)b0 * a.bs);
             if (xs) XXH3_64bits_update(xs, ob.data(), n);
             if (wr(wctx, ob.data(), n) != 0) { rc = -1; break; }

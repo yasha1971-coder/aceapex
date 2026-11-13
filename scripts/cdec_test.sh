@@ -101,6 +101,11 @@ else printf 'head_dec_budget\tfail\tbuild failed: %s\n' "$(head -c 150 $T/dbt.er
 if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/level_tls_test scripts/level_tls_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/ltt.err; then
   $T/level_tls_test 2>/dev/null || true
 else printf 'head_level_tls\tfail\tbuild failed: %s\n' "$(head -c 150 $T/ltt.err | tr '\n\t' '  ')"; fi
+# 2.6.2: the fast streaming decoder does not size buffers from a corrupt header (nb = UINT32_MAX) or block table (2^59 B);
+# inputs in verify/repro/fast_stream_alloc/, built byte for byte by the test; v2.6.1 and c3154b2 fail it (32 GiB, 2^59 B)
+if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/fsa_test scripts/fast_stream_alloc_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/fsa.err; then
+  $T/fsa_test 2>/dev/null || true
+else printf 'head_fast_stream_alloc\tfail\tbuild failed: %s\n' "$(head -c 150 $T/fsa.err | tr '\n\t' '  ')"; fi
 # lzbench #336: the library built without ACEAPEX_ENV_TUNING ignores the environment - five rows of tuning variables
 # give the same bytes at level 1 / one thread (text + silesia/xml when ~/CORPORA/silesia.tar is there), and no thread
 # is started at threads=1 (strace: no clone)

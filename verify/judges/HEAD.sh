@@ -31,4 +31,6 @@ for l in open('/tmp/_vh_fx.tsv'):
 c.append({"claim_id":"head_region_200","level":"R","expected":"bad=0","tolerance":"0","measured":sys.argv[2],"verdict":sys.argv[1],"command":"scripts/region_test.sh chr1 interactive 200"})
 json.dump(d,open(__import__('os').environ['RECORDS'],'w'))
 PY
+RC=$?   # the records step decides the judge's exit code (a parser that dies must not end in exit 0)
 git checkout -q -- results.json 2>/dev/null; rm -f /tmp/_vh.aet /tmp/_vh.log /tmp/_vh_fx.tsv
+exit $RC

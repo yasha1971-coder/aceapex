@@ -4,25 +4,30 @@
 # from main: tags stay immutable, judges can improve. One results/<tag>.json per tag,
 # carrying provenance and one record per claim (claim_id, level, expected, tolerance,
 # measured, verdict, command). Usage: ./verify.sh [tag ...]   (default: verify/manifest.tsv)
+# A tag passes only when its judge exits 0, every claim_id of verify/expected/<tag>.tsv is present (rows marked golden
+# only when $GOLDEN/genome/chr1.fa exists) and no record fails; only then results/<tag>.json is written, otherwise
+# results/<tag>.failed.json (and results/<tag>.json is removed). scripts/verify_selftest.sh checks these rules
+# (JUDGE_DIR / EXPECT_DIR point it at its own judges).
 set -uo pipefail
 ROOT=$(cd "$(dirname "$0")" && pwd); cd "$ROOT"
 OUT=${OUT:-$ROOT/results}; WT=${WT:-/tmp/aceapex-verify}; mkdir -p "$OUT" "$WT"
 TAGS=${*:-$(awk '!/^#/ && NF{print $1}' verify/manifest.tsv)}
 FAILS=0; printf '%-14s %5s %5s %8s %9s %8s %6s\n' tag pass fail skipped declared unjudged known
 for T in $TAGS; do
-  J="verify/judges/$T.sh"; D="$WT/$T"; R="$D/_records.json"
+  J="${JUDGE_DIR:-$ROOT/verify/judges}/$T.sh"; E="${EXPECT_DIR:-$ROOT/verify/expected}/$T.tsv"; D="$WT/$T"; R="$D/_records.json"
   if [ ! -f "$J" ]; then printf '%-14s no judge\n' "$T"; continue; fi
   if [ "$T" != HEAD ] && ! git rev-parse -q --verify "refs/tags/$T^{commit}" >/dev/null; then printf '%-14s no tag\n' "$T"; continue; fi
   if [ "$T" = HEAD ]; then D="$ROOT"; R="$WT/HEAD_records.json"; else
     git worktree remove --force "$D" >/dev/null 2>&1 || true
     git worktree add --detach -q "$D" "$T"; fi
   rm -f "$R"   # records of an earlier run must not stand in for this one (HEAD_records.json of 08.11 did until 13.11)
-  ( cd "$D" && ROOT="$ROOT" RECORDS="$R" GOLDEN="${GOLDEN:-$HOME/golden}" bash "$ROOT/$J" ) >"$WT/$T.log" 2>&1 || echo "judge exit $? (see $WT/$T.log)"
-  if [ ! -s "$R" ]; then echo '{"records":[]}' >"$R"
-    [ "$T" = HEAD ] && { echo "HEAD judge wrote no records (see $WT/$T.log)"; FAILS=$((FAILS+1)); }; fi
-  python3 - "$T" "$(git rev-parse "$T^{commit}")" "$R" "$OUT/$T.json" <<'PY'
+  rm -f "$OUT/$T.json" "$OUT/$T.failed.json" "$OUT/$T.json.tmp"
+  ( cd "$D" && ROOT="$ROOT" RECORDS="$R" GOLDEN="${GOLDEN:-$HOME/golden}" bash "$J" ) >"$WT/$T.log" 2>&1; JRC=$?
+  [ $JRC = 0 ] || echo "$T: judge exit $JRC (see $WT/$T.log)"
+  if [ ! -s "$R" ]; then echo '{"records":[]}' >"$R"; echo "$T: judge wrote no records (see $WT/$T.log)"; [ $JRC = 0 ] && JRC=99; fi
+  GOLDEN="${GOLDEN:-$HOME/golden}" python3 - "$T" "$(git rev-parse "$T^{commit}")" "$R" "$OUT/$T.json.tmp" "$E" <<'PY'
 import sys,json,subprocess,datetime,platform
-tag,sha,rec,out=sys.argv[1:]
+tag,sha,rec,out,exp=sys.argv[1:]
 body=json.load(open(rec))
 def walk(o):
     if isinstance(o,dict):
@@ -52,10 +57,23 @@ prov={"tag":tag,"commit":sha,"date":datetime.datetime.utcnow().strftime("%Y-%m-%
       "compiler":subprocess.run(["g++","--version"],capture_output=True,text=True).stdout.split("\n")[0],
       "pass":c("pass"),"fail":c("fail"),"skipped":sum(c(v) for v in ("skipped-no-gpu","skipped-no-corpus","skipped-no-tool")),
       "declared":c("declared"),"unjudged":c("unjudged"),"known":c("known-deviation"),"build_failed":c("build-failed")}
+# the required claim set: a judge that stops early, or a block that prints nothing, leaves a claim missing
+missing=[]
+if os.path.exists(exp):
+    have={r.get("claim_id") for r in recs}; golden=os.path.exists(os.environ.get("GOLDEN","")+"/genome/chr1.fa")
+    for line in open(exp):
+        if line.startswith("#") or not line.strip(): continue
+        cid,cond=(line.rstrip("\n").split("\t")+["always"])[:2]
+        if (cond=="always" or (cond=="golden" and golden)) and cid not in have: missing.append(cid)
+prov["missing"]=missing
 json.dump({"provenance":prov,"result":body},open(out,"w"),indent=1)
 print("%-14s %5d %5d %8d %9d %8d %6d"%(tag,prov["pass"],prov["fail"],prov["skipped"],prov["declared"],prov["unjudged"],prov["known"]))
-sys.exit(1 if prov["fail"] or prov["build_failed"] else 0)
+if missing: print("%s: %d required claims missing: %s"%(tag,len(missing)," ".join(missing[:20])))
+sys.exit(1 if prov["fail"] or prov["build_failed"] or missing else 0)
 PY
-  [ $? = 0 ] || FAILS=$((FAILS+1))
+  PRC=$?
+  if [ $JRC = 0 ] && [ $PRC = 0 ]; then mv "$OUT/$T.json.tmp" "$OUT/$T.json"
+  else FAILS=$((FAILS+1)); [ -f "$OUT/$T.json.tmp" ] && mv "$OUT/$T.json.tmp" "$OUT/$T.failed.json"
+    echo "$T: FAIL (judge exit $JRC, records check $PRC) -> $OUT/$T.failed.json"; fi
 done
 echo "results in $OUT; worktrees in $WT"; [ "$FAILS" = 0 ]

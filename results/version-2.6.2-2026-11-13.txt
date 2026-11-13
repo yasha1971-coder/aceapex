@@ -1,0 +1,42 @@
+# version strings of the 2.6.2 candidate (13.11.2026): every remaining 2.6.1 / 2.6.2-dev outside results/, research/, release/
+# version sources set to 2.6.2: src/aceapex.h ACEAPEX_VERSION_STRING, c/aceapex_decode.h and python/csrc/aceapex_decode.h
+# ACEAPEX_DECODE_VERSION, python/aceapex/__init__.py __version__, python/pyproject.toml version, CITATION.cff version
+# (date-released 2026-11-17 planned; doi / identifiers stay those of the published releases until the Zenodo record of
+# 2.6.2 exists), CHANGELOG heading v2.6.2 - 2026-11-17. 2.6.2-dev: no source left; a build without scripts/package_linux.sh
+# prints ACEAPEX_VERSION_STRING "-dev" = 2.6.2-dev (src/aceapex_main.cpp ACEAPEX_BUILD_ID, by design: the release id comes
+# from the packaging script); 2.6.2-dev-dev no longer occurs.
+# file:line<TAB>class<TAB>text
+CHANGELOG.md:13	history (changelog entries of 2.6.1 and earlier, or 'affects <= 2.6.1')	levels 1–2 differ from 2.6.1 and are read by 2.6.1. DNA input and levels 3–4 are unchanged. **Level 4 no l
+CHANGELOG.md:17	history (changelog entries of 2.6.1 and earlier, or 'affects <= 2.6.1')	silesia 1.35–1.40 MB/s (was 1.07), ratio +0.007 pp; archives at levels 15–18 differ from 2.6.1, still vali
+CHANGELOG.md:22	history (changelog entries of 2.6.1 and earlier, or 'affects <= 2.6.1')	exit 1, FILE created 0, temporary files left 0 (2.6.1: FILE created 200; `results/freeze4-cli-atomic-2026-11-0
+CHANGELOG.md:25	history (changelog entries of 2.6.1 and earlier, or 'affects <= 2.6.1')	data, refused by 2.6.1; its chunks are decoded once and shared by the groups (claim `head_stream`: 24 MiB text
+CHANGELOG.md:29	history (changelog entries of 2.6.1 and earlier, or 'affects <= 2.6.1')	- Reliability fix, affects versions <= 2.6.1: the fast streaming decoder (`aceapex_decompress_stream` on a ver
+CHANGELOG.md:34	history (changelog entries of 2.6.1 and earlier, or 'affects <= 2.6.1')	2^59 B: 2.6.1 requests 32 GiB and 2^59 B, 2.6.2 at most 32 MiB, both ACEAPEX_ERR_DATA); format and validation 
+CHANGELOG.md:44	history (changelog entries of 2.6.1 and earlier, or 'affects <= 2.6.1')	## v2.6.1 — 2026-11-03
+CITATION.cff:36	history (DOI of the published v2.6.1 record)	description: Software release v2.6.1
+README.md:269	history (comment: the release a behaviour dates from)	**Byte order (2.6.1).** The fast profile (levels 11-18, header version 3) runs on big-endian hosts too and wri
+ROADMAP.md:129	history (ROADMAP status lines)	PASS preflight. Ветка w5-l12: W5 для уровней 1–2 (уровни 3–4 и 14 как в 2.6.1; �
+ROADMAP.md:130	history (ROADMAP status lines)	head_level_tls, исправление sink AX_LINEMODEL, исправление надёжности быст
+ROADMAP.md:131	history (ROADMAP status lines)	только в 2.6.2; 2.6.1.x — только если 2.6.2 задержится из-за FAIL ворот)
+c/ax_fast.h:69	history (comment: the release a behaviour dates from)	* swap bytes, so archives are the same bytes on every host (2.6.1, lzbench #357: until 2.6.0 the fast profile 
+c/ax_fast.h:90	history (comment: the release a behaviour dates from)	* before it allocates the block table (2.6.1, lzbench #357). Returns 0, or -2 (ACEAPEX_ERR_DATA). */
+docs/FORMAT_FAST.md:16	history (comment: the release a behaviour dates from)	reference encoder convert on big-endian hosts (2.6.1): an archive is the same bytes on every host. (The defaul
+python/csrc/ax_fast.h:69	history (comment: the release a behaviour dates from)	* swap bytes, so archives are the same bytes on every host (2.6.1, lzbench #357: until 2.6.0 the fast profile 
+python/csrc/ax_fast.h:90	history (comment: the release a behaviour dates from)	* before it allocates the block table (2.6.1, lzbench #357). Returns 0, or -2 (ACEAPEX_ERR_DATA). */
+scripts/cdec_test.sh:91	history (comment: the release a claim comes from or fails on)	# lzbench #357 (2.6.1): a corrupt DNA literal chunk comes back as ACEAPEX_ERR_DATA, not as orig_size with wron
+scripts/cdec_test.sh:95	history (comment: the release a claim comes from or fails on)	# lzbench #357 (2.6.1): the decoder keeps to its thread budget (peak threads alive <= threads, pthread_create 
+scripts/cdec_test.sh:105	history (comment: the release a claim comes from or fails on)	# inputs in verify/repro/fast_stream_alloc/, built byte for byte by the test; v2.6.1 and c3154b2 fail it (32 G
+scripts/dec_budget_test.cpp:1	history (comment: the release a claim comes from or fails on)	// dec_budget_test.cpp - claim head_dec_budget (lzbench #357, 2.6.1): aceapex_decompress_mt(threads = budget) 
+scripts/dna_err_test.cpp:1	history (comment: the release a claim comes from or fails on)	// dna_err_test.cpp - claim head_dna_err (lzbench #357, 2.6.1): a corrupt DNA literal chunk must come back as
+scripts/stream_test.cpp:8	history (comment: the release a claim comes from or fails on)	// full from ~16 MiB on - the chunk tables grow by ~15 B per 64 KiB of literals). Since FREEZE-3 (after 2.6.1)
+scripts/sync_axfast.py:12	history (comment: the release a behaviour dates from)	START = "/* ---- format and decoder (src/ax_fast.h, 2.6.1) ---- */\n"
+src/aceapex.h:50	history (comment: the release a behaviour dates from)	stream in memory (its 4 chunks are decoded whole; after 2.6.1). Archives of the pre-FSE literal layout are ref
+src/aceapex_api.cpp:719	history (comment: the release a behaviour dates from)	// table right after the 8-byte header (lit_table_check) - streamed after 2.6.1 (FREEZE-3), its 4 chunks decod
+src/aceapex_main.cpp:4	history (comment: the release a behaviour dates from)	#include "ax_fast.h"     // axf_le32/64: little-endian fields (the fast profile and the empty archive are endi
+src/aceapex_main.cpp:906	history (comment: the release a behaviour dates from)	// same bytes on every host (2.6.1); its zero fields read the same either way
+src/aceapex_main.cpp:1211	history (comment: the release a behaviour dates from)	// the caller decodes the last range itself: nt threads in all, not nt spawned + the caller waiting (2.6.1, lz
+src/aceapex_main.cpp:1348	history (comment: the release a behaviour dates from)	// literals: lit_t + tok_t == budget (2.6.1; until 2.6.0 they got one thread on top of the budget, lzbench #35
+src/ax_fast.h:69	history (comment: the release a behaviour dates from)	* swap bytes, so archives are the same bytes on every host (2.6.1, lzbench #357: until 2.6.0 the fast profile 
+src/ax_fast.h:90	history (comment: the release a behaviour dates from)	* before it allocates the block table (2.6.1, lzbench #357). Returns 0, or -2 (ACEAPEX_ERR_DATA). */
+src/ax_fast_enc.h:57	history (comment: the release a behaviour dates from)	// big-endian hosts as on little-endian ones (2.6.1, lzbench #357)
+src/ax_fast_glue.h:147	history (comment: the release a behaviour dates from)	// build, and a failed allocation returns ACEAPEX_ERR_MEMORY instead of leaving through the C API (2.6.1, lzbe

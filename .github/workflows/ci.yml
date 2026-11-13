@@ -70,10 +70,12 @@ jobs:
     # A red judge names its claims here and keeps HEAD.json as an artifact.
     - name: Failed claims
       if: failure()
-      run: python3 -c "import json;[print(c['claim_id'],c['verdict'],'measured:',str(c.get('measured'))[:300]) for c in json.load(open('results/HEAD.json'))['result']['claims'] if c['verdict'] not in ('pass','skipped','declared')]" || true
+      run: python3 -c "import json;d=json.load(open('results/HEAD.failed.json'));print('missing:',d['provenance'].get('missing'));[print(c['claim_id'],c['verdict'],'measured:',str(c.get('measured'))[:300]) for c in d['result']['claims'] if c['verdict'] not in ('pass','skipped','declared')]" || true
+    - name: verify.sh self-test (stale records, early exit, missing claim -> FAIL)
+      run: bash scripts/verify_selftest.sh
     - uses: actions/upload-artifact@v5
       if: always()
-      with: {name: results-HEAD, path: results/HEAD.json, if-no-files-found: ignore}
+      with: {name: results-HEAD, path: "results/HEAD*.json", if-no-files-found: ignore}
 
   # A4: the C decoder and the CLI on aarch64 and armv7 under qemu-user, all fixtures bit-perfect,
   # and the ARM encoders must produce the same bytes as the x86 fixture of the same libzstd line.
@@ -140,6 +142,24 @@ jobs:
       run: |
         ZSTD_INC=/tmp/zstd/lib bash scripts/portability_test.sh | tee /tmp/port.tsv
         grep -q $'\tpass\t' /tmp/port.tsv
+
+  # The CLI on Windows itself (not a cross build): MSYS2 UCRT64 gcc + zstd; conformance fixtures, round trips at levels
+  # 1-4, 11, 14 and t1 / t4, atomic --out (scripts/windows_test.sh). A release gate: 0 failures.
+  windows-msys2:
+    runs-on: windows-2022
+    defaults:
+      run: {shell: 'msys2 {0}'}
+    steps:
+    - run: git config --global core.autocrlf false
+      shell: pwsh
+    - uses: actions/checkout@v5
+    - uses: msys2/setup-msys2@v2
+      with:
+        msystem: UCRT64
+        update: false
+        install: mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-zstd mingw-w64-ucrt-x86_64-python diffutils
+    - name: Judge
+      run: bash scripts/windows_test.sh
 
   verify-tags:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
