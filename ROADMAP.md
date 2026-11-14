@@ -148,6 +148,11 @@ build-and-test (обязательный набор требовал class_<ко
 записи, не по block_size; head_stream_alloc). Preflight PASS 6/6, основные ворота G1–G9 все PASS (G1 4 × 900 с под
 MemoryMax 8G 4/4; CI push и dispatch с verify-tags success). Дальше — только по слову Якова: вливание в main вместе с
 выпуском (тег на этом SHA), release fast-forward, наблюдение за ежедневной сборкой TurboBench (при падении — откат).
+14.11 Кандидат 2.6.2 = 261d99605256922836d2e8b0d4991d3c524952f5. Аудит класса (слово Якова) нашёл переполнение суммы
+z*_sz в aceapex_decompress_mt (OOB-чтение под ASan, путь lzbench/TurboBench); потоковый API чист. Исправлено (пункт 3,
+claim head_hdr_sum_overflow); остальные находки аудита — 2.6.3 (ACEAPEX/AUDIT_ALLOC_262). Правка гонки CI turbobench —
+только ci.yml. Судья 81/0, весь CI (push и dispatch с verify-tags, turbobench) зелёный; preflight и G1–G9 PASS. HOLD:
+тег на 261d996 по слову Якова не ранее 17.11, затем merge в main и release fast-forward.
 05.11 FREEZE-4 (без тега): CLI `d --out FILE` атомарный (временный файл + rename только при совпадении XXH3; претензия
 head_cli_atomic; 200 порч: exit 1 200, FILE создан 0, временных 0; старый CLI: создан 200); судья 77/0. ClusterFuzzLite в
 aceapex (fuzz/fuzz_api.cpp) и aceapex-fast (fuzz/fuzz_axfast.c): сырой путь — ASan/UBSan, VERIFY-путь — «успех => байты ==
