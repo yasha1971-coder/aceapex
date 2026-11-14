@@ -198,10 +198,10 @@ jobs:
         echo "aceapex block of the makefile: $(sed -n '/^# aceapex/,/^endif/p' makefile | md5sum | cut -c1-32)"
         git status --short | grep -v '^ M aceapex$' || true
     - name: make (dynamic)
-      run: cd tb && { make -j4 RUST=0 BLOSC=0 OPENZL=0 || make -j1 RUST=0 BLOSC=0 OPENZL=0; } && mv turbobench ../tb_dyn
+      run: cd tb && { make -j4 RUST=0 BLOSC=0 OPENZL=0 || { rm -rf build && make -j1 RUST=0 BLOSC=0 OPENZL=0; }; } && mv turbobench ../tb_dyn
     - name: make STATIC=1
       run: |
-        cd tb && { make -j4 STATIC=1 RUST=0 BLOSC=0 OPENZL=0 BUILD=build-static || make -j1 STATIC=1 RUST=0 BLOSC=0 OPENZL=0 BUILD=build-static; } && mv turbobench ../tb_static
+        cd tb && { make -j4 STATIC=1 RUST=0 BLOSC=0 OPENZL=0 BUILD=build-static || { rm -rf build-static && make -j1 STATIC=1 RUST=0 BLOSC=0 OPENZL=0 BUILD=build-static; }; } && mv turbobench ../tb_static
         file ../tb_static
     - name: Run both builds on silesia.tar
       run: |
