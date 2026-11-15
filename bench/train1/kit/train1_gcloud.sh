@@ -32,7 +32,7 @@ MAXRUN="${MAXRUN:-4h}"                            # with slack; L4 + 3 seeds x 2
 # reference FASTA is tokenised in CPU RAM), then g2-standard-8 (32 GB).
 MTS="${MTS:-g2-standard-16 g2-standard-8}"
 ZONES="${ZONES:-europe-west4-a europe-west4-b europe-west4-c us-central1-a us-central1-b us-central1-c us-west1-a us-west1-b us-west4-a europe-west1-b europe-west1-c asia-southeast1-a asia-southeast1-b asia-southeast1-c}"
-IMG_FAMILY="${IMG_FAMILY:-common-cu123}"
+IMG_FAMILY="${IMG_FAMILY:-pytorch-2-9-cu129-ubuntu-2204-nvidia-580}"  # DL image: PyTorch 2.9 + CUDA 12.9 + NVIDIA driver 580 preinstalled
 IMG_PROJECT="${IMG_PROJECT:-deeplearning-platform-release}"
 STAGE="$OUT/stage"; mkdir -p "$STAGE"
 log(){ echo "[$(date -u +%FT%TZ)] $*" | tee -a "$OUT/gcloud.log"; }
