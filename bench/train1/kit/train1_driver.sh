@@ -59,6 +59,17 @@ CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"; export CUDA_HOME
 [ -x "$CUDA_HOME/bin/nvcc" ] && export PATH="$CUDA_HOME/bin:$PATH"
 command -v nvcc >/dev/null 2>&1 && S "nvcc: $(nvcc --version | tail -1)" || S "WARN: nvcc not found at $CUDA_HOME/bin (panvram CUDA ext build may fail)"
 
+# 3b) C/C++ compiler + ninja. The PyTorch DL image ships torch + CUDA toolkit but NO gcc/g++,
+#     so the panvram extension cannot compile (first build dies at `x86_64-linux-gnu-gcc: No such
+#     file or directory`). Install build-essential (passwordless sudo on DL images) + ninja.
+if ! { command -v gcc >/dev/null 2>&1 && command -v g++ >/dev/null 2>&1; }; then
+  S "install build-essential (no gcc/g++ on image)"
+  sudo apt-get -qq update >>"$OUT/logs/driver.log" 2>&1 || true
+  sudo DEBIAN_FRONTEND=noninteractive apt-get -qq install -y build-essential >>"$OUT/logs/driver.log" 2>&1 || true
+fi
+command -v gcc >/dev/null 2>&1 || DIE "gcc still missing after apt (cannot build panvram extension)"
+"$PY" -m pip -q install ninja >>"$OUT/logs/driver.log" 2>&1 || true   # fast torch BuildExtension backend
+
 # 4) Stage files (scp'd from ace-core) -> extract. Verify each before use.
 cd ~
 need cohort_q4k.tgz "cohort q4k archives" 5000000000
@@ -77,11 +88,12 @@ tar xzf panvram_src.tgz -C "$OUT/src"
 [ -f "$OUT/src/examples/train_small.py" ] || DIE "examples/train_small.py not in source archive"
 PVSHA="$(cat "$OUT/src/.panvram_sha" 2>/dev/null || echo unknown)"; S "panvram source sha (recorded by orchestrator): $PVSHA"
 
-# 5) Build panvram from source with CUDA (code unchanged). --no-build-isolation so the C++/CUDA
-#    extension builds against this env's torch (the fresh PEP517 build env would have no torch).
-S "pip install panvram (PANVRAM_CUDA=1, from source, --no-build-isolation)"
-( cd "$OUT/src" && PANVRAM_CUDA=1 "$PY" -m pip -q install --no-build-isolation . ) >>"$OUT/logs/driver.log" 2>&1 \
-  || ( cd "$OUT/src" && PANVRAM_CUDA=1 "$PY" -m pip install . ) >>"$OUT/logs/driver.log" 2>&1 \
+# 5) Build panvram from source with CUDA (code unchanged). --no-build-isolation ONLY: the extension
+#    must build against THIS image's torch (cu129, matching nvcc 12.9). The old isolating fallback
+#    (`pip install .`) pulled a fresh PyPI torch (2.14/cu130) -> CUDA 13.0 vs 12.9 mismatch, so it
+#    is removed. Build deps (setuptools/wheel/torch/ninja) are already present in the image env.
+S "pip install panvram (PANVRAM_CUDA=1, from source, --no-build-isolation against image torch cu129)"
+( cd "$OUT/src" && PANVRAM_CUDA=1 "$PY" -m pip install --no-build-isolation . ) >>"$OUT/logs/driver.log" 2>&1 \
   || DIE "panvram build/install failed (see driver.log)"
 "$PY" -c "import panvram; print('panvram', getattr(panvram,'__version__','?'))" 2>&1 | tee -a "$OUT/logs/driver.log" \
   || DIE "panvram import failed after install"
