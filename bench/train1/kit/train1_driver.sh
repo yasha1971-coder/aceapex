@@ -64,13 +64,18 @@ command -v nvcc >/dev/null 2>&1 && S "nvcc: $(nvcc --version | tail -1)" || S "W
 #     file or directory`). Install build-essential (passwordless sudo on DL images) + ninja.
 # build-essential (gcc/g++) AND python3-dev (Python.h) are both absent on the DL image; the
 # extension needs both (pv_core.cpp includes <Python.h> via torch/extension.h).
-if ! { command -v gcc >/dev/null 2>&1 && command -v g++ >/dev/null 2>&1 && [ -e /usr/include/python3.10/Python.h ]; }; then
-  S "install build-essential + python3-dev (no gcc/g++/Python.h on image)"
+# The extension needs: gcc/g++ (build-essential), Python.h (python3-dev), and zstd.h + libzstd
+# (libzstd-dev) — panvram's only external lib is zstd (csrc includes <zstd.h>, libraries=["zstd"]).
+# All three are absent on the PyTorch DL image; install them in one apt transaction.
+if ! { command -v gcc >/dev/null 2>&1 && command -v g++ >/dev/null 2>&1 \
+       && [ -e /usr/include/python3.10/Python.h ] && [ -e /usr/include/zstd.h ]; }; then
+  S "install build-essential + python3-dev + libzstd-dev (absent on DL image)"
   sudo apt-get -qq update >>"$OUT/logs/driver.log" 2>&1 || true
-  sudo DEBIAN_FRONTEND=noninteractive apt-get -qq install -y build-essential python3-dev >>"$OUT/logs/driver.log" 2>&1 || true
+  sudo DEBIAN_FRONTEND=noninteractive apt-get -qq install -y build-essential python3-dev libzstd-dev >>"$OUT/logs/driver.log" 2>&1 || true
 fi
 command -v gcc >/dev/null 2>&1 || DIE "gcc still missing after apt (cannot build panvram extension)"
 ls /usr/include/python3.10/Python.h >/dev/null 2>&1 || DIE "Python.h still missing after apt (python3-dev)"
+ls /usr/include/zstd.h >/dev/null 2>&1 || DIE "zstd.h still missing after apt (libzstd-dev)"
 "$PY" -m pip -q install ninja >>"$OUT/logs/driver.log" 2>&1 || true   # fast torch BuildExtension backend
 
 # 4) Stage files (scp'd from ace-core) -> extract. Verify each before use.
