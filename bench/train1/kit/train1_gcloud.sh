@@ -48,7 +48,15 @@ build_tarballs(){
   tmpd=$(mktemp -d); printf '%s\n' "$PANVRAM_SHA" > "$tmpd/.panvram_sha"
   tar --append -f "$STAGE/panvram_src.tar" -C "$tmpd" .panvram_sha; rm -rf "$tmpd"
   gzip -f "$STAGE/panvram_src.tar"; mv "$STAGE/panvram_src.tar.gz" "$STAGE/panvram_src.tgz"
-  [ -f "$STAGE/src_examples_ok" ] || { tar tzf "$STAGE/panvram_src.tgz" | grep -q '^examples/train_small.py$' && touch "$STAGE/src_examples_ok" || { log "STOP: train_small.py not in archive of $PANVRAM_SHA"; exit 2; }; }
+  # NB: capture the listing first and match a here-string. `tar tzf ... | grep -q` is wrong under
+  # `set -o pipefail`: grep -q closes the pipe on first hit, tar dies with SIGPIPE, and the pipeline
+  # reports non-zero even though the file IS present -> false "not in archive" STOP (the original bug).
+  if [ ! -f "$STAGE/src_examples_ok" ]; then
+    arclist=$(tar tzf "$STAGE/panvram_src.tgz")
+    grep -qx 'examples/train_small.py' <<<"$arclist" \
+      && touch "$STAGE/src_examples_ok" \
+      || { log "STOP: train_small.py not in archive of $PANVRAM_SHA"; exit 2; }
+  fi
   for f in cohort_q4k.tgz t2t.fa.gz; do
     [ -s "$STAGE/$f" ] && { log "have $STAGE/$f"; continue; }
     if "$GS" -q stat "$BUCKET/$f" >/dev/null 2>&1; then log "pull $f from bucket (user creds)"; "$GS" -q cp "$BUCKET/$f" "$STAGE/$f"; continue; fi
