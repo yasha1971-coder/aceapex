@@ -25,21 +25,28 @@ def main():
     x = torch.randint(0, V, (a.batch, a.W), device=dev)   # resident batch, no loader
     out = {}
     for name, d, L in configs:
-        model = ts.TinyCNNLM(d, L).to(dev)
-        opt = torch.optim.AdamW(model.parameters(), lr=a.lr)
-        nparams = sum(p.numel() for p in model.parameters())
-        def step():
-            loss = F.cross_entropy(model(x[:, :-1]).reshape(-1, V), x[:, 1:].reshape(-1))
-            opt.zero_grad(set_to_none=True); loss.backward(); opt.step()
-        for _ in range(a.warmup): step()
-        torch.cuda.synchronize(); t0 = time.time()
-        for _ in range(a.steps): step()
-        torch.cuda.synchronize(); dt = (time.time() - t0) / a.steps
-        out[name] = dict(d=d, layers=L, params=nparams,
-                         t_step_s=round(dt, 6), t_step_ms=round(dt*1000, 3),
-                         compute_bound_windows_s=round(a.batch / dt),
-                         gpu=torch.cuda.get_device_name(0))
-        print(f"{name}: params={nparams} t_step={dt*1000:.3f}ms ceiling={round(a.batch/dt)} win/s", flush=True)
+        try:
+            model = ts.TinyCNNLM(d, L).to(dev)
+            opt = torch.optim.AdamW(model.parameters(), lr=a.lr)
+            nparams = sum(p.numel() for p in model.parameters())
+            def step():
+                loss = F.cross_entropy(model(x[:, :-1]).reshape(-1, V), x[:, 1:].reshape(-1))
+                opt.zero_grad(set_to_none=True); loss.backward(); opt.step()
+            for _ in range(a.warmup): step()
+            torch.cuda.synchronize(); t0 = time.time()
+            for _ in range(a.steps): step()
+            torch.cuda.synchronize(); dt = (time.time() - t0) / a.steps
+            out[name] = dict(d=d, layers=L, params=nparams,
+                             t_step_s=round(dt, 6), t_step_ms=round(dt*1000, 3),
+                             compute_bound_windows_s=round(a.batch / dt),
+                             gpu=torch.cuda.get_device_name(0))
+            print(f"{name}: params={nparams} t_step={dt*1000:.3f}ms ceiling={round(a.batch/dt)} win/s", flush=True)
+            del model, opt; torch.cuda.empty_cache()
+        except RuntimeError as e:
+            msg = str(e)[:200]
+            out[name] = dict(d=d, layers=L, error=msg, oom=("out of memory" in msg.lower()))
+            print(f"{name}: FAILED ({'OOM' if 'out of memory' in msg.lower() else 'err'}): {msg}", flush=True)
+            torch.cuda.empty_cache()
     json.dump(dict(config=dict(W=a.W, batch=a.batch, steps=a.steps, seed=20261115), models=out),
               open(a.out, "w"), indent=2)
 
