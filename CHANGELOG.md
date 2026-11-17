@@ -4,11 +4,53 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
-## Unreleased
+## v2.6.2 — 2026-11-17
+
+- Platforms: the CLI builds on Linux and macOS only (`aceapex faidx` maps the archive with `mmap`, since 02.10.2026, so
+  2.6.1 is the same - not a regression). On Windows the library builds and is checked by the new CI job `windows-msys2`
+  (MSYS2 UCRT64 gcc: 27 conformance fixtures through `aceapex_decompress_stream` + VERIFY and `aceapex_decompress_mt`,
+  24 round trips through the API at levels 1-4, 11, 14 and 1 / 4 threads; `scripts/windows_test.sh`).
+- Levels 1–2 of the default profile cut the literals of non-DNA input into 1 MiB chunks (the chunked layout of
+  FORMAT_ACEPX2 §3.2.2, which every decoder since 2.3 reads in parallel) instead of 4 equal parts: decompression with
+  8 threads ×1.19–1.20 on Zen 4 (ace-core) and ×1.21–1.24 on Zen 5 (c4d-standard-64), silesia and the enwik9 tail,
+  1 thread unchanged; archives +0.40–0.63 % (CLI with zstd 1.4.8; lzbench with zstd 1.5.7 +0.53–0.65 %). Archives of
+  levels 1–2 differ from 2.6.1 and are read by 2.6.1. DNA input and levels 3–4 are unchanged. **Level 4 no longer has the
+  bytes of level 2**: it keeps the 4-part layout (`results/w5-2026-11-12.txt`).
 
 - Levels 15–18 (optimal parse) stop the chain walk at a 256-byte match: 5.7–5.9 MB/s on short-period data (was 0.197),
   silesia 1.35–1.40 MB/s (was 1.07), ratio +0.007 pp; archives at levels 15–18 differ from 2.6.1, still valid and readable
   by any 2.4+ reader; levels 1–3 and 11–14 unchanged (`results/lvl18-2026-11-05.txt`).
+- CLI `aceapex d --out FILE` is atomic: it decodes into `FILE.aceapex-tmp.<pid>` and renames it to FILE only when the
+  XXH3 of the output matches the header; otherwise the temporary file is removed, an existing FILE is left as it was,
+  exit 1. Output to stdout unchanged. Claim `head_cli_atomic`: 200 one-bit-flip archives (levels 1, 2, 3, 11, 14) give
+  exit 1, FILE created 0, temporary files left 0 (2.6.1: FILE created 200; `results/freeze4-cli-atomic-2026-11-05.txt`).
+- The CLI checks every `fread`: a short read of the input or of an archive prints a message and exits 1.
+- Streaming decoder (`aceapex_decompress_stream`) reads the 4-part literal layout of the default profile on non-DNA
+  data, refused by 2.6.1; its chunks are decoded once and shared by the groups (claim `head_stream`: 24 MiB text at
+  levels 1-3 byte for byte). README section Integrity: the raw API guarantees memory safety, the checked paths (CLI,
+  stream with `ACEAPEX_STREAM_VERIFY`, Python `decompress`) also the bytes, through XXH3; api_fuzz under ASan + UBSan:
+  0 verified-silent (`results/freeze3-api-fuzz-2026-11-05.txt`, `results/freeze3-cli-verify-2026-11-05.txt`).
+- Reliability fix, affects versions <= 2.6.1: `aceapex_decompress_mt`'s header check added the four 64-bit stream sizes
+  in one expression, so a crafted sum near 2^64 wrapped past the `need <= src_size` guard and the stream pointers ran
+  past the archive (an out-of-bounds read in the lzbench / TurboBench decompress path). The sizes are now added one at a
+  time against the bytes left. Claim `head_hdr_sum_overflow` (a 132-byte archive with zcmd_sz 2^64-150: ASan reads out of
+  bounds on <= 2.6.1, the fix returns ACEAPEX_ERR_DATA). The streaming decoder already checked this.
+  (`results/hdr-sum-overflow-2026-11-13.txt`)
+- Reliability fix, affects versions <= 2.6.1: the streaming decoder of the default profile (`aceapex_decompress_stream`
+  on a version-2 archive) sized each worker's output and tile from the header's block_size and zero-filled them, so a
+  corrupt block_size made it allocate ~2 GiB per worker (api_fuzz under ASan, seed 20261113001, killed by the OOM killer
+  under MemoryMax 8G). Worker buffers are now not zero-filled and grow only to what a group really writes (to the end of
+  the block being decoded, at most doubling and 16 MiB per step). Claim `head_stream_alloc` (block_size 0x80040000 in a
+  one-block text and DNA archive: 2.6.1 and the earlier 2.6.2 candidate request 2 147 745 856 B; now at most 200 064 B,
+  the valid archive decodes, the corrupt one gives ACEAPEX_ERR_DATA). Format unchanged: archives with blocks of 2-64 MiB
+  (ACEAPEX_BS in a tuning build) still stream byte for byte (`results/stream-alloc-2026-11-13.txt`).
+- Reliability fix, affects versions <= 2.6.1: the fast streaming decoder (`aceapex_decompress_stream` on a version-3
+  archive) sized its buffers from the block count and the block table of the archive, so a corrupt archive could make it
+  allocate and zero-fill memory the archive does not have (2^59 B in the fuzz case). The block table and each group's
+  compressed bytes are now read into buffers that grow with the bytes that arrive (16 MiB steps). Found by api_fuzz under
+  ASan (two of four 900 s seeds); claim `head_fast_stream_alloc` (a header with nb = UINT32_MAX and a table claiming
+  2^59 B: 2.6.1 requests 32 GiB and 2^59 B, 2.6.2 at most 32 MiB, both ACEAPEX_ERR_DATA); format and validation unchanged
+  (`results/fuzz262-2026-11-13.txt`).
 - Streaming decoder: a corrupt literal chunk size no longer drives a huge allocation (bounded by the literal stream,
   overflow-checked sums, the archive must reach its declared end); found by CI API fuzzing, seed 42064533943
   (`results/fuzzfix-api-fuzz-2026-11-05.txt`).

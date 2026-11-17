@@ -14,6 +14,13 @@ jobs:
   build-and-test:
     runs-on: ubuntu-24.04
     steps:
+    # Release gate "CPU without AVX-512" (2.6.2): on a runner without avx512f (e.g. EPYC 7763) this job's round trips
+    # (make test) are the AVX2 path on real hardware; the line below says which case this run is.
+    - name: CPU of the runner
+      run: |
+        lscpu | grep -E 'Model name|^CPU\(s\)|Flags' | sed 's/Flags:.*/&/' | cut -c1-200
+        if grep -qw avx512f /proc/cpuinfo; then echo "AVX512: present (this run does not count as the no-AVX-512 check)"
+        else echo "AVX512: absent; avx2: $(grep -qw avx2 /proc/cpuinfo && echo yes || echo no) -> make test below runs the AVX2 path without AVX-512"; fi
     - uses: actions/checkout@v5
 
     - name: Install dependencies
@@ -70,10 +77,12 @@ jobs:
     # A red judge names its claims here and keeps HEAD.json as an artifact.
     - name: Failed claims
       if: failure()
-      run: python3 -c "import json;[print(c['claim_id'],c['verdict'],'measured:',str(c.get('measured'))[:300]) for c in json.load(open('results/HEAD.json'))['result']['claims'] if c['verdict'] not in ('pass','skipped','declared')]" || true
+      run: python3 -c "import json;d=json.load(open('results/HEAD.failed.json'));print('missing:',d['provenance'].get('missing'));[print(c['claim_id'],c['verdict'],'measured:',str(c.get('measured'))[:300]) for c in d['result']['claims'] if c['verdict'] not in ('pass','skipped','declared')]" || true
+    - name: verify.sh self-test (stale records, early exit, missing claim -> FAIL)
+      run: bash scripts/verify_selftest.sh
     - uses: actions/upload-artifact@v5
       if: always()
-      with: {name: results-HEAD, path: results/HEAD.json, if-no-files-found: ignore}
+      with: {name: results-HEAD, path: "results/HEAD*.json", if-no-files-found: ignore}
 
   # A4: the C decoder and the CLI on aarch64 and armv7 under qemu-user, all fixtures bit-perfect,
   # and the ARM encoders must produce the same bytes as the x86 fixture of the same libzstd line.
@@ -140,6 +149,67 @@ jobs:
       run: |
         ZSTD_INC=/tmp/zstd/lib bash scripts/portability_test.sh | tee /tmp/port.tsv
         grep -q $'\tpass\t' /tmp/port.tsv
+
+  # The library on Windows itself (not a cross build): MSYS2 UCRT64 gcc + zstd; conformance fixtures through the library,
+  # round trips through the API at levels 1-4, 11, 14 and t1 / t4 (scripts/windows_test.sh). The CLI is Linux / macOS only.
+  # A release gate: 0 failures.
+  windows-msys2:
+    runs-on: windows-2022
+    defaults:
+      run: {shell: 'msys2 {0}'}
+    steps:
+    - run: git config --global core.autocrlf false
+      shell: pwsh
+    - uses: actions/checkout@v5
+    - uses: msys2/setup-msys2@v2
+      with:
+        msystem: UCRT64
+        update: false
+        install: mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-zstd
+    - name: Judge
+      run: bash scripts/windows_test.sh
+
+  # TurboBench gate (2.6.2, decision of Yakiv 13.11): clean upstream powturbo/TurboBench 8a0ec42, its aceapex submodule
+  # switched to the commit under test, codecs off only by the upstream make flags RUST=0 BLOSC=0 OPENZL=0; make and
+  # make STATIC=1 with the runner's gcc; silesia.tar (211 947 520 B, sha256 a667bac8..., the source upstream's CI uses)
+  # through aceapex 1-4 and aceapex_fast 1, 3 in both builds: no error, the same sizes.
+  turbobench:
+    runs-on: ubuntu-24.04
+    env:
+      TB_SHA: 8a0ec42f1e0cec9965407655d4ce2eb367948f7c
+      ACE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      SIL_SHA: a667bac80089b3d04d5496772149e632f0758974b0579d743cd8d6e5e0d63eb2
+    steps:
+    - name: Dependencies (as upstream's CI)
+      run: sudo apt-get update && sudo apt-get install -y nasm libomp-dev
+    - uses: actions/cache@v5
+      with: {path: ~/corpus/silesia.tar, key: silesia-a667bac80089b3d0}
+    - name: silesia.tar
+      run: |
+        mkdir -p ~/corpus
+        [ -s ~/corpus/silesia.tar ] || curl -sL https://github.com/DataCompression/corpus-collection/raw/main/Silesia-Corpus/silesia.tar.gz | gunzip -c > ~/corpus/silesia.tar
+        echo "$SIL_SHA  $HOME/corpus/silesia.tar" | sha256sum -c -
+    - name: Upstream TurboBench, aceapex submodule on the commit under test
+      run: |
+        git clone -q https://github.com/powturbo/TurboBench.git tb && cd tb && git checkout -q $TB_SHA
+        git submodule update --init --recursive -q
+        git -C aceapex fetch -q origin $ACE_SHA && git -C aceapex checkout -q $ACE_SHA
+        echo "TurboBench $(git rev-parse HEAD); aceapex $(git -C aceapex rev-parse HEAD); $(gcc --version | head -1)"
+        echo "aceapex block of the makefile: $(sed -n '/^# aceapex/,/^endif/p' makefile | md5sum | cut -c1-32)"
+        git status --short | grep -v '^ M aceapex$' || true
+    - name: make (dynamic)
+      run: cd tb && { make -j4 RUST=0 BLOSC=0 OPENZL=0 || { rm -rf build && make -j1 RUST=0 BLOSC=0 OPENZL=0; }; } && mv turbobench ../tb_dyn
+    - name: make STATIC=1
+      run: |
+        cd tb && { make -j4 STATIC=1 RUST=0 BLOSC=0 OPENZL=0 BUILD=build-static || { rm -rf build-static && make -j1 STATIC=1 RUST=0 BLOSC=0 OPENZL=0 BUILD=build-static; }; } && mv turbobench ../tb_static
+        file ../tb_static
+    - name: Run both builds on silesia.tar
+      run: |
+        mkdir run && cp ~/corpus/silesia.tar run/
+        for b in dyn static; do ( cd run && ../tb_$b -eaceapex,1,2,3,4/aceapex_fast,1,3 -i1,1 silesia.tar ) > tb_$b.log 2>&1; echo "$b rc $?"; done
+        for b in dyn static; do grep -E '^ +[0-9]+ .*aceapex' tb_$b.log | head -6 | awk '{print $1, $4, $5}' > sizes_$b.txt; echo "== $b"; cat sizes_$b.txt; done
+        ! grep -qiE 'error|mismatch' tb_dyn.log tb_static.log
+        [ "$(wc -l < sizes_dyn.txt)" = 6 ] && cmp sizes_dyn.txt sizes_static.txt
 
   verify-tags:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'

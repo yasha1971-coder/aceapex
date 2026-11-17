@@ -125,6 +125,34 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+13.11 2.6.2-кандидат — HOLD (слово Якова 13.11): в main не вливать, релиз не создавать, длинные ворота — только после
+PASS preflight. Ветка w5-l12: W5 для уровней 1–2 (уровни 3–4 и 14 как в 2.6.1; уровень 4 больше не даёт байтов уровня 2),
+head_level_tls, исправление sink AX_LINEMODEL, исправление надёжности быстрого потокового декодера (затронуты ≤ 2.6.1;
+только в 2.6.2; 2.6.1.x — только если 2.6.2 задержится из-за FAIL ворот). Discovery/regression checks 13.11 (прогнозы
+не записаны, задним числом не восстанавливаются): api_fuzz ASan до исправления — seed 1 и 3 pass, seed 2 и 4 — находка;
+после исправления прошли только seed 2 и 4 по 900 с. TurboBench 13.11 собран на изменённой копии (перенесены c-blosc2,
+openzl, подменён turbobench.c) — как ворота не засчитывается. Дальше: PRECHECK-262 -> один SHA кандидата -> preflight ->
+основные ворота на том же SHA.
+13.11 PRECHECK-262: кандидат 0aa31abe7db598f571a39bd2afdf628e0c3895e7 — preflight FAIL (4 из 6), основные ворота не
+запускались. P1 судья 79/0, P2 самопроверка, P3 два повреждённых архива (ASan+UBSan, MemoryMax 8G), P4 4 seed × 60 с — PASS.
+P5 FAIL: upstream TurboBench 8a0ec42 требует C++20 <format> (plugin.cc), на ace-core gcc 11.4. P6 FAIL: ~/golden/mixed/
+silesia.tar = 211 957 760 B (sha 3eee8566), не стандартный a667bac8 (211 947 520 B, /tmp/hwref/corpus). CI на 0aa31ab: красные
+build-and-test (обязательный набор требовал class_<корпус>_* без корпуса — исправлено в dd6f9c1) и windows-msys2 (CLI не
+собирается под Windows: faidx/region через mmap с 02.10, так же в v2.6.1). Ждёт решения Якова: объём ворот Windows,
+компилятор для TurboBench, какой silesia.tar эталон.
+13.11 Кандидат 47f238608cbf33c5fee2aabe6bf780c01370207b: preflight PASS 6/6; основные ворота G2–G9 PASS (G4 — при
+повторе после ошибки обвязки), G1 FAIL: seed 20261113001 убит OOM при MemoryMax 8G — потоковый декодер основного
+профиля выделяет буферы по block_size из заголовка (≈2 GiB на поток, src/aceapex_api.cpp:636; так же в v2.6.1). Формат не
+ограничивает block_size сверху. HOLD, ждёт решения Якова.
+13.11 Кандидат 2.6.2 = 4947cb7579d36cbf5ac0730ff8ec22582aa179aa (G1 вариант г: буферы потокового декодера растут по
+записи, не по block_size; head_stream_alloc). Preflight PASS 6/6, основные ворота G1–G9 все PASS (G1 4 × 900 с под
+MemoryMax 8G 4/4; CI push и dispatch с verify-tags success). Дальше — только по слову Якова: вливание в main вместе с
+выпуском (тег на этом SHA), release fast-forward, наблюдение за ежедневной сборкой TurboBench (при падении — откат).
+14.11 Кандидат 2.6.2 = 261d99605256922836d2e8b0d4991d3c524952f5. Аудит класса (слово Якова) нашёл переполнение суммы
+z*_sz в aceapex_decompress_mt (OOB-чтение под ASan, путь lzbench/TurboBench); потоковый API чист. Исправлено (пункт 3,
+claim head_hdr_sum_overflow); остальные находки аудита — 2.6.3 (ACEAPEX/AUDIT_ALLOC_262). Правка гонки CI turbobench —
+только ci.yml. Судья 81/0, весь CI (push и dispatch с verify-tags, turbobench) зелёный; preflight и G1–G9 PASS. HOLD:
+тег на 261d996 по слову Якова не ранее 17.11, затем merge в main и release fast-forward.
 05.11 FREEZE-4 (без тега): CLI `d --out FILE` атомарный (временный файл + rename только при совпадении XXH3; претензия
 head_cli_atomic; 200 порч: exit 1 200, FILE создан 0, временных 0; старый CLI: создан 200); судья 77/0. ClusterFuzzLite в
 aceapex (fuzz/fuzz_api.cpp) и aceapex-fast (fuzz/fuzz_axfast.c): сырой путь — ASan/UBSan, VERIFY-путь — «успех => байты ==

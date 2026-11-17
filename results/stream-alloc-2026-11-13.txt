@@ -1,0 +1,11 @@
+# head_stream_alloc (13.11.2026): streaming decoder of the default profile, buffers from block_size
+## the gate: api_fuzz seed 20261113001 on 47f238608cbf33c5fee2aabe6bf780c01370207b under MemoryMax=8G MemorySwapMax=0: OOM kill
+## (10:16:04 UTC); repeat with ASAN_OPTIONS=max_allocation_size_mb=2048: request 0x80040040 B in st_worker (src/aceapex_api.cpp:636)
+## new code (this commit)
+pass	block_size 0x80040000 in one-block level-1 archives (text, DNA) through aceapex_decompress_stream + VERIFY, [rc, largest request B, bytes equal], pass = bs_huge gives the input, bs_huge_corrupt rc -2/-3, none above 64 MiB text (num_blocks 1, archive 46309 B) t1: bs_huge [200000 200064 1], bs_huge_corrupt [-2 200064 0]; t4: bs_huge [200000 200064 1], bs_huge_corrupt [-2 200064 0];; DNA (num_blocks 1, archive 50871 B) t1: bs_huge [200000 200064 1], bs_huge_corrupt [-2 200064 0]; t4: bs_huge [200000 200064 1], bs_huge_corrupt [-2 200064 0];
+## 47f2386
+fail	block_size 0x80040000 in one-block level-1 archives (text, DNA) through aceapex_decompress_stream + VERIFY, [rc, largest request B, bytes equal], pass = bs_huge gives the input, bs_huge_corrupt rc -2/-3, none above 64 MiB text (num_blocks 1, archive 46309 B) t1: bs_huge [T 2147745856] FAIL, bs_huge_corrupt [T 2147745856] FAIL; t4: bs_huge [T 2147745856] FAIL, bs_huge_corrupt [T 2147745856 ...] FAIL;; DNA (num_blocks 1, archive 50871 B) t1: bs_huge [T 2147745856] FAIL, bs_huge_corrupt [T 2147745856] FAIL; t4: bs_huge [T 2147745856 ...] FAIL, bs_huge_corrupt [T 2147745856 ...] FAIL;
+## d8debc0
+fail	block_size 0x80040000 in one-block level-1 archives (text, DNA) through aceapex_decompress_stream + VERIFY, [rc, largest request B, bytes equal], pass = bs_huge gives the input, bs_huge_corrupt rc -2/-3, none above 64 MiB text (num_blocks 1, archive 47026 B) t1: bs_huge [-2 512 0] FAIL, bs_huge_corrupt [-2 512 0]; t4: bs_huge [-2 512 0] FAIL, bs_huge_corrupt [-2 512 0];; DNA (num_blocks 1, archive 50871 B) t1: bs_huge [T 2147745856] FAIL, bs_huge_corrupt [T 2147745856] FAIL; t4: bs_huge [T 2147745856 ...] FAIL, bs_huge_corrupt [T 2147745856 ...] FAIL;
+## archives with blocks > 1 MiB (tuning build, ACEAPEX_BS; level 1 and 3, 4 threads) through stream + VERIFY and decompress_mt (scripts/lib_tool.cpp):
+##   enwik8 and the first 64 MiB of chr1.fa, block 2, 4, 32, 64 MiB: 16 of 16 byte for byte
