@@ -36,6 +36,19 @@ calibration_gate(){
 }
 calibration_gate "$TASK"
 
+# --- silesia reference gate: if SILESIA is set, it MUST be the reference corpus ---
+# sha256 a667bac8…, 211 947 520 B (/tmp/hwref/corpus/silesia.tar). Guards against the
+# golden/mixed variant (211 957 760, sha 3eee8566) and the 38-byte ~/CORPORA stub (§1).
+SILESIA="${SILESIA:-}"
+silesia_gate(){
+  [ -n "$SILESIA" ] || return 0
+  [ -r "$SILESIA" ] || die "SILESIA not readable: $SILESIA"
+  local s; s=$(sha256sum "$SILESIA" | cut -c1-8)
+  [ "$s" = "a667bac8" ] || die "silesia '$SILESIA' sha $s != reference a667bac8 (use /tmp/hwref/corpus/silesia.tar, 211 947 520 B; §1)"
+  log "silesia reference OK ($SILESIA sha a667bac8)"
+}
+silesia_gate
+
 [ "$#" -gt 0 ] || { log "env gate passed; no command (dry gate check) — done"; exit 0; }
 
 # --- hang watchdog + PID wait + explicit STOP ---
