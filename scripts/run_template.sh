@@ -10,14 +10,18 @@
 # Usage: run_template.sh <task-name-as-in-CALIBRATION> [-- <command...>]
 #   CALIB=<file>    override CALIBRATION path (default ~/yasha-context/ACEAPEX/CALIBRATION.md)
 #   WATCHDOG=3600   hang watchdog seconds (default 3600 = 60 min)
-#   STATUS=<file>   STATUS log path (default ./STATUS)
+#   RUN_DIR=<dir>   the run's folder (default ${TMPDIR:-/tmp}/run_template/<task>); created if missing
+#   STATUS=<file>   STATUS log path (default $RUN_DIR/STATUS - never the current directory: a dry gate check run
+#                   from a repository root left an untracked STATUS there, 20.11)
 # No command after the task name = dry gate check (exit 0 if the gate passes, 2 if it STOPs).
 set -euo pipefail
 TASK="${1:?task name as written in CALIBRATION}"; shift || true
 [ "${1:-}" = "--" ] && shift || true
 CALIB="${CALIB:-$HOME/yasha-context/ACEAPEX/CALIBRATION.md}"
 WATCHDOG="${WATCHDOG:-3600}"
-STATUS="${STATUS:-./STATUS}"
+RUN_DIR="${RUN_DIR:-${TMPDIR:-/tmp}/run_template/$(printf '%s' "$TASK" | tr -c 'A-Za-z0-9._-' '_')}"
+mkdir -p "$RUN_DIR"
+STATUS="${STATUS:-$RUN_DIR/STATUS}"
 log(){ echo "[$(date -u +%FT%TZ)] $*" | tee -a "$STATUS"; }
 die(){ log "STOP: $*"; exit 2; }
 trap 'die "trap ERR (line $LINENO)"' ERR
