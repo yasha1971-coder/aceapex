@@ -126,7 +126,10 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
 
 ## Сейчас
 20.11 v2.6.3 = c3485e9 (тег поставил Яков), влит в main merge-коммитом 734c3a9 (PR #24; разница с тегом — только
-документы main). Release, Zenodo и ветка lzbench aceapex-2.6.3 — по слову Якова; release не тронута (F.3). Ворота
+документы main). GitHub Release https://github.com/yasha1971-coder/aceapex/releases/tag/v2.6.3 (пакет static,
+zstd 1.5.7, sha256 8e5e33dd…3356), Zenodo 10.5281/zenodo.24404788. Ветка lzbench aceapex-2.6.3 (33b0b8a9 от
+inikep/master 83899784) — в форке yasha1971-coder/lzbench, ворота x86-64 / x86-32 / ARM32 GREEN; в upstream ничего.
+Ветка release не тронута (F.3). Ворота
 выпуска на SHA 8bcfcda (src/ = c3485e9; c3485e9 — + 4 претензии, судья 86/0): нехватка памяти -> ACEAPEX_ERR_MEMORY во всех публичных функциях, никакого исключения наружу; пути ошибки
 encode_file освобождают всё; aceapex_stream_new/update/finish/free убраны из aceapex.h; претензия head_alloc_fail.
 Ворота на 8bcfcda: байты уровней 1-4 и 11-18 = v2.6.2 (48/48); x86-32 (Docker) и ARM32 (qemu), целый silesia: 1-4
@@ -463,8 +466,8 @@ match 30.3, bases 7.4, seq 5.1. Архивы zstd/rans T2T зависят от l
 898 263 414; 1.4.8: 902 319 887 / 898 903 131), open одинаков.
 
 ## Дальше
-2.6.3 = v2.6.3 (c3485e9, в main 734c3a9): (а), (в), (г) сделаны. Дальше по слову Якова: GitHub Release + Zenodo,
-   ветка lzbench aceapex-2.6.3 в форк (в upstream — ничего). Позже (не в 2.6.3): (б) порог одного блока на
+2.6.3 = v2.6.3 (c3485e9, в main 734c3a9): (а), (в), (г) сделаны; Release и Zenodo опубликованы, ветка lzbench в форке.
+   Дальше по слову Якова: PR в inikep/lzbench из aceapex-2.6.3; затем MEM (2.6.4) по очереди плана. Позже (не в 2.6.3): (б) порог одного блока на
    32-бит — ограничить рабочую память кодера (MEM); tuning-сборки (ax_linemodel std::thread, AX_REFSEG thread_local
    vector, open-профиль ERR_DATA при нехватке); ARM TB-3, E-5.
    Парковка: уровни 15–18 сжатие −3 % в 2.6.3 (раскладка кода; SPEED-263: 0.963–0.970, 40/40 пар, принято словом
