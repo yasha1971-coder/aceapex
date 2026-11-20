@@ -24,8 +24,8 @@ keywords:
   - compressed-resident
   - random access
   - genomics
-version: 2.6.1
-date-released: '2026-11-03'
+version: 2.6.2
+date-released: '2026-11-17'
 doi: 10.5281/zenodo.23930083
 identifiers:
   - type: doi

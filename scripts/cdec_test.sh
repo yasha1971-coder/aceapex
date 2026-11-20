@@ -96,6 +96,27 @@ else printf 'head_dna_err\tfail\tbuild failed: %s\n' "$(head -c 150 $T/dna.err |
 if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/dec_budget_test scripts/dec_budget_test.cpp src/aceapex_api.cpp -Wl,--wrap=pthread_create -lzstd -lpthread 2>$T/dbt.err; then
   $T/dec_budget_test 2>/dev/null || true
 else printf 'head_dec_budget\tfail\tbuild failed: %s\n' "$(head -c 150 $T/dbt.err | tr '\n\t' '  ')"; fi
+# 2.6.2: the level that picks the literal layout is per call - levels 2 and 4 compressed at once in two threads give each
+# level's own bytes (a global level variable fails it: 12 of 28 archives wrong)
+if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/level_tls_test scripts/level_tls_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/ltt.err; then
+  $T/level_tls_test 2>/dev/null || true
+else printf 'head_level_tls\tfail\tbuild failed: %s\n' "$(head -c 150 $T/ltt.err | tr '\n\t' '  ')"; fi
+# 2.6.2: the fast streaming decoder does not size buffers from a corrupt header (nb = UINT32_MAX) or block table (2^59 B);
+# inputs in verify/repro/fast_stream_alloc/, built byte for byte by the test; v2.6.1 and c3154b2 fail it (32 GiB, 2^59 B)
+if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/fsa_test scripts/fast_stream_alloc_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/fsa.err; then
+  $T/fsa_test 2>/dev/null || true
+else printf 'head_fast_stream_alloc\tfail\tbuild failed: %s\n' "$(head -c 150 $T/fsa.err | tr '\n\t' '  ')"; fi
+# 2.6.2: aceapex_decompress_mt's header check sums the four u64 stream sizes without the total wrapping past src_size;
+# built under ASan+UBSan - the fix returns ACEAPEX_ERR_DATA, <= 2.6.1 reads out of bounds in fse_stream_size
+HSO_SAN="-O1 -g -std=c++17 -fsanitize=address,undefined -fno-sanitize-recover=all"
+if ${CXX:-g++} $HSO_SAN -Isrc -o $T/hso_test scripts/hdr_sum_overflow_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/hso.err; then
+  ASAN_OPTIONS=allocator_may_return_null=1 $T/hso_test 2>/dev/null || printf 'head_hdr_sum_overflow\tfail\taborted or non-zero (see ASan)\n'
+else printf 'head_hdr_sum_overflow\tfail\tbuild failed: %s\n' "$(head -c 150 $T/hso.err | tr '\n\t' '  ')"; fi
+# 2.6.2: the streaming decoder of the default profile does not size worker buffers from block_size (0x80040000 in a
+# one-block text and DNA archive); v2.6.1 (DNA) and 47f2386 fail it (2 147 745 856 B requested)
+if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/sat_test scripts/stream_alloc_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/sat.err; then
+  $T/sat_test 2>/dev/null || true
+else printf 'head_stream_alloc\tfail\tbuild failed: %s\n' "$(head -c 150 $T/sat.err | tr '\n\t' '  ')"; fi
 # lzbench #336: the library built without ACEAPEX_ENV_TUNING ignores the environment - five rows of tuning variables
 # give the same bytes at level 1 / one thread (text + silesia/xml when ~/CORPORA/silesia.tar is there), and no thread
 # is started at threads=1 (strace: no clone)
@@ -152,7 +173,7 @@ fi
 if ${CXX:-g++} -std=c++17 -O2 -DACEAPEX_ENV_TUNING -Isrc -o $T/lmtest scripts/linemodel_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/lmt.err; then
   l1=$($T/lmtest 2>/dev/null); l2=$(AX_LIT_TILE=0 $T/lmtest 2>/dev/null)
   if echo "$l1" | grep -q $'^head_linemodel\tpass' && echo "$l2" | grep -q $'^head_linemodel\tpass'; then echo "$l1" | sed 's/$/; also with AX_LIT_TILE=0 (two-pass)/'
-  else printf 'head_linemodel\tfail\t%s | AX_LIT_TILE=0: %s\n' "$(echo "$l1" | cut -f2- | cut -c1-200)" "$(echo "$l2" | cut -f2- | cut -c1-200)"; fi
+  else printf 'head_linemodel\tfail\t%s | AX_LIT_TILE=0: %s\n' "$(echo "$l1" | cut -f2- | tr '\t' ' ' | cut -c1-200)" "$(echo "$l2" | cut -f2- | tr '\t' ' ' | cut -c1-200)"; fi
 else printf 'head_linemodel\tfail\tbuild failed: %s\n' "$(head -c 150 $T/lmt.err | tr '\n\t' '  ')"; fi
 # AX_REFSEG prototype (tuning build, own container): assembly B = A with 1/1000 substitutions, its third MiB
 # reverse-complemented and 70 columns; both FASTA files back byte for byte from the container, B under 10 % of A with references,

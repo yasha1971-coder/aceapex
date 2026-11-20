@@ -1,0 +1,6 @@
+# head_hdr_sum_overflow (13.11.2026): aceapex_decompress_mt header check, sum of the four u64 stream sizes
+## a 132-byte version-2 archive: zlit_sz 100, zcmd_sz 2^64-150 -> the single-expression sum of <= 2.6.1 wraps to 82 (<= 132),
+## need <= src_size passes, zcmd points past the archive. Built under ASan+UBSan:
+## new code (this commit): pass	zlit_sz 100 + zcmd_sz 2^64-150 in a 132-byte v2 archive through aceapex_decompress_mt (ASan+UBSan), pass = ACEAPEX_ERR_DATA, no out-of-bounds read (wrapped need 82 <= 132); t1: rc -2; t2: rc -2; t8: rc -2
+## 4947cb7 (prev candidate): ERROR: AddressSanitizer: heap-buffer-overflow on address 0x50d000000128 at pc 0x in fse_stream_size (aceapex_main.cpp:1253)
+## v2.6.1 (d8debc0), without ASan: rc -3 (ERR_MEMORY); under ASan: same out-of-bounds read
