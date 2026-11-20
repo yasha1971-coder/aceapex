@@ -63,6 +63,33 @@ got = [ns["norm"](x) for x in ("aceapex-fast 1", "aceapex\\_fast 1", "aceapex\\\
 if set(got) != {"aceapex_fast 1"}: fails.append(f"norm: {got}")
 print(f"7 norm with 0-3 backslashes: {sorted(set(got))}")
 
+# EXT with no network: GitHub search per keyword, HN (hn.algolia.com) with the same author filter
+GH_ITEMS, HN_HITS = {}, {}
+def fake_gh(*a):
+    if a[0] == "graphql": return {"data": {"repository": {"discussions": {"nodes": []}}}}
+    if "search/issues" in a:
+        q = next(x for x in a if x.startswith("q=")); kw = q.split('"')[1]; pr = q.endswith("is:pr")
+        return {"items": [it for it in GH_ITEMS.values() if kw in it["_kw"] and ("pull_request" in it) == pr]}
+    return []
+def issue(n, login, kws): return {"html_url": f"https://github.com/x/y/issues/{n}", "title": f"t{n}", "updated_at": "2026-11-09T00:00:00Z",
+                                  "user": {"login": login, "type": "User"}, "_kw": kws}
+def hit(oid, author, text, tag="comment"): return {"objectID": oid, "author": author, "comment_text": text, "created_at": "2026-11-09T00:00:00Z", "_tags": [tag]}
+ns["gh"], ns["hn"] = fake_gh, (lambda q: [h for h in HN_HITS.values() if q in h["comment_text"].lower()] + [hit("fz", "carol", "pan ram fuzzy")])
+GH_ITEMS = {1: issue(1, "alice", {"aceapex"}), 3: issue(3, "erin", {"panvram"})}; HN_HITS = {"h1": hit("h1", "dave", "old aceapex thread")}
+old_state = {"seen": {GH_ITEMS[1]["html_url"]: GH_ITEMS[1]["updated_at"]}, "discussions": {}}   # state before this change
+st, n0 = ns["item_ext"](old_state)
+GH_ITEMS.update({2: {**issue(2, "alice", {"aceapex"}), "pull_request": {}}, 5: issue(5, "erin", {"panvram"}), 4: issue(4, "yasha1971-coder", {"aceapex"})})
+HN_HITS.update({"h2": hit("h2", "bob", "panvram looks fast", "story"), "h3": hit("h3", "EMPTYCONTOUR", "aceapex 2.6.1 is out")})
+st2, n1 = ns["item_ext"](st)
+want_in = ["issues/2: новый, автор alice", "issues/5: новый, автор erin", "item?id=h2: HN пост, автор bob"]
+want_out = ["issues/3", "issues/4", "id=h1", "id=h3", "id=fz"]
+txt = " ".join(n1)
+if n0: fails.append(f"EXT: first run after the change notified {n0}")
+if not all(w in txt for w in want_in) or any(w in txt for w in want_out):
+    fails.append(f"EXT: second run notices {n1}")
+if set(st.get("hn", {})) != {"h1"} or st.get("keywords") != ns["KEYWORDS"]: fails.append(f"EXT: baseline state {st.get('hn')} {st.get('keywords')}")
+print(f"8 EXT: baseline after the change {len(n0)} notices (HN {sorted(st['hn'])}); next run: {txt or 'none'}")
+
 if fails:
     print("FAIL:\n- " + "\n- ".join(fails)); sys.exit(1)
 print("watch-judges check: pass")
