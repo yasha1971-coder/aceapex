@@ -7,7 +7,8 @@
 // with every allocation from k on refused (memory exhausted, the 32-bit case of 2.6.2: aceapex,1 then aceapex_fast,1 on
 // silesia.tar aborted lzbench). Each run must give the right result (a refusal the library works around) or
 // ACEAPEX_ERR_MEMORY, and as many allocations live after the call as before it. v2.6.2 aborts (std::terminate) or leaks.
-// Prints one judge line: head_alloc_fail <pass|fail> <detail>. Linux / glibc only (the __libc_* allocator).
+// Prints judge lines: head_alloc_fail; head_alloc_encode_leak, head_alloc_lit_ctx, head_alloc_ranges_span (defects found by
+// reading the code, their cases swept at every k on one thread); head_dec_err_call. Linux / glibc only (__libc_*).
 // -DAF_NEW_ONLY (for ASan, which owns malloc): only operator new is replaced and refused.
 #include "aceapex.h"
 #include <atomic>
@@ -86,7 +87,9 @@ static Buf dna(size_t n, uint32_t seed) {                  // ACGT with repeats,
 // one call: 0 = right result, 1 = ACEAPEX_ERR_MEMORY, 2 = anything else (wrong code or wrong bytes)
 typedef std::function<int()> Call;
 static int64_t g_last = 0;                                // the last call's return value (for the report)
-struct Case { std::string name; Call call; };
+// full: every refusal point k (single-threaded paths: the k-th allocation is the same one in every run, so the defect a
+// claim names is hit deterministically); otherwise up to max_runs points evenly. Per case: wrong results and leaks.
+struct Case { std::string name; Call call; bool full = false; long runs = 0, wrong = 0, leaks = 0; };
 static long g_runs = 0, g_ok = 0, g_mem = 0, g_refusals = 0; static std::vector<std::string> g_bad;
 static void bad(const std::string& s) { if (g_bad.size() < 12) g_bad.push_back(s); }
 static int armed(const Call& c, long fail, bool persist, long* n, long* leak) {
@@ -94,19 +97,20 @@ static int armed(const Call& c, long fail, bool persist, long* n, long* leak) {
     const long l0 = g_live.load(); g_arm = true; const int r = c(); g_arm = false;
     *n = g_cnt.load(); *leak = g_live.load() - l0; return r;
 }
-static void sweep(const Case& c, long max_runs) {
+static void sweep(Case& c, long max_runs) {
     long n = 0, leak = 0;
     for (int w = 0; w < 2; w++) armed(c.call, -1, false, &n, &leak);          // warm-up: lazy statics, thread caches
     const int r0 = armed(c.call, -1, false, &n, &leak);
     if (r0 != 0) { bad(c.name + ": unarmed result " + std::to_string(r0) + " (" + std::to_string(g_last) + ")"); return; }
     if (leak) { bad(c.name + ": unarmed leak " + std::to_string(leak)); return; }
-    const long step = n > max_runs ? (n + max_runs - 1) / max_runs : 1;
+    const long step = c.full || n <= max_runs ? 1 : (n + max_runs - 1) / max_runs;
     for (int persist = 0; persist < 2; persist++)
         for (long k = 0; k < n; k += step) {
             if (getenv("AF_VERBOSE")) fprintf(stderr, "%s %s %ld/%ld\n", c.name.c_str(), persist ? "from" : "at", k, n);
-            long m = 0; const int r = armed(c.call, k, persist, &m, &leak); g_runs++; g_refusals += g_refused.load();
+            long m = 0; const int r = armed(c.call, k, persist, &m, &leak); g_runs++; g_refusals += g_refused.load(); c.runs++;
+            if (leak) c.leaks++;
             if (r == 0) g_ok++; else if (r == 1) g_mem++;
-            else bad(c.name + (persist ? " from " : " at ") + std::to_string(k) + "/" + std::to_string(n) + ": wrong result (" + std::to_string(g_last) + ")");
+            else c.wrong++, bad(c.name + (persist ? " from " : " at ") + std::to_string(k) + "/" + std::to_string(n) + ": wrong result (" + std::to_string(g_last) + ")");
             if (leak) bad(c.name + (persist ? " from " : " at ") + std::to_string(k) + "/" + std::to_string(n) + ": " + std::to_string(leak) + " allocations leaked");
         }
 }
@@ -134,13 +138,14 @@ int main(int argc, char** argv) {
     std::vector<Case> cs;
     for (const Arc& a : arcs) for (int t : {1, 4}) {              // aceapex_compress: the result must decode to the input
         const Arc* ap = &a;
-        cs.push_back({"compress " + a.name + " t" + std::to_string(t), [ap, t] {
+        Case cc{"compress " + a.name + " t" + std::to_string(t), [ap, t] {
             Buf* z = quiet_new<Buf>(aceapex_compress_bound(ap->src->size()));
             const int64_t r = aceapex_compress(ap->src->data(), ap->src->size(), z->data(), z->size(), ap->level, t);
             Quiet q; int c = r < 0 ? (r == ACEAPEX_ERR_MEMORY ? 1 : 2) : 2;
             if (r >= 0) { Buf o(ap->src->size() + 64); const int64_t d = aceapex_decompress_mt(z->data(), (size_t)r, o.data(), o.size(), 1);
                           c = d == (int64_t)ap->src->size() && !memcmp(o.data(), ap->src->data(), (size_t)d) ? 0 : 2; }
-            delete z; return c; }});
+            delete z; return c; }};
+        cc.full = t == 1 && a.level < 11; cs.push_back(cc);       // levels 1-4 on one thread: every k (encode_file, lit_compress)
     }
     for (const Arc& a : arcs) {
         const Arc* ap = &a; const int64_t N = (int64_t)a.src->size();
@@ -156,22 +161,54 @@ int main(int argc, char** argv) {
             const uint64_t off = (uint64_t)N / 3, len = std::min<uint64_t>(400000, (uint64_t)N / 2); Buf* o = quiet_new<Buf>(len);
             const int64_t r = aceapex_decompress_region(ap->z.data(), ap->z.size(), o->data(), o->size(), off, len);
             Quiet q; const int c = code(r, (int64_t)len), v = c == 0 && memcmp(o->data(), ap->src->data() + off, len) ? 2 : c; delete o; return v; }});
-        for (size_t cnt : {(size_t)40, (size_t)600}) cs.push_back({"ranges x" + std::to_string(cnt) + " " + a.name, [ap, N, cnt] {
+        for (size_t cnt : {(size_t)40, (size_t)600}) { Case rc{"ranges x" + std::to_string(cnt) + " " + a.name, [ap, N, cnt] {
             std::vector<aceapex_range_t>* rg = quiet_new<std::vector<aceapex_range_t>>(cnt); Buf* o = quiet_new<Buf>(cnt * 3000); uint32_t x = 5;
             for (size_t i = 0; i < cnt; i++) { x = x * 1103515245u + 12345u; (*rg)[i].offset = (x >> 4) % ((uint64_t)N - 3000);
                 (*rg)[i].length = 1 + (x >> 20) % 2999; (*rg)[i].dst = o->data() + i * 3000; (*rg)[i].written = 0; }
             const int64_t r = aceapex_decompress_ranges(ap->z.data(), ap->z.size(), rg->data(), cnt, 4);
             Quiet q; int c = r == ACEAPEX_ERR_MEMORY ? 1 : r == (int64_t)cnt ? 0 : 2;
             for (size_t i = 0; c == 0 && i < cnt; i++) if ((*rg)[i].written != (int64_t)(*rg)[i].length || memcmp((*rg)[i].dst, ap->src->data() + (*rg)[i].offset, (*rg)[i].length)) c = 2;
-            delete rg; delete o; return c; }});
+            delete rg; delete o; return c; }};
+            rc.full = cnt == 40 && a.level < 11; cs.push_back(rc); }   // x40: one lane, on the caller - every k (batch_worker span)
         if (a.level < 11) cs.push_back({"decode_streams " + a.name, [ap] {
             aceapex_streams_t s; const int r = aceapex_decode_streams(ap->z.data(), ap->z.size(), &s);
             if (r < 0) return r == ACEAPEX_ERR_MEMORY && !s.lit && !s.boffs_vec ? 1 : 2;
             const int c = s.num_blocks && s.lit && s.off && s.len && s.cmd && s.boffs ? 0 : 2; aceapex_streams_free(&s); return c; }});
     }
     const char* only = getenv("AF_ONLY");                    // diagnostics: the cases whose name contains this
-    for (const Case& c : cs) if (!only || c.name.find(only) != std::string::npos) sweep(c, MAXR);
+    for (Case& c : cs) if (!only || c.name.find(only) != std::string::npos) sweep(c, MAXR);
     const bool ok = g_bad.empty() && g_runs > 0;
+    // claims for the defects found by reading the code (each needs its own deterministic input, CLAUDE.md §3)
+    auto claim = [&](const char* id, const char* what, std::vector<std::string> names, bool leaks_only) {
+        long runs = 0, wrong = 0, leaks = 0; size_t found = 0;
+        for (const Case& c : cs) for (const std::string& nm : names) if (c.name == nm) { found++; runs += c.runs; wrong += c.wrong; leaks += c.leaks; }
+        const bool pass = found == names.size() && runs > 0 && leaks == 0 && (leaks_only || wrong == 0);
+        printf("%s\t%s\t%s: %zu cases, every refusal point (once and from k on), %ld runs: %ld wrong results, %ld with leaks\n",
+               id, pass ? "pass" : "fail", what, found, runs, wrong, leaks); return pass; };
+    if (!only) {
+        claim("head_alloc_encode_leak", "levels 1-4 on one thread, a failed call frees everything (encode_file failure paths; v2.6.2 kept the hash tables, block buffers and worker arrays)",
+              {"compress text-l1 t1", "compress text-l2 t1", "compress text-l3 t1", "compress text-l4 t1", "compress dna-l2 t1"}, true);
+        claim("head_alloc_lit_ctx", "no corrupt archive returned as a success when zstd has no memory for a literal context or part (lit_compress, lit_compress_legacy)",
+              {"compress text-l1 t1", "compress text-l2 t1", "compress text-l3 t1", "compress text-l4 t1", "compress dna-l2 t1"}, false);
+        claim("head_alloc_ranges_span", "aceapex_decompress_ranges does not report a range written when its span buffer could not be allocated (batch_worker)",
+              {"ranges x40 text-l1", "ranges x40 text-l2", "ranges x40 text-l3", "ranges x40 text-l4", "ranges x40 dna-l2"}, false);
+        // the decode error flag is per call: a corrupt DNA archive fails decompress_mt on this thread, then the intact one
+        // must stream (v2.6.2: the flag stayed set on the thread and aceapex_decompress_stream, which does not reset it, failed)
+        // every 211th byte flipped in turn (deterministic): after each copy decompress_mt rejects, the intact archive is
+        // streamed on the same thread and must decode - the flips that fail inside a DNA literal chunk set the flag
+        const Arc& dz = arcs[4]; long nflip = 0, nrej = 0, nbad = 0; size_t first_bad = 0;
+        Buf o(dz.src->size() + 64), o2(dz.src->size());
+        for (size_t i = 68; i < dz.z.size(); i += 211) {
+            Buf t = dz.z; t[i] ^= 0x5a; nflip++;
+            if (aceapex_decompress_mt(t.data(), t.size(), o.data(), o.size(), 1) >= 0) continue;
+            nrej++; Mem m{&dz.z}; Out w{&o2, 0};
+            const int64_t r2 = aceapex_decompress_stream(rd, &m, wr, &w, 1, ACEAPEX_STREAM_VERIFY);
+            if (r2 != (int64_t)dz.src->size() || memcmp(o2.data(), dz.src->data(), o2.size())) { if (!nbad) first_bad = i; nbad++; }
+        }
+        const bool p = nrej > 0 && nbad == 0;
+        printf("head_dec_err_call\t%s\tdna-l2: %ld one-byte flips (every 211th byte), %ld rejected by decompress_mt; the intact archive then streamed on the same thread failed after %ld of them%s\n",
+               p ? "pass" : "fail", nflip, nrej, nbad, nbad ? (" (first: byte " + std::to_string(first_bad) + ")").c_str() : "");
+    }
     printf("head_alloc_fail\t%s\t%zu cases (compress 1-4 and 11/14/18, decompress, _mt, stream, region, ranges, decode_streams; 1 and 4 threads), "
            "%ld runs with %ld refused allocations: %ld right result, %ld ACEAPEX_ERR_MEMORY, %zu bad%s%s\n",
            ok ? "pass" : "fail", cs.size(), g_runs, g_refusals, g_ok, g_mem, g_bad.size(), g_bad.empty() ? "" : ": ", g_bad.empty() ? "" : g_bad[0].c_str());

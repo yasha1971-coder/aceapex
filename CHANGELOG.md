@@ -25,6 +25,11 @@ Correctness only; the format and the archive bytes of every level are those of 2
 - The decode error flag is per call: an error left by one call no longer fails the next call on the same thread.
 - `aceapex.h`: the declarations of `aceapex_stream_new` / `_update` / `_finish` / `_free` are removed - they were never
   implemented (a call failed to link).
+- Levels 15-18 compression ~3 % slower on AMD EPYC 4344P (code layout; output identical): lzbench, silesia, 5 rounds
+  against 2.6.2, 1 and 8 internal threads; every other level and every decompression within ±1.3 %.
+- Claims `head_alloc_encode_leak`, `head_alloc_lit_ctx`, `head_alloc_ranges_span` (every refusal point on one thread for
+  the encode_file failure paths, the literal stage without a zstd context, the ranges span buffer) and `head_dec_err_call`
+  (a corrupt archive on a thread, then the intact one streamed on the same thread); each fails with its fix reverted.
 - Claim `head_alloc_fail` (`verify/repro/alloc_fail/`): malloc replaced, allocation k refused (once, and every one from
   k on) at up to 100 points k evenly over the call's allocations (all of them when fewer), for compress (levels 1-4, 11, 14, 18), decompress, `_mt`, stream, region,
   ranges and `decode_streams` at 1 and 4 threads: the right result or `ACEAPEX_ERR_MEMORY`, no leak. v2.6.2 aborts.
