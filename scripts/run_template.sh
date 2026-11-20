@@ -58,7 +58,10 @@ silesia_gate
 # --- hang watchdog + PID wait + explicit STOP ---
 log "START '$TASK': $*"
 "$@" & CHILD=$!
-( sleep "$WATCHDOG"; if kill -0 "$CHILD" 2>/dev/null; then echo "[watchdog] ${WATCHDOG}s elapsed, terminating $CHILD" | tee -a "$STATUS"; kill -TERM "$CHILD" 2>/dev/null || true; fi ) & WD=$!
+# the watchdog's sleep is killed with it and it writes only to STATUS: until 20.11 its sleep outlived `kill $WD` for up to
+# WATCHDOG seconds and held stdout, so `run_template.sh ... | tail` waited for the whole watchdog time
+( exec >/dev/null 2>&1; trap 'kill "$S" 2>/dev/null; exit 0' TERM; sleep "$WATCHDOG" & S=$!; wait "$S" || true
+  if kill -0 "$CHILD" 2>/dev/null; then echo "[$(date -u +%FT%TZ)] [watchdog] ${WATCHDOG}s elapsed, terminating $CHILD" >> "$STATUS"; kill -TERM "$CHILD" 2>/dev/null || true; fi ) & WD=$!
 rc=0; wait "$CHILD" || rc=$?
 kill "$WD" 2>/dev/null || true
 [ "$rc" -eq 0 ] && log "DONE '$TASK' rc=0" || die "'$TASK' exited rc=$rc"
