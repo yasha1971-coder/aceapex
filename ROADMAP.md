@@ -125,6 +125,12 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+20.11 2.6.3 готов к выпуску, HOLD до слова Якова (2.6.2 в lzbench не отправляется). Ветка fix-263 от v2.6.2, SHA
+8bcfcda: нехватка памяти -> ACEAPEX_ERR_MEMORY во всех публичных функциях, никакого исключения наружу; пути ошибки
+encode_file освобождают всё; aceapex_stream_new/update/finish/free убраны из aceapex.h; претензия head_alloc_fail.
+Ворота на 8bcfcda: байты уровней 1-4 и 11-18 = v2.6.2 (48/48); x86-32 (Docker) и ARM32 (qemu), целый silesia: 1-4
+ERROR, fast 1-8 проходят, 0 abort; тест отказов 5044 прогона 0 плохих (v2.6.2 - abort); ASan+UBSan 9/9; судья 82/0.
+Отчёт yasha-context ACEAPEX/REPORT_263.md.
 20.11 v2.6.2 выпущен 17.11 (тег 261d996, Release, Zenodo 10.5281/zenodo.24323622); main = 5a78cdd. Ветка lzbench
 `aceapex-2.6.2` (137cfbb9) запушена в форк yasha1971-coder/lzbench, PR в upstream не открыт (по слову Якова). 32-бит:
 давнее ограничение одного большого блока (как в 2.6.1) и выход std::bad_alloc в lzbench через fast-путь
@@ -455,13 +461,10 @@ match 30.3, bases 7.4, seq 5.1. Архивы zstd/rans T2T зависят от l
 898 263 414; 1.4.8: 902 319 887 / 898 903 131), open одинаков.
 
 ## Дальше
-2.6.3 (вместе с ARM TB-3, E-5 и находками AUDIT_ALLOC_262; в main только с выпуском):
-   (а) нехватка памяти при сжатии и распаковке — всегда код ошибки, никогда исключение наружу: try/catch на всех
-       публичных точках входа и флаг ошибки в каждом pthread-воркере вместо terminate; регрессионный тест на 32-бит
-       (сейчас std::bad_alloc доходит до lzbench через aceapex_compress fast-путь; ловит только потоковый fast-декодер);
-   (б) порог одного блока на 32-бит — ограничить рабочую память кодера (MEM);
-   (в) пути ошибки encode_file — освобождать всё выделенное (утечка — корень цепочки abort в lzbench);
-   (г) aceapex_stream_new/update/finish объявлены в aceapex.h без реализации — убрать или реализовать.
+2.6.3 = fix-263 (8bcfcda): (а), (в), (г) сделаны, ворота зелёные. По слову Якова: тег v2.6.3 + Release, слияние
+   fix-263 в main (конфликтов нет), ветка lzbench aceapex-2.6.3 в форк. Позже (не в 2.6.3): (б) порог одного блока на
+   32-бит — ограничить рабочую память кодера (MEM); tuning-сборки (ax_linemodel std::thread, AX_REFSEG thread_local
+   vector, open-профиль ERR_DATA при нехватке); ARM TB-3, E-5.
 -1. axf safe: цена 8.6-10 % против 1.4 % у misa77 - найти; runtime dispatch AVX2 (+2-5 %); ARM (нет железа). CB1 ClickBench
    по колонкам. Отправка чего-либо наружу (lzbench PR, 2.3.1, письма) - только по слову.
 00000. [сделано 03.10-Б] C99/Python регион. Дальше: Python Archive.close() на mmap-файле - BufferError; регион 50 мкс:
