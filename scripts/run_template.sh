@@ -10,14 +10,18 @@
 # Usage: run_template.sh <task-name-as-in-CALIBRATION> [-- <command...>]
 #   CALIB=<file>    override CALIBRATION path (default ~/yasha-context/ACEAPEX/CALIBRATION.md)
 #   WATCHDOG=3600   hang watchdog seconds (default 3600 = 60 min)
-#   STATUS=<file>   STATUS log path (default ./STATUS)
+#   RUN_DIR=<dir>   the run's folder (default ${TMPDIR:-/tmp}/run_template/<task>); created if missing
+#   STATUS=<file>   STATUS log path (default $RUN_DIR/STATUS - never the current directory: a dry gate check run
+#                   from a repository root left an untracked STATUS there, 20.11)
 # No command after the task name = dry gate check (exit 0 if the gate passes, 2 if it STOPs).
 set -euo pipefail
 TASK="${1:?task name as written in CALIBRATION}"; shift || true
 [ "${1:-}" = "--" ] && shift || true
 CALIB="${CALIB:-$HOME/yasha-context/ACEAPEX/CALIBRATION.md}"
 WATCHDOG="${WATCHDOG:-3600}"
-STATUS="${STATUS:-./STATUS}"
+RUN_DIR="${RUN_DIR:-${TMPDIR:-/tmp}/run_template/$(printf '%s' "$TASK" | tr -c 'A-Za-z0-9._-' '_')}"
+mkdir -p "$RUN_DIR"
+STATUS="${STATUS:-$RUN_DIR/STATUS}"
 log(){ echo "[$(date -u +%FT%TZ)] $*" | tee -a "$STATUS"; }
 die(){ log "STOP: $*"; exit 2; }
 trap 'die "trap ERR (line $LINENO)"' ERR
@@ -54,7 +58,10 @@ silesia_gate
 # --- hang watchdog + PID wait + explicit STOP ---
 log "START '$TASK': $*"
 "$@" & CHILD=$!
-( sleep "$WATCHDOG"; if kill -0 "$CHILD" 2>/dev/null; then echo "[watchdog] ${WATCHDOG}s elapsed, terminating $CHILD" | tee -a "$STATUS"; kill -TERM "$CHILD" 2>/dev/null || true; fi ) & WD=$!
+# the watchdog's sleep is killed with it and it writes only to STATUS: until 20.11 its sleep outlived `kill $WD` for up to
+# WATCHDOG seconds and held stdout, so `run_template.sh ... | tail` waited for the whole watchdog time
+( exec >/dev/null 2>&1; trap 'kill "$S" 2>/dev/null; exit 0' TERM; sleep "$WATCHDOG" & S=$!; wait "$S" || true
+  if kill -0 "$CHILD" 2>/dev/null; then echo "[$(date -u +%FT%TZ)] [watchdog] ${WATCHDOG}s elapsed, terminating $CHILD" >> "$STATUS"; kill -TERM "$CHILD" 2>/dev/null || true; fi ) & WD=$!
 rc=0; wait "$CHILD" || rc=$?
 kill "$WD" 2>/dev/null || true
 [ "$rc" -eq 0 ] && log "DONE '$TASK' rc=0" || die "'$TASK' exited rc=$rc"
