@@ -8,8 +8,8 @@ extern "C" {
 
 #define ACEAPEX_VERSION_MAJOR 2
 #define ACEAPEX_VERSION_MINOR 6
-#define ACEAPEX_VERSION_PATCH 1
-#define ACEAPEX_VERSION_STRING "2.6.2"
+#define ACEAPEX_VERSION_PATCH 3
+#define ACEAPEX_VERSION_STRING "2.6.3"
 
 /* One-shot compression */
 int64_t aceapex_compress(
@@ -100,20 +100,8 @@ int64_t aceapex_decompress_ranges(
 /* Bound for output buffer */
 size_t aceapex_compress_bound(size_t src_size);
 
-/* Streaming context (v2.0) */
-typedef struct aceapex_stream_s aceapex_stream_t;
-
-aceapex_stream_t* aceapex_stream_new(int level, int threads);
-int  aceapex_stream_update(aceapex_stream_t* s,
-                           const void* in,  size_t in_size,
-                           void*       out, size_t out_capacity,
-                           size_t*     out_written);
-int  aceapex_stream_finish(aceapex_stream_t* s,
-                           void*   out, size_t out_capacity,
-                           size_t* out_written);
-void aceapex_stream_free(aceapex_stream_t* s);
-
-/* Error codes */
+/* Error codes. 2.6.3: every function returns ACEAPEX_ERR_MEMORY when an allocation fails (malloc or operator new, on
+   the caller's thread or on a thread the call started); no C++ exception leaves the library. */
 #define ACEAPEX_OK           0
 #define ACEAPEX_ERR_BUFFER  -1
 #define ACEAPEX_ERR_DATA    -2

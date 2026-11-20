@@ -74,6 +74,11 @@ head_dec_budget	always
 head_level_tls	always
 head_fast_stream_alloc	always
 head_stream_alloc	always
+head_alloc_fail	always
+head_alloc_encode_leak	always
+head_alloc_lit_ctx	always
+head_alloc_ranges_span	always
+head_dec_err_call	always
 head_hdr_sum_overflow	always
 head_env_ignored	always
 head_stream	always

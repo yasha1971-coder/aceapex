@@ -117,6 +117,12 @@ else printf 'head_hdr_sum_overflow\tfail\tbuild failed: %s\n' "$(head -c 150 $T/
 if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/sat_test scripts/stream_alloc_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/sat.err; then
   $T/sat_test 2>/dev/null || true
 else printf 'head_stream_alloc\tfail\tbuild failed: %s\n' "$(head -c 150 $T/sat.err | tr '\n\t' '  ')"; fi
+# 2.6.3: an allocation refused inside any public function (malloc / operator new, on the caller's or a worker thread,
+# one refusal at k or all from k) gives ACEAPEX_ERR_MEMORY, no abort, no leak; v2.6.2 aborts (std::terminate) or leaks
+# (verify/repro/alloc_fail/; the 32-bit lzbench abort of 20.11). glibc only: the test replaces malloc over __libc_malloc
+if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/af_test verify/repro/alloc_fail/alloc_fail_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/af.err; then
+  $T/af_test 2>/dev/null; rc=$?; [ $rc -gt 1 ] && printf 'head_alloc_fail\tfail\taborted (exit %s)\n' "$rc"
+else printf 'head_alloc_fail\tfail\tbuild failed: %s\n' "$(head -c 150 $T/af.err | tr '\n\t' '  ')"; fi
 # lzbench #336: the library built without ACEAPEX_ENV_TUNING ignores the environment - five rows of tuning variables
 # give the same bytes at level 1 / one thread (text + silesia/xml when ~/CORPORA/silesia.tar is there), and no thread
 # is started at threads=1 (strace: no clone)
