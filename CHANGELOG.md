@@ -12,11 +12,13 @@ Correctness only; the format and the archive bytes of every level are those of 2
   `operator new`, on the caller's thread or on a thread the call starts, in libzstd too - and no C++ exception leaves
   the library. Until 2.6.2 a `std::bad_alloc` left `aceapex_compress` at levels 11-18 (the fast profile) through the
   C API, and one thrown on a worker thread of any function ended the process (`std::terminate`). Found on 32-bit:
-  lzbench `-eaceapex,1/aceapex_fast,1` on silesia.tar (one 211 MB block) aborted on x86-32 and ARMv7.
+  lzbench `-eaceapex,1/aceapex_fast,1` on silesia.tar (211 MB in one call) aborted on x86-32 and ARMv7.
 - Levels 1-4: a failed call frees everything it allocated. Until 2.6.2 the failure paths of the encoder left its hash
   tables, the block buffers (about the size of the input) and the worker arrays allocated; on 32-bit the next call
-  then had no memory left (the abort above: level 1 fails as before - one block over ~64 MB does not fit a 32-bit
-  address space - and the fast profile after it ran out of memory).
+  then had no memory left (the abort above: level 1 fails as before on 32-bit - the codec cuts the input into 1 MiB
+  blocks and the encoder reserves about 28.5 MiB of address space per block, holding all of them, about 3.4 GiB for
+  silesia.tar on x86-32 - and the fast profile after it ran out of memory). Corrected 20.11 after the tag: the text in
+  the tag said "one 211 MB block" / "one block over ~64 MB"; the measured cause is the per-block reservation.
 - Out-of-memory paths that gave wrong results instead of an error: a zstd error code taken for a size when compressing
   literals (heap corruption), DNA literal buffers read unchecked when decoding, a range of `aceapex_decompress_ranges`
   reported written when its buffer could not be allocated, a part of the literal stream left empty when no zstd
