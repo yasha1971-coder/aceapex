@@ -8,6 +8,7 @@
 // silesia.tar aborted lzbench). Each run must give the right result (a refusal the library works around) or
 // ACEAPEX_ERR_MEMORY, and as many allocations live after the call as before it. v2.6.2 aborts (std::terminate) or leaks.
 // Prints one judge line: head_alloc_fail <pass|fail> <detail>. Linux / glibc only (the __libc_* allocator).
+// -DAF_NEW_ONLY (for ASan, which owns malloc): only operator new is replaced and refused.
 #include "aceapex.h"
 #include <atomic>
 #include <cerrno>
@@ -31,6 +32,23 @@ static inline bool refuse() {
     return false;
 }
 static inline void* took(void* p) { if (p) g_live.fetch_add(1); return p; }
+#ifdef AF_NEW_ONLY
+// under ASan (which owns malloc): only operator new is replaced, so the refusals are the std::bad_alloc paths; live
+// counts the blocks of new / delete
+#include <new>
+static void* take(size_t n) { if (refuse()) throw std::bad_alloc(); void* p = std::malloc(n ? n : 1); if (!p) throw std::bad_alloc(); return took(p); }
+static void give(void* p) { if (p) { g_live.fetch_sub(1); std::free(p); } }
+void* operator new(size_t n) { return take(n); }
+void* operator new[](size_t n) { return take(n); }
+void* operator new(size_t n, const std::nothrow_t&) noexcept { try { return take(n); } catch (...) { return nullptr; } }
+void* operator new[](size_t n, const std::nothrow_t&) noexcept { try { return take(n); } catch (...) { return nullptr; } }
+void operator delete(void* p) noexcept { give(p); }
+void operator delete[](void* p) noexcept { give(p); }
+void operator delete(void* p, size_t) noexcept { give(p); }
+void operator delete[](void* p, size_t) noexcept { give(p); }
+void operator delete(void* p, const std::nothrow_t&) noexcept { give(p); }
+void operator delete[](void* p, const std::nothrow_t&) noexcept { give(p); }
+#else
 extern "C" {
 void* malloc(size_t n) { return refuse() ? nullptr : took(__libc_malloc(n)); }
 void* calloc(size_t a, size_t b) { return refuse() ? nullptr : took(__libc_calloc(a, b)); }
@@ -43,6 +61,7 @@ void* aligned_alloc(size_t al, size_t n) { return refuse() ? nullptr : took(__li
 void* memalign(size_t al, size_t n) { return refuse() ? nullptr : took(__libc_memalign(al, n)); }
 int posix_memalign(void** r, size_t al, size_t n) { if (refuse()) return 12; void* p = took(__libc_memalign(al, n)); if (!p) return 12; *r = p; return 0; }
 }
+#endif
 
 typedef std::vector<uint8_t> Buf;
 static Buf text(size_t n, uint32_t seed) {                 // words of a small vocabulary: compressible, not DNA
