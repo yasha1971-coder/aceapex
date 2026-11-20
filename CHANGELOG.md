@@ -4,6 +4,31 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
+## v2.6.3 — 2026-11-20
+
+Correctness only; the format and the archive bytes of every level are those of 2.6.2.
+
+- Out of memory: every public function returns `ACEAPEX_ERR_MEMORY` when an allocation fails - `malloc` or
+  `operator new`, on the caller's thread or on a thread the call starts, in libzstd too - and no C++ exception leaves
+  the library. Until 2.6.2 a `std::bad_alloc` left `aceapex_compress` at levels 11-18 (the fast profile) through the
+  C API, and one thrown on a worker thread of any function ended the process (`std::terminate`). Found on 32-bit:
+  lzbench `-eaceapex,1/aceapex_fast,1` on silesia.tar (one 211 MB block) aborted on x86-32 and ARMv7.
+- Levels 1-4: a failed call frees everything it allocated. Until 2.6.2 the failure paths of the encoder left its hash
+  tables, the block buffers (about the size of the input) and the worker arrays allocated; on 32-bit the next call
+  then had no memory left (the abort above: level 1 fails as before - one block over ~64 MB does not fit a 32-bit
+  address space - and the fast profile after it ran out of memory).
+- Out-of-memory paths that gave wrong results instead of an error: a zstd error code taken for a size when compressing
+  literals (heap corruption), DNA literal buffers read unchecked when decoding, a range of `aceapex_decompress_ranges`
+  reported written when its buffer could not be allocated, a part of the literal stream left empty when no zstd
+  context could be created (a corrupt archive returned as a success). Out of memory inside zstd is no longer reported
+  as a corrupt archive (`ACEAPEX_ERR_DATA`).
+- The decode error flag is per call: an error left by one call no longer fails the next call on the same thread.
+- `aceapex.h`: the declarations of `aceapex_stream_new` / `_update` / `_finish` / `_free` are removed - they were never
+  implemented (a call failed to link).
+- Claim `head_alloc_fail` (`verify/repro/alloc_fail/`): malloc replaced, allocation k refused (once, and every one from
+  k on) at up to 100 points k evenly over the call's allocations (all of them when fewer), for compress (levels 1-4, 11, 14, 18), decompress, `_mt`, stream, region,
+  ranges and `decode_streams` at 1 and 4 threads: the right result or `ACEAPEX_ERR_MEMORY`, no leak. v2.6.2 aborts.
+
 ## v2.6.2 — 2026-11-17
 
 - Platforms: the CLI builds on Linux and macOS only (`aceapex faidx` maps the archive with `mmap`, since 02.10.2026, so
