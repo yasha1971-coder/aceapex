@@ -257,6 +257,16 @@ DNA archives of levels 1-3 (2 501 of 2 520 refused before the check); since then
 1, 2, 3, 11, 14), exit 1 for all of them, none accepted with other bytes
 ([results/freeze3-cli-verify-2026-11-05.txt](results/freeze3-cli-verify-2026-11-05.txt)).
 
+## Known issues
+
+Open until 2.6.4:
+
+- The C99 and Python decoders (`c/`, `python/`), `aceapex_decompress_region` / `aceapex_decompress_ranges`, the CLI
+  and `aceapex faidx` do not bound memory allocation by the archive fields. Do not open untrusted archives through
+  these paths until 2.6.4.
+- The memory-safety guarantee of [Integrity](#integrity) is fuzzed for `aceapex_decompress`, `aceapex_decompress_mt`
+  and `aceapex_decompress_stream`; the paths above are not covered yet.
+
 ## Build
 
 **CPU (Mode 1):**
