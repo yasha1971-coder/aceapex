@@ -198,7 +198,7 @@ record, not a reading of the current build, and have not been re-measured.
 - **Mode 1** (nvcomp-free, in lzbench 2.3, ARM-portable): entropy on CPU, match on GPU — ships today, fully open.
 - **Mode 2** (nvcomp-accelerated, device-resident): entropy + match both on GPU — performance ceiling, requires proprietary nvcomp.
 
-### Random Access (historical: code of Paper 2, H100, 5 GB genome, 16 KB blocks; not re-measured on 2.6.3)
+### Random Access (historical: H100, 5 GB genome, 16 KB blocks, same period as the GPU table above; not re-measured on 2.6.3)
 
 | Operation | Time | Note |
 |-----------|------|------|
@@ -245,8 +245,9 @@ Meta's open DietGPU ANS: encode **364.9 GB/s**, decode **592.5 GB/s**, bit-perfe
 
 Two guarantees, kept apart:
 
-- **The raw API** (`aceapex_decompress`, `aceapex_decompress_mt`, `aceapex_decompress_stream` - what lzbench calls;
-  `aceapex_decompress_region` / `_ranges` not yet, see [Known issues](#known-issues)) gives **memory safety**: any input, corrupted or not, returns either the size or an error, and never
+- **The raw API** (`aceapex_decompress`, `aceapex_decompress_mt` - what lzbench calls - and
+  `aceapex_decompress_stream`; region / ranges not yet, see [Known issues](#known-issues)) gives **memory safety**:
+  any input, corrupted or not, returns either the size or an error, and never
   reads or writes outside the buffers it was given (fuzzed under ASan + UBSan on every push, with a negative control). It
   does **not** check the content: it does not hash its output, so a damaged archive can decode to the declared size with
   other bytes.
