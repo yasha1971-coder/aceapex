@@ -8,10 +8,13 @@ Full device-resident GPU decode pipeline. Position-invariant random access on ge
 [![lzbench](https://img.shields.io/badge/lzbench-2.4-blue.svg)](https://github.com/inikep/lzbench/releases/tag/v2.4)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![papers](https://img.shields.io/badge/papers-arXiv%20%C2%B7%20Zenodo-b31b1b.svg)](#papers)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23061934.svg)](https://doi.org/10.5281/zenodo.23061934)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20440964.svg)](https://doi.org/10.5281/zenodo.20440964)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/16356/badge)](https://www.bestpractices.dev/projects/16356)
 
 ![ACEAPEX passport: 197 GB/s range-decode on T2T, +18.5% denser than nvCOMP zstd, 4/4 streams NVIDIA-decodable, 0.3-0.4 ms per 16 KiB block](docs/aceapex_passport.png)
+
+*Historical card: pod run 2026-09-27, commit a833414 (before v2.1.0), NVIDIA H100 80GB HBM3 (RunPod), libzstd 1.4.8
+([results/pod-2026-09-27.json](results/pod-2026-09-27.json)); not re-measured on 2.6.3.*
 
 **Every number on that card has a judge. One command runs them all:**
 
@@ -34,6 +37,21 @@ The format is specified in [`docs/FORMAT_ACEPX2.md`](docs/FORMAT_ACEPX2.md) and 
 Python: `pip install ./python` (needs libzstd-dev), then `aceapex.open("x.aet").read(offset, length)` or `.ranges([...])`.
 GPU: [`aceapex_gpu.cu`](aceapex_gpu.cu) reads the same archive on the device through nvCOMP's zstd, two unpack kernels and the match kernel.
 
+## Known issues
+
+Open in 2.6.3, fixed in 2.6.4 — **do not open untrusted archives through the C99 or Python decoders, region / ranges,
+the CLI or `aceapex faidx` until 2.6.4**:
+
+- The C99 and Python decoders (`c/`, `python/`), `aceapex_decompress_region` / `aceapex_decompress_ranges`, the CLI
+  and `aceapex faidx` do not bound memory allocation by the archive fields, and the header checks of the C99 decoder
+  are incomplete.
+- The streaming decoder (`aceapex_decompress_stream`) does not cap its token buffers by the original size.
+- The C99 decoder has undefined behaviour in one size check on 32-bit builds.
+- `CMakeLists.txt` does not build (the CLI needs the library sources); use `make` or the command below.
+
+What is checked is listed under [Integrity](#integrity): the raw API `aceapex_decompress` / `_mt` / `_stream` is fuzzed
+under ASan and UBSan; the paths above are not fuzzed yet.
+
 Measured against bgzip and zstd-seekable on the same operation, nine axes, every answer verified
 byte for byte: [hw-apex-bench](https://yasha1971-coder.github.io/hw-apex-bench/). ACEAPEX does not
 lead every column there, and the ones it loses are printed as they came out.
@@ -43,8 +61,8 @@ lead every column there, and the ones it loses are printed as they came out.
 ```bash
 git clone https://github.com/yasha1971-coder/aceapex.git && cd aceapex
 sudo apt-get install -y libzstd-dev g++
-g++ -O3 -march=native -funroll-loops -std=c++17 \
-    -o aceapex src/aceapex_main.cpp -lpthread -lzstd
+g++ -O3 -march=native -funroll-loops -std=c++17 -DACEAPEX_CLI \
+    -o aceapex src/aceapex_api.cpp -lpthread -lzstd                    # or: make
 ./aceapex c --in myfile --out myfile.aet --threads 8
 ```
 
@@ -74,7 +92,7 @@ Two separate mechanisms, not one. Confining the search is what removes cross-blo
 
 ---
 
-## Fast profile (2.4.0)
+## Fast profile (2.6.3)
 
 The same container, every block independent, no entropy stage: a fixed-width token stream the decoder runs without
 per-token branching on lengths. One archive for the C++ library, the C99 decoder and the Python package; regions,
@@ -88,8 +106,10 @@ Specification: [docs/FORMAT_FAST.md](docs/FORMAT_FAST.md).
 ./aceapex d --in silesia.axf --out silesia.tar                               # the version is in the header
 ```
 
-The decoder is safe by construction — exact-size buffers, any input either decodes or is rejected
-(`scripts/fast_fuzz.cpp` under ASan/UBSan in `make test`) — and there is no second, looser decoder. Research numbers
+What is checked for this decoder: corrupted archives under ASan/UBSan (`scripts/fast_fuzz.cpp` in `make test`,
+ClusterFuzzLite in CI) for `aceapex_decompress`, `_mt` and `_stream`, and out-of-memory handling on every entry point
+of the C++ library (claim `head_alloc_fail`, 2.6.3). Not yet checked: region / ranges and the C99 and Python decoders —
+see [Known issues](#known-issues). There is no second, looser decoder. Research numbers
 of the same layout before the release (ace-core EPYC 4344P, lzbench's single-thread method, silesia.tar, median of 7;
 `research/fastblk/d1-lzbench-2026-10-26.md`): min match 16 at 61.3 % decodes 11 523 MB/s against zxc 0.15.0 -1
 at 61.7 % and 10 634 MB/s in the same binary; min match 12 at 54.1 %, 11 237 MB/s. The release decoder is measured
@@ -112,8 +132,10 @@ ACEAPEX is also part of [TurboBench](https://github.com/powturbo/TurboBench) sin
 
 ### CPU
 
-The CPU table that stood here (lzbench 2.3, `aceapex 1.0.1`, format 1) is out of
-date and was removed. Numbers of the current version are in [TurboBench](https://github.com/powturbo/TurboBench/blob/master/benchmark.md)
+The CPU table that stood here (lzbench 2.3, `aceapex 1.0.1`, format 1) is out of date and moved to
+[docs/history/cpu-lzbench-2.3.md](docs/history/cpu-lzbench-2.3.md). Corrected 2026-11-21: its "3.65x faster than
+zstd -3" compared ACEAPEX `-T8` with one zstd thread; there is no same-thread comparison for the current version, so
+the claim is withdrawn. Numbers of the current version are in [TurboBench](https://github.com/powturbo/TurboBench/blob/master/benchmark.md)
 (daily build of this repository's `main`) and [lzbench](https://github.com/inikep/lzbench); this README gives no CPU
 throughput of its own until a fresh measurement with a log on a named CPU and a repeat.
 
@@ -152,7 +174,7 @@ bound by the dependent steps of the match and entropy stages, not by memory band
 `zstd -19 --long=27 -T16` on chr1 = 61 597 199 B (4.122x, zstd 1.4.8, ace-core, 54 s); ACEAPEX default
 59 429 097 B, open profile 63 083 287 B.
 
-### GPU — Full Device-Resident Pipeline (H100 SXM, 16 KB blocks, nvcomp-accelerated, bit-perfect)
+### GPU — Full Device-Resident Pipeline (historical: June 2026, code of Paper 2 / tag v2.0, H100 SXM, 16 KB blocks, nvcomp-accelerated, bit-perfect)
 
 | Dataset | Size | GB/s | Ratio |
 |---------|------|------|-------|
@@ -176,7 +198,7 @@ record, not a reading of the current build, and have not been re-measured.
 - **Mode 1** (nvcomp-free, in lzbench 2.3, ARM-portable): entropy on CPU, match on GPU — ships today, fully open.
 - **Mode 2** (nvcomp-accelerated, device-resident): entropy + match both on GPU — performance ceiling, requires proprietary nvcomp.
 
-### Random Access (5 GB genome, 16 KB blocks)
+### Random Access (historical: code of Paper 2, H100, 5 GB genome, 16 KB blocks; not re-measured on 2.6.3)
 
 | Operation | Time | Note |
 |-----------|------|------|
@@ -223,8 +245,8 @@ Meta's open DietGPU ANS: encode **364.9 GB/s**, decode **592.5 GB/s**, bit-perfe
 
 Two guarantees, kept apart:
 
-- **The raw API** (`aceapex_decompress`, `aceapex_decompress_mt`, `aceapex_decompress_region` and friends - what
-  lzbench calls) gives **memory safety**: any input, corrupted or not, returns either the size or an error, and never
+- **The raw API** (`aceapex_decompress`, `aceapex_decompress_mt`, `aceapex_decompress_stream` - what lzbench calls;
+  `aceapex_decompress_region` / `_ranges` not yet, see [Known issues](#known-issues)) gives **memory safety**: any input, corrupted or not, returns either the size or an error, and never
   reads or writes outside the buffers it was given (fuzzed under ASan + UBSan on every push, with a negative control). It
   does **not** check the content: it does not hash its output, so a damaged archive can decode to the declared size with
   other bytes.
@@ -248,23 +270,13 @@ DNA archives of levels 1-3 (2 501 of 2 520 refused before the check); since then
 1, 2, 3, 11, 14), exit 1 for all of them, none accepted with other bytes
 ([results/freeze3-cli-verify-2026-11-05.txt](results/freeze3-cli-verify-2026-11-05.txt)).
 
-## Known issues
-
-Open until 2.6.4:
-
-- The C99 and Python decoders (`c/`, `python/`), `aceapex_decompress_region` / `aceapex_decompress_ranges`, the CLI
-  and `aceapex faidx` do not bound memory allocation by the archive fields. Do not open untrusted archives through
-  these paths until 2.6.4.
-- The memory-safety guarantee of [Integrity](#integrity) is fuzzed for `aceapex_decompress`, `aceapex_decompress_mt`
-  and `aceapex_decompress_stream`; the paths above are not covered yet.
-
 ## Build
 
 **CPU (Mode 1):**
 ```bash
 sudo apt-get install -y libzstd-dev g++
-g++ -O3 -march=native -funroll-loops -std=c++17 \
-    -o aceapex src/aceapex_main.cpp -lpthread -lzstd
+g++ -O3 -march=native -funroll-loops -std=c++17 -DACEAPEX_CLI \
+    -o aceapex src/aceapex_api.cpp -lpthread -lzstd                    # or: make
 ```
 
 **Platforms (2.6.2).** The command-line tool `aceapex` builds on Linux and macOS (POSIX: it maps archives with `mmap`;
