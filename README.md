@@ -285,6 +285,7 @@ sudo apt-get install -y libzstd-dev g++
 g++ -O3 -march=native -funroll-loops -std=c++17 -DACEAPEX_CLI \
     -o aceapex src/aceapex_api.cpp -lpthread -lzstd                    # or: make
 ```
+macOS / Linux (Homebrew): `brew install yasha1971-coder/aceapex/aceapex` ([tap](https://github.com/yasha1971-coder/homebrew-aceapex)).
 
 **Platforms (2.6.2).** The command-line tool `aceapex` builds on Linux and macOS (POSIX: it maps archives with `mmap`;
 macOS is not covered by CI). On Windows it does not build (`aceapex faidx` maps the archive with `mmap`, since 02.10.2026; 2.6.1 is the
