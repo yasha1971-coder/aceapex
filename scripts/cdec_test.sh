@@ -176,6 +176,11 @@ if ${CXX:-g++} -std=c++17 -O2 -DACEAPEX_ENV_TUNING -Isrc -o $T/ebs_test verify/r
 else printf 'head_enc_bs_bound\tfail\tbuild failed: %s\n' "$(head -c 150 $T/ebs.err | tr '\n\t' '  ')"; fi
 # 2.6.4: CMake builds, installs and exports the library (aceapex::aceapex) and the CLI; v2.6.3's CMakeLists.txt did not link
 bash scripts/cmake_test.sh . 2>/dev/null || true
+# 2.6.4 step 3 (MEM): the encoder holds the blocks at their real size: peak live heap of aceapex_compress on 32 MiB text
+# and DNA, levels 1-4, 1 and 4 threads, within 3 x input + 32 MiB x threads; main a26a6e9: 925-961 MiB (~29 x the input)
+if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/emt_test verify/repro/enc_mem/enc_mem_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/emt.err; then
+  $T/emt_test 2>/dev/null | grep '^head_enc_mem' || printf 'head_enc_mem\tfail\tno result line\n'
+else printf 'head_enc_mem\tfail\tbuild failed: %s\n' "$(head -c 150 $T/emt.err | tr '\n\t' '  ')"; fi
 # lzbench #336: the library built without ACEAPEX_ENV_TUNING ignores the environment - five rows of tuning variables
 # give the same bytes at level 1 / one thread (text + silesia/xml when ~/CORPORA/silesia.tar is there), and no thread
 # is started at threads=1 (strace: no clone)
