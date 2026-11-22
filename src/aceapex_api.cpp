@@ -135,6 +135,9 @@ static int64_t ax_entropy_decode(const void* src, size_t src_size, int threads, 
     if (ax_lit_decoded_size(zl,hdr.zlit_sz) > hdr.orig_size) return ACEAPEX_ERR_DATA;
     { uint64_t cap = hdr.orig_size * 4 + ((uint64_t)1 << 20);
       if (os > cap || ns > cap || cs > cap) return ACEAPEX_ERR_DATA; }
+    // the block slices against the decoded sizes and the token slice bound, before the streams are allocated (2.6.4:
+    // a 34 KB archive declaring a 1 GiB command stream for a 1 GiB slice had it allocated first, fuzz_region)
+    if (!ax_boffs_ok(S.boffs.data(), hdr.num_blocks, ax_lit_decoded_size(zl,hdr.zlit_sz), os, ns, cs, hdr.block_size)) return ACEAPEX_ERR_DATA;
     uint8_t *&o=S.o, *&n=S.n, *&c=S.c, *&l=S.l;               // S frees them on every way out
     o=ax_big_malloc(os); n=ax_big_malloc(ns); c=ax_big_malloc(cs);
     if(!o||!n||!c) return ACEAPEX_ERR_MEMORY;

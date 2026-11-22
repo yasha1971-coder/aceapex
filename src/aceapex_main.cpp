@@ -2312,6 +2312,10 @@ static int do_decompress(const char* in_path, const char* out_path, int threads)
         if (ax_lit_decoded_size(zlit,hdr.zlit_sz) > hdr.orig_size) {
             fprintf(stderr,"Corrupt archive (literal stream size)\n");
             free(zlit);free(zoff);free(zlen);free(zcmd); return 1; }
+        // the block slices before the streams are allocated (2.6.4; checked again after decoding)
+        if (!ax_boffs_ok(boffs.data(), nb, ax_lit_decoded_size(zlit,hdr.zlit_sz), off_sz, len_sz, cmd_sz, hdr.block_size)) {
+            fprintf(stderr,"Corrupt archive (block offsets)\n");
+            free(zlit);free(zoff);free(zlen);free(zcmd); return 1; }
     }
  
     double dec_time=now_sec();
