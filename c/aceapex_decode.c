@@ -184,13 +184,19 @@ static int dna_unpack(ZSTD_DCtx* x, const uint8_t* s, size_t n, uint8_t* dst, si
       static uint32_t T4[256]; static int ready=0;
       if(!ready){ for(int v=0;v<256;v++){ uint8_t q[4]={(uint8_t)"ACGT"[(v>>6)&3],(uint8_t)"ACGT"[(v>>4)&3],(uint8_t)"ACGT"[(v>>2)&3],(uint8_t)"ACGT"[v&3]}; uint32_t w; memcpy(&w,q,4); T4[v]=w; } ready=1; }
       size_t full=raw>>2; uint32_t* d32=(uint32_t*)dst;                 /* dst comes from malloc: aligned */
-      for(size_t k=0;k<full;k++) d32[k]=T4[seq[k]];
+      /* unrolled x4 (2.6.4): the one-step loop's speed swung -4..+9 % with code placement alone (A/B 22.11) */
+      size_t k=0;
+      for(;k+4<=full;k+=4){ const uint32_t a=T4[seq[k]],b=T4[seq[k+1]],c=T4[seq[k+2]],e=T4[seq[k+3]]; d32[k]=a; d32[k+1]=b; d32[k+2]=c; d32[k+3]=e; }
+      for(;k<full;k++) d32[k]=T4[seq[k]];
       for(size_t i=full<<2;i<raw;i++) dst[i]=(uint8_t)"ACGT"[(seq[i>>2]>>(6-2*(i&3)))&3]; }
     { /* case: one mask byte -> eight bytes of 0x20/0x00 through a 256-entry u64 table, one OR each */
       static uint64_t M8[256]; static int mready=0;
       if(!mready){ for(int v=0;v<256;v++){ uint8_t q[8]; for(int j=0;j<8;j++) q[j]=(v&(0x80>>j))?0x20:0; uint64_t w; memcpy(&w,q,8); M8[v]=w; } mready=1; }
       size_t fullq=raw>>3; uint64_t* d64=(uint64_t*)dst;
-      for(size_t k=0;k<fullq;k++){ uint8_t m=cse[k]; if(m) d64[k]|=M8[m]; }
+      size_t k=0;   /* x4 as above; four zero mask bytes (an upper-case run) skipped with one test */
+      for(;k+4<=fullq;k+=4){ uint32_t m4; memcpy(&m4,cse+k,4); if(!m4) continue;
+        for(int j=0;j<4;j++){ const uint8_t m=cse[k+j]; if(m) d64[k+j]|=M8[m]; } }
+      for(;k<fullq;k++){ uint8_t m=cse[k]; if(m) d64[k]|=M8[m]; }
       if(fullq<nq){ uint8_t m=cse[fullq]; size_t b=fullq<<3; for(size_t j=0;b+j<raw;j++) if(m&(0x80>>j)) dst[b+j]|=0x20; } }
     { uint64_t pos=0; for(uint32_t k=0;k<nexc;k++){ pos+=gap[k]; if(pos<raw) dst[pos]=val[k]; } }
 out:
