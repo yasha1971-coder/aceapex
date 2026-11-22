@@ -1,0 +1,6 @@
+api_fuzz default levels 1-3: 1560 mutants | decompress_mt: 909 errors, 290 ok, 361 SILENT (success + wrong bytes), 0 bad rc | stream+VERIFY: 1256 errors, 304 ok, 0 verified-silent
+api_fuzz fast levels 11-18: 5160 mutants | decompress_mt: 2894 errors, 1125 ok, 1141 SILENT (success + wrong bytes), 0 bad rc | stream+VERIFY: 4051 errors, 1109 ok, 0 verified-silent
+api_fuzz: 112 seed archives in 60 s; gate (verified-silent 0, bad rc 0): pass
+# control:
+control: decoding 300000 bytes into a 299999-byte buffer passed as 300000
+==1237968==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x7fd3ba9babdf at pc 0x7fd3bf6bc2c3 bp 0x7ffef9cb5140 sp 0x7ffef9cb48e8

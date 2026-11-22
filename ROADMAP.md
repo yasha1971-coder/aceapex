@@ -125,6 +125,95 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+22.11 Кандидат 2.6.4 = e8f4b1e (stream-264, не влит; PR открыт): шаг 4 — #11, #12 (чанк токенов ≤ 16 МиБ, срез блока ≤ 4·bs + 4 КиБ,
+FORMAT_ACEPX2 с исключениями paper6-v1 / aceapex_depth.cpp), пустая таблица литералов, faidx проверяет таблицы до буфера;
+head_stream_peak (main 2.1 ГБ → 2.3 МБ); судья 96/0, CI и CFL зелёные, A/B 14 клеток в ±2 %, законные архивы 12/12.
+32-бит ворота: x86-32 RED по ошибке метода (метка кодека из bench/lzbench.h «aceapex 2.6.3», разбор искал 2.6.4; сырой
+вывод в контейнере потерян) — повтор по слову Якова; ARM32 идёт: silesia 1–4 проходят (69 391 151 / 68 987 186 / 66 632 815 /
+68 626 422), fast 1–4 проходят.
+
+22.11 2.6.4 шаг 4 (потоковый, ветка stream-264 955a415, не влита): часть 1 — #11 (токены ≤ 4·orig + 1 MiB) и пустая
+таблица литералов (SIGSEGV), архивы st_tokcap / st_lchempty в head_cpp_alloc; судья 95/0. #12 открыт: архив 33.5 КБ
+(st_group: чанки токенов по 128 MiB из 4-КБ кадров zstd) — VmHWM 2.1 ГБ; законно: silesia L1/L2 15–70 МБ, L3 152–181 МБ,
+enwik9 L3 728–757 МБ (4-частная раскладка: ≈ половина литералов). Решение Якова 22.11: (1) граница чанка токенов 16 МиБ и среза блока 4·bs + 4 КиБ — после проверки истории кодеров
+(найдено: FSE_CHUNK без потолка в paper6-v1 и в aceapex_depth.cpp — ждёт слова); (2) 4-частная раскладка — Known issues /
+Integrity (сделано); вариант (в), чанковые литералы для уровней 3–4 (меняет байты) — после 2.6.4. MEM влит (#34, 8ae26bf).
+
+22.11 2.6.4 шаг 3 MEM, часть кодера (ветка mem-264 1af5f83, не влита): буфер худшего случая — один на рабочего за
+вызов, блоки хранятся в точном размере. x86-32 Docker: уровни 1–4 на целом silesia 4/4 (VmPeak 0.99–1.13 ГБ; main — ERROR,
+4.19 ГБ); пик кучи на 32 MiB 50–195 MiB (main 925–961), head_enc_mem; байты 24/24 = main; сжатие −1.5…−2.7 %. Судья 95/0.
+Решение Якова 22.11: параметра API для лимита блока в 2.6.4 нет (кодеры не пишут блоков > 64 МиБ; лимит — только при сборке,
+ACEAPEX_MAX_BLOCK); по запросу — вариант (б), на каждый вызов, как windowLogMax у zstd. aceapex_compress_memory — после 2.6.4.
+Шаги 1, 2 влиты (9531abc, a26a6e9); сайт #31 и watch #33 влиты; бот пишет в заблокированный #12 (08:10 UTC).
+
+22.11 2.6.4 шаг 2 (C++, ветка fix-264-2 4d29327, не влита): #2 #6–#10 #13, :1812, legacy-литералы, записи блоков
+диапазона против окон, block_size ≤ 64 MiB во всех путях и в ACEAPEX_BS, CMake (aceapex::aceapex), README Integrity для
+_stream; 1 новая от ASan (заголовок пустого потока за архивом). Претензии head_cpp_alloc/_san, head_region_fuzz,
+head_enc_bs_bound, head_cmake; fuzz_region в CFL. Судья 94/0, CI и CFL зелёные, байты 12/12 = v2.6.3, A/B C++ в ±1.4 %.
+Ждёт слова на слияние.
+
+22.11 2.6.4 шаг 1 (C99 = python/csrc) влит в main 9531abc (PR #30); был на ветке fix-264 (d30fb08): находки #1 #3 #4 #5 аудита + 2 новые от
+fuzz_c99 (срез off+sz по модулю 2^64 → чтение за архивом; dec_close по неинициализированным курсорам) + UB :129;
+block_size ≤ 64 MiB (ACEAPEX_MAX_BLOCK, решение (Б)), FORMAT_ACEPX2/FAST. Претензии head_c99_alloc, head_c99_fuzz,
+head_python_fuzz (v2.6.3 падает на всех трёх); fuzz_c99 в ClusterFuzzLite (PR-прогон 44989146136 зелёный). Судья 89/0.
+G5 (б), слово Якова: циклы dna_unpack T4/M8 развёрнуты ×4 (d30fb08) — chr1 −5.1…−10.1 % к v2.6.3 при 5 наборах флагов,
+silesia +0.8 / +1.1 %; судья 89/0 на d30fb08.
+
+20.11 v2.6.3 = c3485e9 (тег поставил Яков), влит в main merge-коммитом 734c3a9 (PR #24; разница с тегом — только
+документы main). GitHub Release https://github.com/yasha1971-coder/aceapex/releases/tag/v2.6.3 (пакет static,
+zstd 1.5.7, sha256 8e5e33dd…3356), Zenodo 10.5281/zenodo.24404788. Ветка lzbench aceapex-2.6.3 (33b0b8a9 от
+inikep/master 83899784) — в форке yasha1971-coder/lzbench, ворота x86-64 / x86-32 / ARM32 GREEN; в upstream ничего.
+Ветка release не тронута (F.3). Ворота
+выпуска на SHA 8bcfcda (src/ = c3485e9; c3485e9 — + 4 претензии, судья 86/0): нехватка памяти -> ACEAPEX_ERR_MEMORY во всех публичных функциях, никакого исключения наружу; пути ошибки
+encode_file освобождают всё; aceapex_stream_new/update/finish/free убраны из aceapex.h; претензия head_alloc_fail.
+Ворота на 8bcfcda: байты уровней 1-4 и 11-18 = v2.6.2 (48/48); x86-32 (Docker) и ARM32 (qemu), целый silesia: 1-4
+ERROR, fast 1-8 проходят, 0 abort; тест отказов 5044 прогона 0 плохих (v2.6.2 - abort); ASan+UBSan 9/9; судья 82/0
+(на c3485e9 — 86/0). Цена: сжатие уровней 15-18 -3 % (SPEED-263, принято словом Якова).
+Отчёт yasha-context ACEAPEX/REPORT_263.md.
+20.11 v2.6.2 выпущен 17.11 (тег 261d996, Release, Zenodo 10.5281/zenodo.24323622); main = 5a78cdd. Ветка lzbench
+`aceapex-2.6.2` (137cfbb9) запушена в форк yasha1971-coder/lzbench, PR в upstream не открыт (по слову Якова). 32-бит:
+давнее ограничение одного большого блока (как в 2.6.1) и выход std::bad_alloc в lzbench через fast-путь
+aceapex_compress — разбор yasha-context ACEAPEX/BAD_ALLOC_AUDIT_262.md; исправление — 2.6.3 (см. «Дальше»).
+Ниже — история 13.11.
+13.11 2.6.2-кандидат — HOLD (слово Якова 13.11): в main не вливать, релиз не создавать, длинные ворота — только после
+PASS preflight. Ветка w5-l12: W5 для уровней 1–2 (уровни 3–4 и 14 как в 2.6.1; уровень 4 больше не даёт байтов уровня 2),
+head_level_tls, исправление sink AX_LINEMODEL, исправление надёжности быстрого потокового декодера (затронуты ≤ 2.6.1;
+только в 2.6.2; 2.6.1.x — только если 2.6.2 задержится из-за FAIL ворот). Discovery/regression checks 13.11 (прогнозы
+не записаны, задним числом не восстанавливаются): api_fuzz ASan до исправления — seed 1 и 3 pass, seed 2 и 4 — находка;
+после исправления прошли только seed 2 и 4 по 900 с. TurboBench 13.11 собран на изменённой копии (перенесены c-blosc2,
+openzl, подменён turbobench.c) — как ворота не засчитывается. Дальше: PRECHECK-262 -> один SHA кандидата -> preflight ->
+основные ворота на том же SHA.
+13.11 PRECHECK-262: кандидат 0aa31abe7db598f571a39bd2afdf628e0c3895e7 — preflight FAIL (4 из 6), основные ворота не
+запускались. P1 судья 79/0, P2 самопроверка, P3 два повреждённых архива (ASan+UBSan, MemoryMax 8G), P4 4 seed × 60 с — PASS.
+P5 FAIL: upstream TurboBench 8a0ec42 требует C++20 <format> (plugin.cc), на ace-core gcc 11.4. P6 FAIL: ~/golden/mixed/
+silesia.tar = 211 957 760 B (sha 3eee8566), не стандартный a667bac8 (211 947 520 B, /tmp/hwref/corpus). CI на 0aa31ab: красные
+build-and-test (обязательный набор требовал class_<корпус>_* без корпуса — исправлено в dd6f9c1) и windows-msys2 (CLI не
+собирается под Windows: faidx/region через mmap с 02.10, так же в v2.6.1). Ждёт решения Якова: объём ворот Windows,
+компилятор для TurboBench, какой silesia.tar эталон.
+13.11 Кандидат 47f238608cbf33c5fee2aabe6bf780c01370207b: preflight PASS 6/6; основные ворота G2–G9 PASS (G4 — при
+повторе после ошибки обвязки), G1 FAIL: seed 20261113001 убит OOM при MemoryMax 8G — потоковый декодер основного
+профиля выделяет буферы по block_size из заголовка (≈2 GiB на поток, src/aceapex_api.cpp:636; так же в v2.6.1). Формат не
+ограничивает block_size сверху. HOLD, ждёт решения Якова.
+13.11 Кандидат 2.6.2 = 4947cb7579d36cbf5ac0730ff8ec22582aa179aa (G1 вариант г: буферы потокового декодера растут по
+записи, не по block_size; head_stream_alloc). Preflight PASS 6/6, основные ворота G1–G9 все PASS (G1 4 × 900 с под
+MemoryMax 8G 4/4; CI push и dispatch с verify-tags success). Дальше — только по слову Якова: вливание в main вместе с
+выпуском (тег на этом SHA), release fast-forward, наблюдение за ежедневной сборкой TurboBench (при падении — откат).
+14.11 Кандидат 2.6.2 = 261d99605256922836d2e8b0d4991d3c524952f5. Аудит класса (слово Якова) нашёл переполнение суммы
+z*_sz в aceapex_decompress_mt (OOB-чтение под ASan, путь lzbench/TurboBench); потоковый API чист. Исправлено (пункт 3,
+claim head_hdr_sum_overflow); остальные находки аудита — 2.6.3 (ACEAPEX/AUDIT_ALLOC_262). Правка гонки CI turbobench —
+только ci.yml. Судья 81/0, весь CI (push и dispatch с verify-tags, turbobench) зелёный; preflight и G1–G9 PASS. HOLD:
+тег на 261d996 по слову Якова не ранее 17.11, затем merge в main и release fast-forward.
+05.11 FREEZE-4 (без тега): CLI `d --out FILE` атомарный (временный файл + rename только при совпадении XXH3; претензия
+head_cli_atomic; 200 порч: exit 1 200, FILE создан 0, временных 0; старый CLI: создан 200); судья 77/0. ClusterFuzzLite в
+aceapex (fuzz/fuzz_api.cpp) и aceapex-fast (fuzz/fuzz_axfast.c): сырой путь — ASan/UBSan, VERIFY-путь — «успех => байты ==
+оригинал», PR 5 мин, batch ежедневно 30 мин, address+undefined — зелёные; негативный контроль (без VERIFY) -> abort. Ответы
+OpenSSF Best Practices — yasha-context ACEAPEX/OPENSSF_BP_ANSWERS_2026-11.md (Met 50 / N/A 9 / GAP 7: SECURITY.md,
+CONTRIBUTING.md — по слову Якова; анкету отправляет Яков).
+05.11 FREEZE-5: SECURITY.md (только Private vulnerability reporting — включён, первый ответ 7 дней) и CONTRIBUTING.md в aceapex
+(main 68398f6) и aceapex-fast (main c385671), без PR (запрет gh pr create), --no-ff; CI зелёный. OpenSSF passing: MUST 44 —
+Met 38, N/A 6, GAP 0. Анкету отправляет Яков.
+05.11 OpenSSF Best Practices passing (проект 16356), бейдж в README (4f74455). OPENSSF-FIX 892bff6: токен workflow read-only,
+fread в CLI проверяется; CodeQL 0 открытых. Дальше (по слову): пин действий по sha (Scorecard PinnedDependencies 22).
 30.10: v2.6.0 = e104741 (main, тег), release = 04f3ebd (merge, дерево == v2.6.0, без force). Уровень 11: ENC3 + SKIP10;
 Zen 5 lzbench 969 / 15858 MB/s при 61.57 % против zxc -1 869 / 11135 при 61.67 %. Формат и декодер прежние, 12–18
 побайтно прежние. Ворота: судья 74/0, fast_test 6/0, portability 2/2. Дальше: Release и Zenodo (команды у Якова),
@@ -411,6 +500,17 @@ match 30.3, bases 7.4, seq 5.1. Архивы zstd/rans T2T зависят от l
 898 263 414; 1.4.8: 902 319 887 / 898 903 131), open одинаков.
 
 ## Дальше
+2.6.4: шаг 3 MEM (кодер) — влить после зелёного CI; шаг 4 потоковый (#11, #12, lch на пустом
+   векторе); перед выпуском — x86-32 в Docker (как 2.6.3: lzbench 32-бит, silesia 1–4 и fast 1–8, мелкие входы) и ARM32 на
+   замороженном кандидате. После 2.6.4: vcpkg, aceapex_compress_memory, чанковые литералы для уровней 3–4 (вариант (в),
+   байты и ratio — по слову), BLOSC2-0 (задание пришлёт Яков). lzbench PR #380 не трогать.
+2.6.3 = v2.6.3 (c3485e9, в main 734c3a9): (а), (в), (г) сделаны; Release и Zenodo опубликованы, ветка lzbench в форке.
+   Дальше по слову Якова: PR в inikep/lzbench из aceapex-2.6.3; затем MEM (2.6.4) по очереди плана. Позже (не в 2.6.3): (б) порог одного блока на
+   32-бит — ограничить рабочую память кодера (MEM); tuning-сборки (ax_linemodel std::thread, AX_REFSEG thread_local
+   vector, open-профиль ERR_DATA при нехватке); ARM TB-3, E-5.
+   Парковка: уровни 15–18 сжатие −3 % в 2.6.3 (раскладка кода; SPEED-263: 0.963–0.970, 40/40 пар, принято словом
+   Якова 20.11) — проверить perf stat и выравнивание при следующей правке энкодера. Пороги A/B по путям: распаковка и
+   fast 1 ±2 %, медленные уровни 15–18 ±5 %.
 -1. axf safe: цена 8.6-10 % против 1.4 % у misa77 - найти; runtime dispatch AVX2 (+2-5 %); ARM (нет железа). CB1 ClickBench
    по колонкам. Отправка чего-либо наружу (lzbench PR, 2.3.1, письма) - только по слову.
 00000. [сделано 03.10-Б] C99/Python регион. Дальше: Python Archive.close() на mmap-файле - BufferError; регион 50 мкс:

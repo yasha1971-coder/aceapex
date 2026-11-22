@@ -109,6 +109,7 @@
     <a href="https://github.com/inikep/lzbench" class="nav-key">lzbench</a>
     <a href="#research">Research</a>
     <a href="https://github.com/yasha1971-coder/aceapex" class="nav-key">GitHub</a>
+    <a href="https://www.bestpractices.dev/projects/16356" class="nav-key"><img src="https://www.bestpractices.dev/projects/16356/badge" alt="OpenSSF Best Practices" style="height:20px;vertical-align:middle"></a>
   </nav>
 </div></header>
 <section class="hero"><div class="wrap">
@@ -183,13 +184,13 @@
   </div>
   <div class="cell">
     <div class="n">0.081<span>&nbsp;ms</span></div>
-    <div class="l"><code>chr1:5000000-5016000</code> out of a 254 MB archive &mdash; a genomic coordinate, not a byte offset. Against bgzip with a fai index, the standard for compressed references: 1.73&times; faster on median, 2.03&times; at p99, and 11.8% denser. Verified against samtools faidx.</div>
-    <div class="src">byte-verified against the original &middot; aceapex faidx + r --range</div>
+    <div class="l"><code>chr1:5000000-5016000</code> out of a 254 MB archive &mdash; a genomic coordinate, not a byte offset. Against BGZF at equal block size (htslib, both as resident libraries) a region read is 1.74&ndash;2.57&times; slower and the archive 13&ndash;25% smaller &mdash; <a href="https://yasha1971-coder.github.io/hw-apex-bench/" style="color:inherit;text-decoration:underline">hw-apex-bench</a>. Output verified against samtools faidx.</div>
+    <div class="src">EPYC 4344P &middot; 2026-08-13 &middot; byte-verified against the original &middot; aceapex faidx + r --range</div>
   </div>
   <div class="cell">
     <div class="n">#1</div>
-    <div class="l">First row of the lzbench 2.3 table. Neutral third-party tool.</div>
-    <div class="src">aceapex 1.0.1</div>
+    <div class="l">Fastest decompression of silesia.tar in TurboBench, at a looser ratio (61.57%) than the next codecs (misa77, zxc: 42&ndash;47%). Neutral third-party tool.</div>
+    <div class="src">aceapex_fast 1 &middot; TurboBench 2026.11.21 &middot; ARM Neoverse-N2, Xeon 6975P-C, Apple M1, EPYC 7763</div>
   </div>
 </div></div></section>
 <section class="losses"><div class="wrap">
@@ -198,7 +199,7 @@
   <div class="loss-grid">
     <div class="loss">
       <div class="t">zstd-19 packs tighter &mdash; when it is allowed a whole-file window</div>
-      <div class="d">On the same genome: ratio 4.04 (ours) vs 4.93 (zstd-19). Ratio is not our axis. But the comparison only means something once the constraint is equalised: under independent 16&nbsp;KB blocks, where every codec is equally seekable, ACEAPEX is first on 3 of 5 corpora against zstd-19 (enwik8 2.638, enwik9 2.981, silesia 3.005) and ahead of zstd-3 everywhere by 4.9&ndash;16.1%. Blocking itself costs 6.7% on genome and 24.2% on text; the match layer returns about three quarters of it. See Paper&nbsp;5.</div>
+      <div class="d">On FASTQ ERR194147 (1 GB, build of 2026-08-02): ratio 4.04 (ours) vs 4.93 (zstd-19). Ratio is not our axis. But the comparison only means something once the constraint is equalised: under independent 16&nbsp;KB blocks, where every codec is equally seekable, ACEAPEX is first on 3 of 5 corpora against zstd-19 (enwik8 2.638, enwik9 2.981, silesia 3.005) and ahead of zstd-3 everywhere by 4.9&ndash;16.1%. Blocking itself costs 6.7% on genome and 24.2% on text; the match layer returns about three quarters of it. See Paper&nbsp;5.</div>
     </div>
     <div class="loss">
       <div class="t">A single cold tile over PCIe is faster</div>
@@ -212,7 +213,7 @@
 </div></section>
 <section id="research"><div class="wrap cta-row">
   <a class="btn primary" href="https://github.com/yasha1971-coder/aceapex">Quickstart on GitHub</a>
-  <a class="btn ghost" href="https://github.com/inikep/lzbench/releases/tag/v2.3">See lzbench 2.3</a>
+  <a class="btn ghost" href="https://github.com/powturbo/TurboBench/blob/master/benchmark.md">See TurboBench</a>
 </div></section>
 <footer><div class="wrap">
   <div class="papers">
