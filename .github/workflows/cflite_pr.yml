@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
     - 'src/**'
+    - 'c/**'
     - 'fuzz/**'
     - '.clusterfuzzlite/**'
     - '.github/workflows/cflite_pr.yml'

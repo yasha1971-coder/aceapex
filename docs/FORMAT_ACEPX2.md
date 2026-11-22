@@ -31,7 +31,7 @@ bytes; trailing bytes after the command stream are not part of the format.
 | 0 | 8 | magic | ASCII `ACEPX2` then two zero bytes |
 | 8 | u32 | version | 2. Readers MUST reject any other value. |
 | 12 | u64 | orig_size | length of the original input |
-| 20 | u32 | block_size | > 0; every block but the last is exactly this long |
+| 20 | u32 | block_size | > 0; every block but the last is exactly this long; encoders write at most 64 MiB (see below) |
 | 24 | u32 | num_blocks | ceil(orig_size / block_size); 0 only for the empty archive |
 | 28 | 8 | xxhash | XXH3-64 of the original input, little-endian |
 | 36 | u64 | zlit_sz | size of the literal stream as stored |
@@ -44,8 +44,14 @@ so a reader MUST NOT cast the table to a struct of u64 on platforms that require
 8-byte alignment; read fields with byte copies.
 
 Invariants a reader MUST check before touching any stream: `num_blocks * block_size >=
-orig_size`; the container size above fits in the input; every BlockOffsets slice lies
-inside its decoded stream (§2).
+orig_size` and `(num_blocks - 1) * block_size < orig_size` (the last block is not empty); the container size above
+fits in the input, each stream size checked against the bytes left so the sum cannot wrap; every BlockOffsets slice
+lies inside its decoded stream (§2), checked as offset and size.
+
+Block size bound (2.6.4): encoders MUST NOT write `block_size` above 64 MiB (67 108 864; the reference encoder writes
+256 KiB to 1 MiB), and a decoder MAY refuse an archive with a larger `block_size` (the reference decoders do, with
+`ACEAPEX_ERR_DATA`). A block is decoded whole, so the bound limits the memory a single block can demand - the role of
+zstd's `windowLogMax`.
 
 ### 1.2 Empty archive
 

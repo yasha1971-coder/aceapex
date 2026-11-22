@@ -123,6 +123,32 @@ else printf 'head_stream_alloc\tfail\tbuild failed: %s\n' "$(head -c 150 $T/sat.
 if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/af_test verify/repro/alloc_fail/alloc_fail_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/af.err; then
   $T/af_test 2>/dev/null; rc=$?; [ $rc -gt 1 ] && printf 'head_alloc_fail\tfail\taborted (exit %s)\n' "$rc"
 else printf 'head_alloc_fail\tfail\tbuild failed: %s\n' "$(head -c 150 $T/af.err | tr '\n\t' '  ')"; fi
+# 2.6.4: the C99 decoder (c/ = python/csrc) on the six archives of verify/repro/c99_alloc (AUDIT_ALLOC_262 #1, #3, #4,
+# #5 and the slice wrap found by fuzz_c99): every entry point refuses, no allocation above 64 MiB (malloc / calloc /
+# realloc wrapped), no read past the archive (ASan+UBSan). v2.6.3: 64 MiB .. 32 GiB requested, heap-buffer-overflow
+C99_SAN="-O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all"
+if ${CC:-gcc} -std=c99 $C99_SAN -Ic -o $T/c99a_test verify/repro/c99_alloc/c99_alloc_test.c c/aceapex_decode.c \
+     -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -lzstd -lm 2>$T/c99a.err; then
+  ao=$(ASAN_OPTIONS=allocator_may_return_null=1 $T/c99a_test verify/repro/c99_alloc 2>$T/c99a.log); rc=$?
+  echo "$ao" | grep '^head_c99_alloc' || printf 'head_c99_alloc\tfail\taborted (exit %s): %s\n' "$rc" "$(grep -m1 -E 'ERROR|runtime error' $T/c99a.log | head -c 200)"
+else printf 'head_c99_alloc\tfail\tbuild failed: %s\n' "$(head -c 150 $T/c99a.err | tr '\n\t' '  ')"; fi
+# 2.6.4: fuzz/fuzz_c99.c (every C99 entry point) without libFuzzer: 20 s of mutants of the conformance fixtures up to
+# 120 KB and the repro archives under ASan+UBSan, allocations above 128 MiB abort; v2.6.3 aborts on the seeds alone
+FZ_SEEDS=$(find verify/fixtures/conf -name '*.aet' -size -120k | sort; ls verify/repro/c99_alloc/*.aet)
+if ${CC:-gcc} -std=c99 $C99_SAN -Ic -c -o $T/fz_dec.o c/aceapex_decode.c 2>$T/fz.err \
+   && ${CC:-gcc} -std=c99 $C99_SAN -Ic -c -o $T/fz_c99.o fuzz/fuzz_c99.c 2>>$T/fz.err \
+   && ${CXX:-g++} -std=c++17 $C99_SAN -o $T/fz_c99 fuzz/standalone.cpp $T/fz_c99.o $T/fz_dec.o -lzstd -lm 2>>$T/fz.err; then
+  fo=$(ASAN_OPTIONS=max_allocation_size_mb=128:allocator_may_return_null=0 $T/fz_c99 20 $FZ_SEEDS 2>$T/fz.log); rc=$?
+  if [ $rc -eq 0 ] && echo "$fo" | grep -q 'no abort'; then printf 'head_c99_fuzz\tpass\tfuzz_c99 (all C99 entry points, ASan+UBSan, 128 MiB allocation cap): %s\n' "${fo#standalone: }"
+  else printf 'head_c99_fuzz\tfail\texit %s: %s\n' "$rc" "$(grep -m1 -E 'ERROR|runtime error' $T/fz.log | head -c 200)"; fi
+else printf 'head_c99_fuzz\tfail\tbuild failed: %s\n' "$(head -c 150 $T/fz.err | tr '\n\t' '  ')"; fi
+# 2.6.4: python/tests/fuzz_python.py - the Python package over a fresh .so, 20 s of mutants of the same seeds, address
+# space 2 GiB: only DecodeError other than "out of memory" may come out; v2.6.3 dies with SIGSEGV on the repro archives
+if ${CC:-gcc} -std=c99 -O2 -fPIC -shared -Ic -o $T/libfz_decode.so c/aceapex_decode.c -lzstd 2>$T/pyfz.err; then
+  po=$(FUZZ_LAST=$T/pyfz_last.aet ACEAPEX_DECODE_SO=$T/libfz_decode.so PYTHONPATH=python python3 python/tests/fuzz_python.py 20 $FZ_SEEDS 2>/dev/null); rc=$?
+  if [ $rc -eq 0 ] || [ $rc -eq 1 ]; then echo "$po" | grep '^head_python_fuzz' || printf 'head_python_fuzz\tfail\tno result line (exit %s)\n' "$rc"
+  else printf 'head_python_fuzz\tfail\tinterpreter died (exit %s), input kept while running: %s B\n' "$rc" "$(stat -c%s $T/pyfz_last.aet 2>/dev/null)"; fi
+else printf 'head_python_fuzz\tfail\tbuild failed: %s\n' "$(head -c 150 $T/pyfz.err | tr '\n\t' '  ')"; fi
 # lzbench #336: the library built without ACEAPEX_ENV_TUNING ignores the environment - five rows of tuning variables
 # give the same bytes at level 1 / one thread (text + silesia/xml when ~/CORPORA/silesia.tar is there), and no thread
 # is started at threads=1 (strace: no clone)

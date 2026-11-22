@@ -29,7 +29,7 @@ profile, header version 2, is little-endian only.)
 | 0 | 8 | magic | `ACEPX2\0\0` |
 | 8 | 4 | version | 3 |
 | 12 | 8 | orig_size | bytes of the original input, > 0 (the empty input is a version-2 archive, one header) |
-| 20 | 4 | block_size | 1 ≤ block_size ≤ 2^20; the reference encoder writes 1048576 |
+| 20 | 4 | block_size | 1 ≤ block_size ≤ 2^20; the reference encoder writes 1048576 (well inside the 64 MiB bound of FORMAT_ACEPX2.md: encoders do not write larger blocks, decoders may refuse them) |
 | 24 | 4 | num_blocks | ceil(orig_size / block_size), ≥ 1 |
 | 28 | 8 | xxhash | XXH3-64 of the original input |
 | 36 | 4 | profile | 1 = FAST |

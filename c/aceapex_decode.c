@@ -46,6 +46,13 @@ static int zdec(ZSTD_DCtx* x, void* d, size_t raw, const void* s, size_t n){
     size_t r = x ? ZSTD_decompressDCtx(x,d,raw,s,n) : ZSTD_decompress(d,raw,s,n); return !ZSTD_isError(r) && r==raw; }
 
 /* ---- archive header / bounds ------------------------------------------------------- */
+/* Largest block_size a version-2 archive may declare (bytes; 0 = no limit). Encoders write at most 64 MiB (the release
+   encoders at most 1 MiB) and a decoder may refuse larger blocks (FORMAT_ACEPX2.md): a block is decoded whole, so a
+   region read of a crafted archive with one huge block would need that much memory - the role of zstd's windowLogMax.
+   2.6.4: 64 MiB, ACEAPEX_ERR_DATA above it; raise it by building with -DACEAPEX_MAX_BLOCK=<bytes> (an API parameter: MEM). */
+#ifndef ACEAPEX_MAX_BLOCK
+#define ACEAPEX_MAX_BLOCK ((uint64_t)64 << 20)
+#endif
 static int open_arc(const void* src, size_t n, Arc* a){
     const uint8_t* p=(const uint8_t*)src;
     if(!src || n<68 || memcmp(p,"ACEPX2\0\0",8)) return ACEAPEX_ERR_DATA;
@@ -58,11 +65,17 @@ static int open_arc(const void* src, size_t n, Arc* a){
     a->orig=rd64(p+12); a->bs=rd32(p+20); a->nb=rd32(p+24);
     a->zls=rd64(p+36); a->zos=rd64(p+44); a->zns=rd64(p+52); a->zcs=rd64(p+60);
     if(!a->bs) return ACEAPEX_ERR_DATA;
+    if(ACEAPEX_MAX_BLOCK && (uint64_t)a->bs>(uint64_t)ACEAPEX_MAX_BLOCK) return ACEAPEX_ERR_DATA;
     if(!a->nb){ /* empty archive: one header, orig 0, no streams */
         if(a->orig || a->zls || a->zos || a->zns || a->zcs) return ACEAPEX_ERR_DATA; }
-    else if((uint64_t)a->nb*a->bs < a->orig) return ACEAPEX_ERR_DATA;
-    uint64_t need=68+(uint64_t)a->nb*64+a->zls+a->zos+a->zns+a->zcs;
+    /* the blocks cover orig exactly: the last one is not empty (2.6.4; the C++ stream decoder checks the same) */
+    else if((uint64_t)a->nb*a->bs < a->orig || (uint64_t)(a->nb-1)*a->bs >= a->orig) return ACEAPEX_ERR_DATA;
+    /* header + table + the four stream sizes, each checked against the bytes left: the u64 sum cannot wrap past n
+       (2.6.4; until 2.6.3 a crafted zcs made the total wrap and the streams were read past the archive) */
+    uint64_t need=68+(uint64_t)a->nb*64;
     if(need>n) return ACEAPEX_ERR_DATA;
+    { const uint64_t z[4]={a->zls,a->zos,a->zns,a->zcs};
+      for(int i=0;i<4;i++){ if(z[i]>n-need) return ACEAPEX_ERR_DATA; need+=z[i]; } }
     a->bo=p+68; a->zl=p+68+(size_t)a->nb*64;
     a->zo=a->zl+a->zls; a->zn=a->zo+a->zos; a->zc=a->zn+a->zns;
     return ACEAPEX_OK;
@@ -126,7 +139,7 @@ static int cur_open(Cur* c, const uint8_t* z, size_t zsz, int is_lit, int index)
     /* check: every entry well-formed and the sum of the sizes inside the stream. Sizes are checked <= room and
      * summed in runs of 4096 (4096 x 2^48 < 2^64), each run added to a checked total; a stream of 2^48 bytes or
      * more takes the entry-by-entry path. Same verdict as summing one by one with a bound after each entry. */
-    if(zsz>=((size_t)1<<48)){
+    if((uint64_t)zsz>=((uint64_t)1<<48)){   /* uint64: a shift of 48 in a 32-bit size_t is undefined (2.6.4) */
         size_t p=0;
         for(size_t i=0;i<c->nc;i++){ uint64_t e=rd64(c->tab+8*i);
             if(!c->kind && (((e>>48)&0x3FFF) || ((e>>63) && ((e>>62)&1)))) return ACEAPEX_ERR_DATA;
@@ -156,7 +169,8 @@ static void cur_close(Cur* c){ free(c->coff); free(c->win); c->coff=0; c->win=0;
 static int dna_unpack(ZSTD_DCtx* x, const uint8_t* s, size_t n, uint8_t* dst, size_t raw){
     if(n<20) return 0;
     uint32_t nexc=rd32(s),h1=rd32(s+4),h2=rd32(s+8),h3=rd32(s+12),h4=rd32(s+16);
-    if(20+(size_t)h1+h2+h3+h4>n) return 0;
+    if(20+(uint64_t)h1+h2+h3+h4>n) return 0;
+    if(nexc>raw) return 0;                     /* at most one exception per base (2.6.4: was unbounded - 16 + 4 GiB) */
     size_t np=(raw+3)/4, nq=(raw+7)/8; const uint8_t* p=s+20; int ok=1;
     uint8_t* seq=(uint8_t*)malloc(np+1); uint8_t* cse=(uint8_t*)malloc(nq+1);
     uint32_t* gap=(uint32_t*)malloc((size_t)nexc*4+4); uint8_t* val=(uint8_t*)malloc((size_t)nexc+1);
@@ -170,13 +184,19 @@ static int dna_unpack(ZSTD_DCtx* x, const uint8_t* s, size_t n, uint8_t* dst, si
       static uint32_t T4[256]; static int ready=0;
       if(!ready){ for(int v=0;v<256;v++){ uint8_t q[4]={(uint8_t)"ACGT"[(v>>6)&3],(uint8_t)"ACGT"[(v>>4)&3],(uint8_t)"ACGT"[(v>>2)&3],(uint8_t)"ACGT"[v&3]}; uint32_t w; memcpy(&w,q,4); T4[v]=w; } ready=1; }
       size_t full=raw>>2; uint32_t* d32=(uint32_t*)dst;                 /* dst comes from malloc: aligned */
-      for(size_t k=0;k<full;k++) d32[k]=T4[seq[k]];
+      /* unrolled x4 (2.6.4): the one-step loop's speed swung -4..+9 % with code placement alone (A/B 22.11) */
+      size_t k=0;
+      for(;k+4<=full;k+=4){ const uint32_t a=T4[seq[k]],b=T4[seq[k+1]],c=T4[seq[k+2]],e=T4[seq[k+3]]; d32[k]=a; d32[k+1]=b; d32[k+2]=c; d32[k+3]=e; }
+      for(;k<full;k++) d32[k]=T4[seq[k]];
       for(size_t i=full<<2;i<raw;i++) dst[i]=(uint8_t)"ACGT"[(seq[i>>2]>>(6-2*(i&3)))&3]; }
     { /* case: one mask byte -> eight bytes of 0x20/0x00 through a 256-entry u64 table, one OR each */
       static uint64_t M8[256]; static int mready=0;
       if(!mready){ for(int v=0;v<256;v++){ uint8_t q[8]; for(int j=0;j<8;j++) q[j]=(v&(0x80>>j))?0x20:0; uint64_t w; memcpy(&w,q,8); M8[v]=w; } mready=1; }
       size_t fullq=raw>>3; uint64_t* d64=(uint64_t*)dst;
-      for(size_t k=0;k<fullq;k++){ uint8_t m=cse[k]; if(m) d64[k]|=M8[m]; }
+      size_t k=0;   /* x4 as above; four zero mask bytes (an upper-case run) skipped with one test */
+      for(;k+4<=fullq;k+=4){ uint32_t m4; memcpy(&m4,cse+k,4); if(!m4) continue;
+        for(int j=0;j<4;j++){ const uint8_t m=cse[k+j]; if(m) d64[k+j]|=M8[m]; } }
+      for(;k<fullq;k++){ uint8_t m=cse[k]; if(m) d64[k]|=M8[m]; }
       if(fullq<nq){ uint8_t m=cse[fullq]; size_t b=fullq<<3; for(size_t j=0;b+j<raw;j++) if(m&(0x80>>j)) dst[b+j]|=0x20; } }
     { uint64_t pos=0; for(uint32_t k=0;k<nexc;k++){ pos+=gap[k]; if(pos<raw) dst[pos]=val[k]; } }
 out:
@@ -207,11 +227,14 @@ static const uint8_t* cur_chunk_get(Cur* c, size_t i, size_t* raw_out, int* err)
         c->cc[slot].idx=i; c->cc[slot].raw=raw; }
     c->cc[slot].age=++c->tick; return c->cc[slot].buf;
 }
-/* make [from,to) of the decoded stream available; returns pointer to byte 'from'. A slice inside one
- * chunk is served from that chunk's buffer; a slice spanning chunks is assembled by copying. */
-static const uint8_t* cur_get(Cur* c, uint64_t from, uint64_t to, int* err){
-    if(to<=from) return c->z;                       /* empty slice: any valid pointer */
-    if(to>c->size){ *err=ACEAPEX_ERR_DATA; return 0; }
+/* make the slice [off, off+sz) of the decoded stream available; returns pointer to byte 'off'. A slice inside one
+ * chunk is served from that chunk's buffer; a slice spanning chunks is assembled by copying. The slice is checked as
+ * offset and size against the stream (2.6.4: as [from, from+size) a block entry whose sum wrapped past 2^64 looked
+ * empty, and the block decoder read its huge size from the archive itself - past its end) */
+static const uint8_t* cur_get(Cur* c, uint64_t off, uint64_t sz, int* err){
+    if(off>c->size || sz>c->size-off){ *err=ACEAPEX_ERR_DATA; return 0; }
+    if(!sz) return c->z;                            /* empty slice: any valid pointer (the decoder reads 0 bytes) */
+    const uint64_t from=off, to=off+sz;
     size_t c0=(size_t)(from/c->chunk), c1=(size_t)((to-1)/c->chunk), raw;
     if(c0==c1){ const uint8_t* b=cur_chunk_get(c,c0,&raw,err); return b ? b+(from-(uint64_t)c0*c->chunk) : 0; }
     size_t need=(size_t)(to-from); if(need+64>c->wcap){ uint8_t* w=(uint8_t*)realloc(c->win,need+64); if(!w){ *err=ACEAPEX_ERR_MEMORY; return 0; } c->win=w; c->wcap=need+64; }
@@ -263,13 +286,20 @@ static int decode_block(uint8_t* dst, size_t dsz, const uint8_t* lit, size_t ls,
 /* ---- a decoder over the four cursors -------------------------------------------- */
 typedef struct { Arc a; Cur l,o,n,c; } Dec;
 static int dec_open(Dec* d, const void* src, size_t n, int index){
-    int r=open_arc(src,n,&d->a); if(r) return r;
+    /* cursors zeroed first: every caller runs dec_close on failure (2.6.4; until 2.6.3 a header the decoder refused left
+       them uninitialised and dec_close freed stack bytes) */
     memset(&d->l,0,sizeof(Cur)); memset(&d->o,0,sizeof(Cur)); memset(&d->n,0,sizeof(Cur)); memset(&d->c,0,sizeof(Cur));
+    int r=open_arc(src,n,&d->a); if(r) return r;
     if(d->a.fast) return ACEAPEX_OK;                      /* no stream cursors in the FAST profile */
     if((r=cur_open(&d->l,d->a.zl,(size_t)d->a.zls,1,index))) return r;
     if((r=cur_open(&d->o,d->a.zo,(size_t)d->a.zos,0,index))) return r;
     if((r=cur_open(&d->n,d->a.zn,(size_t)d->a.zns,0,index))) return r;
     if((r=cur_open(&d->c,d->a.zc,(size_t)d->a.zcs,0,index))) return r;
+    /* decoded stream sizes: literals at most the original, token streams at most 4 x orig + 1 MiB (the C++ decoder's
+       bounds). The chunk buffers are sized from these, so a small archive cannot ask for more than its output (2.6.4:
+       a 157-byte archive claimed a 16 GiB literal chunk) */
+    { const uint64_t cap=d->a.orig*4+((uint64_t)1<<20);
+      if(d->l.size>d->a.orig || d->o.size>cap || d->n.size>cap || d->c.size>cap) return ACEAPEX_ERR_DATA; }
     return ACEAPEX_OK;
 }
 static void dec_close(Dec* d){ cur_close(&d->l); cur_close(&d->o); cur_close(&d->n); cur_close(&d->c); }
@@ -279,10 +309,10 @@ static int dec_block(Dec* d, size_t b, uint8_t* dst){
     if(b>=d->a.nb) return ACEAPEX_ERR_DATA;
     if(d->a.fast) return axf_dec_block_of(&d->a.fa,(uint32_t)b,dst) ? ACEAPEX_OK : ACEAPEX_ERR_DATA;
     BO bov=bo_at(d->a.bo,b); const BO* bo=&bov; size_t sz=block_size_of(d,b); int err=0;
-    const uint8_t* L=cur_get(&d->l,bo->lit_off,bo->lit_off+bo->lit_sz,&err); if(err) return err;
-    const uint8_t* O=cur_get(&d->o,bo->off_off,bo->off_off+bo->off_sz,&err); if(err) return err;
-    const uint8_t* N=cur_get(&d->n,bo->len_off,bo->len_off+bo->len_sz,&err); if(err) return err;
-    const uint8_t* C=cur_get(&d->c,bo->cmd_off,bo->cmd_off+bo->cmd_sz,&err); if(err) return err;
+    const uint8_t* L=cur_get(&d->l,bo->lit_off,bo->lit_sz,&err); if(err) return err;
+    const uint8_t* O=cur_get(&d->o,bo->off_off,bo->off_sz,&err); if(err) return err;
+    const uint8_t* N=cur_get(&d->n,bo->len_off,bo->len_sz,&err); if(err) return err;
+    const uint8_t* C=cur_get(&d->c,bo->cmd_off,bo->cmd_sz,&err); if(err) return err;
     return decode_block(dst,sz,L,(size_t)bo->lit_sz,O,(size_t)bo->off_sz,N,(size_t)bo->len_sz,C,(size_t)bo->cmd_sz)
            ? ACEAPEX_OK : ACEAPEX_ERR_DATA;
 }
@@ -299,8 +329,10 @@ int64_t aceapex_decompress(const void* src, size_t n, void* dst, size_t cap){
 
 /* ranges are served from a block cache: each distinct block decoded once */
 typedef struct { size_t b; uint8_t* buf; } Cached;
+/* a block never holds more than the original: the buffer is min(bs, orig) (2.6.4: was bs, up to 4 GiB for any archive) */
+static size_t blk_cap(const Dec* d){ return (size_t)(d->a.orig<d->a.bs?d->a.orig:d->a.bs); }
 static int64_t serve(Dec* d, aceapex_range_t* rg, size_t count){
-    uint8_t* blk=(uint8_t*)malloc(d->a.bs+64); if(!blk) return ACEAPEX_ERR_MEMORY;
+    uint8_t* blk=(uint8_t*)malloc(blk_cap(d)+64); if(!blk) return ACEAPEX_ERR_MEMORY;
     size_t cur=(size_t)-1; int64_t okn=0;
     /* order of service: by first block, so a block is decoded once for consecutive users */
     size_t* order=(size_t*)malloc(count*sizeof(size_t)); if(!order){ free(blk); return ACEAPEX_ERR_MEMORY; }
@@ -348,7 +380,7 @@ struct aceapex_dec { Dec d; uint8_t* blk; size_t cur; };
 aceapex_dec_t* aceapex_dec_open(const void* src, size_t n){
     aceapex_dec_t* h=(aceapex_dec_t*)calloc(1,sizeof *h); if(!h) return 0;
     if(dec_open(&h->d,src,n,1)){ dec_close(&h->d); free(h); return 0; }
-    h->blk=(uint8_t*)malloc((size_t)h->d.a.bs+64); h->cur=(size_t)-1;
+    h->blk=(uint8_t*)malloc(blk_cap(&h->d)+64); h->cur=(size_t)-1;
     if(!h->blk){ dec_close(&h->d); free(h); return 0; }
     return h;
 }
