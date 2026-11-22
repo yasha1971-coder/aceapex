@@ -125,6 +125,11 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
+22.11 v2.6.4 выпущен: тег v2.6.4 = ef9e673 (Яков; ворота на e8f4b1e, разница — документы), main b1280da (PR #35),
+GitHub Release https://github.com/yasha1971-coder/aceapex/releases/tag/v2.6.4 (пакет static zstd 1.5.7, sha256 787b7cb0…7f4d),
+Zenodo 10.5281/zenodo.24444574, ветка release = 4dda533 «release: 2.6.4 (tree == v2.6.4)» поверх 67ffc61 (2.6.2 и 2.6.3 в
+release не добавлялись). Отчёт — yasha-context ACEAPEX/REPORT_264.md. Следующее: HOMEBREW-TAP, затем BLOSC2-0 (задание Якова).
+
 22.11 Кандидат 2.6.4 = e8f4b1e (stream-264, не влит; PR открыт): шаг 4 — #11, #12 (чанк токенов ≤ 16 МиБ, срез блока ≤ 4·bs + 4 КиБ,
 FORMAT_ACEPX2 с исключениями paper6-v1 / aceapex_depth.cpp), пустая таблица литералов, faidx проверяет таблицы до буфера;
 head_stream_peak (main 2.1 ГБ → 2.3 МБ); судья 96/0, CI и CFL зелёные, A/B 14 клеток в ±2 %, законные архивы 12/12.
