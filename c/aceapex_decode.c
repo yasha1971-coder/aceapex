@@ -46,11 +46,12 @@ static int zdec(ZSTD_DCtx* x, void* d, size_t raw, const void* s, size_t n){
     size_t r = x ? ZSTD_decompressDCtx(x,d,raw,s,n) : ZSTD_decompress(d,raw,s,n); return !ZSTD_isError(r) && r==raw; }
 
 /* ---- archive header / bounds ------------------------------------------------------- */
-/* Largest block_size a version-2 archive may declare (bytes; 0 = no limit). The format allows 2^32 - 1; the release
-   encoders write at most 1 MiB. A block is decoded whole, so a region read of a crafted archive with one huge block
-   needs that much memory - this bound plays the role of zstd's windowLogMax. Pending decision (2.6.4): default. */
+/* Largest block_size a version-2 archive may declare (bytes; 0 = no limit). Encoders write at most 64 MiB (the release
+   encoders at most 1 MiB) and a decoder may refuse larger blocks (FORMAT_ACEPX2.md): a block is decoded whole, so a
+   region read of a crafted archive with one huge block would need that much memory - the role of zstd's windowLogMax.
+   2.6.4: 64 MiB, ACEAPEX_ERR_DATA above it; raise it by building with -DACEAPEX_MAX_BLOCK=<bytes> (an API parameter: MEM). */
 #ifndef ACEAPEX_MAX_BLOCK
-#define ACEAPEX_MAX_BLOCK 0
+#define ACEAPEX_MAX_BLOCK ((uint64_t)64 << 20)
 #endif
 static int open_arc(const void* src, size_t n, Arc* a){
     const uint8_t* p=(const uint8_t*)src;
