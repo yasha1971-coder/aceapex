@@ -128,10 +128,16 @@ struct PoolState {
     std::atomic<size_t> next_block;
 };
  
+// A worker's buffers for one block at the worst case (literals 2 x block + 1 KiB, offsets and lengths 6 x that, commands
+// 1.25 x): one set per worker for the whole call. A block's result is then copied out at its real size (2.6.4, MEM:
+// until 2.6.3 every block kept its worst-case buffers until the streams were joined, about 28.5 x the block in address
+// space, so level 1 on silesia reserved the whole 4 GiB of a 32-bit process; the archive bytes are the same).
+struct BlockScratch { uint8_t *lit, *off, *len, *cmd; size_t cap; };
 struct WorkerArgs {
     int thread_id;
     struct ThreadHashTable* htab;
     PoolState* pool;
+    BlockScratch scratch;
 };
  
 // Positions in the tables are relative to the block start (matches never leave the
@@ -262,20 +268,46 @@ static uint32_t* ax_origin_table() {
 }
 // wlo < bstart (AX_REFSEG, tuning builds): the bytes [wlo, bstart) are a history the block may copy from (a reference
 // segment put before it): entered into the head table first, matches may reach back to wlo. Default wlo = bstart.
+static bool ax_scratch_init(BlockScratch& w, size_t block_size) {
+    const size_t cap = block_size * 2 + 1024;
+    w.cap = cap; w.lit = (uint8_t*)malloc(cap); w.off = (uint8_t*)malloc(cap * 6); w.len = (uint8_t*)malloc(cap * 6);
+    w.cmd = (uint8_t*)malloc(cap + cap / 4 + 4);
+    return w.lit && w.off && w.len && w.cmd;
+}
+static void ax_scratch_free(BlockScratch& w) { free(w.lit); free(w.off); free(w.len); free(w.cmd); w = BlockScratch{}; }
+static void compress_block_into(const uint8_t* src, size_t src_size, size_t bstart, size_t bend,
+                                ThreadHashTable* ht, BlockResult* res, size_t wlo, const BlockScratch& w);
+// The block into the worker's scratch, then its four streams copied out at their real sizes (2.6.4, MEM). res->overflow
+// 99: no memory (encode_file fails the call).
 static void compress_block(const uint8_t* src, size_t src_size,
                             size_t bstart, size_t bend,
-                            ThreadHashTable* ht, BlockResult* res, size_t wlo = (size_t)-1) {
+                            ThreadHashTable* ht, BlockResult* res, const BlockScratch& w, size_t wlo = (size_t)-1) {
+    res->lit_buf = res->off_buf = res->len_buf = res->cmd_buf = nullptr;
+    if (bend - bstart > (w.cap - 1024) / 2) { res->overflow = 99; return; }   // a block larger than the scratch was sized for
+    compress_block_into(src, src_size, bstart, bend, ht, res, wlo, w);
+    if (res->overflow == 99) return;
+    auto out = [](const uint8_t* from, size_t n) { uint8_t* q = (uint8_t*)malloc(n ? n : 1); if (q && n) memcpy(q, from, n); return q; };
+    res->lit_buf = out(w.lit, res->lit_size); res->off_buf = out(w.off, res->off_size);
+    res->len_buf = out(w.len, res->len_size); res->cmd_buf = out(w.cmd, res->cmd_size);
+    if (!res->lit_buf || !res->off_buf || !res->len_buf || !res->cmd_buf) res->overflow = 99;
+}
+// without a worker (research tools, src/encode_streaming.cpp, src/acepx3.cpp): a scratch for this one block
+static void compress_block(const uint8_t* src, size_t src_size, size_t bstart, size_t bend,
+                           ThreadHashTable* ht, BlockResult* res, size_t wlo = (size_t)-1) {
+    BlockScratch w{};
+    if (!ax_scratch_init(w, bend - bstart)) { ax_scratch_free(w); res->lit_buf = res->off_buf = res->len_buf = res->cmd_buf = nullptr; res->overflow = 99; return; }
+    compress_block(src, src_size, bstart, bend, ht, res, w, wlo); ax_scratch_free(w);
+}
+static void compress_block_into(const uint8_t* src, size_t src_size,
+                                size_t bstart, size_t bend,
+                                ThreadHashTable* ht, BlockResult* res_out, size_t wlo, const BlockScratch& w) {
     if (wlo > bstart) wlo = bstart;
     size_t bsz = bend - bstart;
-    size_t cap = bsz * 2 + 1024;
-    res->lit_buf = (uint8_t*)malloc(cap);
-    res->off_buf = (uint8_t*)malloc(cap * 6);
-    res->len_buf = (uint8_t*)malloc(cap * 6);
-    res->cmd_buf = (uint8_t*)malloc(cap + cap/4 + 4);
-    res->overflow = 0;
-    if (!res->lit_buf || !res->off_buf || !res->len_buf || !res->cmd_buf) {
-        res->overflow = 99; return;
-    }
+    const size_t cap = bsz * 2 + 1024;
+    // the streams are written into the scratch through a local result; the caller copies them out
+    BlockResult rs{w.lit, w.off, w.len, w.cmd, 0, 0, 0, 0, 0}; BlockResult* const res = &rs;
+    struct Out { BlockResult* to; const BlockResult* from; ~Out() { to->lit_size = from->lit_size; to->off_size = from->off_size;
+        to->len_size = from->len_size; to->cmd_size = from->cmd_size; to->overflow = from->overflow; } } out_guard{res_out, res};
     size_t lit_cap=cap, off_cap=cap*6, len_cap=cap*6, cmd_cap=cap+cap/4+4;
  
     ht->cur_epoch++;
@@ -460,9 +492,9 @@ static void* worker_func(void* arg) {
         if (g_ax_ref_fn) { const uint8_t* pre = nullptr; const size_t pl = g_ax_ref_fn(g_ax_ref_ctx, bid, &pre);
             if (pl) { static thread_local std::vector<uint8_t> V; const size_t n = bend - bstart; V.resize(pl + n + 64);
                 memcpy(V.data(), pre, pl); memcpy(V.data() + pl, ps->src + bstart, n); memset(V.data() + pl + n, 0, 64);
-                compress_block(V.data(), pl + n, pl, pl + n, wa->htab, &ps->results[bid], 0); continue; } }
+                compress_block(V.data(), pl + n, pl, pl + n, wa->htab, &ps->results[bid], wa->scratch, 0); continue; } }
 #endif
-        compress_block(ps->src,ps->src_size,bstart,bend,wa->htab,&ps->results[bid]);
+        compress_block(ps->src,ps->src_size,bstart,bend,wa->htab,&ps->results[bid],wa->scratch);
     }
     return nullptr;
 }
@@ -1173,6 +1205,7 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
             free(results[b].lit_buf); free(results[b].off_buf); free(results[b].len_buf); free(results[b].cmd_buf); }
         if(htabs) for(int i=0;i<threads;i++) if(htabs[i]) {
             free(htabs[i]->pos); free(htabs[i]->epoch); free(htabs[i]->chain); free(htabs[i]); }
+        if(wargs) for(int i=0;i<threads;i++) ax_scratch_free(wargs[i].scratch);
         free(htabs); free(results); free(wargs); };
     auto fail=[&](){ release(); free(raw_lit); free(raw_off); free(raw_len); free(raw_cmd);
         raw_lit=raw_off=raw_len=raw_cmd=nullptr; return false; };
@@ -1206,7 +1239,8 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
     pool.next_block.store(0);
     wargs=(WorkerArgs*)calloc(threads,sizeof(WorkerArgs));
     if(!wargs) return fail();
-    for(int i=0;i<threads;i++) { wargs[i].thread_id=i; wargs[i].htab=htabs[i]; wargs[i].pool=&pool; }
+    for(int i=0;i<threads;i++) { wargs[i].thread_id=i; wargs[i].htab=htabs[i]; wargs[i].pool=&pool;
+        if(!ax_scratch_init(wargs[i].scratch, g_block_size)) return fail(); }
     { AxThreads pts(threads>1 ? (size_t)threads-1 : 0);
       for(int i=1;i<threads;i++) pts.spawn((size_t)i-1,worker_func,&wargs[i]);   // worker 0 is the caller
       ax_guard(worker_func,&wargs[0]); }
