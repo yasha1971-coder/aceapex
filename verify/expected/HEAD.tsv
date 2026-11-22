@@ -84,6 +84,7 @@ head_region_fuzz	always
 head_enc_bs_bound	always
 head_cmake	always
 head_enc_mem	always
+head_stream_peak	always
 head_alloc_encode_leak	always
 head_alloc_lit_ctx	always
 head_alloc_ranges_span	always

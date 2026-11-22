@@ -1000,10 +1000,17 @@ static bool ax_header_ok(const AetHeader& h, uint64_t src_size) {
     return true;
 }
 
+// Token stream bounds (2.6.4, FORMAT_ACEPX2.md): a decoder may refuse a token chunk above 16 MiB (no encoder writes one:
+// the release encoders write 512 KiB and never above 16 MiB) and a block's slice of a token stream above
+// 4 x block_size + 4 KiB (a block's offsets, lengths and commands are about 1.25 x the block at most). The streaming
+// decoder's memory then follows block_size, not the stream sizes an archive declares (a 33.5 KB archive took 2.1 GB).
+#define AX_TOK_CHUNK_MAX ((size_t)16 << 20)
+static inline bool ax_tok_slice_ok(uint64_t sz, uint64_t bs) { return sz <= 4 * bs + 4096; }
 static bool ax_boffs_ok(const BlockOffsets* b, uint64_t nb,
-                        uint64_t ls, uint64_t os, uint64_t ns, uint64_t cs) {
+                        uint64_t ls, uint64_t os, uint64_t ns, uint64_t cs, uint64_t bs) {
     for (uint64_t i = 0; i < nb; i++) {
         const BlockOffsets& o = b[i];
+        if (!ax_tok_slice_ok(o.off_sz, bs) || !ax_tok_slice_ok(o.len_sz, bs) || !ax_tok_slice_ok(o.cmd_sz, bs)) return false;
         if (o.lit_off > ls || o.lit_sz > ls - o.lit_off) return false;
         if (o.off_off > os || o.off_sz > os - o.off_off) return false;
         if (o.len_off > ns || o.len_sz > ns - o.len_off) return false;
@@ -1360,7 +1367,7 @@ static bool ax_fse_check(const uint8_t* z, size_t zsz, size_t* orig) {
     if (zsz < 8) { *orig = 0; return true; }
     size_t S = fse_stream_size(z), CH = fse_stream_chunk(z);
     uint64_t h; memcpy(&h, z, 8); if (h >> 63) return false;
-    if (!CH) return false;
+    if (!CH || CH > AX_TOK_CHUNK_MAX) return false;                 // 2.6.4: token chunks of at most 16 MiB
     size_t nc = (S + CH - 1) / CH;
     if (nc > (zsz - 8) / 8) return false;
     uint64_t sum = 8 + (uint64_t)nc * 8;
@@ -2305,6 +2312,10 @@ static int do_decompress(const char* in_path, const char* out_path, int threads)
         if (ax_lit_decoded_size(zlit,hdr.zlit_sz) > hdr.orig_size) {
             fprintf(stderr,"Corrupt archive (literal stream size)\n");
             free(zlit);free(zoff);free(zlen);free(zcmd); return 1; }
+        // the block slices before the streams are allocated (2.6.4; checked again after decoding)
+        if (!ax_boffs_ok(boffs.data(), nb, ax_lit_decoded_size(zlit,hdr.zlit_sz), off_sz, len_sz, cmd_sz, hdr.block_size)) {
+            fprintf(stderr,"Corrupt archive (block offsets)\n");
+            free(zlit);free(zoff);free(zlen);free(zcmd); return 1; }
     }
  
     double dec_time=now_sec();
@@ -2349,7 +2360,7 @@ static int do_decompress(const char* in_path, const char* out_path, int threads)
     }
     if(!dst){free(lit);free(off);free(len);free(cmd);return 1;}
     // Last barrier: every block's slice must lie inside its decoded stream.
-    if (!ax_boffs_ok(boffs.data(), nb, lit_sz, off_sz, len_sz, cmd_sz)) {
+    if (!ax_boffs_ok(boffs.data(), nb, lit_sz, off_sz, len_sz, cmd_sz, hdr.block_size)) {
         fprintf(stderr,"Corrupt archive (block offsets)\n");
         free(lit);free(off);free(len);free(cmd);free(dst); return 1; }
     // ACEAPEX_DUMP=1: write streams.bin (header, block table, decoded lit/off/len/cmd) for
@@ -2530,6 +2541,12 @@ static int ax_fai_build(const char* arc, std::vector<AxFai>& out) {
         AetHeader h; memcpy(&h, z.data(), sizeof h); uint64_t orig = h.orig_size; const bool lm = !memcmp(z.data(), "AXLINE01", 8); if (lm) memcpy(&orig, z.data() + 8, 8);
         // 2.6.4: the header is checked before orig_size sizes the buffer, and a failed allocation is an error, not std::terminate
         if (!lm && !ax_header_ok(h, z.size())) { close(fd); return 1; }
+        if (!lm && h.num_blocks) {   // and the stream tables (token chunks, sizes) before orig_size sizes the buffer (2.6.4)
+            const uint8_t* zl = z.data() + sizeof(AetHeader) + (size_t)h.num_blocks * sizeof(BlockOffsets);
+            const uint8_t *zo = zl + h.zlit_sz, *zn = zo + h.zoff_sz, *zc = zn + h.zlen_sz; size_t a = 0, b = 0, c = 0;
+            const uint64_t cap = orig * 4 + ((uint64_t)1 << 20);
+            if (!ax_fse_check(zo, h.zoff_sz, &a) || !ax_fse_check(zn, h.zlen_sz, &b) || !ax_fse_check(zc, h.zcmd_sz, &c) ||
+                a > cap || b > cap || c > cap || ax_lit_decoded_size(zl, h.zlit_sz) > orig) { close(fd); return 1; } }
         if (orig > (uint64_t)SIZE_MAX - 64) { close(fd); return 1; }
         std::vector<uint8_t> o; try { o.resize((size_t)orig + 64); } catch (const std::bad_alloc&) { close(fd); return 1; }
         if (aceapex_decompress_mt(z.data(), z.size(), o.data(), o.size(), 0) != (int64_t)orig) { close(fd); return 1; }

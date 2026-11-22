@@ -131,6 +131,7 @@ static int cur_open(Cur* c, const uint8_t* z, size_t zsz, int is_lit, int index)
     } else {
         c->kind=0; c->size=h&(((uint64_t)1<<48)-1); uint64_t f=(h>>48)&0x7FFF;
         c->chunk=f?f<<12:fse_default_chunk(); c->tab=z+8;
+        if(c->chunk>((uint64_t)16<<20)) return ACEAPEX_ERR_DATA;   /* token chunks of at most 16 MiB (2.6.4, FORMAT_ACEPX2.md) */
         c->nc=(size_t)((c->size+c->chunk-1)/c->chunk);
     }
     if(c->nc>(zsz-(size_t)(c->tab-z))/8) return ACEAPEX_ERR_DATA;
@@ -309,6 +310,8 @@ static int dec_block(Dec* d, size_t b, uint8_t* dst){
     if(b>=d->a.nb) return ACEAPEX_ERR_DATA;
     if(d->a.fast) return axf_dec_block_of(&d->a.fa,(uint32_t)b,dst) ? ACEAPEX_OK : ACEAPEX_ERR_DATA;
     BO bov=bo_at(d->a.bo,b); const BO* bo=&bov; size_t sz=block_size_of(d,b); int err=0;
+    { const uint64_t tmax=4*(uint64_t)d->a.bs+4096;   /* a block's token slices: at most 4 x block_size + 4 KiB (2.6.4, FORMAT_ACEPX2.md) */
+      if(bo->off_sz>tmax || bo->len_sz>tmax || bo->cmd_sz>tmax) return ACEAPEX_ERR_DATA; }
     const uint8_t* L=cur_get(&d->l,bo->lit_off,bo->lit_sz,&err); if(err) return err;
     const uint8_t* O=cur_get(&d->o,bo->off_off,bo->off_sz,&err); if(err) return err;
     const uint8_t* N=cur_get(&d->n,bo->len_off,bo->len_sz,&err); if(err) return err;

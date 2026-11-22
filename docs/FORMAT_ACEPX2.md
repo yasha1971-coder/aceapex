@@ -154,6 +154,19 @@ LEGACY: a zero in bits 48..62 is an archive written before the chunk field exist
 (before 2026-09-19). Its CHUNK is 524288 unless the writer was run with `FSE_CHUNK`, in
 which case the reader must be told the same value. Conforming writers MUST set the field.
 
+Token stream bounds (2.6.4): encoders MUST NOT write a token chunk (CHUNK, whether in the field or by the LEGACY rule)
+above 16 MiB (16 777 216; the reference encoders write 524 288 and never above 16 MiB) nor a block whose slice of
+`off`, `len` or `cmd` (its BlockOffsets size) is above `4 * block_size + 4096` bytes (a block's tokens are about
+1.25 x the block at most). A decoder MAY refuse an archive that breaks either (the reference decoders do, with
+`ACEAPEX_ERR_DATA`). Without them the streaming decoder's memory followed the stream sizes an archive declares (a
+33 KB archive with 128 MiB chunks took 2.1 GB, `verify/repro/cpp_alloc/st_group.aet`); with them it follows
+`block_size`.
+Exceptions, as a fact: the CLI of the paper tag `paper6-v1` (b9e2910) and the research fork `aceapex_depth.cpp`
+(outside every build, ADR-007) take `FSE_CHUNK` without the 16 MiB ceiling, so with that variable set by hand they
+could write chunks above 16 MiB. Such archives carry 0 in the chunk field (LEGACY), and the released decoders since
+v2.1.0 take 524 288 for that field (at most 16 MiB from `FSE_CHUNK` in tuning builds): they did not read those
+archives before 2.6.4 either.
+
 ### 3.2 Literal stream
 
 The first u64 word carries the decoded size `S` in bits 0..59 and three flags (bit 63 is reserved and MUST be 0):
