@@ -1,5 +1,5 @@
 # WATCH-1 v2: daily watch of the "judges" (TurboBench, lzbench, threads, external mentions). Extracts values, compares
-# them with the last successful state kept in the issue "Watch: judges (auto)", and on a significant change writes ONE
+# them with the last successful state kept in the issue (#12; TITLE below, OLD_TITLES found too and renamed), and on a significant change writes ONE
 # comment there. A comment is a notice for Yakiv; it only suggests a check. The workflow never declares an unfreeze.
 # dry_run: every check runs, the diff and the would-be comment go to the job summary, nothing is written.
 # Delivery: the comment is posted first and the state saved after it (a failed comment leaves the state, the next run
@@ -48,7 +48,9 @@ jobs:
         KEYWORDS = ["aceapex", "aceapex_fast", "aceapex-fast", "hw-apex-bench", "panvram"]   # EXT: GitHub search and HN
         THREADS = os.environ.get("THREADS", "powturbo/TurboBench#65 inikep/lzbench#357").split()
         SUMMARY = os.environ.get("GITHUB_STEP_SUMMARY", "/dev/stdout")
-        TITLE = "Watch: judges (auto)"
+        TITLE = "Automated: daily watch of TurboBench, lzbench and mentions (maintainer notifications)"
+        OLD_TITLES = ("Watch: judges (auto)",)   # the issue's title until 22.11: still found, renamed to TITLE by the next state save
+        NOTE = "This issue is written by a bot for the maintainer; to report a problem, open a new issue."
         MARK_A, MARK_B = "<!-- watch-state", "-->"
         D_TOL = 0.10        # TB-TABLE: |D / D_ref - 1| above this is significant; D_ref moves only when a notice is sent
         SEEN_MAX = 1000     # EXT: URLs remembered (merged, oldest dropped)
@@ -79,11 +81,11 @@ jobs:
 
         def find_issue():
             for i in paginate(f"repos/{REPO}/issues?state=all"):
-                if i["title"] == TITLE and "pull_request" not in i: return i
+                if (i["title"] == TITLE or i["title"] in OLD_TITLES) and "pull_request" not in i: return i
             return None
 
         def create_issue(body): return gh(f"repos/{REPO}/issues", "-X", "POST", "-f", f"title={TITLE}", "-f", f"body={body}")
-        def patch_issue(n, body): gh(f"repos/{REPO}/issues/{n}", "-X", "PATCH", "-f", f"body={body}")
+        def patch_issue(n, body): gh(f"repos/{REPO}/issues/{n}", "-X", "PATCH", "-f", f"title={TITLE}", "-f", f"body={body}")
         def post_comment(n, body): gh(f"repos/{REPO}/issues/{n}/comments", "-X", "POST", "-f", f"body={body}")
         def bot_comments(n): return [c for c in paginate(f"repos/{REPO}/issues/{n}/comments") if c["user"].get("type") == "Bot"]
         def now_utc(): return datetime.datetime.now(datetime.timezone.utc)
@@ -124,7 +126,7 @@ jobs:
             if not o: return []
             ch = [f"{k} {o.get(k)} -> {n[k]}" for k in ("sha", "release", "released_code") if o.get(k) != n[k]]
             if not ch: return []
-            return [f"PIN: {', '.join(ch)} (код в TurboBench: {'выпущенный' if n['released_code'] else 'НЕВЫПУЩЕННЫЙ, впереди ' + n['release']})"]
+            return [f"PIN: {', '.join(ch)} (code in TurboBench: {'released' if n['released_code'] else 'UNRELEASED, ahead of ' + n['release']})"]
 
 
         # ------------------------------------------------------------------ 2 TB-TABLE
@@ -160,30 +162,30 @@ jobs:
             ch = []
             for k in sorted(set(old or {}) | set(new)):
                 o, n = (old or {}).get(k), new.get(k)
-                if old is not None and o is None: ch.append(f"{k}: новая таблица со строками aceapex")
-                if n is None: ch.append(f"{k}: строки aceapex исчезли"); continue
+                if old is not None and o is None: ch.append(f"{k}: new table with aceapex rows")
+                if n is None: ch.append(f"{k}: aceapex rows disappeared"); continue
                 on = {norm(r["name"]): r for r in (o or {}).get("aceapex", [])}
                 for r in n["aceapex"]:
                     rk = f"{k}|{r['name']}"
                     a = on.get(r["name"])
                     if rk not in ref:
                         ref[rk] = r["D"]
-                        if old is not None and o is not None and a is None: ch.append(f"{k}: добавлена {r['name']}")
+                        if old is not None and o is not None and a is None: ch.append(f"{k}: added {r['name']}")
                         continue
                     if a is not None:
                         if a["ratio"] != r["ratio"]: ch.append(f"{k}: {r['name']} ratio {a['ratio']} -> {r['ratio']}")
                         if a["rank"] != r["rank"]: ch.append(f"{k}: {r['name']} rank {a['rank']} -> {r['rank']}")
                     if r["D"] and ref[rk] and abs(r["D"] / ref[rk] - 1) > D_TOL:
-                        ch.append(f"{k}: {r['name']} D {ref[rk]} -> {r['D']} MB/s ({(r['D'] / ref[rk] - 1) * 100:+.1f} % к опорному)")
+                        ch.append(f"{k}: {r['name']} D {ref[rk]} -> {r['D']} MB/s ({(r['D'] / ref[rk] - 1) * 100:+.1f} % vs reference)")
                         ref[rk] = r["D"]
-                for name in sorted(set(on) - {r["name"] for r in n["aceapex"]}): ch.append(f"{k}: убрана {name}")
+                for name in sorted(set(on) - {r["name"] for r in n["aceapex"]}): ch.append(f"{k}: removed {name}")
                 if o is not None:
                     ob, nb = norm((o.get("best_other") or {}).get("name")), norm((n.get("best_other") or {}).get("name"))
-                    if ob != nb: ch.append(f"{k}: лучший другой кодек {ob} -> {nb}")
+                    if ob != nb: ch.append(f"{k}: best other codec {ob} -> {nb}")
                     def lead(t):
                         f = [x["D"] for x in t["aceapex"] if x["D"]]
                         return bool(f and t.get("best_other") and max(f) > t["best_other"]["D"])
-                    if lead(o) != lead(n): ch.append(f"{k}: aceapex — самая быстрая распаковка: {lead(o)} -> {lead(n)}")
+                    if lead(o) != lead(n): ch.append(f"{k}: aceapex has the fastest decompression: {lead(o)} -> {lead(n)}")
             return [("TB-TABLE: " + "; ".join(ch))] if ch else []
 
 
@@ -211,7 +213,7 @@ jobs:
 
         def lzb_notices(o, n):
             if not o or (o["release"] == n["release"] and o["rows"] == n["rows"]): return []
-            return [f"LZB: выпуск {o['release']} -> {n['release']}; строки aceapex в README: {' / '.join(n['rows']) or 'нет'} — проверь P-LZB-1 и условие §8(а)"]
+            return [f"LZB: release {o['release']} -> {n['release']}; aceapex rows in README: {' / '.join(n['rows']) or 'none'} - check P-LZB-1 and condition §8(a)"]
 
 
         # ------------------------------------------------------------------ 4 THREADS
@@ -225,7 +227,7 @@ jobs:
                 if old and (old["updated_at"], old["comments"]) != (cur["updated_at"], cur["comments"]):
                     for c in paginate(f"repos/{repo}/issues/{n}/comments?since={old['updated_at']}"):
                         if c["created_at"] > old["updated_at"] and human(c["user"]["login"], c["user"].get("type", "")):
-                            notes.append(f"THREADS: {t}: новый комментарий {c['user']['login']} {c['created_at']} {c['html_url']}")
+                            notes.append(f"THREADS: {t}: new comment {c['user']['login']} {c['created_at']} {c['html_url']}")
                 out[t] = cur
             return out, notes
 
@@ -244,7 +246,7 @@ jobs:
                     for it in res["items"]: items.setdefault(it["html_url"], it)
             notes = []
             for it in items.values():
-                if it["title"] == TITLE: continue
+                if it["title"] == TITLE or it["title"] in OLD_TITLES: continue
                 u, up = it["html_url"], it["updated_at"]
                 old = seen.get(u)
                 seen[u] = up
@@ -253,12 +255,12 @@ jobs:
                 parts = u.split("/"); repo, n = f"{parts[3]}/{parts[4]}", parts[6]
                 since = old or "1970-01-01T00:00:00Z"
                 if old is None and human(it["user"]["login"], it["user"].get("type", "")):
-                    notes.append(f"{u}: новый, автор {it['user']['login']} ({it['title'][:80]})")
+                    notes.append(f"{u}: new, author {it['user']['login']} ({it['title'][:80]})")
                 cs = paginate(f"repos/{repo}/issues/{n}/comments?since={since}")
                 if "pull_request" in it: cs += paginate(f"repos/{repo}/pulls/{n}/comments?since={since}")
                 for c in cs:
                     if c["created_at"] > since and human(c["user"]["login"], c["user"].get("type", "")):
-                        notes.append(f"{u}: комментарий {c['user']['login']} {c['created_at']}")
+                        notes.append(f"{u}: comment {c['user']['login']} {c['created_at']}")
             if len(seen) > SEEN_MAX:
                 seen = dict(sorted(seen.items(), key=lambda kv: kv[1])[-SEEN_MAX:])
             owner, name = REPO.split("/")
@@ -271,11 +273,11 @@ jobs:
                 if first or old == nd["updatedAt"]: continue
                 since = old or "1970-01-01T00:00:00Z"
                 if old is None and human((nd.get("author") or {}).get("login")):
-                    notes.append(f"{nd['url']}: новое обсуждение, автор {nd['author']['login']}")
+                    notes.append(f"{nd['url']}: new discussion, author {nd['author']['login']}")
                 for c in nd["comments"]["nodes"]:
                     for x in [c] + (c.get("replies") or {}).get("nodes", []):
                         if x["createdAt"] > since and human((x.get("author") or {}).get("login")):
-                            notes.append(f"{nd['url']}: сообщение {x['author']['login']} {x['createdAt']}")
+                            notes.append(f"{nd['url']}: message {x['author']['login']} {x['createdAt']}")
             hn_first = "hn" not in prev                      # first run with HN: remember, no notice
             hn_seen = dict(prev.get("hn", {}))
             for kw in KEYWORDS:
@@ -286,11 +288,11 @@ jobs:
                     if oid in hn_seen: continue
                     hn_seen[oid] = h["created_at"]
                     if not hn_first and h.get("author") and h["author"] not in OURS_HN:
-                        kind = "комментарий" if "comment" in (h.get("_tags") or []) else "пост"
-                        notes.append(f"https://news.ycombinator.com/item?id={oid}: HN {kind}, автор {h['author']} {h['created_at']} ({kw})")
+                        kind = "comment" if "comment" in (h.get("_tags") or []) else "post"
+                        notes.append(f"https://news.ycombinator.com/item?id={oid}: HN {kind}, author {h['author']} {h['created_at']} ({kw})")
             if len(hn_seen) > SEEN_MAX:
                 hn_seen = dict(sorted(hn_seen.items(), key=lambda kv: kv[1])[-SEEN_MAX:])
-            note = [("EXT (выборочное обнаружение упоминаний): внешнее упоминание — проверь, запрос ли это (§8б): " + "; ".join(notes))] if notes else []
+            note = [("EXT (sample-based mention detection): an external mention - check whether it is a request (§8b): " + "; ".join(notes))] if notes else []
             return {"seen": seen, "discussions": disc, "hn": hn_seen, "keywords": KEYWORDS}, note
 
 
@@ -302,8 +304,9 @@ jobs:
             return {}
 
         def body_of(state, now):
-            return (f"Ежедневное слежение за TurboBench, lzbench, нитями и внешними упоминаниями (.github/workflows/watch-judges.yml).\n"
-                    f"Комментарии здесь — уведомления мейнтейнеру; решения принимает человек. Last check: {now}.\n\n{MARK_A}\n"
+            return (f"{NOTE}\n\n"
+                    f"Daily watch of TurboBench, lzbench, threads and external mentions (.github/workflows/watch-judges.yml).\n"
+                    f"Comments here are notifications for the maintainer; a person makes the decisions. Last check: {now}.\n\n{MARK_A}\n"
                     + json.dumps(state, indent=1, sort_keys=True) + f"\n{MARK_B}\n")
 
         def main():
@@ -319,14 +322,14 @@ jobs:
                     v = fn(); errs[key] = 0; ok_at[key] = now; return v
                 except Exception as e:
                     errs[key] = errs.get(key, 0) + 1
-                    report.append(f"- {key}: ОШИБКА ({e}); сохранено последнее удачное значение от {ok_at.get(key, '(нет)')}; ошибок подряд {errs[key]}")
-                    if errs[key] == 3: notices.append(f"пункт {key} не читается 3 запуска подряд: {e}")
+                    report.append(f"- {key}: ERROR ({e}); the last successful value from {ok_at.get(key, '(none)')} is kept; errors in a row {errs[key]}")
+                    if errs[key] == 3: notices.append(f"item {key} unreadable for 3 runs in a row: {e}")
                     return None
 
             v = run("PIN", item_pin)
             if v is not None:
                 notices += pin_notices(items.get("PIN"), v); new["PIN"] = v
-                report.append(f"- PIN: {v['sha']} — {v['status']} относительно {v['release']} ({'выпущенный' if v['released_code'] else 'невыпущенный'} код)")
+                report.append(f"- PIN: {v['sha']} - {v['status']} relative to {v['release']} ({'released' if v['released_code'] else 'unreleased'} code)")
             v = run("TB-TABLE", item_tb)
             if v is not None:
                 old = items.get("TB-TABLE")
@@ -336,11 +339,11 @@ jobs:
                 for k, tb in v.items():
                     rows = ", ".join(f"{r['name']} {r['ratio']} C {r['C']} D {r['D']} rank {r['rank']}" for r in tb["aceapex"])
                     bo = tb["best_other"]
-                    report.append(f"- TB-TABLE {k}: {rows}" + (f" | лучший другой {bo['name']} D {bo['D']}" if bo else ""))
+                    report.append(f"- TB-TABLE {k}: {rows}" + (f" | best other {bo['name']} D {bo['D']}" if bo else ""))
             v = run("LZB", item_lzb)
             if v is not None:
                 notices += lzb_notices(items.get("LZB"), v); new["LZB"] = v
-                report.append(f"- LZB: выпуск {v['release']}; строки README: " + (" / ".join(v["rows"]) or "нет"))
+                report.append(f"- LZB: release {v['release']}; README rows: " + (" / ".join(v["rows"]) or "none"))
             v = run("THREADS", lambda: item_threads(items.get("THREADS")))
             if v is not None:
                 new["THREADS"], n = v; notices += n
@@ -348,16 +351,16 @@ jobs:
             v = run("EXT", lambda: item_ext(items.get("EXT")))
             if v is not None:
                 new["EXT"], n = v; notices += n
-                report.append(f"- EXT (выборочное обнаружение упоминаний): {len(v[0]['seen'])} URL в памяти, {len(v[0]['discussions'])} обсуждений, {len(v[0]['hn'])} HN")
+                report.append(f"- EXT (sample-based mention detection): {len(v[0]['seen'])} URLs remembered, {len(v[0]['discussions'])} discussions, {len(v[0]['hn'])} HN")
 
             last_c = state.get("last_comment")
             if first:
-                comment = f"Начальное состояние ({now}).\n\n" + "\n".join(report)
+                comment = f"Initial state ({now}).\n\n" + "\n".join(report)
             elif notices:
-                comment = (f"Watch {now}: проверь.\n\n" + "\n".join(f"- {x}" for x in notices)
-                           + "\n\nЭто только уведомление; решения (§8, P-LZB-1, ответы людям) принимает человек.")
+                comment = (f"Watch {now}: check.\n\n" + "\n".join(f"- {x}" for x in notices)
+                           + "\n\nThis is only a notification; a person makes the decisions (§8, P-LZB-1, replies to people).")
             elif last_c and (t - datetime.datetime.fromisoformat(last_c)).days >= PULSE_DAYS:
-                comment = f"Работает, значимых изменений за {PULSE_DAYS} дней нет ({now})."
+                comment = f"Still running, no significant changes in {PULSE_DAYS} days ({now})."
             else:
                 comment = None
             # the key includes the time of the last successful check: after a failed state save "checked" is unchanged, so a
@@ -371,7 +374,7 @@ jobs:
             print("\n".join(report)); print("--- would comment ---"); print(comment or "(none)")   # the same in the job log (summaries are UI-only)
             with open(SUMMARY, "a") as f:
                 f.write(f"## Watch judges — {'DRY RUN' if DRY else 'run'} {now}\n\n" + "\n".join(report) + "\n\n")
-                f.write("### Будущий комментарий\n\n" + (comment or "_нет (значимых изменений нет)_") + "\n")
+                f.write("### Comment to be posted\n\n" + (comment or "_none (no significant changes)_") + "\n")
             if DRY:
                 print("dry run: nothing written"); return "dry"
             # delivery: comment first, state second. A failed comment raises (job red) and leaves the state where it was, so the

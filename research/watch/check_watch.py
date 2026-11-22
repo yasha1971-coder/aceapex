@@ -81,7 +81,7 @@ st, n0 = ns["item_ext"](old_state)
 GH_ITEMS.update({2: {**issue(2, "alice", {"aceapex"}), "pull_request": {}}, 5: issue(5, "erin", {"panvram"}), 4: issue(4, "yasha1971-coder", {"aceapex"})})
 HN_HITS.update({"h2": hit("h2", "bob", "panvram looks fast", "story"), "h3": hit("h3", "EMPTYCONTOUR", "aceapex 2.6.1 is out")})
 st2, n1 = ns["item_ext"](st)
-want_in = ["issues/2: новый, автор alice", "issues/5: новый, автор erin", "item?id=h2: HN пост, автор bob"]
+want_in = ["issues/2: new, author alice", "issues/5: new, author erin", "item?id=h2: HN post, author bob"]
 want_out = ["issues/3", "issues/4", "id=h1", "id=h3", "id=fz"]
 txt = " ".join(n1)
 if n0: fails.append(f"EXT: first run after the change notified {n0}")
