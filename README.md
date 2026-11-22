@@ -48,6 +48,9 @@ the CLI or `aceapex faidx` until 2.6.4**:
 - The streaming decoder (`aceapex_decompress_stream`) does not cap its token buffers by the original size.
 - The C99 decoder has undefined behaviour in one size check on 32-bit builds.
 - `CMakeLists.txt` does not build (the CLI needs the library sources); use `make` or the command below.
+- Not changed in 2.6.4: the streaming decoder (`aceapex_decompress_stream`, `aceapex d --out -`) on levels 3-4 of
+  non-DNA input (the 4-part literal layout) holds about half of the literal stream in memory; for untrusted archives,
+  limit the memory of the process.
 
 What is checked is listed under [Integrity](#integrity): the raw API `aceapex_decompress` / `_mt` / `_stream` is fuzzed
 under ASan and UBSan; the paths above are not fuzzed yet.
@@ -250,7 +253,8 @@ Two guarantees, kept apart:
   any input, corrupted or not, returns either the size or an error, and never
   reads or writes outside the buffers it was given (fuzzed under ASan + UBSan on every push, with a negative control).
   Memory safety here means bounds only, not bounded allocation: `aceapex_decompress_stream` can still allocate more
-  than the original size justifies for a damaged archive (see [Known issues](#known-issues)). It
+  than the original size justifies for a damaged archive, and on levels 3-4 of non-DNA input it holds about half of the
+  literal stream; for untrusted archives, limit the memory of the process (see [Known issues](#known-issues)). It
   does **not** check the content: it does not hash its output, so a damaged archive can decode to the declared size with
   other bytes.
 - **The checked paths** - the CLI `aceapex d`, `aceapex_decompress_stream` with `ACEAPEX_STREAM_VERIFY`, and
