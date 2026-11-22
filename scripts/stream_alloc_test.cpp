@@ -1,10 +1,12 @@
-// stream_alloc_test.cpp - claim head_stream_alloc (2.6.2): the streaming decoder of the default profile
+// stream_alloc_test.cpp - claim head_stream_alloc (2.6.2; 2.6.4: block_size 64 MiB, the largest accepted): the streaming decoder of the default profile
 // (aceapex_decompress_stream on a version-2 archive) does not size its worker buffers from the header's block_size.
 // Inputs built here byte for byte: 200 000 B of seeded word text (the 4-part literal layout, streamed since 2.6.2) and
 // 200 000 B of seeded A/C/G/T lines (DNA: the chunked layout, streamed by 2.6.1 too), level 1, one thread (one block of
-// 256 KiB), then the block_size field (offset 20) set to 0x80040000 - still consistent (1 * block_size >= orig_size):
-//   bs_huge          only that field changed: a valid archive, the stream gives the input back (VERIFY on)
-//   bs_huge_corrupt  plus one byte of the archive's last quarter changed: ACEAPEX_ERR_DATA (VERIFY on) or ERR_MEMORY
+// 256 KiB), then the block_size field (offset 20) changed - still consistent (1 * block_size >= orig_size):
+//   bs_max           64 MiB, the largest block_size a decoder accepts (2.6.4): a valid archive, the stream gives the
+//                    input back (VERIFY on); a worker buffer of block_size + 64 B would be a request above 64 MiB
+//   bs_max_corrupt   plus one byte of the archive's last quarter changed: ACEAPEX_ERR_DATA (VERIFY on) or ERR_MEMORY
+//   bs_huge          0x80040000: above the 64 MiB block bound, ACEAPEX_ERR_DATA since 2.6.4 (until 2.6.3 a valid archive)
 // Until 2.6.2 every worker allocated block_size + 64 B for its output and as much for its tile, zero-filled (~2 GiB per
 // worker; api_fuzz seed 20261113001 under MemoryMax 8G was killed by the OOM killer, 13.11). The global operator new
 // records the largest request and refuses anything above 1 GiB; each case runs in a child process (the old code
@@ -60,19 +62,23 @@ int main() {
     Buf z(aceapex_compress_bound(in.size())); const int64_t zs = aceapex_compress(in.data(), in.size(), z.data(), z.size(), 1, 1);
     if (zs <= 0) { printf("head_stream_alloc\tfail\tcompress rc %lld\n", (long long)zs); return 1; }
     z.resize((size_t)zs); uint32_t nb; memcpy(&nb, &z[24], 4);
-    Buf a = z; const uint32_t BS = 0x80040000u; memcpy(&a[20], &BS, 4);
+    Buf a = z; const uint32_t BS = 64u << 20; memcpy(&a[20], &BS, 4);
     Buf b = a; b[b.size() * 3 / 4] ^= 0x5a;
+    Buf h = z; const uint32_t BH = 0x80040000u; memcpy(&h[20], &BH, 4);
     ok = ok && nb == 1; det += std::string(kind ? "; DNA" : " text") + " (num_blocks " + std::to_string(nb) + ", archive " + std::to_string(zs) + " B)";
     for (int th : {1, 4}) {
-        const std::string r1 = run(a, in, th), r2 = run(b, in, th);
-        long long rc1 = 0, rc2 = 0; size_t m1 = ~(size_t)0, m2 = ~(size_t)0; int same1 = 0, same2 = 0;
-        const bool p1 = sscanf(r1.c_str(), "%lld %zu %d", &rc1, &m1, &same1) == 3, p2 = sscanf(r2.c_str(), "%lld %zu %d", &rc2, &m2, &same2) == 3;
+        const std::string r1 = run(a, in, th), r2 = run(b, in, th), r3 = run(h, in, th);
+        long long rc1 = 0, rc2 = 0, rc3 = 0; size_t m1 = ~(size_t)0, m2 = ~(size_t)0, m3 = ~(size_t)0; int same1 = 0, same2 = 0, same3 = 0;
+        const bool p1 = sscanf(r1.c_str(), "%lld %zu %d", &rc1, &m1, &same1) == 3, p2 = sscanf(r2.c_str(), "%lld %zu %d", &rc2, &m2, &same2) == 3,
+                   p3 = sscanf(r3.c_str(), "%lld %zu %d", &rc3, &m3, &same3) == 3;
         const bool g1 = p1 && rc1 == (long long)in.size() && same1 && m1 <= ((size_t)64 << 20);
         const bool g2 = p2 && (rc2 == ACEAPEX_ERR_DATA || rc2 == ACEAPEX_ERR_MEMORY) && m2 <= ((size_t)64 << 20);
-        ok = ok && g1 && g2;
+        const bool g3 = p3 && rc3 == ACEAPEX_ERR_DATA && m3 <= ((size_t)64 << 20);
+        ok = ok && g1 && g2 && g3;
         auto one = [](std::string r) { const size_t q = r.find('\n'); return q == std::string::npos ? r : r.substr(0, q) + " ..."; };
-        det += " t" + std::to_string(th) + ": bs_huge [" + one(r1) + "]" + (g1 ? "" : " FAIL") + ", bs_huge_corrupt [" + one(r2) + "]" + (g2 ? "" : " FAIL") + ";";
+        det += " t" + std::to_string(th) + ": bs_max [" + one(r1) + "]" + (g1 ? "" : " FAIL") + ", bs_max_corrupt [" + one(r2) + "]" + (g2 ? "" : " FAIL") +
+               ", bs_huge [" + one(r3) + "]" + (g3 ? "" : " FAIL") + ";";
     } }
-    printf("head_stream_alloc\t%s\tblock_size 0x80040000 in one-block level-1 archives (text, DNA) through aceapex_decompress_stream + VERIFY, [rc, largest request B, bytes equal], pass = bs_huge gives the input, bs_huge_corrupt rc -2/-3, none above 64 MiB%s\n", ok ? "pass" : "fail", det.c_str());
+    printf("head_stream_alloc\t%s\tblock_size 64 MiB and 0x80040000 in one-block level-1 archives (text, DNA) through aceapex_decompress_stream + VERIFY, [rc, largest request B, bytes equal], pass = bs_max gives the input, bs_max_corrupt rc -2/-3, bs_huge rc -2 (above the 2.6.4 block bound), none above 64 MiB%s\n", ok ? "pass" : "fail", det.c_str());
     return ok ? 0 : 1;
 }

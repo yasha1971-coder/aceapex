@@ -113,18 +113,8 @@ static int64_t ax_entropy_decode(const void* src, size_t src_size, int threads, 
     // A single corrupted byte in the header or in the BlockOffsets table used to send
     // stream pointers into arbitrary memory (SIGSEGV). Absolute offsets make this cheap
     // to check: every bound is a constant known before decoding starts.
-    if (hdr.block_size == 0 || hdr.num_blocks == 0) return ACEAPEX_ERR_DATA;
-    if ((uint64_t)hdr.num_blocks * (uint64_t)hdr.block_size < hdr.orig_size)
-        return ACEAPEX_ERR_DATA;
-    {
-        // sum the four u64 stream sizes one by one against the remaining bytes so the total cannot wrap (2.6.2; affects <= 2.6.1)
-        uint64_t need = (uint64_t)sizeof(hdr) + (uint64_t)hdr.num_blocks * sizeof(BlockOffsets);
-        if (need > src_size) return ACEAPEX_ERR_DATA;
-        for (uint64_t z : {hdr.zlit_sz, hdr.zoff_sz, hdr.zlen_sz, hdr.zcmd_sz}) {
-            if (z > src_size - need) return ACEAPEX_ERR_DATA;
-            need += z;
-        }
-    }
+    // stream sizes summed one by one against the remaining bytes (2.6.2), block_size bound and last block not empty (2.6.4)
+    if (!ax_header_ok(hdr, src_size)) return ACEAPEX_ERR_DATA;
     p+=sizeof(hdr);
     const double t_a = ax_pt() ? ax_now() : 0;
     S.boffs.assign(hdr.num_blocks, BlockOffsets());
@@ -333,6 +323,34 @@ void aceapex_streams_free(aceapex_streams_t* s)
 static inline BlockOffsets ax_bo(const BlockOffsets* t, size_t i) {
     BlockOffsets b; memcpy(&b, (const uint8_t*)t + i * sizeof(BlockOffsets), sizeof b); return b; }
 
+// Region / ranges (2.6.4): the decoded sizes of the four streams, checked before anything is decoded - literals at
+// most the original, token streams at most 4 x orig + 1 MiB (the full decoder's bounds), every chunk table against
+// its stream. Until 2.6.3 these paths took the sizes the streams declared.
+struct AxSizes { uint64_t z[4]; };
+static bool ax_stream_sizes(const AetHeader& h, const uint8_t* zlit, const uint8_t* zoff, const uint8_t* zlen, const uint8_t* zcmd, AxSizes& S) {
+    size_t a, b, c; if (!ax_fse_check(zoff, h.zoff_sz, &a) || !ax_fse_check(zlen, h.zlen_sz, &b) || !ax_fse_check(zcmd, h.zcmd_sz, &c)) return false;
+    const uint64_t cap = h.orig_size * 4 + ((uint64_t)1 << 20);
+    if (a > cap || b > cap || c > cap) return false;
+    const uint64_t l = ax_lit_decoded_size(zlit, h.zlit_sz); if (l > h.orig_size) return false;
+    S.z[0] = l; S.z[1] = a; S.z[2] = b; S.z[3] = c; return true;
+}
+// The slices of blocks b0..b1 in each stream: [lo, hi) from the first entry of b0 to the end of b1, inside the decoded
+// stream, and every entry of the span inside [lo, hi). The windows the range decoders return cover [lo, hi) only, so
+// an entry outside it was a read outside the window (2.6.4; until 2.6.3 only b0 and b1 were used, unchecked).
+static bool ax_span_ok(const BlockOffsets* t, size_t b0, size_t b1, const AxSizes& S, uint64_t lo[4], uint64_t hi[4]) {
+    const BlockOffsets f = ax_bo(t, b0), l = ax_bo(t, b1);
+    const uint64_t fo[4] = {f.lit_off, f.off_off, f.len_off, f.cmd_off}, lo1[4] = {l.lit_off, l.off_off, l.len_off, l.cmd_off},
+                   ls[4] = {l.lit_sz, l.off_sz, l.len_sz, l.cmd_sz};
+    for (int k = 0; k < 4; k++) {
+        if (lo1[k] > S.z[k] || ls[k] > S.z[k] - lo1[k]) return false;
+        lo[k] = fo[k]; hi[k] = lo1[k] + ls[k]; if (lo[k] > hi[k]) return false; }
+    for (size_t b = b0; b <= b1; b++) {
+        const BlockOffsets e = ax_bo(t, b);
+        const uint64_t o[4] = {e.lit_off, e.off_off, e.len_off, e.cmd_off}, z[4] = {e.lit_sz, e.off_sz, e.len_sz, e.cmd_sz};
+        for (int k = 0; k < 4; k++) if (o[k] < lo[k] || o[k] > hi[k] || z[k] > hi[k] - o[k]) return false; }
+    return true;
+}
+
 static int64_t ax_decompress_region_impl(
     const void* src, size_t src_size,
     void*       dst, size_t dst_capacity,
@@ -350,15 +368,10 @@ static int64_t ax_decompress_region_impl(
     AetHeader hdr; memcpy(&hdr, p, sizeof(hdr));
     if (memcmp(hdr.magic,"ACEPX2\0\0",8) != 0) return ACEAPEX_ERR_DATA;
     if (hdr.num_blocks == 0) return (ax_is_empty_archive(hdr) && length == 0) ? 0 : ACEAPEX_ERR_DATA;
-    if (hdr.block_size == 0) return ACEAPEX_ERR_DATA;
+    if (!ax_header_ok(hdr, src_size)) return ACEAPEX_ERR_DATA;   // 2.6.4: the sum checked per term, block_size bound
     if (length == 0) return 0;
     if (offset > hdr.orig_size || length > hdr.orig_size - offset) return ACEAPEX_ERR_DATA;
     if (length > dst_capacity) return ACEAPEX_ERR_BUFFER;
-
-    uint64_t need = (uint64_t)sizeof(hdr)
-                  + (uint64_t)hdr.num_blocks * sizeof(BlockOffsets)
-                  + hdr.zlit_sz + hdr.zoff_sz + hdr.zlen_sz + hdr.zcmd_sz;
-    if (need > src_size) return ACEAPEX_ERR_DATA;
 
     p += sizeof(hdr);
     // Таблица блоков читается ПРЯМО ИЗ АРХИВА. Копия в вектор стоила 969 KB на каждый
@@ -371,24 +384,19 @@ static int64_t ax_decompress_region_impl(
     const uint8_t* zoff = zlit + hdr.zlit_sz;
     const uint8_t* zlen = zoff + hdr.zoff_sz;
     const uint8_t* zcmd = zlen + hdr.zlen_sz;
-    { size_t a,b,c; if (!ax_fse_check(zoff,hdr.zoff_sz,&a) || !ax_fse_check(zlen,hdr.zlen_sz,&b) ||
-                        !ax_fse_check(zcmd,hdr.zcmd_sz,&c)) return ACEAPEX_ERR_DATA; }
+    AxSizes S; if (!ax_stream_sizes(hdr, zlit, zoff, zlen, zcmd, S)) return ACEAPEX_ERR_DATA;
 
     size_t b0 = (size_t)(offset / hdr.block_size);
     size_t b1 = (size_t)((offset + length - 1) / hdr.block_size);
     if (b1 >= hdr.num_blocks) return ACEAPEX_ERR_DATA;
-
-    size_t lf=ax_bo(boffs,b0).lit_off, lt=ax_bo(boffs,b1).lit_off+ax_bo(boffs,b1).lit_sz;
-    size_t of=ax_bo(boffs,b0).off_off, ot=ax_bo(boffs,b1).off_off+ax_bo(boffs,b1).off_sz;
-    size_t nf=ax_bo(boffs,b0).len_off, nt=ax_bo(boffs,b1).len_off+ax_bo(boffs,b1).len_sz;
-    size_t cf=ax_bo(boffs,b0).cmd_off, ct=ax_bo(boffs,b1).cmd_off+ax_bo(boffs,b1).cmd_sz;
+    uint64_t lo[4], hi[4]; if (!ax_span_ok(boffs, b0, b1, S, lo, hi)) return ACEAPEX_ERR_DATA;
 
     size_t lit_sz = 0, wl=0, wo=0, wn=0, wc=0;
     g_dec_err=0;
-    uint8_t* lit = lit_range(zlit, hdr.zlit_sz, lit_sz, lf, lt, &wl);
-    uint8_t* off = fse_range(zoff, fse_stream_size(zoff), of, ot, &wo);
-    uint8_t* len = fse_range(zlen, fse_stream_size(zlen), nf, nt, &wn);
-    uint8_t* cmd = fse_range(zcmd, fse_stream_size(zcmd), cf, ct, &wc);
+    uint8_t* lit = lit_range(zlit, hdr.zlit_sz, lit_sz, (size_t)lo[0], (size_t)hi[0], &wl);
+    uint8_t* off = fse_range(zoff, (size_t)S.z[1], (size_t)lo[1], (size_t)hi[1], &wo);
+    uint8_t* len = fse_range(zlen, (size_t)S.z[2], (size_t)lo[2], (size_t)hi[2], &wn);
+    uint8_t* cmd = fse_range(zcmd, (size_t)S.z[3], (size_t)lo[3], (size_t)hi[3], &wc);
     // A range function returns nullptr when a zstd frame fails to decode (or on malloc
     // failure); either way the caller must not read the buffers: fail closed.
     if (!lit || !off || !len || !cmd || g_dec_err) {
@@ -396,22 +404,21 @@ static int64_t ax_decompress_region_impl(
         return ACEAPEX_ERR_DATA;
     }
 
-    size_t span_start = b0 * (size_t)hdr.block_size;
-    size_t span_end   = (b1 + 1) * (size_t)hdr.block_size;
-    if (span_end > hdr.orig_size) span_end = (size_t)hdr.orig_size;
-    uint8_t* span = (uint8_t*)malloc(span_end - span_start + 64);
+    // 64-bit: (b1 + 1) x block_size wrapped a 32-bit size_t (2.6.4); the span is at most length + 2 blocks
+    const uint64_t span_start = (uint64_t)b0 * hdr.block_size;
+    const uint64_t span_end   = std::min<uint64_t>((uint64_t)(b1 + 1) * hdr.block_size, (uint64_t)hdr.orig_size);
+    uint8_t* span = (uint8_t*)malloc((size_t)(span_end - span_start) + 64);
     if (!span) { free(lit); free(off); free(len); free(cmd); return ACEAPEX_ERR_MEMORY; }
 
     for (size_t b = b0; b <= b1; b++) {
         const BlockOffsets bo = ax_bo(boffs,b);
-        size_t bstart = b * (size_t)hdr.block_size;
-        size_t bsize  = (size_t)(hdr.orig_size - bstart);
-        if (bsize > hdr.block_size) bsize = hdr.block_size;
-        decompress_streams(span + (bstart - span_start), bsize,
+        const uint64_t bstart = (uint64_t)b * hdr.block_size;
+        const size_t bsize = (size_t)std::min<uint64_t>((uint64_t)hdr.orig_size - bstart, (uint64_t)hdr.block_size);
+        decompress_streams(span + (size_t)(bstart - span_start), bsize,
             lit + (bo.lit_off-wl), bo.lit_sz, off + (bo.off_off-wo), bo.off_sz,
             len + (bo.len_off-wn), bo.len_sz, cmd + (bo.cmd_off-wc), bo.cmd_sz);
     }
-    memcpy(dst, span + (offset - span_start), (size_t)length);
+    memcpy(dst, span + (size_t)(offset - span_start), (size_t)length);
 
     free(lit); free(off); free(len); free(cmd); free(span);
     return (int64_t)length;
@@ -440,6 +447,7 @@ struct BatchTask {
     const AetHeader*    hdr;
     const BlockOffsets* boffs;
     const uint8_t      *zlit, *zoff, *zlen, *zcmd;
+    const AxSizes*      S;     // decoded stream sizes, checked (2.6.4)
     RangeWork*          w;
     Group*              g;
     size_t              ng;
@@ -463,43 +471,40 @@ void* batch_worker(void* arg) {
         size_t i = G.first, grp_end = G.last;
         RangeWork& r = t->w[i];
 
-        size_t lf=ax_bo(t->boffs,G.b0).lit_off, lt=ax_bo(t->boffs,G.b1).lit_off+ax_bo(t->boffs,G.b1).lit_sz;
-        size_t of=ax_bo(t->boffs,G.b0).off_off, ot=ax_bo(t->boffs,G.b1).off_off+ax_bo(t->boffs,G.b1).off_sz;
-        size_t nf=ax_bo(t->boffs,G.b0).len_off, nt=ax_bo(t->boffs,G.b1).len_off+ax_bo(t->boffs,G.b1).len_sz;
-        size_t cf=ax_bo(t->boffs,G.b0).cmd_off, ct=ax_bo(t->boffs,G.b1).cmd_off+ax_bo(t->boffs,G.b1).cmd_sz;
-
+        uint64_t lo[4], hi[4];
+        if(!ax_span_ok(t->boffs,G.b0,G.b1,*t->S,lo,hi)){            // 2.6.4: every entry of the span inside the windows
+            for(size_t k=G.first;k<G.last;k++) t->w[k].dst=nullptr;
+            t->failed.store(1); continue; }
         size_t lit_sz=0, wl=0, wo=0, wn=0, wc=0;
-        uint8_t* lit=lit_range(t->zlit,h.zlit_sz,lit_sz,lf,lt,&wl);
-        uint8_t* off=fse_range(t->zoff,fse_stream_size(t->zoff),of,ot,&wo);
-        uint8_t* len=fse_range(t->zlen,fse_stream_size(t->zlen),nf,nt,&wn);
-        uint8_t* cmd=fse_range(t->zcmd,fse_stream_size(t->zcmd),cf,ct,&wc);
+        uint8_t* lit=lit_range(t->zlit,h.zlit_sz,lit_sz,(size_t)lo[0],(size_t)hi[0],&wl);
+        uint8_t* off=fse_range(t->zoff,(size_t)t->S->z[1],(size_t)lo[1],(size_t)hi[1],&wo);
+        uint8_t* len=fse_range(t->zlen,(size_t)t->S->z[2],(size_t)lo[2],(size_t)hi[2],&wn);
+        uint8_t* cmd=fse_range(t->zcmd,(size_t)t->S->z[3],(size_t)lo[3],(size_t)hi[3],&wc);
         if(!lit||!off||!len||!cmd||g_dec_err){
             free(lit);free(off);free(len);free(cmd);
             for(size_t k=G.first;k<G.last;k++) t->w[k].dst=nullptr;
             t->failed.store(1); continue;
         }
 
-        size_t span_start=(size_t)G.b0*h.block_size;
-        size_t span_end=(size_t)(G.b1+1)*h.block_size;
-        if(span_end>h.orig_size) span_end=(size_t)h.orig_size;
-        uint8_t* span=(uint8_t*)malloc(span_end-span_start+64);
+        const uint64_t span_start=(uint64_t)G.b0*h.block_size;   // 64-bit: wrapped a 32-bit size_t (2.6.4)
+        const uint64_t span_end=std::min<uint64_t>((uint64_t)(G.b1+1)*h.block_size,(uint64_t)h.orig_size);
+        uint8_t* span=(uint8_t*)malloc((size_t)(span_end-span_start)+64);
         if(!span){ free(lit);free(off);free(len);free(cmd); ax_nomem();   // the call reports ACEAPEX_ERR_MEMORY (2.6.3)
                    for(size_t k=G.first;k<G.last;k++) t->w[k].dst=nullptr;
                    t->failed.store(1); continue; }
 
         for(uint32_t b=G.b0;b<=G.b1;b++){
             const BlockOffsets bo=ax_bo(t->boffs,b);
-            size_t bs=(size_t)b*h.block_size;
-            size_t bsz=(size_t)(h.orig_size-bs);
-            if(bsz>h.block_size) bsz=h.block_size;
-            decompress_streams(span+(bs-span_start),bsz,
+            const uint64_t bs=(uint64_t)b*h.block_size;
+            const size_t bsz=(size_t)std::min<uint64_t>((uint64_t)h.orig_size-bs,(uint64_t)h.block_size);
+            decompress_streams(span+(size_t)(bs-span_start),bsz,
                 lit+(bo.lit_off-wl),bo.lit_sz, off+(bo.off_off-wo),bo.off_sz,
                 len+(bo.len_off-wn),bo.len_sz, cmd+(bo.cmd_off-wc),bo.cmd_sz);
         }
         for(size_t k=i;k<grp_end;k++){
             RangeWork& q=t->w[k];
             if(q.offset<span_start || q.offset+q.length>span_end) continue;
-            memcpy(q.dst, span+(q.offset-span_start), (size_t)q.length);
+            memcpy(q.dst, span+(size_t)(q.offset-span_start), (size_t)q.length);
         }
         free(lit);free(off);free(len);free(cmd);free(span);
     }
@@ -524,10 +529,7 @@ static int64_t ax_decompress_ranges_impl(
     if(hdr.num_blocks==0){ if(!ax_is_empty_archive(hdr)) return ACEAPEX_ERR_DATA;
         int64_t okn=0; for(size_t i=0;i<count;i++){ ranges[i].written = ranges[i].length==0 ? 0 : ACEAPEX_ERR_DATA; if(!ranges[i].length) okn++; }
         return okn; }
-    if(hdr.block_size==0) return ACEAPEX_ERR_DATA;
-    uint64_t need=(uint64_t)sizeof(hdr)+(uint64_t)hdr.num_blocks*sizeof(BlockOffsets)
-                 +hdr.zlit_sz+hdr.zoff_sz+hdr.zlen_sz+hdr.zcmd_sz;
-    if(need>src_size) return ACEAPEX_ERR_DATA;
+    if(!ax_header_ok(hdr,src_size)) return ACEAPEX_ERR_DATA;   // 2.6.4: the sum checked per term, block_size bound
 
     p+=sizeof(hdr);
     const BlockOffsets* boffs=(const BlockOffsets*)p;
@@ -536,8 +538,7 @@ static int64_t ax_decompress_ranges_impl(
     const uint8_t* zoff=zlit+hdr.zlit_sz;
     const uint8_t* zlen=zoff+hdr.zoff_sz;
     const uint8_t* zcmd=zlen+hdr.zlen_sz;
-    { size_t a,b,c; if (!ax_fse_check(zoff,hdr.zoff_sz,&a) || !ax_fse_check(zlen,hdr.zlen_sz,&b) ||
-                        !ax_fse_check(zcmd,hdr.zcmd_sz,&c)) return ACEAPEX_ERR_DATA; }
+    AxSizes S; if (!ax_stream_sizes(hdr, zlit, zoff, zlen, zcmd, S)) return ACEAPEX_ERR_DATA;
 
     // Проверяем каждый запрос отдельно: плохой диапазон не должен ронять батч.
     std::vector<RangeWork> w; w.reserve(count);
@@ -573,7 +574,7 @@ static int64_t ax_decompress_ranges_impl(
         i=j;
     }
 
-    BatchTask t{(const uint8_t*)src,&hdr,boffs,zlit,zoff,zlen,zcmd,
+    BatchTask t{(const uint8_t*)src,&hdr,boffs,zlit,zoff,zlen,zcmd,&S,
                 w.data(),groups.data(),groups.size(),{0},{0}};
     // Порог: поднимать восемь потоков ради сотни запросов дороже, чем выполнить их
     // последовательно. Замер: при N=100 батч был вдвое медленнее цикла.
@@ -711,7 +712,7 @@ static int64_t ax_decompress_stream_impl(aceapex_read_fn rd, void* rctx, aceapex
     if (memcmp(hdr.magic, "ACEPX2\0\0", 8) != 0) return ACEAPEX_ERR_DATA;
     if (axf_is_v3((const uint8_t*)&hdr, sizeof hdr)) return ax_fast_stream(rd, rctx, wr, wctx, threads, flags, (const uint8_t*)&hdr);
     if (hdr.num_blocks == 0) { if (!ax_is_empty_archive(hdr)) return ACEAPEX_ERR_DATA; return 0; }
-    if (hdr.block_size == 0 || (uint64_t)hdr.num_blocks * hdr.block_size < hdr.orig_size || (uint64_t)(hdr.num_blocks - 1) * hdr.block_size >= hdr.orig_size) return ACEAPEX_ERR_DATA;
+    if (!ax_block_size_ok(hdr.block_size) || (uint64_t)hdr.num_blocks * hdr.block_size < hdr.orig_size || (uint64_t)(hdr.num_blocks - 1) * hdr.block_size >= hdr.orig_size) return ACEAPEX_ERR_DATA;
     c.orig = hdr.orig_size; c.bs = hdr.block_size; c.nb = hdr.num_blocks;
     uint64_t p = sizeof hdr + (uint64_t)hdr.num_blocks * sizeof(BlockOffsets);
     const uint64_t zsz[4] = {hdr.zlit_sz, hdr.zoff_sz, hdr.zlen_sz, hdr.zcmd_sz};

@@ -946,14 +946,26 @@ static inline void ax_empty_header(AetHeader& h) {
     memset(&h, 0, sizeof(h)); memcpy(h.magic, "ACEPX2\0\0", 8); h.version = axf_le32(2); h.block_size = axf_le32(65536);
     uint64_t hv = axf_le64(OUR_CHECKSUM(nullptr, 0)); memcpy(h.xxhash, &hv, 8);
 }
+// Largest block_size a version-2 archive may declare (bytes; 0 = no limit). Encoders write at most 64 MiB (the release
+// encoders at most 1 MiB) and a decoder may refuse larger blocks (FORMAT_ACEPX2.md): a block is decoded whole, so a
+// region read of a crafted archive with one huge block would need that much memory. 2.6.4, as the C99 decoder; raise it
+// by building with -DACEAPEX_MAX_BLOCK=<bytes> (an API parameter: MEM).
+#ifndef ACEAPEX_MAX_BLOCK
+#define ACEAPEX_MAX_BLOCK ((uint64_t)64 << 20)
+#endif
+static inline bool ax_block_size_ok(uint64_t bs) { return bs != 0 && (!ACEAPEX_MAX_BLOCK || bs <= (uint64_t)ACEAPEX_MAX_BLOCK); }
+// The one header check of a version-2 archive of src_size bytes (2.6.4: every decode path; until 2.6.3 region, ranges
+// and the CLI summed the four u64 stream sizes, which a crafted archive made wrap): the blocks cover orig_size exactly
+// (the last one not empty), block_size within the bound, header + table + each stream size against the bytes left.
 static bool ax_header_ok(const AetHeader& h, uint64_t src_size) {
-    if (h.num_blocks == 0) return ax_is_empty_archive(h) && src_size >= sizeof(AetHeader);
-    if (h.block_size == 0) return false;
-    if ((uint64_t)h.num_blocks * (uint64_t)h.block_size < h.orig_size) return false;
-    uint64_t need = (uint64_t)sizeof(AetHeader)
-                  + (uint64_t)h.num_blocks * sizeof(BlockOffsets)
-                  + h.zlit_sz + h.zoff_sz + h.zlen_sz + h.zcmd_sz;
-    return need <= src_size;
+    if (src_size < sizeof(AetHeader)) return false;
+    if (h.num_blocks == 0) return ax_is_empty_archive(h);
+    if (!ax_block_size_ok(h.block_size)) return false;
+    if ((uint64_t)h.num_blocks * h.block_size < h.orig_size || (uint64_t)(h.num_blocks - 1) * h.block_size >= h.orig_size) return false;
+    uint64_t need = (uint64_t)sizeof(AetHeader) + (uint64_t)h.num_blocks * sizeof(BlockOffsets);
+    if (need > src_size) return false;
+    for (uint64_t z : {h.zlit_sz, h.zoff_sz, h.zlen_sz, h.zcmd_sz}) { if (z > src_size - need) return false; need += z; }
+    return true;
 }
 
 static bool ax_boffs_ok(const BlockOffsets* b, uint64_t nb,
@@ -1105,7 +1117,7 @@ static void* dec_worker(void* arg) {
 }
  
 static size_t compute_block_size(size_t src_size, int threads) {
-    { const char* _e=ax_getenv("ACEAPEX_BS"); if(_e){ size_t _v=strtoull(_e,0,10); if(_v>=4096) return _v; } }
+    { const char* _e=ax_getenv("ACEAPEX_BS"); if(_e){ size_t _v=strtoull(_e,0,10); if(_v>=4096 && _v<=(size_t)ACEAPEX_MAX_BLOCK) return _v; } }   // never above the decoders' bound (2.6.4)
     const size_t MIN_BS = 256*1024, MAX_BS = 1*1024*1024;
     if (threads < 1) threads = 1;
     size_t want_blocks = (size_t)threads * 4;
@@ -1704,7 +1716,8 @@ static int ax_lit_chunks(const uint8_t* src, size_t src_sz, size_t& orig_sz, siz
     const bool chunked=(h & (uint64_t(1)<<61))!=0, tagged=(h & (uint64_t(1)<<60))!=0;
     if((h>>63) || (tagged && !chunked)){ orig_sz=0; return -1; }
     orig_sz=h & ~((uint64_t(1)<<62)|(uint64_t(1)<<61)|(uint64_t(1)<<60));
-    if(!(h & (uint64_t(1)<<62))) return 0;
+    if(!(h & (uint64_t(1)<<62))) {   // legacy layout = a token-stream layout: its chunk table checked against the stream (2.6.4)
+        size_t S=0; if(!ax_fse_check(src,src_sz,&S) || S!=orig_sz){ orig_sz=0; return -1; } return 0; }
     const long long nwc=lit_table_check(src,src_sz,chunked,orig_sz,csz);
     if(nwc<0 || nwc>INT32_MAX){ orig_sz=0; return -1; }
     const int NW=(int)nwc;
@@ -1764,13 +1777,15 @@ static uint8_t* lit_decompress(const uint8_t* src, size_t src_sz, size_t& orig_s
 // the requested span are left zero and are never read by the block decoder.
 static uint8_t* fse_range(const uint8_t* src, size_t orig_sz, size_t from, size_t to,
                           size_t* base_off=nullptr) {
-    const size_t CHUNK=fse_stream_chunk(src);
-    const AxU64s cs{src+8};
-    size_t nc=(orig_sz+CHUNK-1)/CHUNK;
     // Пустой диапазон: поток len не нужен 29% регионов (7478 блоков chr1 из 15 499
     // имеют len_sz=0, медиана 1 байт при таблице 16 байт на блок). Вызов ради нуля
     // байт стоит ~12 us по закону амплификации.
-    if(to<=from){ if(base_off) *base_off=0; uint8_t* e=(uint8_t*)calloc(1,1); if(!e) ax_nomem(); return e; }
+    if(to<=from){ if(base_off) *base_off=from; uint8_t* e=(uint8_t*)calloc(1,1); if(!e) ax_nomem(); return e; }   // base = from: an empty slice at 'from' points into the buffer (2.6.4)
+    // the stream header is read only for a non-empty slice: an empty stream (0 bytes, the last one of the archive) has
+    // none, and its 8 "header" bytes were read past the archive (2.6.4, ASan on cpp_alloc)
+    const size_t CHUNK=fse_stream_chunk(src);
+    const AxU64s cs{src+8};
+    size_t nc=(orig_sz+CHUNK-1)/CHUNK;
     size_t c0=from/CHUNK, c1=(to?to-1:0)/CHUNK;
     if(c1>=nc) c1=nc?nc-1:0;
     size_t win_lo=c0*CHUNK, win_hi=std::min(orig_sz,(c1+1)*CHUNK);
@@ -1797,15 +1812,19 @@ static uint8_t* fse_range(const uint8_t* src, size_t orig_sz, size_t from, size_
 // Литеральный поток: новая схема — чанки LIT_CHUNK, старая — NW равных долей.
 static uint8_t* lit_range(const uint8_t* src, size_t src_sz, size_t& orig_sz,
                           size_t from, size_t to, size_t* base_off=nullptr) {
-    if(!src||src_sz<8){orig_sz=0; uint8_t* e=(uint8_t*)malloc(1); if(!e) ax_nomem(); return e;}
+    if(!src||src_sz<8){orig_sz=0; if(base_off) *base_off=from; uint8_t* e=(uint8_t*)malloc(1); if(!e) ax_nomem(); return e;}
     uint64_t h; memcpy(&h,src,8);
     const bool chunked=(h&(uint64_t(1)<<61))!=0;
     const bool tagged=(h&(uint64_t(1)<<60))!=0;
     if((h>>63) || (tagged && !chunked)){ orig_sz=0; return nullptr; }   // spec 3.2 reserved combinations
     orig_sz=h&~((uint64_t(1)<<62)|(uint64_t(1)<<61)|(uint64_t(1)<<60));
-    if(!(h&(uint64_t(1)<<62))) return fse_range(src,orig_sz,from,to);
+    if(!(h&(uint64_t(1)<<62))) {   // legacy layout: table checked against the stream as in ax_lit_chunks (2.6.4)
+        size_t S=0; if(!ax_fse_check(src,src_sz,&S) || S!=orig_sz){ orig_sz=0; return nullptr; }
+        return fse_range(src,orig_sz,from,to,base_off); }
     size_t csz=0; const long long nwc=lit_table_check(src,src_sz,chunked,orig_sz,csz);
     if(nwc<0 || nwc>INT32_MAX){ orig_sz=0; return nullptr; }
+    // an empty slice, or a stream of no bytes (4-part layout with orig 0: csz = 0, the divisions below were by zero)
+    if(to<=from || !csz){ if(base_off) *base_off=from; uint8_t* e=(uint8_t*)calloc(1,1); if(!e) ax_nomem(); return e; }
     const int NW=(int)nwc;
     const AxU64s zsz{src+(chunked?16:8)};
     const uint8_t* p=src+(chunked?16:8)+(size_t)NW*8;
@@ -2247,6 +2266,11 @@ static int do_decompress(const char* in_path, const char* out_path, int threads)
         if (off_sz > cap || len_sz > cap || cmd_sz > cap) {
             fprintf(stderr,"Corrupt archive (stream size)\n");
             free(zlit);free(zoff);free(zlen);free(zcmd); return 1; }
+        // the literal stream decodes to at most the original (as the API, 2.6.4; until 2.6.3 the CLI allocated what the
+        // literal header declared)
+        if (ax_lit_decoded_size(zlit,hdr.zlit_sz) > hdr.orig_size) {
+            fprintf(stderr,"Corrupt archive (literal stream size)\n");
+            free(zlit);free(zoff);free(zlen);free(zcmd); return 1; }
     }
  
     double dec_time=now_sec();
@@ -2468,11 +2492,17 @@ static int ax_fai_build(const char* arc, std::vector<AxFai>& out) {
     const int64_t n = aceapex_decompress_stream(ax_cli_pread, &fd, [](void* c, const void* b, size_t m) -> int { ax_fai_feed(*((Ctx*)c)->B, (const uint8_t*)b, m); return 0; }, &cx, 0, ACEAPEX_STREAM_VERIFY);
     if (n < 0) {                                              // not streamable (AXLINE01, pre-2.1 literals): whole decode
         struct stat st; fstat(fd, &st); std::vector<uint8_t> z((size_t)st.st_size); if (ax_pread(fd, z.data(), z.size(), 0) != (ssize_t)z.size()) { close(fd); return 1; }
-        AetHeader h; memcpy(&h, z.data(), sizeof h); uint64_t orig = h.orig_size; if (!memcmp(z.data(), "AXLINE01", 8)) memcpy(&orig, z.data() + 8, 8);
-        std::vector<uint8_t> o(orig + 64); if (aceapex_decompress_mt(z.data(), z.size(), o.data(), o.size(), 0) != (int64_t)orig) { close(fd); return 1; }
+        if (z.size() < sizeof(AetHeader)) { close(fd); return 1; }
+        AetHeader h; memcpy(&h, z.data(), sizeof h); uint64_t orig = h.orig_size; const bool lm = !memcmp(z.data(), "AXLINE01", 8); if (lm) memcpy(&orig, z.data() + 8, 8);
+        // 2.6.4: the header is checked before orig_size sizes the buffer, and a failed allocation is an error, not std::terminate
+        if (!lm && !ax_header_ok(h, z.size())) { close(fd); return 1; }
+        if (orig > (uint64_t)SIZE_MAX - 64) { close(fd); return 1; }
+        std::vector<uint8_t> o; try { o.resize((size_t)orig + 64); } catch (const std::bad_alloc&) { close(fd); return 1; }
+        if (aceapex_decompress_mt(z.data(), z.size(), o.data(), o.size(), 0) != (int64_t)orig) { close(fd); return 1; }
         B = AxFaiBuild(); ax_fai_feed(B, o.data(), orig); }
     close(fd);
     if (B.bad) { fprintf(stderr, "[faidx] lines of different lengths inside a record (or CR): no index, as samtools\n"); return 1; }
+    for (AxFai& f : B.v) if (f.len && !f.lb) { f.lb = f.len; f.lw = f.len; }   // one line without a newline at the end (lb 0 divided by zero, 2.6.4)
     out = B.v; std::string fp = std::string(arc) + ".fai"; FILE* f = fopen(fp.c_str(), "w"); if (!f) return 1;
     for (auto& x : out) fprintf(f, "%s\t%llu\t%llu\t%llu\t%llu\n", x.name.c_str(), (unsigned long long)x.len, (unsigned long long)x.off, (unsigned long long)x.lb, (unsigned long long)x.lw);
     fclose(f); return 0;
@@ -2487,7 +2517,11 @@ static int do_faidx(int argc, char** argv) {
     if (W <= 0) W = 60;
     std::vector<AxFai> fai; std::string fp = std::string(arc) + ".fai";
     if (FILE* f = build_only ? nullptr : fopen(fp.c_str(), "r")) { char nm[4096]; unsigned long long a, b, c, d;
-        while (fscanf(f, "%4095s %llu %llu %llu %llu", nm, &a, &b, &c, &d) == 5) fai.push_back({nm, a, b, c, d}); fclose(f); }
+        while (fscanf(f, "%4095s %llu %llu %llu %llu", nm, &a, &b, &c, &d) == 5) {
+            // 2.6.4: a row with bases needs line bases > 0 and line bytes >= line bases (lb = 0 divided by zero below)
+            if (a && (!c || d < c)) { fprintf(stderr, "[faidx] bad .fai row for %s (line bases %llu, line bytes %llu)\n", nm, c, d); fclose(f); return 1; }
+            fai.push_back({nm, a, b, c, d}); }
+        fclose(f); }
     else if (ax_fai_build(arc, fai)) { fprintf(stderr, "[faidx] cannot index %s\n", arc); return 1; }
     if (build_only) return 0;
     int fd = open(arc, O_RDONLY); if (fd < 0) { fprintf(stderr, "Cannot open: %s\n", arc); return 1; }
@@ -2508,7 +2542,11 @@ static int do_faidx(int argc, char** argv) {
         if (e > f.len) { if (range && e != UINT64_MAX) fprintf(stderr, "[faidx] Truncated sequence: %s\n", r.c_str()); e = f.len; }
         if (s > e) { if (range) fprintf(stderr, "[faidx] Zero length sequence: %s\n", r.c_str()); continue; }
         auto bo = [&](uint64_t x) { return f.off + x / f.lb * f.lw + x % f.lb; };       // 0-based base -> byte
-        const uint64_t lo = bo(s - 1), hi = bo(e - 1) + 1; buf.resize(hi - lo + 64);
+        const uint64_t lo = bo(s - 1), hi = bo(e - 1) + 1;
+        // 2.6.4: the bytes asked for lie inside the archive's original before the buffer is sized from a .fai row
+        uint64_t orig = 0; if (zn >= 20) memcpy(&orig, z + (memcmp(z, "AXLINE01", 8) ? 12 : 8), 8);   // orig_size: offset 12 in ACEPX2 v2/v3, 8 in AXLINE01
+        if (lo >= hi || hi > orig) { fprintf(stderr, "[faidx] region outside the archive for %s\n", r.c_str()); rc = 1; continue; }
+        buf.resize((size_t)(hi - lo) + 64);
         const int64_t got = aceapex_decompress_region(z, zn, buf.data(), buf.size(), lo, hi - lo);
         if (got != (int64_t)(hi - lo)) { fprintf(stderr, "[faidx] region decode failed (%lld) for %s\n", (long long)got, r.c_str()); rc = 1; continue; }
         // bases without line ends, then cut at W: runs copied whole (a char at a time was ~1/16 of a region read)

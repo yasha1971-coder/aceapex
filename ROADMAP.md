@@ -125,12 +125,18 @@ order-0 на литералах не-ДНК; OpenMP в декоде; двухп�
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
-22.11 2.6.4 шаг 1 (C99 = python/csrc) на ветке fix-264 (d30fb08, не влита): находки #1 #3 #4 #5 аудита + 2 новые от
+22.11 2.6.4 шаг 2 (C++, ветка fix-264-2 4d29327, не влита): #2 #6–#10 #13, :1812, legacy-литералы, записи блоков
+диапазона против окон, block_size ≤ 64 MiB во всех путях и в ACEAPEX_BS, CMake (aceapex::aceapex), README Integrity для
+_stream; 1 новая от ASan (заголовок пустого потока за архивом). Претензии head_cpp_alloc/_san, head_region_fuzz,
+head_enc_bs_bound, head_cmake; fuzz_region в CFL. Судья 94/0, CI и CFL зелёные, байты 12/12 = v2.6.3, A/B C++ в ±1.4 %.
+Ждёт слова на слияние.
+
+22.11 2.6.4 шаг 1 (C99 = python/csrc) влит в main 9531abc (PR #30); был на ветке fix-264 (d30fb08): находки #1 #3 #4 #5 аудита + 2 новые от
 fuzz_c99 (срез off+sz по модулю 2^64 → чтение за архивом; dec_close по неинициализированным курсорам) + UB :129;
 block_size ≤ 64 MiB (ACEAPEX_MAX_BLOCK, решение (Б)), FORMAT_ACEPX2/FAST. Претензии head_c99_alloc, head_c99_fuzz,
 head_python_fuzz (v2.6.3 падает на всех трёх); fuzz_c99 в ClusterFuzzLite (PR-прогон 44989146136 зелёный). Судья 89/0.
 G5 (б), слово Якова: циклы dna_unpack T4/M8 развёрнуты ×4 (d30fb08) — chr1 −5.1…−10.1 % к v2.6.3 при 5 наборах флагов,
-silesia +0.8 / +1.1 %; судья 89/0 на d30fb08. Шаг 1 готов к слиянию в main (код — по слову Якова).
+silesia +0.8 / +1.1 %; судья 89/0 на d30fb08.
 
 20.11 v2.6.3 = c3485e9 (тег поставил Яков), влит в main merge-коммитом 734c3a9 (PR #24; разница с тегом — только
 документы main). GitHub Release https://github.com/yasha1971-coder/aceapex/releases/tag/v2.6.3 (пакет static,
@@ -473,9 +479,8 @@ match 30.3, bases 7.4, seq 5.1. Архивы zstd/rans T2T зависят от l
 898 263 414; 1.4.8: 902 319 887 / 898 903 131), open одинаков.
 
 ## Дальше
-2.6.4: слово на слияние шага 1 (fix-264 d30fb08) в main; шаг 2 — C++ region/ranges/CLI/faidx (#2-остаток,
-   #6–#10, #13, :1812) + block_size ≤ 64 MiB (#7) + ACEAPEX_BS ≤ 64 MiB в кодере + CMake (VCPKG_CHECK) + README Integrity
-   для _stream; затем MEM (+ параметр API для границы блока), потоковый (#11, #12). vcpkg — после 2.6.4.
+2.6.4: шаг 1 в main (9531abc); шаг 2 (fix-264-2 4d29327) — слово на слияние; затем шаг 3 MEM (+ параметр API для
+   границы блока), шаг 4 потоковый (#11, #12, lch на пустом векторе). vcpkg — после 2.6.4. Сайт: PR #31 (не влит).
 2.6.3 = v2.6.3 (c3485e9, в main 734c3a9): (а), (в), (г) сделаны; Release и Zenodo опубликованы, ветка lzbench в форке.
    Дальше по слову Якова: PR в inikep/lzbench из aceapex-2.6.3; затем MEM (2.6.4) по очереди плана. Позже (не в 2.6.3): (б) порог одного блока на
    32-бит — ограничить рабочую память кодера (MEM); tuning-сборки (ax_linemodel std::thread, AX_REFSEG thread_local

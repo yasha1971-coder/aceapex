@@ -159,8 +159,10 @@ static int64_t ax_fast_stream(aceapex_read_fn rd, void* rctx, aceapex_write_fn w
         return true; };
     std::vector<uint8_t> hd; if (!rdv(hd, 0, need)) return -2;
     if (axf_open64(hd.data(), need + a.payload, &a) != 0) return -2;   // header + table; the payload is not touched
-    const int T = std::max(1, ax_decode_budget(threads, a.orig));
-    std::vector<uint8_t> zb, ob((size_t)T * a.bs); int64_t rc = 0;
+    // T at most the number of blocks and the buffer at most the original (2.6.4; until 2.6.3 threads = 1024 on a one-block
+    // archive zero-filled 1024 blocks before reading a byte of data)
+    const int T = (int)std::min<uint64_t>((uint64_t)std::max(1, ax_decode_budget(threads, a.orig)), a.nb ? a.nb : 1);
+    std::vector<uint8_t> zb, ob((size_t)std::min<uint64_t>((uint64_t)T * a.bs, a.orig)); int64_t rc = 0;
     XXH3_state_t* xs = nullptr; if (flags & ACEAPEX_STREAM_VERIFY) { xs = XXH3_createState(); if (!xs) return -3; XXH3_64bits_reset(xs); }
     try {
         for (uint32_t b0 = 0; b0 < a.nb && rc == 0; ) {
