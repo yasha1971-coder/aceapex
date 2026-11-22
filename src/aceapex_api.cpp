@@ -656,7 +656,7 @@ static void* st_work(StCtx& c) {
         if (c.four) for (const auto& lb : g->lit) {
             const uint64_t a = std::max(t0, lb->off0), e = std::min(t0 + tsz, lb->off0 + lb->d.size());
             if (a < e) memcpy(tile.data() + (a - t0), lb->d.data() + (a - lb->off0), (size_t)(e - a)); }
-        for (uint64_t k = g->k0; k <= g->k1 && !bad && !c.four; k++) {
+        for (uint64_t k = g->k0; k <= g->k1 && k < c.lch.size() && !bad && !c.four; k++) {   // no chunk: literals of 0 bytes (2.6.4: c.lch[0] of an empty table)
             const StChunk& ch = c.lch[k];
             rbuf.need(ch.csz + 64);
             if (ch.csz && !st_read(c, ch.pos, rbuf.data(), ch.csz)) { bad = true; break; }
@@ -724,6 +724,9 @@ static int64_t ax_decompress_stream_impl(aceapex_read_fn rd, void* rctx, aceapex
         uint8_t h8[8]; if (!st_read(c, c.zoff[st], h8, 8)) return ACEAPEX_ERR_DATA;
         uint64_t h; memcpy(&h, h8, 8); if (h >> 63) return ACEAPEX_ERR_DATA;
         t.S = fse_stream_size(h8); t.CH = fse_stream_chunk(h8); if (!t.CH) return ACEAPEX_ERR_DATA;
+        // decoded size at most 4 x orig + 1 MiB, as the full decoder (2.6.4, AUDIT_ALLOC_262 #11: until 2.6.3 a stream
+        // declaring 8.6 GB in chunks of 1 compressed byte had its chunks decoded, 128 MiB each, before any other check)
+        if ((uint64_t)t.S > c.orig * 4 + ((uint64_t)1 << 20)) return ACEAPEX_ERR_DATA;
         t.nc = (t.S + t.CH - 1) / t.CH; if (t.nc > (zsz[st] - 8) / 8) return ACEAPEX_ERR_DATA;
         std::vector<uint8_t> tb(t.nc * 8); if (t.nc && !st_read(c, c.zoff[st] + 8, tb.data(), tb.size())) return ACEAPEX_ERR_DATA;
         t.cs.resize(t.nc); t.pos.resize(t.nc); uint64_t q = c.zoff[st] + 8 + 8 * t.nc, end = c.zoff[st] + zsz[st];
