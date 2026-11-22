@@ -248,7 +248,9 @@ Two guarantees, kept apart:
 - **The raw API** (`aceapex_decompress`, `aceapex_decompress_mt` - what lzbench calls - and
   `aceapex_decompress_stream`; region / ranges not yet, see [Known issues](#known-issues)) gives **memory safety**:
   any input, corrupted or not, returns either the size or an error, and never
-  reads or writes outside the buffers it was given (fuzzed under ASan + UBSan on every push, with a negative control). It
+  reads or writes outside the buffers it was given (fuzzed under ASan + UBSan on every push, with a negative control).
+  Memory safety here means bounds only, not bounded allocation: `aceapex_decompress_stream` can still allocate more
+  than the original size justifies for a damaged archive (see [Known issues](#known-issues)). It
   does **not** check the content: it does not hash its output, so a damaged archive can decode to the declared size with
   other bytes.
 - **The checked paths** - the CLI `aceapex d`, `aceapex_decompress_stream` with `ACEAPEX_STREAM_VERIFY`, and

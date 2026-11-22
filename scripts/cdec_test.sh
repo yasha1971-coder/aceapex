@@ -149,6 +149,33 @@ if ${CC:-gcc} -std=c99 -O2 -fPIC -shared -Ic -o $T/libfz_decode.so c/aceapex_dec
   if [ $rc -eq 0 ] || [ $rc -eq 1 ]; then echo "$po" | grep '^head_python_fuzz' || printf 'head_python_fuzz\tfail\tno result line (exit %s)\n' "$rc"
   else printf 'head_python_fuzz\tfail\tinterpreter died (exit %s), input kept while running: %s B\n' "$rc" "$(stat -c%s $T/pyfz_last.aet 2>/dev/null)"; fi
 else printf 'head_python_fuzz\tfail\tbuild failed: %s\n' "$(head -c 150 $T/pyfz.err | tr '\n\t' '  ')"; fi
+# 2.6.4 step 2: the C++ library and CLI on the 11 archives of verify/repro/c99_alloc + cpp_alloc (AUDIT_ALLOC_262 #1-#10,
+# #13, the legacy literal table, the 4-part layout of 0 bytes, slices past a window): every call in a child process, no
+# signal, no allocation above 64 MiB (malloc and kin replaced over glibc), and again under ASan+UBSan. v2.6.3: 36 / 33
+# of 90 calls fail (requests of 1 GiB .. 64 GiB, SIGSEGV, SIGFPE, std::terminate, heap-buffer-overflow)
+if ${CXX:-g++} -std=c++17 -O1 -g -Isrc -o $T/cpa_test verify/repro/cpp_alloc/cpp_alloc_test.cpp -lzstd -lpthread 2>$T/cpa.err; then
+  mkdir -p $T/cpa; co=$($T/cpa_test verify/repro verify/fixtures/conf $T/cpa 2>/dev/null)
+  echo "$co" | grep '^head_cpp_alloc' || printf 'head_cpp_alloc\tfail\tno result line\n'
+else printf 'head_cpp_alloc\tfail\tbuild failed: %s\n' "$(head -c 150 $T/cpa.err | tr '\n\t' '  ')"; fi
+if ${CXX:-g++} -std=c++17 $C99_SAN -DCA_SAN -Isrc -o $T/cpas_test verify/repro/cpp_alloc/cpp_alloc_test.cpp -lzstd -lpthread 2>$T/cpas.err; then
+  mkdir -p $T/cpas; co=$(ASAN_OPTIONS=allocator_may_return_null=1:max_allocation_size_mb=64 $T/cpas_test verify/repro verify/fixtures/conf $T/cpas 2>/dev/null)
+  echo "$co" | grep '^head_cpp_alloc_san' || printf 'head_cpp_alloc_san\tfail\tno result line\n'
+else printf 'head_cpp_alloc_san\tfail\tbuild failed: %s\n' "$(head -c 150 $T/cpas.err | tr '\n\t' '  ')"; fi
+# 2.6.4 step 2: fuzz/fuzz_region.cpp (region, ranges, decode_streams) without libFuzzer, 20 s of mutants of the same seeds
+# + cpp_alloc under ASan+UBSan, allocations above 128 MiB abort; v2.6.3 aborts on the conformance fixtures alone
+FZR_SEEDS="$FZ_SEEDS $(ls verify/repro/cpp_alloc/*.aet)"
+if ${CXX:-g++} -std=c++17 $C99_SAN -Isrc -c -o $T/fzr_api.o src/aceapex_api.cpp 2>$T/fzr.err \
+   && ${CXX:-g++} -std=c++17 $C99_SAN -Isrc -o $T/fz_region fuzz/fuzz_region.cpp fuzz/standalone.cpp $T/fzr_api.o -lzstd -lpthread 2>>$T/fzr.err; then
+  fo=$(ASAN_OPTIONS=max_allocation_size_mb=128:allocator_may_return_null=0 $T/fz_region 20 $FZR_SEEDS 2>$T/fzr.log); rc=$?
+  if [ $rc -eq 0 ] && echo "$fo" | grep -q 'no abort'; then printf 'head_region_fuzz\tpass\tfuzz_region (region, ranges 1/2 threads, decode_streams; ASan+UBSan, 128 MiB allocation cap): %s\n' "${fo#standalone: }"
+  else printf 'head_region_fuzz\tfail\texit %s: %s\n' "$rc" "$(grep -m1 -E 'ERROR|runtime error' $T/fzr.log | head -c 200)"; fi
+else printf 'head_region_fuzz\tfail\tbuild failed: %s\n' "$(head -c 150 $T/fzr.err | tr '\n\t' '  ')"; fi
+# 2.6.4 step 2: ACEAPEX_BS (tuning builds) never writes block_size above 64 MiB; v2.6.3 wrote 2^27 and hung on 2^32 + 4096
+if ${CXX:-g++} -std=c++17 -O2 -DACEAPEX_ENV_TUNING -Isrc -o $T/ebs_test verify/repro/cpp_alloc/enc_bs_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/ebs.err; then
+  timeout 120 $T/ebs_test 2>/dev/null | grep '^head_enc_bs_bound' || printf 'head_enc_bs_bound\tfail\tno result line in 120 s\n'
+else printf 'head_enc_bs_bound\tfail\tbuild failed: %s\n' "$(head -c 150 $T/ebs.err | tr '\n\t' '  ')"; fi
+# 2.6.4: CMake builds, installs and exports the library (aceapex::aceapex) and the CLI; v2.6.3's CMakeLists.txt did not link
+bash scripts/cmake_test.sh . 2>/dev/null || true
 # lzbench #336: the library built without ACEAPEX_ENV_TUNING ignores the environment - five rows of tuning variables
 # give the same bytes at level 1 / one thread (text + silesia/xml when ~/CORPORA/silesia.tar is there), and no thread
 # is started at threads=1 (strace: no clone)
