@@ -159,15 +159,9 @@ static int64_t ax_entropy_decode(const void* src, size_t src_size, int threads, 
     if(!l || ax_oom()) return ACEAPEX_ERR_MEMORY;
     if(g_dec_err) return ACEAPEX_ERR_DATA;
 
-    // Every block's stream slice must lie inside its decoded stream.
-    for (size_t b = 0; b < hdr.num_blocks; b++) {
-        const BlockOffsets& bo = S.boffs[b];
-        if (bo.lit_off + bo.lit_sz > ls || bo.lit_off > ls ||
-            bo.off_off + bo.off_sz > os || bo.off_off > os ||
-            bo.len_off + bo.len_sz > ns || bo.len_off > ns ||
-            bo.cmd_off + bo.cmd_sz > cs || bo.cmd_off > cs)
-            return ACEAPEX_ERR_DATA;
-    }
+    // Every block's stream slice must lie inside its decoded stream, checked as offset and size (2.6.4: offset + size
+    // could wrap), token slices within 4 x block_size + 4 KiB (FORMAT_ACEPX2.md, 2.6.4).
+    if (!ax_boffs_ok(S.boffs.data(), hdr.num_blocks, ls, os, ns, cs, hdr.block_size)) return ACEAPEX_ERR_DATA;
     S.ls=ls; S.os=os; S.ns=ns; S.cs=cs;
     return (int64_t)hdr.orig_size;
 }
@@ -337,17 +331,18 @@ static bool ax_stream_sizes(const AetHeader& h, const uint8_t* zlit, const uint8
 // The slices of blocks b0..b1 in each stream: [lo, hi) from the first entry of b0 to the end of b1, inside the decoded
 // stream, and every entry of the span inside [lo, hi). The windows the range decoders return cover [lo, hi) only, so
 // an entry outside it was a read outside the window (2.6.4; until 2.6.3 only b0 and b1 were used, unchecked).
-static bool ax_span_ok(const BlockOffsets* t, size_t b0, size_t b1, const AxSizes& S, uint64_t lo[4], uint64_t hi[4]) {
+static bool ax_span_ok(const BlockOffsets* t, size_t b0, size_t b1, const AxSizes& S, uint64_t bs, uint64_t lo[4], uint64_t hi[4]) {
     const BlockOffsets f = ax_bo(t, b0), l = ax_bo(t, b1);
     const uint64_t fo[4] = {f.lit_off, f.off_off, f.len_off, f.cmd_off}, lo1[4] = {l.lit_off, l.off_off, l.len_off, l.cmd_off},
                    ls[4] = {l.lit_sz, l.off_sz, l.len_sz, l.cmd_sz};
     for (int k = 0; k < 4; k++) {
         if (lo1[k] > S.z[k] || ls[k] > S.z[k] - lo1[k]) return false;
+        if (k && !ax_tok_slice_ok(ls[k], bs)) return false;
         lo[k] = fo[k]; hi[k] = lo1[k] + ls[k]; if (lo[k] > hi[k]) return false; }
     for (size_t b = b0; b <= b1; b++) {
         const BlockOffsets e = ax_bo(t, b);
         const uint64_t o[4] = {e.lit_off, e.off_off, e.len_off, e.cmd_off}, z[4] = {e.lit_sz, e.off_sz, e.len_sz, e.cmd_sz};
-        for (int k = 0; k < 4; k++) if (o[k] < lo[k] || o[k] > hi[k] || z[k] > hi[k] - o[k]) return false; }
+        for (int k = 0; k < 4; k++) if (o[k] < lo[k] || o[k] > hi[k] || z[k] > hi[k] - o[k] || (k && !ax_tok_slice_ok(z[k], bs))) return false; }
     return true;
 }
 
@@ -389,7 +384,7 @@ static int64_t ax_decompress_region_impl(
     size_t b0 = (size_t)(offset / hdr.block_size);
     size_t b1 = (size_t)((offset + length - 1) / hdr.block_size);
     if (b1 >= hdr.num_blocks) return ACEAPEX_ERR_DATA;
-    uint64_t lo[4], hi[4]; if (!ax_span_ok(boffs, b0, b1, S, lo, hi)) return ACEAPEX_ERR_DATA;
+    uint64_t lo[4], hi[4]; if (!ax_span_ok(boffs, b0, b1, S, hdr.block_size, lo, hi)) return ACEAPEX_ERR_DATA;
 
     size_t lit_sz = 0, wl=0, wo=0, wn=0, wc=0;
     g_dec_err=0;
@@ -472,7 +467,7 @@ void* batch_worker(void* arg) {
         RangeWork& r = t->w[i];
 
         uint64_t lo[4], hi[4];
-        if(!ax_span_ok(t->boffs,G.b0,G.b1,*t->S,lo,hi)){            // 2.6.4: every entry of the span inside the windows
+        if(!ax_span_ok(t->boffs,G.b0,G.b1,*t->S,h.block_size,lo,hi)){            // 2.6.4: every entry of the span inside the windows
             for(size_t k=G.first;k<G.last;k++) t->w[k].dst=nullptr;
             t->failed.store(1); continue; }
         size_t lit_sz=0, wl=0, wo=0, wn=0, wc=0;
@@ -723,7 +718,7 @@ static int64_t ax_decompress_stream_impl(aceapex_read_fn rd, void* rctx, aceapex
         StTok& t = c.tk[st]; if (zsz[st] < 8) continue;
         uint8_t h8[8]; if (!st_read(c, c.zoff[st], h8, 8)) return ACEAPEX_ERR_DATA;
         uint64_t h; memcpy(&h, h8, 8); if (h >> 63) return ACEAPEX_ERR_DATA;
-        t.S = fse_stream_size(h8); t.CH = fse_stream_chunk(h8); if (!t.CH) return ACEAPEX_ERR_DATA;
+        t.S = fse_stream_size(h8); t.CH = fse_stream_chunk(h8); if (!t.CH || t.CH > AX_TOK_CHUNK_MAX) return ACEAPEX_ERR_DATA;   // 2.6.4: <= 16 MiB
         // decoded size at most 4 x orig + 1 MiB, as the full decoder (2.6.4, AUDIT_ALLOC_262 #11: until 2.6.3 a stream
         // declaring 8.6 GB in chunks of 1 compressed byte had its chunks decoded, 128 MiB each, before any other check)
         if ((uint64_t)t.S > c.orig * 4 + ((uint64_t)1 << 20)) return ACEAPEX_ERR_DATA;
@@ -805,7 +800,7 @@ static int64_t ax_decompress_stream_impl(aceapex_read_fn rd, void* rctx, aceapex
             if (g->b1 > g->b0 && k1 - k0 + 1 > G + 1) break;
             const uint64_t so[4] = {0, bo.off_off, bo.len_off, bo.cmd_off}, ss[4] = {0, bo.off_sz, bo.len_sz, bo.cmd_sz}; bool ok = true;
             for (int st = 1; st < 4; st++) { if (!ss[st]) continue; const StTok& t = c.tk[st];
-                if (!t.CH || so[st] > t.S || ss[st] > t.S - so[st]) { ok = false; break; }
+                if (!t.CH || so[st] > t.S || ss[st] > t.S - so[st] || !ax_tok_slice_ok(ss[st], c.bs)) { ok = false; break; }   // 2.6.4: slice bound
                 tk0[st] = std::min(tk0[st], so[st] / t.CH); tk1[st] = std::max(tk1[st], (so[st] + ss[st] - 1) / t.CH); }
             if (!ok) { bad = true; break; }
             if (c.four) { if (g->b1 == g->b0) g->llo = bo.lit_off; g->lhi = std::max(g->lhi, bo.lit_off + bo.lit_sz); if (bo.lit_off < g->llo) { bad = true; break; } }

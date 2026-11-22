@@ -44,3 +44,25 @@ open("st_tokcap.aet","wb").write(v2(1, 4096, 4096, (len(LIT8),0,0,len(cmd)), bo(
 # stream worker reads c.lch[0] of an empty vector (SIGSEGV)
 lit0 = struct.pack("<QQ", (1<<62)|(1<<61)|0, 4096)
 open("st_lchempty.aet","wb").write(v2(1, 4096, 4096, (len(lit0),0,0,len(CMD1)), bo(0,0,0,0, 0,0,0,1), lit0 + CMD1))
+
+# zstd frame of n zero bytes from RLE blocks of 128 KiB (stdlib only): magic, single-segment header with a 4-byte
+# content size, then 3-byte block headers (type 1 = RLE, the block size is the regenerated size) and the byte 0
+def zrle(n):
+    f = struct.pack("<IB", 0xFD2FB528, 0xA0) + struct.pack("<I", n); left = n
+    while left:
+        k = min(left, 128 << 10); left -= k
+        f += struct.pack("<I", (1 if not left else 0) | (1 << 1) | (k << 3))[:3] + b"\0"
+    return f
+# st_group (#12): 4 blocks of 64 MiB (orig 256 MiB), the command stream 8 chunks of 0x7FFF << 12 B (128 MiB), each a
+# 4 KiB zstd frame of zeros; block 0's command slice is the whole stream. 33.5 KB that made the streaming decoder of
+# 955a415 hold 2.1 GB (VmHWM). Refused since 2.6.4: token chunks above 16 MiB.
+CHG = 0x7FFF << 12; zg = zrle(CHG); bsg = 64 << 20
+cmd = struct.pack("<Q", (0x7FFF << 48) | (8 * CHG)) + struct.pack("<8Q", *([len(zg)] * 8)) + zg * 8
+tab = bo(0,0,0,0, 8,0,0,8*CHG) + bo(0,0,0,0, 0,0,0,0) * 3
+open("st_group.aet","wb").write(v2(4, bsg, 4 * bsg, (len(LIT8),0,0,len(cmd)), tab, LIT8 + cmd))
+# st_slice (#12): the same with 64 chunks of 16 MiB (allowed) and block 0's command slice 1 GiB (above 4 x 64 MiB + 4 KiB):
+# without the slice bound the decoder holds the whole window (64 x 16 MiB). Refused since 2.6.4: the slice bound.
+CHS = 16 << 20; zs_ = zrle(CHS)
+cmd = struct.pack("<Q", ((CHS >> 12) << 48) | (64 * CHS)) + struct.pack("<64Q", *([len(zs_)] * 64)) + zs_ * 64
+tab = bo(0,0,0,0, 8,0,0,64*CHS) + bo(0,0,0,0, 0,0,0,0) * 3
+open("st_slice.aet","wb").write(v2(4, bsg, 4 * bsg, (len(LIT8),0,0,len(cmd)), tab, LIT8 + cmd))

@@ -12,6 +12,7 @@
 //   st_tokcap     #11 a command stream declaring 8.6 GB in 128 MiB chunks of 1 byte: v2.6.3 stream decodes them
 //   st_lchempty       chunked literals of 0 bytes: v2.6.3's stream worker reads c.lch[0] of an empty table (SIGSEGV);
 //                     otherwise well-formed (signals and allocations judged)
+//   st_group      #12 128 MiB token chunks from 4 KiB zstd frames: v2.6.3 stream holds 2.1 GB (head_stream_peak)
 //   threads 1024      #13 a valid one-block fast archive (../../fixtures/conf/rand_fast_7B.aet) streamed with
 //                     threads = 1024: v2.6.3 zero-fills 1024 blocks (1 GiB)
 //   fai lb 0          #10 a .fai row with bases and line bases 0: v2.6.3 faidx divides by zero
@@ -83,7 +84,7 @@ int main(int argc, char** argv) {
         if (detail.size() < 1500) detail += b; };
     static const char* names[] = {"c99_alloc/v2_wrap", "c99_alloc/v2_dna", "c99_alloc/v2_lit", "c99_alloc/v2_lit1", "c99_alloc/v2_bs",
         "c99_alloc/v2_slicewrap", "cpp_alloc/v2_tokwin", "cpp_alloc/v2_bigblock", "cpp_alloc/v2_litlegacy", "cpp_alloc/v2_lit4zero",
-        "cpp_alloc/v2_litslice", "cpp_alloc/st_tokcap", "cpp_alloc/st_lchempty"};
+        "cpp_alloc/v2_litslice", "cpp_alloc/st_tokcap", "cpp_alloc/st_lchempty", "cpp_alloc/st_group"};
     int n_calls = 0; size_t worst = 0;
     for (const char* nm : names) {
         const std::string path = rep + "/" + nm + ".aet"; const std::vector<uint8_t> v = slurp(path);
@@ -127,7 +128,7 @@ int main(int argc, char** argv) {
 #else
     const char* id = "head_cpp_alloc";
 #endif
-    if (!bad) printf("%s\tpass\t13 damaged archives x 8 entry points (decompress_mt, region, ranges, stream, decode_streams, CLI d, faidx index, faidx region), fast archive streamed with 1024 threads, .fai lb 0: %d calls, 0 signals, largest request %zu B (limit 64 MiB)\n", id, n_calls, worst);
+    if (!bad) printf("%s\tpass\t14 damaged archives x 8 entry points (decompress_mt, region, ranges, stream, decode_streams, CLI d, faidx index, faidx region), fast archive streamed with 1024 threads, .fai lb 0: %d calls, 0 signals, largest request %zu B (limit 64 MiB)\n", id, n_calls, worst);
     else printf("%s\tfail\t%d of %d calls: %s\n", id, bad, n_calls, detail.c_str());
     return bad ? 1 : 0;
 }

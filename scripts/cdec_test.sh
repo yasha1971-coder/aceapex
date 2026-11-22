@@ -181,6 +181,11 @@ bash scripts/cmake_test.sh . 2>/dev/null || true
 if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/emt_test verify/repro/enc_mem/enc_mem_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/emt.err; then
   $T/emt_test 2>/dev/null | grep '^head_enc_mem' || printf 'head_enc_mem\tfail\tno result line\n'
 else printf 'head_enc_mem\tfail\tbuild failed: %s\n' "$(head -c 150 $T/emt.err | tr '\n\t' '  ')"; fi
+# 2.6.4 step 4: the streaming decoder refuses the #12 archives (33-34 KB declaring 128 MiB token chunks / a 1 GiB slice)
+# with a peak (child VmHWM) <= 64 MiB; main 8ae26bf held 2.1 GB on both
+if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/spt_test verify/repro/cpp_alloc/stream_peak_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/spt.err; then
+  $T/spt_test verify/repro/cpp_alloc 2>/dev/null | grep '^head_stream_peak' || printf 'head_stream_peak\tfail\tno result line\n'
+else printf 'head_stream_peak\tfail\tbuild failed: %s\n' "$(head -c 150 $T/spt.err | tr '\n\t' '  ')"; fi
 # lzbench #336: the library built without ACEAPEX_ENV_TUNING ignores the environment - five rows of tuning variables
 # give the same bytes at level 1 / one thread (text + silesia/xml when ~/CORPORA/silesia.tar is there), and no thread
 # is started at threads=1 (strace: no clone)
