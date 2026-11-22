@@ -3,7 +3,8 @@
 // stretches, N runs, 60-column lines) is encoded in memory with the default profile (DNA: 16 KiB blocks, 64 KiB literal
 // chunks) and written to a file; a child process (this program re-executed, a fresh address space) streams it back through pread + a hashing sink (XXH3 of the
 // handed-out bytes against XXH3 of the input, and the archive header's hash through ACEAPEX_STREAM_VERIFY) and its
-// peak RSS is read from wait4. Sizes 64 and 512 MiB on the default thread budget: both bit-perfect, and the 512 MiB
+// peak RSS is its own VmHWM after exec (2.6.4: wait4's ru_maxrss carries the parent's resident set at fork over exec,
+// so the parent's heap after encoding - kept by glibc, not trimmed - showed as +178 MiB in CI, 85129aa). Sizes 64 and 512 MiB on the default thread budget: both bit-perfect, and the 512 MiB
 // peak at most 8 MiB above the 64 MiB peak (the buffers are threads x tile and threads x token window - a window is
 // full from ~16 MiB on - the chunk tables grow by ~15 B per 64 KiB of literals). Since FREEZE-3 (after 2.6.1) also a text
 // input (24 MiB of seeded words, not DNA: the 4-chunk literal layout) at levels 1, 2 and 3: bit-perfect through the
@@ -45,7 +46,9 @@ static std::vector<uint8_t> text(size_t n, uint64_t seed) {
     v.resize(n); return v;
 }
 // encode, write to a temp file, stream it back in a child: true when bit-perfect (XXH3 of the sink == XXH3 of the input,
-// and ACEAPEX_STREAM_VERIFY accepted); rss gets the child's peak RSS
+// and ACEAPEX_STREAM_VERIFY accepted); rss gets the child's peak RSS (its VmHWM, written to a file next to the archive)
+static long child_hwm(const char* path) { std::string p = std::string(path) + ".hwm"; long v = -1; FILE* f = fopen(p.c_str(), "r");
+    if (f) { if (fscanf(f, "%ld", &v) != 1) v = -1; fclose(f); } unlink(p.c_str()); return v; }
 static bool stream_once(const std::vector<uint8_t>& in, int level, const char* self, long& rss, std::string& note) {
     std::vector<uint8_t> z(aceapex_compress_bound(in.size()));
     const int64_t zs = aceapex_compress(in.data(), in.size(), z.data(), z.size(), level, 4);
@@ -57,7 +60,7 @@ static bool stream_once(const std::vector<uint8_t>& in, int level, const char* s
     { std::vector<uint8_t>().swap(z); }
     const pid_t pid = fork();
     if (pid == 0) { execl("/proc/self/exe", self, "--child", path, hex, (char*)nullptr); _exit(3); }
-    int st = 0; rusage ru; wait4(pid, &st, 0, &ru); unlink(path); rss = ru.ru_maxrss;
+    int st = 0; rusage ru; wait4(pid, &st, 0, &ru); rss = child_hwm(path); unlink(path);
     return WIFEXITED(st) && WEXITSTATUS(st) == 0;
 }
 int main(int argc, char** argv) {
@@ -65,6 +68,9 @@ int main(int argc, char** argv) {
         int afd = open(argv[2], O_RDONLY); if (afd < 0) return 2; Sink s{XXH3_createState(), 0}; XXH3_64bits_reset(s.st);
         const int64_t n = aceapex_decompress_stream(rd, &afd, wr, &s, 0, ACEAPEX_STREAM_VERIFY);
         const uint64_t h = XXH3_64bits_digest(s.st); const uint64_t want = strtoull(argv[3], 0, 16);
+        { FILE* q = fopen("/proc/self/status", "r"); char l[256]; long hwm = -1;   // the peak of this process image only
+          while (q && fgets(l, sizeof l, q)) if (!strncmp(l, "VmHWM:", 6)) hwm = atol(l + 6);
+          if (q) fclose(q); FILE* o = fopen((std::string(argv[2]) + ".hwm").c_str(), "w"); if (o) { fprintf(o, "%ld\n", hwm); fclose(o); } }
         return n > 0 && (uint64_t)n == s.n && h == want ? 0 : 1;
     }
     const size_t sizes[2] = {(size_t)64 << 20, (size_t)512 << 20}; long rss[2] = {0, 0}; bool ok[2] = {false, false}; std::string note;
@@ -81,8 +87,8 @@ int main(int argc, char** argv) {
         char hex[32]; snprintf(hex, sizeof hex, "%llx", (unsigned long long)want);
         const pid_t pid = fork();
         if (pid == 0) { execl("/proc/self/exe", argv[0], "--child", path, hex, (char*)nullptr); _exit(3); }
-        int st = 0; rusage ru; wait4(pid, &st, 0, &ru); if (getenv("KEEP_ARCHIVE")) fprintf(stderr, "kept %s\n", path); else unlink(path);
-        ok[k] = WIFEXITED(st) && WEXITSTATUS(st) == 0; rss[k] = ru.ru_maxrss;
+        int st = 0; rusage ru; wait4(pid, &st, 0, &ru); rss[k] = child_hwm(path); if (getenv("KEEP_ARCHIVE")) fprintf(stderr, "kept %s\n", path); else unlink(path);
+        ok[k] = WIFEXITED(st) && WEXITSTATUS(st) == 0 && rss[k] > 0;
     }
     const long grow = rss[1] - rss[0];
     std::string tx; bool tok = true;
