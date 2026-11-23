@@ -3,9 +3,12 @@
 # explicit STOP, `trap ERR`. Do not rewrite per task — source or copy this.
 #
 # GATE (CLAUDE.md §0.4): the run refuses to start unless CALIBRATION has a prediction
-# line for THIS task carrying all three fields — «опора», «потолок», «вероятность»
-# (or an explicit %). Negative control: a line missing any field makes the gate STOP
-# (every gate must be able to fail).
+# line for THIS task carrying the fields «опора», «потолок», «вероятность» (or an explicit %)
+# and, since GUARD-1 (23.11.2026), the killer criterion («убийственный» / «kill») and the counting
+# rule («правило подсчёта» / «counting rule») - and that line is COMMITTED: present verbatim in
+# HEAD of the git repository holding CALIBRATION (a prediction edited after the run cannot pass as
+# one written before it). The commit that introduced the line is logged in STATUS.
+# Negative controls: scripts/run_template_test.sh (each missing field and an uncommitted line STOP).
 #
 # Usage: run_template.sh <task-name-as-in-CALIBRATION> [-- <command...>]
 #   CALIB=<file>    override CALIBRATION path (default ~/yasha-context/ACEAPEX/CALIBRATION.md)
@@ -35,8 +38,18 @@ calibration_gate(){
   grep -qi 'опора'                  <<<"$line" || missing+=("опора")
   grep -qi 'потолок'                <<<"$line" || missing+=("потолок")
   grep -qiE 'вероятность|уверенность|[0-9]+ ?%'  <<<"$line" || missing+=("вероятность")
-  [ "${#missing[@]}" -eq 0 ] || die "CALIBRATION line for '$task' missing field(s): ${missing[*]} (§0.4 requires опора/потолок/вероятность)"
-  log "CALIBRATION gate OK for '$task' — опора/потолок/вероятность present"
+  grep -qiE 'убийственн|kill'       <<<"$line" || missing+=("убийственный критерий")
+  grep -qiE 'правил[оа] подсч[её]та|counting rule' <<<"$line" || missing+=("правило подсчёта")
+  [ "${#missing[@]}" -eq 0 ] || die "CALIBRATION line for '$task' missing field(s): ${missing[*]} (§0.4 + GUARD-1: опора/потолок/вероятность, убийственный критерий, правило подсчёта)"
+  # committed: the line must be in HEAD of the repository that holds CALIBRATION
+  local dir rel top sha
+  dir=$(cd "$(dirname "$CALIB")" && pwd); top=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true)
+  [ -n "$top" ] || die "CALIBRATION is not in a git repository: $CALIB (the prediction must be a commit)"
+  rel=$(realpath --relative-to="$top" "$dir/$(basename "$CALIB")")
+  git -C "$top" show "HEAD:$rel" 2>/dev/null | grep -qxF -- "$line" \
+    || die "CALIBRATION line for '$task' is not committed (not in HEAD:$rel) — commit the prediction BEFORE the run"
+  sha=$(git -C "$top" log --format=%h -S"$line" -- "$rel" 2>/dev/null | tail -1)
+  log "CALIBRATION gate OK for '$task' — опора/потолок/вероятность, убийственный критерий, правило подсчёта present; committed in ${sha:-HEAD} ($rel)"
 }
 calibration_gate "$TASK"
 

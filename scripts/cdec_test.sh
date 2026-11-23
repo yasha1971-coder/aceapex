@@ -279,4 +279,7 @@ if python3 -c "import pytest" 2>/dev/null; then
 else
   printf 'head_python_tests\tdeclared\tpytest not installed on this host\n'
 fi
+# GUARD-1: run_template.sh starts a run only with a committed CALIBRATION line carrying the prediction fields, the killer
+# criterion and the counting rule (scratch git repository, 8 cases; the previous template passes 0 of them)
+bash scripts/run_template_test.sh 2>/dev/null || true
 rm -rf $T
