@@ -1,4 +1,4 @@
-/* ax_fast.h - ACEPX2 header version 3, profile FAST: the format constants, the archive reader and the block
+/* ax_fast.h - ACEPX2 header version 3, profile FAST: the format constants, the archive reader and the block 
  * decoder. C99, no dependency, no allocation. One identical copy in src/, c/ and python/csrc/ (scripts/cdec_test.sh
  * checks that they are byte for byte the same); the C++ library includes this file, so every reader runs the one
  * decoder. GENERATED (FREEZE-2): everything after this preamble (from the AXF_VERSION define to the closing endif) is
