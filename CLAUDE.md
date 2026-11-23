@@ -71,6 +71,7 @@ ACEAPEX — параллельный блочный LZ77-компрессор с
 
 ## 5. Git и сервер
 - Автор: Yakiv Shavidze <aceapex.contour@outlook.com>. Никогда `git add -A`, без «!» в сообщении, без force-push и squash.
+- Одна задача — один исполнитель; имя исполнителя в описании PR.
 - `set -euo pipefail` в скриптах (не в циклах замеров и не с `| head`).
 - Коммит только явными путями (`git add <путь>` / `git commit <пути>`); не коммитить `results/HEAD.json`, `sweep.log`, локальный мусор.
 - PR только в наши репозитории (aceapex, aceapex-fast) через `gh api repos/yasha1971-coder/...`; чужие репозитории (lzbench, TurboBench) — ничего без слова Якова.
