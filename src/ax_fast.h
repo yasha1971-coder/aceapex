@@ -132,7 +132,9 @@ AXF_INLINE uint32_t axf_block_len(const axf_arc_t* a, uint32_t b) {
    decoder of TurboBench 2026.11.24), so there four 8-byte copies, which it expands inline */
 #if defined(__riscv)
 AXF_INLINE void axf_cp32(uint8_t* d, const uint8_t* s) {
-    memcpy(d, s, 8); memcpy(d + 8, s + 8, 8); memcpy(d + 16, s + 16, 8); memcpy(d + 24, s + 24, 8);
+    uint64_t a, b, c, e;
+    memcpy(&a, s, 8); memcpy(&b, s + 8, 8); memcpy(&c, s + 16, 8); memcpy(&e, s + 24, 8);
+    memcpy(d, &a, 8); memcpy(d + 8, &b, 8); memcpy(d + 16, &c, 8); memcpy(d + 24, &e, 8);
 }
 #else
 AXF_INLINE void axf_cp32(uint8_t* d, const uint8_t* s) { memcpy(d, s, 32); }
