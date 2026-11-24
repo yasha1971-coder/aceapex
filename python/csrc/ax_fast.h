@@ -127,8 +127,16 @@ AXF_INLINE uint32_t axf_block_len(const axf_arc_t* a, uint32_t b) {
     return (uint32_t)(a->orig - st < a->bs ? a->orig - st : a->bs);
 }
 
-/* 32-byte copy; memcpy of a constant size compiles to one vector move (AVX2), two (SSE2/NEON) */
+/* 32-byte copy; memcpy of a constant size compiles to one vector move (AVX2), two (SSE2/NEON). RISC-V: rv64gc
+   builds are strict-align by default and gcc 14 calls memcpy for 32 bytes of unknown alignment (57 calls in the block
+   decoder of TurboBench 2026.11.24), so there four 8-byte copies, which it expands inline */
+#if defined(__riscv)
+AXF_INLINE void axf_cp32(uint8_t* d, const uint8_t* s) {
+    memcpy(d, s, 8); memcpy(d + 8, s + 8, 8); memcpy(d + 16, s + 16, 8); memcpy(d + 24, s + 24, 8);
+}
+#else
 AXF_INLINE void axf_cp32(uint8_t* d, const uint8_t* s) { memcpy(d, s, 32); }
+#endif
 /* up to AXF_COPY + 30 bytes in 32-byte steps; exact when the source lies >= 64 bytes before the destination or is disjoint */
 AXF_INLINE void axf_cpw(uint8_t* d, const uint8_t* s, uint32_t l) {
     uint32_t k;
