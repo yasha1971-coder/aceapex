@@ -42,7 +42,7 @@ clean:
 	rm -rf $(OBJS) $(PROG) axdec libaceapex_decode.so libaceapex_gpu.so.1 libaceapex_gpu.so build/zstd
 
 # aceapex_api.cpp #includes aceapex_main.cpp; make must see that edge.
-src/aceapex_api.o: src/aceapex_main.cpp src/aceapex.h src/ax_align.h src/ax_fast.h src/ax_fast_enc.h src/ax_fast_glue.h
+src/aceapex_api.o: src/aceapex_main.cpp src/aceapex.h src/ax_align.h src/ax_fast.h src/ax_fast_enc.h src/ax_fast_glue.h src/ax_zframe.h src/lit_fse.cpp
 
 # Standalone C99 decoder (no C++, no threads): CLI and a shared library for bindings.
 axdec: c/axdec.c c/aceapex_decode.c c/aceapex_decode.h c/ax_rans.h c/ax_lit_open.h c/ax_env.h c/ax_fast.h
