@@ -4,7 +4,7 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
-## v2.6.5 — candidate, not released (security fix; release by Yakiv's word)
+## v2.6.5 — 2026-11-26
 
 Security: only zstd v1 frames reach libzstd. `ZSTD_decompress` / `ZSTD_decompressDCtx` decode every concatenated frame,
 and a libzstd built with `ZSTD_LEGACY_SUPPORT` (Debian / Ubuntu system libzstd: formats v0.5-v0.7) ran its legacy
