@@ -28,8 +28,12 @@ jobs:
         nvcc -std=c++17 -O3 -arch=sm_90 -Isrc -I"$NV/include" scripts/gpu_a1.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp \
           -L"$(dirname "$(find / -name "$NVLIB" -path '*nvcomp*' | head -1)")" -l:"$NVLIB" -lhts -lpthread -o gpu_a1
         ls -l gpu_a1
+    - name: Build gpu_a1h (hypotheses H1-H3, -DAXW_PROF, sm_90)
+      run: |
+        nvcc -std=c++17 -O3 -arch=sm_90 -DAXW_PROF -Isrc scripts/gpu_a1h.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp -Xptxas -v -o gpu_a1h 2>&1 | grep -E 'k_decode_list|registers|smem' | head -40
+        ls -l gpu_a1h
     - name: Build the CLI
       run: make -j4 aceapex && ./aceapex --version | head -1
     - name: Shell check of the pod script
       run: |
-        bash -n scripts/run_gpu_a1.sh && echo "run_gpu_a1.sh - syntax ok"
+        bash -n scripts/run_gpu_a1.sh && bash -n scripts/run_gpu_a1h.sh && echo "pod scripts - syntax ok"

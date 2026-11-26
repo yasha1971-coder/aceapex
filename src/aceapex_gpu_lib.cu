@@ -42,6 +42,16 @@ static aceapex_gpu_phase_fn g_phase = nullptr;
 extern "C" void aceapex_gpu_debug_phase_hook(aceapex_gpu_phase_fn f){ g_phase=f; }
 static inline void phase(const char* p, cudaStream_t s){ if(g_phase) g_phase(p,s); }
 static const unsigned TPB = 128, G = 32;
+#ifdef AXW_PROF
+// GPU-A1 hypotheses (measurement branch gpu-a1, never merged; scripts/gpu_a1h.cu): the match-kernel variant of the
+// windows batch (0 production, 1 parse only, 2 shared-memory ring R=4096), a host hook after each phase is enqueued
+// (the harness records CUDA events there) and the plan geometry
+#include "../scripts/gpu_a1h_kernels.cuh"
+extern "C" { int axw_variant = 0; void (*axw_hook)(int, cudaStream_t) = nullptr; }
+#define AXW_MARK(k) do { if (axw_hook) axw_hook((k), s); } while (0)
+#else
+#define AXW_MARK(k) do { } while (0)
+#endif
 
 // ---- small kernels of the library
 __global__ void kg_init(uint32_t* e){ if(threadIdx.x==0){ e[0]=0; e[1]=~0u; e[2]=0; e[3]=~0u; e[4]=0; e[5]=0; e[6]=0; e[7]=0; e[8]=0; } }
@@ -175,28 +185,39 @@ extern "C" int aceapex_gpu_decompress_windows_async(const aceapex_gpu_plan* pl, 
     RansDesc* dR=(RansDesc*)(T+P.o_rans); OpenDesc* dO=(OpenDesc*)(T+P.o_open);
     WinArgs a; for(int q=0;q<4;q++){ a.cb[q]=L.cb[q]; a.ch[q]=P.chunk[q]; }
     WinArgs a0=a; for(int q=1;q<4;q++) a0.cb[q]=a.cb[0];                       // open keys: the literal chunk index alone (stream 0)
-    kg_init<<<1,32,0,s>>>(err);
-    cudaMemsetAsync(T+L.need,0,(size_t)P.nb,s); cudaMemsetAsync(T+L.cneed,0,(size_t)(L.cb[3]+L.nc[3]),s); cudaMemsetAsync(cnt,0,64,s);
+    AXW_MARK(0); kg_init<<<1,32,0,s>>>(err);
+    cudaMemsetAsync(T+L.need,0,(size_t)P.nb,s); cudaMemsetAsync(T+L.cneed,0,(size_t)(L.cb[3]+L.nc[3]),s); cudaMemsetAsync(cnt,0,64,s); AXW_MARK(1);
     if(NR) kg_fix_rans<<<blocks_for(NR),256,0,s>>>((const agp::Rans*)(M+pl->o_rans),dR,NR,T);
     if(NO) kg_fix_open<<<blocks_for(NO),256,0,s>>>((const agp::Open*)(M+pl->o_open),dO,NO,T);
-    kw_mark<<<std::max(1u,std::min(blocks_for(n),4096u)),256,0,s>>>(d_offsets,n,W,(uint32_t)P.bs,P.orig,T+L.need,err);
+    AXW_MARK(2); kw_mark<<<std::max(1u,std::min(blocks_for(n),4096u)),256,0,s>>>(d_offsets,n,W,(uint32_t)P.bs,P.orig,T+L.need,err);
     kw_chunks<<<std::max(1u,std::min(blocks_for(P.nb),4096u)),256,0,s>>>((const BlockOffsets*)(M+pl->o_bo),P.nb,T+L.need,a,T+L.cneed);
     kw_scan<<<1,1024,0,s>>>(T+L.need,P.nb,(uint32_t*)(T+L.slot),(uint32_t*)(T+L.list),cnt);
     if(NR) kw_pick<<<std::min(blocks_for(NR),4096u),256,0,s>>>((const uint8_t*)dR,(uint32_t)sizeof(RansDesc),(const uint64_t*)(M+pl->o_rkey),NR,T+L.cneed,a,T+L.rj,cnt+0);
     if(NO) kw_pick<<<std::min(blocks_for(NO),4096u),256,0,s>>>((const uint8_t*)dO,(uint32_t)sizeof(OpenDesc),(const uint64_t*)(M+pl->o_okey),NO,T+L.cneed,a0,T+L.oj,cnt+1);
     if(NW) kw_pick<<<std::min(blocks_for(NW),4096u),256,0,s>>>((const uint8_t*)(M+pl->o_raw),(uint32_t)sizeof(agp::Raw),(const uint64_t*)(M+pl->o_wkey),NW,T+L.cneed,a,T+L.wj,cnt+2);
     if(NW) kw_raw_n<<<std::min(NW,4096u),256,0,s>>>((const agp::Raw*)(T+L.wj),cnt+2,in,T);
-    const unsigned gw=std::max(1u,pl->grid*4), gyo=(unsigned)((P.chunk[0]/16+255)/256);
+    AXW_MARK(3); const unsigned gw=std::max(1u,pl->grid*4), gyo=(unsigned)((P.chunk[0]/16+255)/256);
     if(NR) k_rans_n<1><<<std::min(gw,(NR+AXW_WARPS-1)/AXW_WARPS),32*AXW_WARPS,0,s>>>(in,(const RansDesc*)(T+L.rj),cnt+0,err);
     if(NO){ k_open_cg_n<<<std::min(gw,NO),AXO_NT,0,s>>>((const OpenDesc*)(T+L.oj),cnt+1,err+2);
             k_open_bases_s_n<<<dim3(std::min(gw,NO),gyo),256,0,s>>>((const OpenDesc*)(T+L.oj),cnt+1); }
-    uint32_t* ctr=(uint32_t*)(T+P.o_ctr); kg_set<<<1,1,0,s>>>(ctr,0);
+    AXW_MARK(4); uint32_t* ctr=(uint32_t*)(T+P.o_ctr); kg_set<<<1,1,0,s>>>(ctr,0);
+#ifdef AXW_PROF
+    if(axw_variant==1) k_decode_list_v<G,1,4096,TPB/G><<<std::max(1u,pl->grid),TPB,0,s>>>(T+P.o_s[0],T+P.o_s[1],T+P.o_s[2],T+P.o_s[3],(const BlockOffsets*)(M+pl->o_bo),P.orig,P.bs,T+L.sbuf,
+        (const uint32_t*)(T+L.list),cnt+3,ctr,err+4);
+    else if(axw_variant==2) k_decode_list_v<G,2,4096,TPB/G><<<std::max(1u,pl->grid),TPB,0,s>>>(T+P.o_s[0],T+P.o_s[1],T+P.o_s[2],T+P.o_s[3],(const BlockOffsets*)(M+pl->o_bo),P.orig,P.bs,T+L.sbuf,
+        (const uint32_t*)(T+L.list),cnt+3,ctr,err+4);
+    else
+#endif
     k_decode_list<G><<<std::max(1u,pl->grid),TPB,0,s>>>(T+P.o_s[0],T+P.o_s[1],T+P.o_s[2],T+P.o_s[3],(const BlockOffsets*)(M+pl->o_bo),P.orig,P.bs,T+L.sbuf,
         (const uint32_t*)(T+L.list),cnt+3,ctr,err+4);
-    kw_gather<<<std::max(1u,std::min(n,65535u)),256,0,s>>>(d_offsets,n,W,(uint32_t)P.bs,P.orig,(const uint32_t*)(T+L.slot),T+L.sbuf,(uint8_t*)d_out);
-    kg_status<<<1,32,0,s>>>(err,d_status);
+    AXW_MARK(5); kw_gather<<<std::max(1u,std::min(n,65535u)),256,0,s>>>(d_offsets,n,W,(uint32_t)P.bs,P.orig,(const uint32_t*)(T+L.slot),T+L.sbuf,(uint8_t*)d_out);
+    kg_status<<<1,32,0,s>>>(err,d_status); AXW_MARK(6);
     return cudaGetLastError()==cudaSuccess ? ACEAPEX_GPU_OK : ACEAPEX_GPU_E_CUDA;
 }
+#ifdef AXW_PROF
+extern "C" void axw_info(const aceapex_gpu_plan* p, uint64_t* v){ const agp::Plan& P=p->P;   // bs nb orig NR NO NW chunk0..3 grid
+    v[0]=P.bs; v[1]=P.nb; v[2]=P.orig; v[3]=P.rans.size(); v[4]=P.open.size(); v[5]=P.raw.size(); for(int q=0;q<4;q++) v[6+q]=P.chunk[q]; v[10]=p->grid; }
+#endif
 extern "C" void   aceapex_gpu_plan_destroy(aceapex_gpu_plan* p){ if(p){ if(p->dmem) cudaFree(p->dmem); delete p; } }
 
 // the whole schedule; S == nullptr: every job and every block into d_out; S: the range selection into the window
