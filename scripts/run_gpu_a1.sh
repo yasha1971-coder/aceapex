@@ -10,6 +10,7 @@
 # The pod deletes itself: the orchestrator on ace-core also arms a timer that removes this pod by id (GPU-A1 step 3).
 set -uo pipefail
 R=${R:-/root/gpu_a1}; W=${W:-/root/gpu_a1_work}; REF=${REF:-gpu-a1}; WAIT_MIN=${WAIT_MIN:-30}; T=${THREADS:-$(nproc)}; mkdir -p "$R" "$W"; L=$R/run.log   # THREADS: the pod's vCPU (nproc shows the host)
+export PATH="/usr/local/cuda/bin:$PATH"   # a non-login shell (ssh + nohup) on the RunPod image has no CUDA in PATH
 log() { echo "$*" | tee -a "$L"; }
 finish() {
     rc=$?; log "== exit rc $rc at $(date -u +%FT%TZ)"; grep '^A1ROW' "$L" > "$R/a1rows.tsv" 2>/dev/null
