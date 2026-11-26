@@ -86,6 +86,7 @@ head_cmake	always
 head_enc_mem	always
 head_stream_peak	always
 head_run_template_gate	always
+head_zstd_legacy_reject	always
 head_alloc_encode_leak	always
 head_alloc_lit_ctx	always
 head_alloc_ranges_span	always

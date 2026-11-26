@@ -5,11 +5,14 @@
 #include <pthread.h>
 #include <algorithm>
 #include <zstd.h>
+#include <zstd_errors.h>
+#include "ax_zframe.h"
 
 static size_t LIT_compress(void* dst, size_t dstCap, const void* src, size_t srcSize) {
     return ZSTD_compress(dst, dstCap, src, srcSize, 1);
 }
 static size_t LIT_decompress(void* dst, size_t dstCap, const void* src, size_t srcSize) {
+    if (!ax_zframes_ok(src, srcSize)) return (size_t)0 - (size_t)ZSTD_error_corruption_detected;   /* 2.6.5: v1 frames only */
     return ZSTD_decompress(dst, dstCap, src, srcSize);
 }
 static size_t LIT_compressBound(size_t srcSize) {

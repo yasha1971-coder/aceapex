@@ -32,6 +32,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <zstd.h>
+#include "ax_zframe.h"  /* 2.6.5: only zstd v1 frames reach libzstd; identical copy of src/ax_zframe.h */
 
 typedef struct { uint64_t lit_off, off_off, len_off, cmd_off, lit_sz, off_sz, len_sz, cmd_sz; } BO;
 typedef struct {
@@ -43,6 +44,7 @@ static uint64_t rd64(const uint8_t* p){ uint64_t v; memcpy(&v,p,8); return v; }
 static uint32_t rd32(const uint8_t* p){ uint32_t v; memcpy(&v,p,4); return v; }
 static BO bo_at(const uint8_t* t, size_t b){ BO o; memcpy(&o,t+64*b,64); return o; }
 static int zdec(ZSTD_DCtx* x, void* d, size_t raw, const void* s, size_t n){
+    if (!ax_zframes_ok(s, n)) return 0;   /* a legacy or skippable frame: corrupt archive (ax_zframe.h) */
     size_t r = x ? ZSTD_decompressDCtx(x,d,raw,s,n) : ZSTD_decompress(d,raw,s,n); return !ZSTD_isError(r) && r==raw; }
 
 /* ---- archive header / bounds ------------------------------------------------------- */
