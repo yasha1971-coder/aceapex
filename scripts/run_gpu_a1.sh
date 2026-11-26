@@ -19,6 +19,8 @@ finish() {
     if [ "${KEEP:-0}" = 1 ]; then log "KEEP=1: the pod stays"; return; fi
     for i in $(seq $((WAIT_MIN * 6))); do [ -f "$R/FETCHED" ] && break; sleep 10; done
     log "removing pod ${RUNPOD_POD_ID:-?} ($( [ -f "$R/FETCHED" ] && echo 'results fetched' || echo "results NOT fetched after $WAIT_MIN min"))"
+    # a shell started over ssh has no RUNPOD_* variables: take them from the container's first process (GPU-A1 26.11)
+    for v in RUNPOD_POD_ID RUNPOD_API_KEY; do [ -n "${!v:-}" ] || export "$v=$(tr '\0' '\n' < /proc/1/environ 2>/dev/null | sed -n "s/^$v=//p")"; done
     if [ -n "${RUNPOD_POD_ID:-}" ] && command -v runpodctl >/dev/null; then   # 3.x: pod delete; the 1.x of pod images: remove pod
         runpodctl pod delete "$RUNPOD_POD_ID" 2>/dev/null || runpodctl remove pod "$RUNPOD_POD_ID"; else log "runpodctl or RUNPOD_POD_ID missing: remove the pod by hand"; fi
 }
@@ -54,7 +56,7 @@ get t2t.fa cd1e52ce400c027ed0b7ab4b9d613f5a https://ftp.ncbi.nlm.nih.gov/genomes
 for X in chr1 t2t; do
     env -i PATH="$PATH" AX_PROFILE=open ./aceapex c --in "$W/$X.fa" --out "$W/$X.open.aet" --threads "$T" >/dev/null 2>&1 || { log "$X: encode failed"; exit 4; }
     ./aceapex d --in "$W/$X.open.aet" --out "$W/$X.rt" >/dev/null 2>&1 && cmp -s "$W/$X.rt" "$W/$X.fa" && rm -f "$W/$X.rt" || { log "$X: open archive round trip FAILED"; exit 4; }
-    bgzip -@ "$T" -i -c "$W/$X.fa" > "$W/$X.fa.bgz" || { log "$X: bgzip failed"; exit 4; }
+    bgzip -@ "$T" -i -I "$W/$X.fa.bgz.gzi" -c "$W/$X.fa" > "$W/$X.fa.bgz" || { log "$X: bgzip failed"; exit 4; }   # -I: with -c the index was named <input>.gz.gzi
     log "$X: open archive $(stat -c%s "$W/$X.open.aet") B (CPU round trip ok), bgzf $(stat -c%s "$W/$X.fa.bgz") + gzi $(stat -c%s "$W/$X.fa.bgz.gzi") B"
 done
 log "t2t.open pinned size in scripts/gpu_run.sh: 853265321 B"
