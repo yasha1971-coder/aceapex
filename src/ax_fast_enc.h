@@ -30,13 +30,29 @@
 namespace axf {
 
 enum : uint32_t { LL_EXT = 63, ML_EXT = 63, D_MAX = (1u << 20) - 1, WIN = AXF_BLOCK_MAX };
-static const double LAMBDA = 2.0;        // optimal parse: decode cost of a token, in bytes
-static const int    DEPTH_GREEDY = 64, DEPTH_OPT = 512;
+// FAST-PARETO-1 prototype knobs (encoder only; the format and the decoder are unchanged): the defaults are the 2.6.5 values
+#ifndef AXF_P_LAMBDA
+#define AXF_P_LAMBDA 2.0
+#endif
+#ifndef AXF_P_DEPTH
+#define AXF_P_DEPTH 512
+#endif
+#ifndef AXF_P_NICE
+#define AXF_P_NICE 256
+#endif
+#ifndef AXF_P_MM_OPT
+#define AXF_P_MM_OPT 16, 12, 8, 5
+#endif
+#ifndef AXF_P_LIFT
+#define AXF_P_LIFT 0
+#endif
+static const double LAMBDA = AXF_P_LAMBDA;        // optimal parse: decode cost of a token, in bytes
+static const int    DEPTH_GREEDY = 64, DEPTH_OPT = AXF_P_DEPTH;
 
 struct Params { uint32_t mm; int depth; bool lazy, optimal; };
 // fast-profile level 1..8 -> parameters; 0 = unknown level
 static inline bool level_params(int level, Params& p) {
-    static const uint32_t MM[8] = {16, 12, 8, 5, 16, 12, 8, 5};
+    static const uint32_t MM[8] = {16, 12, 8, 5, AXF_P_MM_OPT};
     if (level < 1 || level > 8) return false;
     p.mm = MM[level - 1]; p.optimal = level >= 5; p.lazy = true; p.depth = p.optimal ? DEPTH_OPT : DEPTH_GREEDY;
     return true;
@@ -232,7 +248,7 @@ static size_t enc_optimal(const uint8_t* in, uint32_t n, uint8_t* out, const Par
     const uint32_t HB = 16, HN = 1u << HB, mm = P.mm; e.head.assign(HN, 0xffffffffu); e.chain.assign(n + 1, 0xffffffffu);
     auto H = [&](uint32_t p) { return (rd32(in + p) * 0x9E3779B1u) >> (32 - HB); };
     e.bl.assign(n + 1, 0); e.bd.assign(n + 1, 0);
-    const uint32_t lastp = n > 12 ? n - 12 : 0, LONG = 4096, NICE = 256;   // NICE: a match this long ends the chain walk
+    const uint32_t lastp = n > 12 ? n - 12 : 0, LONG = 4096, NICE = AXF_P_NICE;   // NICE: a match this long ends the chain walk
     for (uint32_t pos = 0; pos < lastp; pos++) {
         const uint32_t h = H(pos); uint32_t cand = e.head[h], best = 0, bdist = 0; int dep = P.depth; const uint32_t lim = n - pos - 8;
         while (cand != 0xffffffffu && dep-- > 0) {
@@ -240,6 +256,10 @@ static size_t enc_optimal(const uint8_t* in, uint32_t n, uint8_t* out, const Par
             if (d >= AXF_MIN_DIST && rd32(in + cand) == rd32(in + pos)) {
                 const uint32_t l = match_len(in, pos, cand, lim);
                 if (l > best) { best = l; bdist = d; if (l >= NICE) break; }   // long enough: stop the walk (short periods made every candidate run to LONG)
+            }
+            else if (AXF_P_LIFT && d < AXF_MIN_DIST) {   // prototype: lift a short distance to its nearest multiple >= 64
+                const uint32_t d2 = d * ((AXF_MIN_DIST + d - 1) / d);
+                if (d2 <= pos && rd32(in + pos - d2) == rd32(in + pos)) { const uint32_t l = match_len(in, pos, pos - d2, lim); if (l > best) { best = l; bdist = d2; if (l >= NICE) break; } }
             }
             cand = e.chain[cand];
         }
