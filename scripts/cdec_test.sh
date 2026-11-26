@@ -51,8 +51,9 @@ fi
 if cmp -s c/aceapex_decode.c python/csrc/aceapex_decode.c && cmp -s c/aceapex_decode.h python/csrc/aceapex_decode.h \
    && cmp -s src/ax_rans.h c/ax_rans.h && cmp -s src/ax_rans.h python/csrc/ax_rans.h \
    && cmp -s src/ax_lit_open.h c/ax_lit_open.h && cmp -s src/ax_lit_open.h python/csrc/ax_lit_open.h \
-   && cmp -s src/ax_fast.h c/ax_fast.h && cmp -s src/ax_fast.h python/csrc/ax_fast.h; then r=pass; else r=fail; fi
-printf 'head_python_csrc_in_sync\t%s\tpython/csrc == c/ (aceapex_decode.c, .h); ax_rans.h, ax_lit_open.h and ax_fast.h identical in src/, c/, python/csrc/\n' "$r"
+   && cmp -s src/ax_fast.h c/ax_fast.h && cmp -s src/ax_fast.h python/csrc/ax_fast.h \
+   && cmp -s src/ax_zframe.h c/ax_zframe.h && cmp -s src/ax_zframe.h python/csrc/ax_zframe.h; then r=pass; else r=fail; fi
+printf 'head_python_csrc_in_sync\t%s\tpython/csrc == c/ (aceapex_decode.c, .h); ax_rans.h, ax_lit_open.h, ax_fast.h and ax_zframe.h identical in src/, c/, python/csrc/\n' "$r"
 # the GPU rANS chunk decoder (k_rans, per-lane steps in src/ax_rans_warp.h) run on the CPU
 # lane by lane against axr_decode: round-trips, the conformance rANS chunks, mutations
 if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/rans_emu scripts/rans_warp_emu.cpp 2>$T/emu.err; then
@@ -134,7 +135,7 @@ if ${CC:-gcc} -std=c99 $C99_SAN -Ic -o $T/c99a_test verify/repro/c99_alloc/c99_a
 else printf 'head_c99_alloc\tfail\tbuild failed: %s\n' "$(head -c 150 $T/c99a.err | tr '\n\t' '  ')"; fi
 # 2.6.4: fuzz/fuzz_c99.c (every C99 entry point) without libFuzzer: 20 s of mutants of the conformance fixtures up to
 # 120 KB and the repro archives under ASan+UBSan, allocations above 128 MiB abort; v2.6.3 aborts on the seeds alone
-FZ_SEEDS=$(find verify/fixtures/conf -name '*.aet' -size -120k | sort; ls verify/repro/c99_alloc/*.aet)
+FZ_SEEDS=$(find verify/fixtures/conf -name '*.aet' -size -120k | sort; ls verify/repro/c99_alloc/*.aet verify/repro/zstd_legacy/*.aet)
 if ${CC:-gcc} -std=c99 $C99_SAN -Ic -c -o $T/fz_dec.o c/aceapex_decode.c 2>$T/fz.err \
    && ${CC:-gcc} -std=c99 $C99_SAN -Ic -c -o $T/fz_c99.o fuzz/fuzz_c99.c 2>>$T/fz.err \
    && ${CXX:-g++} -std=c++17 $C99_SAN -o $T/fz_c99 fuzz/standalone.cpp $T/fz_c99.o $T/fz_dec.o -lzstd -lm 2>>$T/fz.err; then
@@ -161,6 +162,28 @@ if ${CXX:-g++} -std=c++17 $C99_SAN -DCA_SAN -Isrc -o $T/cpas_test verify/repro/c
   mkdir -p $T/cpas; co=$(ASAN_OPTIONS=allocator_may_return_null=1:max_allocation_size_mb=64 $T/cpas_test verify/repro verify/fixtures/conf $T/cpas 2>/dev/null)
   echo "$co" | grep '^head_cpp_alloc_san' || printf 'head_cpp_alloc_san\tfail\tno result line\n'
 else printf 'head_cpp_alloc_san\tfail\tbuild failed: %s\n' "$(head -c 150 $T/cpas.err | tr '\n\t' '  ')"; fi
+# 2.6.5 SEC-ZSTD-1: only zstd v1 frames reach libzstd (src/ax_zframe.h, copies in c/ and python/csrc/). The four
+# archives of verify/repro/zstd_legacy (a v0.7 frame, a v1 frame + a v0.7 frame, a skippable + a v1 frame, one v1 frame)
+# through every C++ entry point and the CLI, every C99 entry point and the Python package: with the check only zl_v1
+# decodes. Negative control, the same sources with -DAX_ZFRAME_NO_CHECK on this machine's libzstd: the skippable one
+# decodes, and when libzstd decodes legacy frames (Debian / Ubuntu libzstd: v0.5-v0.7) the v0.7 ones decode through the
+# legacy decoder - each control must decode, or the archives do not test what they claim.
+zl=""; zlf=0; ZD=verify/repro/zstd_legacy
+for m in check control; do D=; [ $m = control ] && D=-DAX_ZFRAME_NO_CHECK
+  if ${CXX:-g++} -std=c++17 -O1 $D -Isrc -o $T/zl_cpp_$m $ZD/zstd_legacy_test.cpp -lzstd -lpthread 2>$T/zl.err; then
+    mkdir -p $T/zl_$m; r=$($T/zl_cpp_$m $ZD $T/zl_$m 2>/dev/null); zl="$zl | $(echo "$r" | cut -f1,2,3,4 | tr '\t' ' ')"; echo "$r" | grep -q "	pass	" || zlf=1
+  else zl="$zl | cpp $m build failed"; zlf=1; fi
+  if ${CC:-gcc} -std=c99 -O1 $D -Ic -o $T/zl_c99_$m $ZD/zstd_legacy_c99.c c/aceapex_decode.c -lzstd 2>$T/zl.err; then
+    r=$($T/zl_c99_$m $ZD 2>/dev/null); zl="$zl | $(echo "$r" | cut -f1,2,3,4 | tr '\t' ' ')"; echo "$r" | grep -q "	pass	" || zlf=1
+    [ $m = control ] && { echo "$r" | grep -q "decodes legacy" && LG=1 || LG=0; }
+  else zl="$zl | c99 $m build failed"; zlf=1; fi
+done
+for m in check control; do D=; [ $m = control ] && D=-DAX_ZFRAME_NO_CHECK
+  if ${CC:-gcc} -std=c99 -O2 -fPIC -shared $D -Ic -o $T/libzl_$m.so c/aceapex_decode.c -lzstd 2>$T/zl.err; then
+    r=$(ACEAPEX_DECODE_SO=$T/libzl_$m.so PYTHONPATH=python python3 $ZD/zstd_legacy_py.py $ZD $m ${LG:-0} 2>/dev/null); zl="$zl | $(echo "$r" | cut -f1,2,3,4 | tr '\t' ' ')"; echo "$r" | grep -q "	pass	" || zlf=1
+  else zl="$zl | py $m build failed"; zlf=1; fi
+done
+printf 'head_zstd_legacy_reject\t%s\t%s (control on libzstd with legacy frames: %s)\n' "$([ $zlf = 0 ] && echo pass || echo fail)" "${zl# | }" "$([ "${LG:-0}" = 1 ] && echo yes || echo no)"
 # 2.6.4 step 2: fuzz/fuzz_region.cpp (region, ranges, decode_streams) without libFuzzer, 20 s of mutants of the same seeds
 # + cpp_alloc under ASan+UBSan, allocations above 128 MiB abort; v2.6.3 aborts on the conformance fixtures alone
 FZR_SEEDS="$FZ_SEEDS $(ls verify/repro/cpp_alloc/*.aet)"
@@ -279,4 +302,7 @@ if python3 -c "import pytest" 2>/dev/null; then
 else
   printf 'head_python_tests\tdeclared\tpytest not installed on this host\n'
 fi
+# GUARD-1: run_template.sh starts a run only with a committed CALIBRATION line carrying the prediction fields, the killer
+# criterion and the counting rule (scratch git repository, 8 cases; the previous template passes 0 of them)
+bash scripts/run_template_test.sh 2>/dev/null || true
 rm -rf $T

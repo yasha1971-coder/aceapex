@@ -39,6 +39,11 @@ GPU: [`aceapex_gpu.cu`](aceapex_gpu.cu) reads the same archive on the device thr
 
 ## Known issues
 
+Open in 2.6.4, fixed in 2.6.5 — security: a decoder built against a libzstd that has legacy-format support (the system
+libzstd of Debian and Ubuntu, likely Homebrew's) handed the bytes of a crafted archive to that library's legacy (v0.x)
+decoders. Affected: the C99 decoder, the Python package and the CLI or library built with `make` on such a libzstd. Not
+affected: the released static binaries (zstd built without legacy support), lzbench and TurboBench builds.
+
 Open in 2.6.3, fixed in 2.6.4 — **do not open untrusted archives through the C99 or Python decoders, region / ranges,
 the CLI or `aceapex faidx` until 2.6.4**:
 
@@ -285,6 +290,7 @@ sudo apt-get install -y libzstd-dev g++
 g++ -O3 -march=native -funroll-loops -std=c++17 -DACEAPEX_CLI \
     -o aceapex src/aceapex_api.cpp -lpthread -lzstd                    # or: make
 ```
+macOS / Linux (Homebrew): `brew install yasha1971-coder/aceapex/aceapex` ([tap](https://github.com/yasha1971-coder/homebrew-aceapex)).
 
 **Platforms (2.6.2).** The command-line tool `aceapex` builds on Linux and macOS (POSIX: it maps archives with `mmap`;
 macOS is not covered by CI). On Windows it does not build (`aceapex faidx` maps the archive with `mmap`, since 02.10.2026; 2.6.1 is the

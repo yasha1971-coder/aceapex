@@ -27,6 +27,7 @@
 #include "ax_env.h"         /* ax_getenv: FSE_CHUNK of legacy archives only with ACEAPEX_ENV_TUNING */
 #ifdef AGP_WITH_ZSTD           /* validate_zstd: libzstd on the host */
 #include <zstd.h>
+#include "ax_zframe.h"
 #include <atomic>
 #include <thread>
 #endif
@@ -301,6 +302,7 @@ static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt
    to exactly its expected size, else 1 (*bad = the first failing frame index found). nvCOMP 5.3 does not finish
    on some corrupt frames (verify/repro/README.md); after this it only gets frames libzstd decoded. */
 static inline int zstd_frame_decodes(ZSTD_DCtx* dc, const uint8_t* f, uint64_t csz, uint8_t* buf, uint64_t osz) {
+    if (!ax_zframes_ok(f, (size_t)csz)) return 1;   /* 2.6.5: v1 frames only (ax_zframe.h) */
     const size_t r = ZSTD_decompressDCtx(dc, buf, osz, f, csz); return !ZSTD_isError(r) && r == osz ? 0 : 1; }
 static inline int validate_zstd(const uint8_t* a, const Plan& P, unsigned threads = 0, uint64_t* bad = nullptr) {
     if (P.nv.empty()) return 0;

@@ -17,6 +17,7 @@
 #include <cstring>
 #include <algorithm>
 #include <zstd.h>
+#include "ax_zframe.h"
 #include "xxhash.h"
 
 namespace axlm {
@@ -89,7 +90,7 @@ struct View { uint64_t orig, hash; std::vector<uint8_t> lm; std::vector<Seg> S; 
 static int open(const uint8_t* src, size_t n, View& v) {
     if (n < 40) return ACEAPEX_ERR_DATA; uint64_t h[4]; memcpy(h, src + 8, 32); v.orig = h[0]; v.hash = h[1];
     if (h[3] > n - 40 || h[2] > ((uint64_t)1 << 40)) return ACEAPEX_ERR_DATA;
-    v.lm.resize((size_t)h[2]); if (ZSTD_decompress(v.lm.data(), v.lm.size(), src + 40, (size_t)h[3]) != h[2]) return ACEAPEX_ERR_DATA;
+    v.lm.resize((size_t)h[2]); if (!ax_zframes_ok(src + 40, (size_t)h[3]) || ZSTD_decompress(v.lm.data(), v.lm.size(), src + 40, (size_t)h[3]) != h[2]) return ACEAPEX_ERR_DATA;
     if (!parse(v.lm.data(), v.lm.data() + v.lm.size(), v.S, v.out_n, v.seq_n) || v.out_n != v.orig) return ACEAPEX_ERR_DATA;
     v.img = src + 40 + h[3]; v.img_n = n - 40 - (size_t)h[3]; return 0;
 }

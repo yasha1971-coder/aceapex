@@ -6,7 +6,7 @@ on:
   pull_request:
     paths: ['.github/workflows/watch-judges.yml', '.github/workflows/watch-judges-check.yml', 'research/watch/**']
   push:
-    branches: [main]
+    branches: [dev, release]
     paths: ['.github/workflows/watch-judges.yml', '.github/workflows/watch-judges-check.yml', 'research/watch/**']
 permissions:
   contents: read
