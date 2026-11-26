@@ -134,8 +134,11 @@ Blosc2 (aceapex-fast как пользовательский кодек; BLOSC2-
   (claude/COMPETITORS_2026-09-28.md, claude/STANDARD_PATH_2026-09-28.md, claude/STATE_*.md).
 
 ## Сейчас
-26.11 2.6.5 (исключение по безопасности, слово Якова): SEC-ZSTD-1 — только кадры zstd v1 доходят до libzstd (PR #45,
-цена chr1 +2…2.7 % принята); пакет со статическим zstd 1.6.0, байты всех уровней = 2.6.4. Следующий выпуск — 2.6.6 около 10.12.
+26.11 2.6.5 выпущен (исключение по безопасности, слово Якова): SEC-ZSTD-1 — только кадры zstd v1 доходят до libzstd (PR #45,
+цена chr1 +2…2.7 % принята); пакет со статическим zstd 1.6.0 (sha256 5899edaa…5e53), байты всех уровней = 2.6.4. Ворота на
+rel-265 daa8e44 (судья 98/0, CI, TurboBench master make / STATIC=1, lzbench x86-64 / x86-32 / ARM32, clang -m32 C99); dev 17e84e2
+(#46), main ce6b674 (#47, дерево = daa8e44), тег v2.6.5, release 9f2c34c «release: 2.6.5 (tree == v2.6.5)»; GitHub Release
+https://github.com/yasha1971-coder/aceapex/releases/tag/v2.6.5, Zenodo 10.5281/zenodo.24554186. Следующий выпуск — 2.6.6 около 10.12.
 24.11 BRANCH-1 (решение Якова): ветки по схеме zstd/lz4 — `dev` основная (из 1d23116), `release` = 4dda533 (дерево v2.6.4,
 защищена: без force push и удаления), `release-2.2.2` → `v2.2`, `main` заморожена на 1d23116; workflows main → dev (PR #42).
 22.11 v2.6.4 выпущен: тег v2.6.4 = ef9e673 (Яков; ворота на e8f4b1e, разница — документы), main b1280da (PR #35),

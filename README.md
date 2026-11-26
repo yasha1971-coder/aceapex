@@ -387,9 +387,8 @@ Measurement tool and its 435 records: [hw-apex-bench, 10.5281/zenodo.22713364](h
 
 ## Citation
 
-Software release v2.2.2 (2026-10-01): [10.5281/zenodo.23090998](https://doi.org/10.5281/zenodo.23090998);
-v2.2.1: [10.5281/zenodo.23070077](https://doi.org/10.5281/zenodo.23070077);
-v2.2.0: [10.5281/zenodo.23061934](https://doi.org/10.5281/zenodo.23061934).
+Software release v2.6.5 (2026-11-26): [10.5281/zenodo.24554186](https://doi.org/10.5281/zenodo.24554186);
+the DOIs of earlier releases (v2.2.0 … v2.6.4) are listed in [CITATION.cff](CITATION.cff).
 All versions: concept DOI [10.5281/zenodo.20440964](https://doi.org/10.5281/zenodo.20440964).
 Machine-readable metadata: [CITATION.cff](CITATION.cff) (GitHub "Cite this repository"). When a result
 comes from a paper, cite the paper (table above).
