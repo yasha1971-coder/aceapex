@@ -4,6 +4,27 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
+## v2.6.5 — 2026-11-26
+
+Security: only zstd v1 frames reach libzstd. `ZSTD_decompress` / `ZSTD_decompressDCtx` decode every concatenated frame,
+and a libzstd built with `ZSTD_LEGACY_SUPPORT` (Debian / Ubuntu system libzstd: formats v0.5-v0.7) ran its legacy
+decoders on a v0.x frame placed in an archive. Every decoder now walks the frames of each zstd chunk before libzstd
+sees it (magic 0xFD2FB528 at each start, size from `ZSTD_findFrameCompressedSize`) and refuses a legacy or skippable
+frame anywhere, or a truncated one, as a corrupt archive (`src/ax_zframe.h`, identical in `c/` and `python/csrc/`).
+The released static binaries had no legacy decoder; builds on a system libzstd (C99 `axdec`, `libaceapex_decode.so`,
+the Python package, `make` without `ZSTD_SRC`, Homebrew) did. Decoding in magicless mode does not help: zstd 1.4.8
+tests for legacy frames whatever the format (`verify/repro/zstd_legacy/magicless_probe.c`).
+
+- Regression `verify/repro/zstd_legacy` (claim `head_zstd_legacy_reject`): a v0.7 frame, a v1 + v0.7 frame, a skippable +
+  v1 frame and a valid v1 frame through every C++, C99 and Python entry point; the negative control (no check, system
+  libzstd) decodes the legacy ones through the legacy decoder.
+- Archives of the released encoders v2.1.0-v2.6.4 (810: silesia, enwik8, chr1 32 MiB, six small inputs; levels 1-4, 11,
+  14) read on every path. Archive bytes are those of 2.6.4 at every level.
+- Cost: decoding inputs with many small zstd frames is slower (ace-core, A/B under the shared lock: chr1 level 2,
+  ~14 200 frames, +2.0-2.7 %; enwik8 8 threads +1.3 %; silesia within ±0.8 %), accepted for safety.
+- The release package links zstd 1.6.0 (was 1.5.7): the archives of levels 1-4 are byte-identical with both on
+  silesia and enwik8 (8/8).
+
 ## v2.6.4 — 2026-11-22
 
 Decoder hardening and encoder memory; the archive bytes of every level are those of 2.6.3. FORMAT_ACEPX2.md now states three bounds a decoder may enforce (block_size ≤ 64 MiB, token chunk ≤ 16 MiB, a block's token slice ≤ 4 x block_size + 4 KiB); no released encoder writes past them by default.
