@@ -10,7 +10,7 @@
 // Per path: size (archive + index), open time, batch latency (call to sync) median of R repeats in two blocks (A/A),
 // windows/s and GB/s of output at the median, one-window latency (median of 200), and every window of the batch compared
 // with the original (copied back outside the timer). Any window that differs: KILL, exit 5, no table.
-// Build (CUDA 12, nvCOMP C API, htslib):
+// Build (CUDA 12, nvCOMP 6 C API - the GetTempSize calls take a stream since 6.0 -, htslib):
 //   nvcc -std=c++17 -O3 -arch=sm_90 -Isrc -I<nvcomp>/include scripts/gpu_a1.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp
 //        -L<nvcomp>/lib -lnvcomp -lhts -lpthread -o gpu_a1
 // Usage: gpu_a1 <archive.open.aet> <original> <original.bgz (with .gzi)> [n=10000] [W=16384] [R=20] [threads=all]
@@ -108,9 +108,9 @@ static bool path_nvcomp(Algo al, const std::vector<uint8_t>& o, const std::vecto
     for (size_t i = 0; i < N; i++) { hp[i] = d_orig + i * C; hs[i] = std::min(C, (size_t)(g_orig - i * C)); }
     size_t maxc = 0, ctemp = 0;
     if (al == ZSTD) { NV(nvcompBatchedZstdCompressGetMaxOutputChunkSize(C, nvcompBatchedZstdCompressDefaultOpts, &maxc));
-                      NV(nvcompBatchedZstdCompressGetTempSizeAsync(N, C, nvcompBatchedZstdCompressDefaultOpts, &ctemp, g_orig)); }
+                      NV(nvcompBatchedZstdCompressGetTempSize(N, C, nvcompBatchedZstdCompressDefaultOpts, &ctemp, g_orig, s)); }
     else            { NV(nvcompBatchedLZ4CompressGetMaxOutputChunkSize(C, nvcompBatchedLZ4CompressDefaultOpts, &maxc));
-                      NV(nvcompBatchedLZ4CompressGetTempSizeAsync(N, C, nvcompBatchedLZ4CompressDefaultOpts, &ctemp, g_orig)); }
+                      NV(nvcompBatchedLZ4CompressGetTempSize(N, C, nvcompBatchedLZ4CompressDefaultOpts, &ctemp, g_orig, s)); }
     void **d_up, **d_cp; size_t *d_us, *d_cs; uint8_t *d_cbuf, *d_ctmp; nvcompStatus_t* d_cst;
     CK(cudaMalloc(&d_up, N * 8)); CK(cudaMalloc(&d_us, N * 8)); CK(cudaMalloc(&d_cp, N * 8)); CK(cudaMalloc(&d_cs, N * 8)); CK(cudaMalloc(&d_cst, N * sizeof(nvcompStatus_t)));
     CK(cudaMalloc(&d_cbuf, N * maxc)); CK(cudaMalloc(&d_ctmp, ctemp ? ctemp : 1));
@@ -130,8 +130,8 @@ static bool path_nvcomp(Algo al, const std::vector<uint8_t>& o, const std::vecto
     // batch buffers: at most 2 chunks per window
     const size_t MAXJ = std::min(N, (size_t)2 * n);
     size_t dtemp = 0;
-    if (al == ZSTD) NV(nvcompBatchedZstdDecompressGetTempSizeAsync(MAXJ, C, nvcompBatchedZstdDecompressDefaultOpts, &dtemp, MAXJ * C));
-    else            NV(nvcompBatchedLZ4DecompressGetTempSizeAsync(MAXJ, C, nvcompBatchedLZ4DecompressDefaultOpts, &dtemp, MAXJ * C));
+    if (al == ZSTD) NV(nvcompBatchedZstdDecompressGetTempSize(MAXJ, C, nvcompBatchedZstdDecompressDefaultOpts, &dtemp, MAXJ * C, s));
+    else            NV(nvcompBatchedLZ4DecompressGetTempSize(MAXJ, C, nvcompBatchedLZ4DecompressDefaultOpts, &dtemp, MAXJ * C, s));
     uint8_t *d_dec, *d_dtmp, *d_out; void **d_jp, **d_jo; size_t *d_jcs, *d_jos, *d_jact; nvcompStatus_t* d_jst; uint32_t* d_slot; uint64_t* d_off;
     CK(cudaMalloc(&d_dec, MAXJ * C)); CK(cudaMalloc(&d_dtmp, dtemp ? dtemp : 1)); CK(cudaMalloc(&d_out, (size_t)n * W));
     CK(cudaMalloc(&d_jp, MAXJ * 8)); CK(cudaMalloc(&d_jo, MAXJ * 8)); CK(cudaMalloc(&d_jcs, MAXJ * 8)); CK(cudaMalloc(&d_jos, MAXJ * 8)); CK(cudaMalloc(&d_jact, MAXJ * 8));
