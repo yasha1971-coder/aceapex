@@ -48,6 +48,7 @@
 #endif
 #include "xxhash.h"
 #define OUR_CHECKSUM(buf,sz) XXH3_64bits(buf,sz)
+#include "ax_zframe.h"   // 2.6.5: only zstd v1 frames reach libzstd (no legacy v0.x decoder on archive bytes)
 #include "lit_fse.cpp"
 #include "ax_rans.h"
 #include "ax_lit_open.h"
@@ -1288,6 +1289,7 @@ static bool encode_file(const uint8_t* src, size_t src_size, int threads, int le
 // the output and the call reported success (region on a legacy archive, 21.09).
 // 2.6.3: ZSTD_decompress allocates its context; out of memory is not a corrupt frame (ax_nomem: ACEAPEX_ERR_MEMORY)
 static inline bool zdec_ok(void* dst,size_t raw,const void* src,size_t csz){
+    if(!ax_zframes_ok(src,csz)) return false;   // 2.6.5: a legacy or skippable frame is a corrupt archive (ax_zframe.h)
     size_t r=ZSTD_decompress(dst,raw,src,csz);
     if(ZSTD_isError(r)&&ZSTD_getErrorCode(r)==ZSTD_error_memory_allocation) ax_nomem();
     return !ZSTD_isError(r)&&r==raw; }
