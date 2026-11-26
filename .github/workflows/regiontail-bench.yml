@@ -1,0 +1,51 @@
+# REGION-TAIL-1 step 2 (measurement branch regiontail-bench, never merged; builds off ace-core by Yakiv's rule):
+# the chr1 archive of HW-REGION-1's ACEAPEX cell (tag v2.6.5 CLI, zstd 1.5.7 f8745da, ACEAPEX_BS=16384 LIT_CHUNK=65536
+# FSE_CHUNK=4096, level 2, 1 thread - codecs/aceapex.sh of hw-apex-bench) and the static base-measurement harness
+# tools/regiontail/dnasplit.c (gcc -O3 -std=c99 as the HW C99 library build), uploaded as artifacts; the timed run is
+# on ace-core under the OVH-BENCH lock. The run here only checks the method (decode == reference on every chunk).
+name: regiontail-bench
+on:
+  push:
+    branches: [regiontail-bench]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v5
+    - uses: actions/checkout@v5
+      with: {repository: yasha1971-coder/aceapex, ref: v2.6.5, path: ace265}
+    - uses: actions/checkout@v5
+      with: {repository: facebook/zstd, ref: f8745da6ff1ad1e7bab384bd1f9d742439278e99, path: zstd}
+    - name: zstd 1.5.7 static library (as the HW adapter)
+      run: make -C zstd/lib -j4 libzstd.a CFLAGS='-O3 -fPIC'
+    - name: aceapex CLI at v2.6.5 (as the HW adapter)
+      run: |
+        git -C ace265 rev-parse HEAD
+        make -C ace265 -j4 ZSTD_CFLAGS="-I$PWD/zstd/lib" ZSTD_LIBS="$PWD/zstd/lib/libzstd.a" aceapex
+        ./ace265/aceapex --version | head -1
+    - name: chr1
+      run: |
+        curl -sL https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr1.fa.gz | gunzip -c > chr1.fa
+        echo "9465e0f0df6e2c6eb39729c39cee5465  chr1.fa" | md5sum -c -
+    - name: archive of the HW-REGION-1 cell
+      run: |
+        env -u MIN_MATCH -u AX_PROFILE -u AX_TOK -u AX_LIT -u AX_ENC ACEAPEX_BS=16384 LIT_CHUNK=65536 FSE_CHUNK=4096 ./ace265/aceapex c --in chr1.fa --out chr1_interactive.aet --threads 1 --level 2 | tail -3
+        ./ace265/aceapex d --in chr1_interactive.aet --out chr1.out > /dev/null && cmp chr1.out chr1.fa && echo "round trip ok"
+        ls -l chr1_interactive.aet; sha256sum chr1_interactive.aet | tee chr1_interactive.aet.sha256
+    - name: dnasplit (static, gcc -O3 -std=c99) and a method check
+      run: |
+        gcc -O3 -std=c99 -Wall -Wextra -static -Izstd/lib -o dnasplit tools/regiontail/dnasplit.c zstd/lib/libzstd.a
+        sha256sum dnasplit | tee dnasplit.sha256
+        ./dnasplit chr1_interactive.aet 5 100
+    - uses: actions/upload-artifact@v5
+      with:
+        name: regiontail-base
+        path: |
+          chr1_interactive.aet
+          chr1_interactive.aet.sha256
+          dnasplit
+          dnasplit.sha256
