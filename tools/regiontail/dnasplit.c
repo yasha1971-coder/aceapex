@@ -6,6 +6,7 @@
  * each phase and the unpack share = (bases + case + exceptions) / total. Every chunk is checked against a reference
  * decode of the same code path (the full chunk once) - a mismatch is an error.
  * Usage: dnasplit ARCHIVE [R=15] [MAXC=400] */
+#define _POSIX_C_SOURCE 199309L   /* clock_gettime under -std=c99 */
 #include <zstd.h>
 #include <stdio.h>
 #include <stdlib.h>
