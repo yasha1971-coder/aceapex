@@ -29,7 +29,7 @@ trap finish EXIT
   nvidia-smi -q -d CLOCK,PERFORMANCE | sed -n 1,40p; nvcc --version 2>/dev/null | tail -1
   lscpu | grep -E 'Model name|^CPU\(s\)'; echo "threads used: $T"; free -g | head -2; df -h "$W" | tail -1; } 2>&1 | tee -a "$L"
 # 2. dependencies and builds
-apt-get update -qq >/dev/null 2>&1; DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libzstd-dev libhts-dev tabix git make g++ curl python3-pip >/dev/null 2>&1 || { log "apt failed"; exit 4; }
+apt-get update -qq >/dev/null 2>&1; DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libzstd-dev libhts-dev tabix git make g++ curl ca-certificates python3-pip >/dev/null 2>&1 || { log "apt failed"; exit 4; }
 pip install -q --break-system-packages nvidia-nvcomp-cu12 2>/dev/null || pip install -q nvidia-nvcomp-cu12 || { log "nvcomp pip failed"; exit 4; }
 log "nvcomp $(pip show nvidia-nvcomp-cu12 2>/dev/null | awk '/^Version/{print $2}')"
 NVL=$(find / -name 'libnvcomp.so*' -path '*nvcomp*' 2>/dev/null | head -1); NV=$(dirname "$(dirname "$NVL")"); NVLIB=$(basename "$NVL")
@@ -43,7 +43,8 @@ nvcc -std=c++17 -O3 -arch=sm_90 -Isrc -I"$NV/include" scripts/gpu_a1.cu src/acea
 # 3. corpora (md5 pinned as in scripts/gpu_run.sh)
 get() { local f=$W/$1 md5=$2 url=$3 gzmd5=${4:-}
     if [ ! -s "$f" ] || [ "$(md5sum < "$f" | cut -c1-32)" != "$md5" ]; then
-        curl -sL --retry 3 -o "$f.gz" "$url" || return 1
+        if [ -s "/workspace/aceapex_store/$1.gz" ]; then cp "/workspace/aceapex_store/$1.gz" "$f.gz" && log "$1.gz: copied from the volume (read only)"   # the store of gpu_run.sh on aceapex-desk
+        else curl -sSL --retry 3 -o "$f.gz" "$url" || { log "$1: download failed ($url)"; return 1; }; fi
         [ -z "$gzmd5" ] || [ "$(md5sum < "$f.gz" | cut -c1-32)" = "$gzmd5" ] || { log "$1.gz md5 mismatch"; return 1; }
         gunzip -c "$f.gz" > "$f" && rm -f "$f.gz"; fi
     [ "$(md5sum < "$f" | cut -c1-32)" = "$md5" ] && log "$1: $(stat -c%s "$f") B, md5 ok" || { log "$1 md5 mismatch"; return 1; }; }
