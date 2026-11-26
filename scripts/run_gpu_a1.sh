@@ -18,7 +18,8 @@ finish() {
     if [ "${KEEP:-0}" = 1 ]; then log "KEEP=1: the pod stays"; return; fi
     for i in $(seq $((WAIT_MIN * 6))); do [ -f "$R/FETCHED" ] && break; sleep 10; done
     log "removing pod ${RUNPOD_POD_ID:-?} ($( [ -f "$R/FETCHED" ] && echo 'results fetched' || echo "results NOT fetched after $WAIT_MIN min"))"
-    if [ -n "${RUNPOD_POD_ID:-}" ] && command -v runpodctl >/dev/null; then runpodctl remove pod "$RUNPOD_POD_ID"; else log "runpodctl or RUNPOD_POD_ID missing: remove the pod by hand"; fi
+    if [ -n "${RUNPOD_POD_ID:-}" ] && command -v runpodctl >/dev/null; then   # 3.x: pod delete; the 1.x of pod images: remove pod
+        runpodctl pod delete "$RUNPOD_POD_ID" 2>/dev/null || runpodctl remove pod "$RUNPOD_POD_ID"; else log "runpodctl or RUNPOD_POD_ID missing: remove the pod by hand"; fi
 }
 trap finish EXIT
 # 1. provenance
