@@ -9,7 +9,7 @@
 #   orchestrator to fetch $R and touch $R/FETCHED, then `runpodctl remove pod $RUNPOD_POD_ID` (KEEP=1 keeps the pod).
 # The pod deletes itself: the orchestrator on ace-core also arms a timer that removes this pod by id (GPU-A1 step 3).
 set -uo pipefail
-R=${R:-/root/gpu_a1}; W=${W:-/root/gpu_a1_work}; REF=${REF:-gpu-a1}; WAIT_MIN=${WAIT_MIN:-30}; T=${THREADS:-$(nproc)};   # THREADS: the pod's vCPU (nproc shows the host) mkdir -p "$R" "$W"; L=$R/run.log
+R=${R:-/root/gpu_a1}; W=${W:-/root/gpu_a1_work}; REF=${REF:-gpu-a1}; WAIT_MIN=${WAIT_MIN:-30}; T=${THREADS:-$(nproc)}; mkdir -p "$R" "$W"; L=$R/run.log   # THREADS: the pod's vCPU (nproc shows the host)
 log() { echo "$*" | tee -a "$L"; }
 finish() {
     rc=$?; log "== exit rc $rc at $(date -u +%FT%TZ)"; grep '^A1ROW' "$L" > "$R/a1rows.tsv" 2>/dev/null
