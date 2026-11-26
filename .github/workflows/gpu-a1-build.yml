@@ -1,0 +1,35 @@
+# GPU-A1 (measurement branch gpu-a1, never merged): build check without a GPU - scripts/gpu_a1.cu with the ACEAPEX GPU
+# library (open profile, no nvCOMP inside the library), nvCOMP's C API from the pip wheel for the zstd / LZ4 paths and
+# htslib for the BGZF path, in a CUDA devel container, sm_90 (H100); the CLI; shell check of scripts/run_gpu_a1.sh.
+name: gpu-a1-build
+on:
+  push:
+    branches: [gpu-a1]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    container: nvidia/cuda:12.6.3-devel-ubuntu24.04
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v5
+    - name: Dependencies
+      run: |
+        apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-pip libzstd-dev libhts-dev tabix make g++ git >/dev/null
+        pip install -q --break-system-packages nvidia-nvcomp-cu12
+        pip show nvidia-nvcomp-cu12 | grep -i '^version'
+        NVL=$(find / -name 'libnvcomp.so*' -path '*nvcomp*' 2>/dev/null | head -1); echo "nvcomp lib: $NVL"
+        NV=$(dirname "$(dirname "$NVL")"); ls "$NV" "$NV/include/nvcomp" | head -20; echo "NV=$NV" >> $GITHUB_ENV; echo "NVLIB=$(basename "$NVL")" >> $GITHUB_ENV
+        nvcc --version | tail -2
+    - name: Build gpu_a1 (sm_90)
+      run: |
+        nvcc -std=c++17 -O3 -arch=sm_90 -Isrc -I"$NV/include" scripts/gpu_a1.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp \
+          -L"$(dirname "$(find / -name "$NVLIB" -path '*nvcomp*' | head -1)")" -l:"$NVLIB" -lhts -lpthread -o gpu_a1
+        ls -l gpu_a1
+    - name: Build the CLI
+      run: make -j4 aceapex && ./aceapex --version | head -1
+    - name: Shell check of the pod script
+      run: |
+        bash -n scripts/run_gpu_a1.sh && echo "run_gpu_a1.sh - syntax ok"
