@@ -334,7 +334,7 @@ static bool ax_stream_sizes(const AetHeader& h, const uint8_t* zlit, const uint8
 // The slices of blocks b0..b1 in each stream: [lo, hi) from the first entry of b0 to the end of b1, inside the decoded
 // stream, and every entry of the span inside [lo, hi). The windows the range decoders return cover [lo, hi) only, so
 // an entry outside it was a read outside the window (2.6.4; until 2.6.3 only b0 and b1 were used, unchecked).
-static bool ax_span_ok(const BlockOffsets* t, size_t b0, size_t b1, const AxSizes& S, uint64_t bs, uint64_t lo[4], uint64_t hi[4]) {
+static bool ax_span_ok(const BlockOffsets* t, size_t b0, size_t b1, size_t nb, const AxSizes& S, uint64_t bs, uint64_t lo[4], uint64_t hi[4]) {
     const BlockOffsets f = ax_bo(t, b0), l = ax_bo(t, b1);
     const uint64_t fo[4] = {f.lit_off, f.off_off, f.len_off, f.cmd_off}, lo1[4] = {l.lit_off, l.off_off, l.len_off, l.cmd_off},
                    ls[4] = {l.lit_sz, l.off_sz, l.len_sz, l.cmd_sz};
@@ -346,6 +346,14 @@ static bool ax_span_ok(const BlockOffsets* t, size_t b0, size_t b1, const AxSize
         const BlockOffsets e = ax_bo(t, b);
         const uint64_t o[4] = {e.lit_off, e.off_off, e.len_off, e.cmd_off}, z[4] = {e.lit_sz, e.off_sz, e.len_sz, e.cmd_sz};
         for (int k = 0; k < 4; k++) if (o[k] < lo[k] || o[k] > hi[k] || z[k] > hi[k] - o[k] || (k && !ax_tok_slice_ok(z[k], bs))) return false; }
+    // 2.6.6: the span's slices follow each other and its neighbours' (ax_bo_next; block 0 starts at 0). The whole table is
+    // not read here: a region read touches its span only (the table of a 4 GB archive is ~1 MB)
+    // (the previous block's end may wrap if its entry is damaged: unsigned, defined, and then no offset equals it)
+    { uint64_t ex[4] = {0, 0, 0, 0};
+      if (b0) { const BlockOffsets p = ax_bo(t, b0 - 1);
+                ex[0] = p.lit_off + p.lit_sz; ex[1] = p.off_off + p.off_sz; ex[2] = p.len_off + p.len_sz; ex[3] = p.cmd_off + p.cmd_sz; }
+      const size_t c1 = b1 + 1 < nb ? b1 + 1 : b1;
+      for (size_t b = b0; b <= c1; b++) if (!ax_bo_next(ax_bo(t, b), ex)) return false; }
     return true;
 }
 
@@ -387,7 +395,7 @@ static int64_t ax_decompress_region_impl(
     size_t b0 = (size_t)(offset / hdr.block_size);
     size_t b1 = (size_t)((offset + length - 1) / hdr.block_size);
     if (b1 >= hdr.num_blocks) return ACEAPEX_ERR_DATA;
-    uint64_t lo[4], hi[4]; if (!ax_span_ok(boffs, b0, b1, S, hdr.block_size, lo, hi)) return ACEAPEX_ERR_DATA;
+    uint64_t lo[4], hi[4]; if (!ax_span_ok(boffs, b0, b1, hdr.num_blocks, S, hdr.block_size, lo, hi)) return ACEAPEX_ERR_DATA;
 
     size_t lit_sz = 0, wl=0, wo=0, wn=0, wc=0;
     g_dec_err=0;
@@ -471,7 +479,7 @@ void* batch_worker(void* arg) {
         RangeWork& r = t->w[i];
 
         uint64_t lo[4], hi[4];
-        if(!ax_span_ok(t->boffs,G.b0,G.b1,*t->S,h.block_size,lo,hi)){            // 2.6.4: every entry of the span inside the windows
+        if(!ax_span_ok(t->boffs,G.b0,G.b1,h.num_blocks,*t->S,h.block_size,lo,hi)){            // 2.6.4: every entry of the span inside the windows
             for(size_t k=G.first;k<G.last;k++) t->w[k].dst=nullptr;
             t->failed.store(1); continue; }
         size_t lit_sz=0, wl=0, wo=0, wn=0, wc=0;
@@ -795,6 +803,7 @@ static int64_t ax_decompress_stream_impl(aceapex_read_fn rd, void* rctx, aceapex
         if (!ax_lit_chunk_decode(d, b->d.data())) return nullptr;
         b->d.resize(ch.raw);
         lcache[0] = lcache[1]; lck[0] = lck[1]; lcache[1] = b; lck[1] = k; return b; };
+    uint64_t bex[4] = {0, 0, 0, 0};   // 2.6.6: each block's slices start where the previous block's end (ax_bo_next)
     for (uint64_t b = 0; b < c.nb && !bad; ) {
         auto g = std::make_shared<StGroup>(); g->seq = seq++; g->b0 = g->b1 = b; g->k0 = ~0ull; g->k1 = 0;
         for (int st = 1; st < 4; st++) g->t0[st] = ~0ull;
@@ -814,6 +823,7 @@ static int64_t ax_decompress_stream_impl(aceapex_read_fn rd, void* rctx, aceapex
                 tk0[st] = std::min(tk0[st], so[st] / t.CH); tk1[st] = std::max(tk1[st], (so[st] + ss[st] - 1) / t.CH); }
             if (!ok) { bad = true; break; }
             if (c.four) { if (g->b1 == g->b0) g->llo = bo.lit_off; g->lhi = std::max(g->lhi, bo.lit_off + bo.lit_sz); if (bo.lit_off < g->llo) { bad = true; break; } }
+            if (!ax_bo_next(bo, bex)) { bad = true; break; }   // after the slice bounds; once per block (taken here, then ++b)
             g->k0 = k0; g->k1 = k1; g->bo.push_back(bo); g->b1 = ++b;
         }
         if (bad) break;

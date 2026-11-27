@@ -1028,8 +1028,20 @@ static bool ax_header_ok(const AetHeader& h, uint64_t src_size) {
 // decoder's memory then follows block_size, not the stream sizes an archive declares (a 33.5 KB archive took 2.1 GB).
 #define AX_TOK_CHUNK_MAX ((size_t)16 << 20)
 static inline bool ax_tok_slice_ok(uint64_t sz, uint64_t bs) { return sz <= 4 * bs + 4096; }
+// 2.6.6 (J3-K of the 2.6.6 gates): block b's slices start where block b-1's end, block 0's at 0 - every encoder writes
+// the running sums (encode_file). Until 2.6.5 a damaged offset (one entry zeroed) made a block decode another block's
+// slices: success with wrong bytes on decompress / mt / stream / CLI --out -. AX_BOFFS_CONTIG_NO_CHECK: negative control
+// of verify/repro/boffs_contig only. Region and ranges check the span and its two neighbours (ax_span_ok).
+static inline bool ax_bo_next(const BlockOffsets& o, uint64_t ex[4]) {
+#ifndef AX_BOFFS_CONTIG_NO_CHECK
+    if (o.lit_off != ex[0] || o.off_off != ex[1] || o.len_off != ex[2] || o.cmd_off != ex[3]) return false;
+#endif
+    ex[0] = o.lit_off + o.lit_sz; ex[1] = o.off_off + o.off_sz; ex[2] = o.len_off + o.len_sz; ex[3] = o.cmd_off + o.cmd_sz;
+    return true;
+}
 static bool ax_boffs_ok(const BlockOffsets* b, uint64_t nb,
                         uint64_t ls, uint64_t os, uint64_t ns, uint64_t cs, uint64_t bs) {
+    uint64_t ex[4] = {0, 0, 0, 0};
     for (uint64_t i = 0; i < nb; i++) {
         const BlockOffsets& o = b[i];
         if (!ax_tok_slice_ok(o.off_sz, bs) || !ax_tok_slice_ok(o.len_sz, bs) || !ax_tok_slice_ok(o.cmd_sz, bs)) return false;
@@ -1037,6 +1049,7 @@ static bool ax_boffs_ok(const BlockOffsets* b, uint64_t nb,
         if (o.off_off > os || o.off_sz > os - o.off_off) return false;
         if (o.len_off > ns || o.len_sz > ns - o.len_off) return false;
         if (o.cmd_off > cs || o.cmd_sz > cs - o.cmd_off) return false;
+        if (!ax_bo_next(o, ex)) return false;   // after the bounds: the sums cannot wrap
     }
     return true;
 }
