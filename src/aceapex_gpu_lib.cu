@@ -18,6 +18,9 @@
 #include <cuda_runtime.h>
 #ifdef ACEAPEX_GPU_NVCOMP
 #include <nvcomp/zstd.h>
+#if defined(NVCOMP_VER_MAJOR) && NVCOMP_VER_MAJOR >= 6   // nvCOMP 6 renamed it and added the stream (as aceapex_gpu.cu, e879560)
+#define nvcompBatchedZstdDecompressGetTempSizeAsync(...) nvcompBatchedZstdDecompressGetTempSize(__VA_ARGS__, 0)
+#endif
 #endif
 #include <new>
 
@@ -198,8 +201,12 @@ extern "C" int aceapex_gpu_decompress_windows_async(const aceapex_gpu_plan* pl, 
     if(NW) kw_raw_n<<<std::min(NW,4096u),256,0,s>>>((const agp::Raw*)(T+L.wj),cnt+2,in,T);
     AXW_MARK(3); const unsigned gw=std::max(1u,pl->grid*4), gyo=(unsigned)((P.chunk[0]/16+255)/256);
     if(NR) k_rans_n<1><<<std::min(gw,(NR+AXW_WARPS-1)/AXW_WARPS),32*AXW_WARPS,0,s>>>(in,(const RansDesc*)(T+L.rj),cnt+0,err);
-    if(NO){ k_open_cg_n<<<std::min(gw,NO),AXO_NT,0,s>>>((const OpenDesc*)(T+L.oj),cnt+1,err+2);
+    AXW_MARK(7);   // GPU-WIN-ENT base: the entropy phase split - rANS pieces | open case/gap | open bases
+    if(NO){ k_open_cg_n<<<std::min(gw,NO),AXO_NT,0,s>>>((const OpenDesc*)(T+L.oj),cnt+1,err+2); AXW_MARK(8);
             k_open_bases_s_n<<<dim3(std::min(gw,NO),gyo),256,0,s>>>((const OpenDesc*)(T+L.oj),cnt+1); }
+#ifdef AXW_PROF
+    else AXW_MARK(8);
+#endif
     AXW_MARK(4); uint32_t* ctr=(uint32_t*)(T+P.o_ctr); kg_set<<<1,1,0,s>>>(ctr,0);
 #ifdef AXW_PROF
     if(axw_variant==1) k_decode_list_v<G,1,4096,TPB/G><<<std::max(1u,pl->grid),TPB,0,s>>>(T+P.o_s[0],T+P.o_s[1],T+P.o_s[2],T+P.o_s[3],(const BlockOffsets*)(M+pl->o_bo),P.orig,P.bs,T+L.sbuf,

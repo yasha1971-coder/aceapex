@@ -38,8 +38,12 @@ jobs:
         nvcc -std=c++17 -O3 -arch=sm_90 -Isrc -I"$NV/include" scripts/hybrid1.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp aceapex_api.o \
           -L"$(dirname "$(find / -name "$NVLIB" -path '*nvcomp*' | head -1)")" -l:"$NVLIB" -lzstd -L/usr/local/cuda/lib64/stubs -lnvidia-ml -lpthread -o hybrid1
         ls -l hybrid1
+        nvcc -std=c++17 -O3 -arch=sm_90 -DACEAPEX_GPU_NVCOMP -Isrc -I"$NV/include" scripts/hybrid1.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp aceapex_api.o \
+          -L"$(dirname "$(find / -name "$NVLIB" -path '*nvcomp*' | head -1)")" -l:"$NVLIB" -lzstd -L/usr/local/cuda/lib64/stubs -lnvidia-ml -lpthread -o hybrid1_nv
+        ls -l hybrid1_nv
+        nvcc -O3 -arch=sm_90 scripts/enc5_gpu_sa_prototype.cu -o gpu_sa && ls -l gpu_sa
     - name: Build the CLI
       run: make -j4 aceapex && ./aceapex --version | head -1
     - name: Shell check of the pod script
       run: |
-        bash -n scripts/run_gpu_a1.sh && bash -n scripts/run_gpu_a1h.sh && bash -n scripts/run_gpu_a1s.sh && bash -n scripts/run_hy1.sh && bash -n scripts/run_fp0.sh && bash -n scripts/run_fp1.sh && echo "pod scripts - syntax ok"
+        bash -n scripts/run_gpu_a1.sh && bash -n scripts/run_gpu_a1h.sh && bash -n scripts/run_gpu_a1s.sh && bash -n scripts/run_hy1.sh && bash -n scripts/run_fp0.sh && bash -n scripts/run_fp1.sh && bash -n scripts/run_pod2.sh && echo "pod scripts - syntax ok"

@@ -11,7 +11,7 @@
 // (NVML, sampled every 20 ms). After the last run of each configuration the whole output == the original (memcmp, out of
 // the timer) and its XXH3; any difference: KILL, exit 5.
 // FULLPOD-1 jobs (one process each, a line per second):
-//   fullgpu <open.aet> <original> <secs>      full GPU decodes (on-device XXH3 check, D2H) + windows batches (10 000 x 16 KiB,
+//   fullgpu <aet> <original> <secs> [d2h] [windows]  full GPU decodes (on-device XXH3 check, D2H) + windows batches (10 000 x 16 KiB,
 //                                             compared on the device with the resident original) on two streams
 //   cpucomp <threads> <secs> <file>...        aceapex_compress level 2 in a loop; every archive's XXH3 == the first one's
 //   cpudec  <threads> <secs> <arc> <original> aceapex_decompress_mt + aceapex_decompress_ranges (10 000 x 16 KiB) in turn;
@@ -116,6 +116,12 @@ static bool ace_cpu_ranges(const std::vector<uint8_t>& a, uint64_t bs, uint64_t 
     if (k != (int64_t)r.size()) { printf("[hy] ranges returned %lld of %zu\n", (long long)k, r.size()); return false; }
     return true;
 }
+// ACE CPU part through aceapex_decompress_region_mt (HYBRID-2, 2.6.6): blocks [first, last) straight into h_out
+static bool ace_cpu_region_mt(const std::vector<uint8_t>& a, uint64_t bs, uint64_t orig, uint32_t first, uint32_t last, uint8_t* h_out, int thr) {
+    if (first >= last) return true; const uint64_t o = (uint64_t)first * bs, e = std::min<uint64_t>((uint64_t)last * bs, orig);
+    const int64_t r = aceapex_decompress_region_mt(a.data(), a.size(), h_out + o, e - o, o, e - o, thr);
+    if (r != (int64_t)(e - o)) { printf("[hy] region_mt returned %lld\n", (long long)r); return false; } return true;
+}
 static void mode_ace(const char* arcp, const std::vector<uint8_t>& o, uint8_t* h_out, int R, uint32_t K) {
     const std::vector<uint8_t> a = slurp(arcp);
     aceapex_gpu_plan* one = aceapex_gpu_plan_create_blocks(a.data(), a.size(), 0, 1, 0);   // the block size = the window of block 0
@@ -132,21 +138,25 @@ static void mode_ace(const char* arcp, const std::vector<uint8_t>& o, uint8_t* h
     memset(h_out, 0, orig);
     Res rr = measure([&](double& tf) { const double t0 = now_s(); const bool ok = ace_cpu_ranges(a, bs, orig, 0, nb, h_out, g_vcpu); tf = now_s() - t0; return ok; }, R, orig);
     verify_row("ace", "cpu_ranges", a.size(), rr, "cpu all", h_out, o);
+    // (a'') CPU only, region_mt of the whole file (HYBRID-2 engine)
+    memset(h_out, 0, orig);
+    Res rm = measure([&](double& tf) { const double t0 = now_s(); const bool ok = ace_cpu_region_mt(a, bs, orig, 0, nb, h_out, g_vcpu); tf = now_s() - t0; return ok; }, R, orig);
+    verify_row("ace", "cpu_region_mt", a.size(), rm, "cpu all", h_out, o);
     // (b) GPU only
     memset(h_out, 0, orig); G.build(a, 0, nb, K);
     Res rb = measure([&](double& tf) { return G.run(h_out, tf, now_s()); }, R, orig);
     verify_row("ace", "gpu", a.size(), rb, "gpu all", h_out, o);
     // (c) hybrid, split by (a') and (b)
-    const double cpu_eng = rr.gbps;   // the CPU part of the hybrid runs the ranges engine
+    const double cpu_eng = rm.gbps;   // the CPU part of the hybrid runs region_mt (HYBRID-2; 27.11 morning: ranges)
     uint32_t kG = (uint32_t)std::min<double>(nb, std::max(0.0, nb * rb.gbps / (cpu_eng + rb.gbps) + 0.5));
     memset(h_out, 0, orig); G.build(a, 0, kG, K);
     Res rc = measure([&](double& tf) { const double t0 = now_s(); std::atomic<double> tcpu{1e9}; bool okc = true;
-        std::thread th([&] { okc = ace_cpu_ranges(a, bs, orig, kG, nb, h_out, std::max(1, g_vcpu - 1)); tcpu = now_s() - t0; });
+        std::thread th([&] { okc = ace_cpu_region_mt(a, bs, orig, kG, nb, h_out, std::max(1, g_vcpu - 1)); tcpu = now_s() - t0; });
         double tg = 1e9; const bool okg = G.run(h_out, tg, t0); th.join(); tf = std::min(tg, tcpu.load()); return okg && okc; }, R, orig);
     char sp[96]; snprintf(sp, sizeof sp, "gpu blocks [0,%u) cpu [%u,%u) %d thr", kG, kG, nb, std::max(1, g_vcpu - 1));
     verify_row("ace", "hybrid", a.size(), rc, sp, h_out, o);
-    printf("[hy] %s ace hybrid / ((a') + (b)) = %.3f ; hybrid / ((a) + (b)) = %.3f\n", g_tag, rc.gbps / (rr.gbps + rb.gbps), rc.gbps / (ra.gbps + rb.gbps));
-    printf("HYSUM\t%s\tace\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n", g_tag, ra.gbps, rr.gbps, rb.gbps, rc.gbps, rc.gbps / (rr.gbps + rb.gbps), rc.gbps / (ra.gbps + rb.gbps));
+    printf("[hy] %s ace hybrid / ((a'') + (b)) = %.3f ; hybrid / ((a) + (b)) = %.3f\n", g_tag, rc.gbps / (rm.gbps + rb.gbps), rc.gbps / (ra.gbps + rb.gbps));
+    printf("HYSUM\t%s\tace\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n", g_tag, ra.gbps, rr.gbps, rm.gbps, rb.gbps, rc.gbps, rc.gbps / (rm.gbps + rb.gbps), rc.gbps / (ra.gbps + rb.gbps));
     for (auto* p : G.pl) aceapex_gpu_plan_destroy(p);
     cudaFree(G.d_arc); for (int i = 0; i < 2; i++) { cudaFree(G.d_out[i]); cudaFree(G.d_tmp[i]); } cudaFree(G.d_st);
 }
@@ -229,18 +239,18 @@ __global__ void k_cmpwin(const uint8_t* got, const uint8_t* orig, const uint64_t
     const uint32_t i = blockIdx.x; const uint64_t o = off[i]; unsigned long long b = 0;
     for (uint32_t k = threadIdx.x; k < W; k += blockDim.x) b += got[(uint64_t)i * W + k] != orig[o + k];
     if (b) atomicAdd(bad, b); }
-static int job_fullgpu(const char* arcp, const char* origp, double secs, int d2h) {   // d2h 0: data and result stay in VRAM
+static int job_fullgpu(const char* arcp, const char* origp, double secs, int d2h, int wins = 1) {   // wins 0: no windows thread (profiles without the windows API)   // d2h 0: data and result stay in VRAM
     const std::vector<uint8_t> a = slurp(arcp), o = slurp(origp); const uint64_t orig = o.size(); const uint32_t n = 10000, W = 16384;
     aceapex_gpu_plan* pl = aceapex_gpu_plan_create(a.data(), a.size(), 0); if (!pl) { printf("FP\tfullgpu\tplan failed\n"); return 4; }
     uint8_t *d_in, *d_out, *d_tmp, *d_orig, *d_wout, *d_wtmp, *h_out; int *d_st, *d_wst; uint64_t* d_off; unsigned long long* d_bad;
     CK(cudaMalloc(&d_in, a.size())); CK(cudaMemcpy(d_in, a.data(), a.size(), cudaMemcpyHostToDevice));
     CK(cudaMalloc(&d_out, orig)); CK(cudaMalloc(&d_tmp, aceapex_gpu_temp_bytes(pl))); CK(cudaMalloc(&d_orig, orig)); CK(cudaMemcpy(d_orig, o.data(), orig, cudaMemcpyHostToDevice));
-    CK(cudaMalloc(&d_wout, (size_t)n * W)); CK(cudaMalloc(&d_wtmp, aceapex_gpu_windows_temp_bytes(pl, n, W))); CK(cudaMalloc(&d_st, 4)); CK(cudaMalloc(&d_wst, 4));
+    CK(cudaMalloc(&d_wout, (size_t)n * W)); CK(cudaMalloc(&d_wtmp, std::max<size_t>(256, aceapex_gpu_windows_temp_bytes(pl, n, W)))); CK(cudaMalloc(&d_st, 4)); CK(cudaMalloc(&d_wst, 4));
     CK(cudaMalloc(&d_off, (size_t)n * 8)); CK(cudaMalloc(&d_bad, 8)); CK(cudaMemset(d_bad, 0, 8)); CK(cudaHostAlloc(&h_out, orig, 0));
     std::mt19937_64 g(20261127ull); std::vector<uint64_t> off(n); for (auto& x : off) x = g() % (orig - W + 1); CK(cudaMemcpy(d_off, off.data(), (size_t)n * 8, cudaMemcpyHostToDevice));
     cudaStream_t sa, sb; CK(cudaStreamCreateWithFlags(&sa, cudaStreamNonBlocking)); CK(cudaStreamCreateWithFlags(&sb, cudaStreamNonBlocking));
     std::atomic<bool> stop{false}; std::atomic<uint64_t> dec{0}, win{0}, badst{0};
-    std::thread tb([&] { while (!stop) { if (aceapex_gpu_decompress_windows_async(pl, d_in, d_off, n, W, d_wout, d_wtmp, d_wst, sb)) { badst++; break; }
+    std::thread tb([&] { while (!stop && wins) { if (aceapex_gpu_decompress_windows_async(pl, d_in, d_off, n, W, d_wout, d_wtmp, d_wst, sb)) { badst++; break; }
         k_cmpwin<<<n, 256, 0, sb>>>(d_wout, d_orig, d_off, W, d_bad); int st = 0; cudaMemcpyAsync(&st, d_wst, 4, cudaMemcpyDeviceToHost, sb); cudaStreamSynchronize(sb); if (st) badst++; win += n; } });
     const double t0 = now_s(); double last = t0; uint64_t ld = 0, lw = 0;
     while (now_s() - t0 < secs) {
@@ -316,7 +326,7 @@ int main(int argc, char** argv) {
     setvbuf(stdout, nullptr, _IONBF, 0);
     if (argc >= 2 && !strcmp(argv[1], "pcie")) return mode_pcie();
     if (argc >= 3 && !strcmp(argv[1], "memcpy")) return mode_memcpy(atoi(argv[2]));
-    if (argc >= 2 && !strcmp(argv[1], "fullgpu") && argc >= 5) return job_fullgpu(argv[2], argv[3], atof(argv[4]), argc > 5 ? atoi(argv[5]) : 1);
+    if (argc >= 2 && !strcmp(argv[1], "fullgpu") && argc >= 5) return job_fullgpu(argv[2], argv[3], atof(argv[4]), argc > 5 ? atoi(argv[5]) : 1, argc > 6 ? atoi(argv[6]) : 1);
     if (argc >= 2 && !strcmp(argv[1], "cpucomp") && argc >= 5) return job_cpucomp(atoi(argv[2]), atof(argv[3]), argc - 4, argv + 4);
     if (argc >= 2 && !strcmp(argv[1], "cpudec") && argc >= 6) return job_cpudec(atoi(argv[2]), atof(argv[3]), argv[4], argv[5]);
     if (argc < 5) { fprintf(stderr, "usage: %s hybrid <tag> <open.aet> <original> [vcpu] [R] [K blocks]\n       %s fullgpu|cpucomp|cpudec ...\n", argv[0], argv[0]); return 1; }

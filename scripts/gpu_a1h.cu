@@ -31,8 +31,8 @@ static std::vector<uint8_t> slurp(const char* p) {
     if (!v.empty() && fread(v.data(), 1, v.size(), f) != v.size()) { perror(p); exit(1); } fclose(f); return v; }
 static double pct(std::vector<double> v, double p) { if (v.empty()) return 0; std::sort(v.begin(), v.end()); return v[std::min(v.size() - 1, (size_t)(p * v.size()))]; }
 
-static cudaEvent_t g_ev[7]; static bool g_evset[7];
-static void hook(int k, cudaStream_t s) { if (k >= 0 && k < 7) { cudaEventRecord(g_ev[k], s); g_evset[k] = true; } }
+static cudaEvent_t g_ev[9]; static bool g_evset[9];
+static void hook(int k, cudaStream_t s) { if (k >= 0 && k < 9) { cudaEventRecord(g_ev[k], s); g_evset[k] = true; } }
 
 static const char* g_tag = ""; static bool g_kill = false;
 static bool same(const uint8_t* got, const std::vector<uint8_t>& o, const uint64_t* off, uint32_t n, uint32_t W, const char* what) {
@@ -101,17 +101,21 @@ int main(int argc, char** argv) {
         if (V != 1 && !(ok && ok1 && okf)) g_kill = true;
         // phase breakdown (V0, V2): 20 calls each for n windows and for 1 window, median per phase
         if (V != 1) for (int which = 0; which < 2; which++) {
-            const uint32_t k = which ? 1 : n; std::vector<double> ph[6];
+            const uint32_t k = which ? 1 : n; std::vector<double> ph[6], es[3];
             axw_hook = hook;
             for (int r = 0; r < 22; r++) { if (which) CK(cudaMemcpy(d_o1, &off1[r], 8, cudaMemcpyHostToDevice));
                 if (!call(which ? d_o1 : d_off, k, W, which ? d_tmp1 : d_tmp)) return 4;
-                if (r < 2) continue; for (int q = 0; q < 6; q++) { float ms = 0; CK(cudaEventElapsedTime(&ms, g_ev[q], g_ev[q + 1])); ph[q].push_back(ms); } }
+                if (r < 2) continue; for (int q = 0; q < 6; q++) { float ms = 0; CK(cudaEventElapsedTime(&ms, g_ev[q], g_ev[q + 1])); ph[q].push_back(ms); }
+                { float a = 0, b = 0, c = 0; CK(cudaEventElapsedTime(&a, g_ev[3], g_ev[7])); CK(cudaEventElapsedTime(&b, g_ev[7], g_ev[8])); CK(cudaEventElapsedTime(&c, g_ev[8], g_ev[4]));
+                  es[0].push_back(a); es[1].push_back(b); es[2].push_back(c); } }
             axw_hook = nullptr;
             static const char* nm[6] = {"init+memset", "fix descriptors", "select", "entropy", "match", "gather+status"};
             double tot = 0; for (int q = 0; q < 6; q++) tot += pct(ph[q], .5);
             printf("[a1h] %s %s phases, %u window(s), GPU time (median of 20) %.1f us:", g_tag, vname[V], k, tot * 1e3);
             for (int q = 0; q < 6; q++) printf(" %s %.1f us (%.0f %%)%s", nm[q], pct(ph[q], .5) * 1e3, 100 * pct(ph[q], .5) / tot, q < 5 ? ";" : "\n");
             printf("A1HPH\t%s\t%s\t%u", g_tag, vname[V], k); for (int q = 0; q < 6; q++) printf("\t%.1f", pct(ph[q], .5) * 1e3); printf("\n");
+            printf("[a1h] %s %s entropy split, %u window(s): rANS pieces %.1f us, open case/gap %.1f us, open bases %.1f us\n", g_tag, vname[V], k, pct(es[0], .5) * 1e3, pct(es[1], .5) * 1e3, pct(es[2], .5) * 1e3);
+            printf("A1HES\t%s\t%s\t%u\t%.1f\t%.1f\t%.1f\n", g_tag, vname[V], k, pct(es[0], .5) * 1e3, pct(es[1], .5) * 1e3, pct(es[2], .5) * 1e3);
         }
     }
     // H1: one window by a CUDA Graph of the whole call (V0, V2); the offset buffer is fixed, its content written before
