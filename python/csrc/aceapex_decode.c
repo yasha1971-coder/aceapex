@@ -80,6 +80,15 @@ static int open_arc(const void* src, size_t n, Arc* a){
       for(int i=0;i<4;i++){ if(z[i]>n-need) return ACEAPEX_ERR_DATA; need+=z[i]; } }
     a->bo=p+68; a->zl=p+68+(size_t)a->nb*64;
     a->zo=a->zl+a->zls; a->zn=a->zo+a->zos; a->zc=a->zn+a->zns;
+#ifndef AX_BOFFS_CONTIG_NO_CHECK
+    /* 2.6.6 (J3-K of the 2.6.6 gates): block b's slices start where block b-1's end, block 0's at 0 (every encoder writes the
+     * running sums). Until 2.6.5 a damaged offset made a block decode another block's slices: success with wrong bytes.
+     * The sums are unsigned (a damaged size wraps, defined, and then no later offset equals it). Whole table, once per open. */
+    { uint64_t ex[4]={0,0,0,0};
+      for(size_t b=0;b<a->nb;b++){ BO o=bo_at(a->bo,b);
+          if(o.lit_off!=ex[0] || o.off_off!=ex[1] || o.len_off!=ex[2] || o.cmd_off!=ex[3]) return ACEAPEX_ERR_DATA;
+          ex[0]=o.lit_off+o.lit_sz; ex[1]=o.off_off+o.off_sz; ex[2]=o.len_off+o.len_sz; ex[3]=o.cmd_off+o.cmd_sz; } }
+#endif
     return ACEAPEX_OK;
 }
 

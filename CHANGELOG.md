@@ -6,7 +6,7 @@ Every number below is reproduced by `make test && ./verify.sh` on the tagged com
 
 ## v2.6.6 — 2026-11-2X
 
-Security (patch release: v2.6.5 + these four fixes only).
+Security (patch release: v2.6.5 + these five fixes only).
 
 1. A block whose tokens end before its size is an error on every C++ entry point. The C++ match decoder (`decompress_streams`) stopped silently on a bad token or on a command stream that ran out: the
 block's tail stayed unwritten and the call returned the full size, so the output carried the old bytes of the caller's buffer
@@ -38,6 +38,16 @@ only in the chunked layout. Until 2.6.5 they decoded such archives, which the C+
 wrong bytes. Affected: the C99 decoder and the Python package only. Regression `verify/repro/stream_hdr` (claim
 `head_stream_hdr_reject`): four archives refused by three C99 and six C++ entry points; the negative control
 `-DAX_STREAM_HDR_NO_CHECK` decodes all four.
+
+5. Block slices must follow each other: block b's slices start where block b-1's end, block 0's at 0 (the running sums
+every encoder writes; 2 485 stored archives of all versions, 3.69 M blocks, all of them so). Until 2.6.5 a damaged
+BlockOffsets entry whose slices stayed inside their streams made a block decode another block's literals: success with
+wrong bytes. Affected: the C++ library (`decompress`, `_mt`, `_stream`; `_region` / `_ranges` when the damaged block was
+inside the span), the CLI `d --out -`, the C99 decoder and the Python package; not affected: the CLI writing a file (XXH3).
+All J3-K silent outputs on candidate 18e6da5 were of this kind. The C++ whole-archive paths and the C99 decoder check the
+whole table; C++ region and ranges check the span and its two neighbours. The rule goes into FORMAT_ACEPX2 with SPEC-VAL-1
+(2.6.7). Regression `verify/repro/boffs_contig` (claim `head_boffs_contig_reject`); negative control
+`-DAX_BOFFS_CONTIG_NO_CHECK` (2.6.5): the wrong bytes come back with success. Not yet in the GPU library (2.6.7).
 
 - CLI streaming: `aceapex d --out -` checks the archive's XXH3 at the end of the stream - by then the bytes have been handed
   out; a mismatch gives exit code 1 after the output. To get only verified bytes, decode to a file (written only on a match).
