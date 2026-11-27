@@ -47,7 +47,8 @@ version as the current one (the CLI and the C99 decoder refused it); a DNA pack 
 decoded to wrong bytes in the C++ library, the C99 decoder and the Python package (the CLI writing a file and the GPU
 library refused it); the C99 decoder and the Python package accepted stream headers that the C++ library refuses; a
 damaged block table could make a block decode another block's literals with success (all CPU decoders; the CLI writing a
-file refused it by XXH3; the GPU library: open until 2.6.7).
+file refused it by XXH3). Open in 2.6.6: the GPU decoder does not yet check the header version or that block slices
+follow each other; fixed in the next release (until then: `ACEAPEX_GPU_VERIFY_XXH3`).
 
 Open in 2.6.4, fixed in 2.6.5 — security: a decoder built against a libzstd that has legacy-format support (the system
 libzstd of Debian and Ubuntu, likely Homebrew's) handed the bytes of a crafted archive to that library's legacy (v0.x)

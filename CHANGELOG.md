@@ -45,9 +45,9 @@ BlockOffsets entry whose slices stayed inside their streams made a block decode 
 wrong bytes. Affected: the C++ library (`decompress`, `_mt`, `_stream`; `_region` / `_ranges` when the damaged block was
 inside the span), the CLI `d --out -`, the C99 decoder and the Python package; not affected: the CLI writing a file (XXH3).
 All J3-K silent outputs on candidate 18e6da5 were of this kind. The C++ whole-archive paths and the C99 decoder check the
-whole table; C++ region and ranges check the span and its two neighbours. The rule goes into FORMAT_ACEPX2 with SPEC-VAL-1
-(2.6.7). Regression `verify/repro/boffs_contig` (claim `head_boffs_contig_reject`); negative control
-`-DAX_BOFFS_CONTIG_NO_CHECK` (2.6.5): the wrong bytes come back with success. Not yet in the GPU library (2.6.7).
+whole table; C++ region and ranges check the span and its two neighbours. FORMAT_ACEPX2 §1.3 states the rule (readers
+MUST reject any other table). Regression `verify/repro/boffs_contig` (claim `head_boffs_contig_reject`); negative control
+`-DAX_BOFFS_CONTIG_NO_CHECK` (2.6.5): the wrong bytes come back with success. Not yet in the GPU library (Known issues).
 
 - CLI streaming: `aceapex d --out -` checks the archive's XXH3 at the end of the stream - by then the bytes have been handed
   out; a mismatch gives exit code 1 after the output. To get only verified bytes, decode to a file (written only on a match).
@@ -62,6 +62,10 @@ whole table; C++ region and ranges check the span and its two neighbours. The ru
 - zstd: zstd 1.6.0 (2026-11-23) fixes CVE-2026-124851 in streaming decompression; ACEAPEX calls only the one-shot
   `ZSTD_decompress` / `ZSTD_decompressDCtx`. Builds on a system libzstd should still use libzstd >= 1.6.0; the release
   binaries link zstd 1.6.0 statically (since 2.6.5).
+
+Known issues: the GPU decoder (`libaceapex_gpu`) does not yet check the header version (fix 2) or that block slices follow
+each other (fix 5); a damaged archive of either kind can decode there with success. Fixed in the next release. Until then,
+decode archives from others on the GPU with `ACEAPEX_GPU_VERIFY_XXH3`, or with the CLI to a file.
 
 ## v2.6.5 — 2026-11-26
 
