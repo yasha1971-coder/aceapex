@@ -4,6 +4,31 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
+## v2.6.6 — 2026-11-2X
+
+Security (patch release: v2.6.5 + this fix only): a block whose tokens end before its size is an error on every C++ entry
+point. The C++ match decoder (`decompress_streams`) stopped silently on a bad token or on a command stream that ran out: the
+block's tail stayed unwritten and the call returned the full size, so the output carried the old bytes of the caller's buffer
+or, through `region` / `ranges` and the streaming decoder, uninitialized heap. In every release from v2.0 to v2.6.5 (checked
+on the tags). Affected: the C++ library (`aceapex_decompress`, `_mt`, `_region`, `_ranges`, `_stream`) and what embeds it
+(lzbench, TurboBench); the CLI `aceapex d --out -` (streaming to stdout) handed out the block's bytes before it reported the
+error. Not affected: the CLI writing a file (its XXH3 check of the whole output writes no file on a mismatch), the C99 decoder
+(`axdec`, `libaceapex_decode.so`) and the Python package (they already refused such a block), the GPU library (status
+`_MATCH`), the fast profile. Only damaged or crafted archives reach this path; intact archives decode to the same bytes, and
+the archives written are byte for byte those of 2.6.5.
+
+- Regression `verify/repro/short_block` (claim `head_short_block_reject`): four archives found by `scripts/api_fuzz.cpp`,
+  refused by decompress, mt (1 and 2 threads), region, ranges and stream; with the check compiled out
+  (`-DAX_SHORT_BLOCK_NO_CHECK`, the negative control) all 24 calls return the full size.
+- What the format checks: one XXH3-64 of the whole original, in the header. The CLI checks it by default (before writing a
+  file; at the end when streaming). The C++ API checks it only in `aceapex_decompress_stream` with `ACEAPEX_STREAM_VERIFY`,
+  the GPU library with `ACEAPEX_GPU_VERIFY_XXH3`; `decompress`, `_mt`, `region`, `ranges`, GPU ranges and windows and the
+  C99 / Python decoders do not (a range cannot: the hash covers the whole file). For archives from others, decode with the
+  CLI to a file or with `stream + VERIFY`.
+- zstd: zstd 1.6.0 (2026-11-23) fixes CVE-2026-124851 in streaming decompression; ACEAPEX calls only the one-shot
+  `ZSTD_decompress` / `ZSTD_decompressDCtx`. Builds on a system libzstd should still use libzstd >= 1.6.0; the release
+  binaries link zstd 1.6.0 statically (since 2.6.5).
+
 ## v2.6.5 — 2026-11-26
 
 Security: only zstd v1 frames reach libzstd. `ZSTD_decompress` / `ZSTD_decompressDCtx` decode every concatenated frame,

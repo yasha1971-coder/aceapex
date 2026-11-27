@@ -39,6 +39,11 @@ GPU: [`aceapex_gpu.cu`](aceapex_gpu.cu) reads the same archive on the device thr
 
 ## Known issues
 
+Open in 2.6.5, fixed in 2.6.6 — security: the C++ library could return success with part of a block not written when it
+decoded a damaged or crafted archive. Affected: the C++ library and what embeds it (lzbench, TurboBench), the CLI when it
+writes to stdout (`d --out -`). Not affected: the CLI writing a file (checked by the archive's XXH3), the C99 decoder, the
+Python package, the GPU library, the fast profile.
+
 Open in 2.6.4, fixed in 2.6.5 — security: a decoder built against a libzstd that has legacy-format support (the system
 libzstd of Debian and Ubuntu, likely Homebrew's) handed the bytes of a crafted archive to that library's legacy (v0.x)
 decoders. Affected: the C99 decoder, the Python package and the CLI or library built with `make` on such a libzstd. Not
