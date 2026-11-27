@@ -425,9 +425,10 @@ static int64_t ax_decompress_region_impl(
         const BlockOffsets bo = ax_bo(boffs,b);
         const uint64_t bstart = (uint64_t)b * hdr.block_size;
         const size_t bsize = (size_t)std::min<uint64_t>((uint64_t)hdr.orig_size - bstart, (uint64_t)hdr.block_size);
-        decompress_streams(span + (size_t)(bstart - span_start), bsize,
+        if (!decompress_streams(span + (size_t)(bstart - span_start), bsize,
             lit + (bo.lit_off-wl), bo.lit_sz, off + (bo.off_off-wo), bo.off_sz,
-            len + (bo.len_off-wn), bo.len_sz, cmd + (bo.cmd_off-wc), bo.cmd_sz);
+            len + (bo.len_off-wn), bo.len_sz, cmd + (bo.cmd_off-wc), bo.cmd_sz)) {   // a short block: no output (SEC-DEC-2)
+            free(lit); free(off); free(len); free(cmd); free(span); return ACEAPEX_ERR_DATA; }
     }
     memcpy(dst, span + (size_t)(offset - span_start), (size_t)length);
 
@@ -504,14 +505,19 @@ void* batch_worker(void* arg) {
                    for(size_t k=G.first;k<G.last;k++) t->w[k].dst=nullptr;
                    t->failed.store(1); continue; }
 
-        for(uint32_t b=G.b0;b<=G.b1;b++){
+        bool short_block=false;
+        for(uint32_t b=G.b0;b<=G.b1 && !short_block;b++){
             const BlockOffsets bo=ax_bo(t->boffs,b);
             const uint64_t bs=(uint64_t)b*h.block_size;
             const size_t bsz=(size_t)std::min<uint64_t>((uint64_t)h.orig_size-bs,(uint64_t)h.block_size);
-            decompress_streams(span+(size_t)(bs-span_start),bsz,
+            if(!decompress_streams(span+(size_t)(bs-span_start),bsz,
                 lit+(bo.lit_off-wl),bo.lit_sz, off+(bo.off_off-wo),bo.off_sz,
-                len+(bo.len_off-wn),bo.len_sz, cmd+(bo.cmd_off-wc),bo.cmd_sz);
+                len+(bo.len_off-wn),bo.len_sz, cmd+(bo.cmd_off-wc),bo.cmd_sz)) short_block=true;
         }
+        if(short_block){                                         // the group's requests fail; others go on (SEC-DEC-2)
+            free(lit);free(off);free(len);free(cmd);free(span);
+            for(size_t k=G.first;k<G.last;k++) t->w[k].dst=nullptr;
+            t->failed.store(1); continue; }
         for(size_t k=i;k<grp_end;k++){
             RangeWork& q=t->w[k];
             if(q.offset<span_start || q.offset+q.length>span_end) continue;
@@ -691,8 +697,8 @@ static void* st_work(StCtx& c) {
             }
             if (bad) break;
             out.need((size_t)(bstart - g->b0 * c.bs + bsize) + 64, true);   // up to this block's end: the output as it is written
-            decompress_streams(out.data() + (bstart - g->b0 * c.bs), (size_t)bsize, tile.data() + (bo.lit_sz ? bo.lit_off - t0 : 0), (size_t)bo.lit_sz,
-                               tp[1], (size_t)ss[1], tp[2], (size_t)ss[2], tp[3], (size_t)ss[3]);
+            if (!decompress_streams(out.data() + (bstart - g->b0 * c.bs), (size_t)bsize, tile.data() + (bo.lit_sz ? bo.lit_off - t0 : 0), (size_t)bo.lit_sz,
+                               tp[1], (size_t)ss[1], tp[2], (size_t)ss[2], tp[3], (size_t)ss[3])) { bad = true; break; }   // SEC-DEC-2
         }
         { std::unique_lock<std::mutex> lk(c.m); c.cv_w.wait(lk, [&] { return c.next_write == g->seq || c.err; });
           if (!c.err) {
