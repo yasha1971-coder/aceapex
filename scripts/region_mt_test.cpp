@@ -4,6 +4,7 @@
 //                                            region; a range past the end and dst too small are refused like region
 //   speed  <archive> <original> <threads> <first block> [R]: decompress_mt of the whole file (A/A: two blocks of R),
 //                                            region_mt of the whole file and of the blocks [first, end) - GB/s of output
+// original "-": the reference is decompress_mt of the archive. RMT_RANGES: the number of random ranges (default 1000).
 // Build: g++ -std=c++17 -O3 -march=native -Isrc -c src/aceapex_api.cpp -o api_lib.o (no -DACEAPEX_CLI: no main);
 //        g++ -std=c++17 -O3 -march=native -Isrc scripts/region_mt_test.cpp api_lib.o -lzstd -lpthread
 #include "aceapex.h"
@@ -27,7 +28,17 @@ static uint64_t block_size(const std::vector<uint8_t>& a) {   // ACEPX2 header: 
 int main(int argc, char** argv) {
     setvbuf(stdout, nullptr, _IONBF, 0);
     if (argc < 4) { fprintf(stderr, "usage: %s check|speed <archive> <original> [threads] [first block] [R]\n", argv[0]); return 1; }
-    const std::vector<uint8_t> a = slurp(argv[2]), o = slurp(argv[3]); const uint64_t N = o.size();
+    // original "-": the reference is aceapex_decompress_mt of the archive (the claim's fixtures have no originals here)
+    const std::vector<uint8_t> a = slurp(argv[2]);
+    std::vector<uint8_t> o;
+    if (!strcmp(argv[3], "-")) { uint64_t n; if (a.size() < 20) return 4; memcpy(&n, a.data() + 12, 8); if (n > ((uint64_t)256 << 20)) return 4;
+        o.resize(n); if (aceapex_decompress_mt(a.data(), a.size(), o.data(), n, 1) != (int64_t)n) {   // a fixture every decoder refuses:
+            std::vector<uint8_t> t(n + 64);                                                              // region_mt must refuse it too
+            const int64_t r1 = aceapex_decompress_region_mt(a.data(), a.size(), t.data(), n, 0, n, argc > 4 ? atoi(argv[4]) : 0), r2 = aceapex_decompress_region(a.data(), a.size(), t.data(), n, 0, n);
+            printf("[rmt] check %s: %s (decompress_mt refuses it; region_mt %lld, region %lld)\n", argv[2], r1 < 0 && r2 < 0 ? "ok" : "FAIL", (long long)r1, (long long)r2);
+            return r1 < 0 && r2 < 0 ? 0 : 5; } }
+    else o = slurp(argv[3]);
+    const uint64_t N = o.size();
     const int thr = argc > 4 ? atoi(argv[4]) : 0; const bool v3 = a.size() >= 12 && a[8] == 3;
     const uint64_t bs = v3 ? 0 : block_size(a); long bad = 0;
     std::vector<uint8_t> out(N + 64), ref(N + 64);
@@ -40,14 +51,15 @@ int main(int argc, char** argv) {
                 bad++; } };
         one(0, N, "whole");
         if (bs) for (int k = 1; k <= 10; k++) { const uint64_t nb = (N + bs - 1) / bs, b = nb * k / 11, off = b * bs; if (off < N) one(off, N - off, "tail"); }
-        std::mt19937_64 g(20261127ull); const uint64_t mx = bs ? 3 * bs : ((uint64_t)3 << 20);
-        for (int i = 0; i < 1000; i++) { const uint64_t len = 1 + g() % std::min<uint64_t>(mx, N), off = g() % (N - len + 1); one(off, len, "random"); }
-        const int64_t e1 = aceapex_decompress_region_mt(a.data(), a.size(), out.data(), N, N - 10, 20, thr);
-        const int64_t e2 = aceapex_decompress_region_mt(a.data(), a.size(), out.data(), 10, 0, 20, thr);
-        const int64_t f1 = aceapex_decompress_region(a.data(), a.size(), out.data(), N, N - 10, 20), f2 = aceapex_decompress_region(a.data(), a.size(), out.data(), 10, 0, 20);
+        std::mt19937_64 g(20261127ull); const uint64_t mx = bs ? 3 * bs : ((uint64_t)3 << 20); const int NR = getenv("RMT_RANGES") ? atoi(getenv("RMT_RANGES")) : 1000;
+        if (N) for (int i = 0; i < NR; i++) { const uint64_t len = 1 + g() % std::min<uint64_t>(mx, N), off = g() % (N - len + 1); one(off, len, "random"); }
+        int64_t e1 = 0, e2 = 0, f1 = 0, f2 = 0;
+        if (N >= 20) { e1 = aceapex_decompress_region_mt(a.data(), a.size(), out.data(), N, N - 10, 20, thr);
+            e2 = aceapex_decompress_region_mt(a.data(), a.size(), out.data(), 10, 0, 20, thr);
+            f1 = aceapex_decompress_region(a.data(), a.size(), out.data(), N, N - 10, 20); f2 = aceapex_decompress_region(a.data(), a.size(), out.data(), 10, 0, 20); }
         if (e1 != f1 || e2 != f2) { printf("[rmt] refusals differ: past end %lld/%lld, small dst %lld/%lld\n", (long long)e1, (long long)f1, (long long)e2, (long long)f2); bad++; }
-        printf("[rmt] check %s: %s (block %llu, %s, 1 whole + 10 tails + 1000 random + 2 refusals, threads %d)\n", argv[2], bad ? "FAIL" : "ok",
-               (unsigned long long)bs, v3 ? "fast profile" : "ACEPX2 v2", thr);
+        printf("[rmt] check %s: %s (block %llu, %s, 1 whole + 10 tails + %d random + 2 refusals, threads %d)\n", argv[2], bad ? "FAIL" : "ok",
+               (unsigned long long)bs, v3 ? "fast profile" : "ACEPX2 v2", NR, thr);
         return bad ? 5 : 0;
     }
     // speed
