@@ -6,8 +6,9 @@ Every number below is reproduced by `make test && ./verify.sh` on the tagged com
 
 ## v2.6.6 — 2026-11-2X
 
-Security (patch release: v2.6.5 + this fix only): a block whose tokens end before its size is an error on every C++ entry
-point. The C++ match decoder (`decompress_streams`) stopped silently on a bad token or on a command stream that ran out: the
+Security (patch release: v2.6.5 + these two fixes only).
+
+1. A block whose tokens end before its size is an error on every C++ entry point. The C++ match decoder (`decompress_streams`) stopped silently on a bad token or on a command stream that ran out: the
 block's tail stayed unwritten and the call returned the full size, so the output carried the old bytes of the caller's buffer
 or, through `region` / `ranges` and the streaming decoder, uninitialized heap. In every release from v2.0 to v2.6.5 (checked
 on the tags). Affected: the C++ library (`aceapex_decompress`, `_mt`, `_region`, `_ranges`, `_stream`) and what embeds it
@@ -17,6 +18,14 @@ error. Not affected: the CLI writing a file (its XXH3 check of the whole output 
 `_MATCH`), the fast profile. Only damaged or crafted archives reach this path; intact archives decode to the same bytes, and
 the archives written are byte for byte those of 2.6.5.
 
+2. The C++ library refuses a header version it does not read. Until 2.6.5 it read any version other than 3 (the fast profile)
+as version 2, so an archive of a later format version, or one with a damaged version field, was decoded silently; the CLI
+and the C99 decoder already refused it. Now `ax_header_ok` and the streaming decoder accept version 2 only on that path.
+Regression `verify/repro/hdr_version` (claim `head_hdr_version_reject`): two conformance fixtures with versions 0, 1, 4 and
+0xCE02 refused on decompress, mt, region, ranges, stream and decode_streams; the negative control decodes them.
+
+- CLI streaming: `aceapex d --out -` checks the archive's XXH3 at the end of the stream - by then the bytes have been handed
+  out; a mismatch gives exit code 1 after the output. To get only verified bytes, decode to a file (written only on a match).
 - Regression `verify/repro/short_block` (claim `head_short_block_reject`): four archives found by `scripts/api_fuzz.cpp`,
   refused by decompress, mt (1 and 2 threads), region, ranges and stream; with the check compiled out
   (`-DAX_SHORT_BLOCK_NO_CHECK`, the negative control) all 24 calls return the full size.

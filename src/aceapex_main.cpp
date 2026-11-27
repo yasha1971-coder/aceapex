@@ -1000,8 +1000,19 @@ static inline bool ax_block_size_ok(uint64_t bs) { return bs != 0 && (!ACEAPEX_M
 // The one header check of a version-2 archive of src_size bytes (2.6.4: every decode path; until 2.6.3 region, ranges
 // and the CLI summed the four u64 stream sizes, which a crafted archive made wrap): the blocks cover orig_size exactly
 // (the last one not empty), block_size within the bound, header + table + each stream size against the bytes left.
+// Header version (2.6.6, J3 of the 2.6.6 gates): this path reads version 2 only - the fast profile (version 3) is taken
+// before it, and a version the library does not know is refused, as the CLI and the C99 decoder do (until 2.6.5 the C++
+// library read any version other than 3 as version 2). AX_HDR_VERSION_NO_CHECK: negative control of verify/repro/hdr_version.
+static inline bool ax_version_ok(uint32_t v_le) {
+#ifdef AX_HDR_VERSION_NO_CHECK
+    (void)v_le; return true;
+#else
+    return axf_le32(v_le) == 2;
+#endif
+}
 static bool ax_header_ok(const AetHeader& h, uint64_t src_size) {
     if (src_size < sizeof(AetHeader)) return false;
+    if (!ax_version_ok(h.version)) return false;
     if (h.num_blocks == 0) return ax_is_empty_archive(h);
     if (!ax_block_size_ok(h.block_size)) return false;
     if ((uint64_t)h.num_blocks * h.block_size < h.orig_size || (uint64_t)(h.num_blocks - 1) * h.block_size >= h.orig_size) return false;

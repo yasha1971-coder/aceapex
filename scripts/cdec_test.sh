@@ -194,6 +194,16 @@ for m in check control; do D=; [ $m = control ] && D=-DAX_SHORT_BLOCK_NO_CHECK
   else sb="$sb | $m build failed"; sbf=1; fi
 done
 printf 'head_short_block_reject\t%s\t%s\n' "$([ $sbf = 0 ] && echo pass || echo fail)" "${sb# | }"
+# 2.6.6 (J3 of the 2.6.6 gates): a header version other than 2 (3 = the fast profile) is refused by every C++ entry point -
+# verify/repro/hdr_version (gen.py: two fixtures with versions 0, 1, 4, 0xCE02), each call in a child process; the fixtures
+# themselves decode. Negative control -DAX_HDR_VERSION_NO_CHECK (the library before 2.6.6): the eight decode to the fixtures' bytes
+hv=""; hvf=0; HVD=verify/repro/hdr_version
+for m in check control; do D=; [ $m = control ] && D=-DAX_HDR_VERSION_NO_CHECK
+  if ${CXX:-g++} -std=c++17 -O1 $D -Isrc -o $T/hv_$m $HVD/hdr_version_test.cpp -lzstd -lpthread 2>$T/hv.err; then
+    r=$($T/hv_$m $HVD verify/fixtures/conf 2>/dev/null); hv="$hv | $(echo "$r" | cut -f2,3,4 | tr '\t' ' ')"; echo "$r" | grep -q "	pass	" || hvf=1
+  else hv="$hv | $m build failed"; hvf=1; fi
+done
+printf 'head_hdr_version_reject\t%s\t%s\n' "$([ $hvf = 0 ] && echo pass || echo fail)" "${hv# | }"
 # 2.6.4 step 2: fuzz/fuzz_region.cpp (region, ranges, decode_streams) without libFuzzer, 20 s of mutants of the same seeds
 # + cpp_alloc under ASan+UBSan, allocations above 128 MiB abort; v2.6.3 aborts on the conformance fixtures alone
 FZR_SEEDS="$FZ_SEEDS $(ls verify/repro/cpp_alloc/*.aet)"
