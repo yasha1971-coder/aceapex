@@ -715,6 +715,7 @@ static int64_t ax_decompress_stream_impl(aceapex_read_fn rd, void* rctx, aceapex
     AetHeader hdr; if (!st_read(c, 0, &hdr, sizeof hdr)) return ACEAPEX_ERR_DATA;
     if (memcmp(hdr.magic, "ACEPX2\0\0", 8) != 0) return ACEAPEX_ERR_DATA;
     if (axf_is_v3((const uint8_t*)&hdr, sizeof hdr)) return ax_fast_stream(rd, rctx, wr, wctx, threads, flags, (const uint8_t*)&hdr);
+    if (!ax_version_ok(hdr.version)) return ACEAPEX_ERR_DATA;   // 2.6.6: version 2 only on this path (ax_header_ok)
     if (hdr.num_blocks == 0) { if (!ax_is_empty_archive(hdr)) return ACEAPEX_ERR_DATA; return 0; }
     if (!ax_block_size_ok(hdr.block_size) || (uint64_t)hdr.num_blocks * hdr.block_size < hdr.orig_size || (uint64_t)(hdr.num_blocks - 1) * hdr.block_size >= hdr.orig_size) return ACEAPEX_ERR_DATA;
     c.orig = hdr.orig_size; c.bs = hdr.block_size; c.nb = hdr.num_blocks;
