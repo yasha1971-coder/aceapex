@@ -6,7 +6,7 @@ Every number below is reproduced by `make test && ./verify.sh` on the tagged com
 
 ## v2.6.6 — 2026-11-2X
 
-Security (patch release: v2.6.5 + these two fixes only).
+Security (patch release: v2.6.5 + these four fixes only).
 
 1. A block whose tokens end before its size is an error on every C++ entry point. The C++ match decoder (`decompress_streams`) stopped silently on a bad token or on a command stream that ran out: the
 block's tail stayed unwritten and the call returned the full size, so the output carried the old bytes of the caller's buffer
@@ -23,6 +23,21 @@ as version 2, so an archive of a later format version, or one with a damaged ver
 and the C99 decoder already refused it. Now `ax_header_ok` and the streaming decoder accept version 2 only on that path.
 Regression `verify/repro/hdr_version` (claim `head_hdr_version_reject`): two conformance fixtures with versions 0, 1, 4 and
 0xCE02 refused on decompress, mt, region, ranges, stream and decode_streams; the negative control decodes them.
+
+3. A DNA pack (literal chunk mode 1) that declares exceptions but carries no exception frames is refused (FORMAT_ACEPX2 3.3:
+the gap and value frames are empty only when there are no exceptions). Until 2.6.5 the C++ decoder took the exception
+positions and bytes from a heap buffer it never wrote, the C99 decoder (and the Python package) put zeros - both returned
+success with bytes different from the original and from each other. Affected: the C++ library, the C99 decoder, the Python
+package; not affected: the CLI writing a file (XXH3), the GPU library (it refused it already). Found by the J3-K gate of
+2.6.6 (C++ against C99 on fuzz mutants). Regression `verify/repro/dna_exc` (claim `head_dna_exc_reject`): refused by six
+C++ and three C99 entry points; the negative control `-DAX_DNA_EXC_NO_CHECK` returns the full size.
+
+4. The C99 decoder and the Python package check the stream headers as the C++ decoder does: bit 63 of a token stream's
+first word must be 0, a literal stored size carries no flag bit (bit 63 was masked off), and a literal stream may be tagged
+only in the chunked layout. Until 2.6.5 they decoded such archives, which the C++ library refused, in the fuzz mutants to
+wrong bytes. Affected: the C99 decoder and the Python package only. Regression `verify/repro/stream_hdr` (claim
+`head_stream_hdr_reject`): four archives refused by three C99 and six C++ entry points; the negative control
+`-DAX_STREAM_HDR_NO_CHECK` decodes all four.
 
 - CLI streaming: `aceapex d --out -` checks the archive's XXH3 at the end of the stream - by then the bytes have been handed
   out; a mismatch gives exit code 1 after the output. To get only verified bytes, decode to a file (written only on a match).

@@ -1539,6 +1539,12 @@ __attribute__((aligned(64))) static void dna_decompress(const uint8_t* src, size
     if(src_sz<20){ g_dec_err=1; return; }
     uint32_t h[5]; memcpy(h,src,20);
     if((uint64_t)20+h[1]+h[2]+h[3]+h[4]>src_sz || h[0]>n){ g_dec_err=1; return; }
+    // 2.6.6 (J3-K of the 2.6.6 gates): exceptions need both their frames (FORMAT_ACEPX2 3.3: h3 = h4 = 0 only when nexc = 0;
+    // the GPU plan already refused it). Until 2.6.5 nexc > 0 with h3 or h4 = 0 left gap / val unwritten: exception positions
+    // and bytes came from uninitialized heap. AX_DNA_EXC_NO_CHECK: negative control of verify/repro/dna_exc only.
+#ifndef AX_DNA_EXC_NO_CHECK
+    if(h[0] && (!h[3] || !h[4])){ g_dec_err=1; return; }
+#endif
     size_t nexc=h[0], np=(n+3)/4, nc=(n+7)/8;
     const uint8_t* p=src+20;
     uint8_t* seq=(uint8_t*)malloc(np?np:1);
