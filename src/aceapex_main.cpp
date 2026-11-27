@@ -651,7 +651,16 @@ static inline void ax_match_fast(uint8_t* d, uint32_t dist, uint32_t len) {
 // and their order are those of the checked zone, so a corrupt block stops at the same token with the same bytes.
 // out0 > 0 (AX_REFSEG prototype only): dst[0, out0) already holds the block's reference prefix, the block is written
 // after it and its matches may reach into it; the bounds checks stay (dist <= out, out + l <= dst_size).
-static void decompress_streams(
+// Returns true only when the block decoded to exactly dst_size bytes (SEC-DEC-2, 27.11: a bad token or a command
+// stream that ran out used to end the block silently - its tail was left unwritten and the call reported success, so the
+// output carried the old bytes of the caller's buffer or, through region / ranges, uninitialized heap; the C99 decoder
+// and the GPU match kernel already refused such a block). Every caller turns false into an error.
+#ifdef AX_SHORT_BLOCK_NO_CHECK   /* negative control of verify/repro/short_block only: a short block reported as whole */
+#define AX_BLOCK_DONE(ok) return true
+#else
+#define AX_BLOCK_DONE(ok) return (ok)
+#endif
+static bool decompress_streams(
     uint8_t* dst, size_t dst_size,
     const uint8_t* lit, size_t lit_sz,
     const uint8_t* off, size_t off_sz,
@@ -682,7 +691,7 @@ static void decompress_streams(
             l=lv+6; dist=read_varint(off,op,off_sz);
             rep[3]=rep[2];rep[2]=rep[1];rep[1]=rep[0];rep[0]=dist;
         }
-        if (!dist||dist>out||out+l>dst_size) return;
+        if (!dist||dist>out||out+l>dst_size) AX_BLOCK_DONE(false);
         if (out+l+SL<=dst_size) ax_match_fast(dst+out,dist,l); else copy_match(dst,out,dist,l);
         out+=l;
     }
@@ -716,6 +725,7 @@ static void decompress_streams(
             out+=l;
         }
     }
+    AX_BLOCK_DONE(out==dst_size);
 }
  
 
@@ -1105,15 +1115,15 @@ static inline void ax_block_out(uint8_t* dst, size_t bstart, size_t bsize, const
                                 const uint8_t* off, const uint8_t* len, const uint8_t* cmd, std::vector<uint8_t>& nbuf, bool ntok) {
 #ifdef ACEAPEX_ENV_TUNING
     if (g_ax_out_sink) { if (nbuf.size() < bsize + 64) nbuf.resize(bsize + 64);
-        decompress_streams(nbuf.data(), bsize, lit, bo.lit_sz, off + bo.off_off, bo.off_sz, len + bo.len_off, bo.len_sz, cmd + bo.cmd_off, bo.cmd_sz);
+        if (!decompress_streams(nbuf.data(), bsize, lit, bo.lit_sz, off + bo.off_off, bo.off_sz, len + bo.len_off, bo.len_sz, cmd + bo.cmd_off, bo.cmd_sz)) g_dec_err = 1;
         g_ax_out_sink(g_ax_out_ctx, bstart, nbuf.data(), bsize); return; }
 #endif
     if (ntok && (double)bo.lit_sz >= ax_nt().lit * (double)bsize) {
         if (nbuf.size() < bsize + 64) nbuf.resize(bsize + 64);
-        decompress_streams(nbuf.data(), bsize, lit, bo.lit_sz, off + bo.off_off, bo.off_sz, len + bo.len_off, bo.len_sz, cmd + bo.cmd_off, bo.cmd_sz);
+        if (!decompress_streams(nbuf.data(), bsize, lit, bo.lit_sz, off + bo.off_off, bo.off_sz, len + bo.len_off, bo.len_sz, cmd + bo.cmd_off, bo.cmd_sz)) g_dec_err = 1;
         ax_nt_copy(dst + bstart, nbuf.data(), bsize);
-    } else
-        decompress_streams(dst + bstart, bsize, lit, bo.lit_sz, off + bo.off_off, bo.off_sz, len + bo.len_off, bo.len_sz, cmd + bo.cmd_off, bo.cmd_sz);
+    } else if (!decompress_streams(dst + bstart, bsize, lit, bo.lit_sz, off + bo.off_off, bo.off_sz, len + bo.len_off, bo.len_sz, cmd + bo.cmd_off, bo.cmd_sz))
+        g_dec_err = 1;
 }
 
 static void* dec_worker(void* arg) {
@@ -1145,12 +1155,12 @@ static void* dec_worker(void* arg) {
                 a->len + bo.len_off, bo.len_sz,
                 a->cmd + bo.cmd_off, bo.cmd_sz, b);
 #endif
-            decompress_streams(
+            if (!decompress_streams(
                 a->dst + bstart, bsize,
                 a->lit + bo.lit_off, bo.lit_sz,
                 a->off + bo.off_off, bo.off_sz,
                 a->len + bo.len_off, bo.len_sz,
-                a->cmd + bo.cmd_off, bo.cmd_sz);
+                a->cmd + bo.cmd_off, bo.cmd_sz)) g_dec_err = 1;
         }
     }
     return nullptr;
