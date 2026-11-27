@@ -6,6 +6,11 @@
 #   C. variant 1 base: full GPU decode in VRAM of the default profile (zstd frames through nvCOMP, library with
 #      -DACEAPEX_GPU_NVCOMP) against the open profile, T2T, no windows thread (hybrid1_nv fullgpu ... 0 0)
 #   D. ENC-5: gpu_sa_prototype as it is (8 MiB of chr1 and of enwik9)
+#   E. token chunk of the GPU-windows preset (word of Yakiv 11:15 asked for a smaller LIT_CHUNK; the format requires
+#      literal chunks >= 65536 (FORMAT_ACEPX2.md 3.2) and the encoder falls back to the unchunked layout below it, so the
+#      lever inside the format is the token chunk, FSE_CHUNK, a multiple of 4096 (3.1)): block 16 KiB with FSE_CHUNK
+#      16384 (= the preset), 8192 and 4096 on T2T, HG00438.1, HG00621.1 - windows/s, one window, size, nvCOMP in the same
+#      process; the entropy split of the 4096 archive (T2T)
 # zstd 1.6.0 (the release's zstd since 2.6.5) from its GitHub release tarball, sha256 against the release .sha256 and the
 # pin of scripts/package_linux.sh (2ba599ae...). vCPU = the cgroup quota (cpu.max), not nproc. DONE, FETCHED, self-delete.
 set -uo pipefail
@@ -15,8 +20,8 @@ mkdir -p "$R" "$W"; L=$R/run.log
 export PATH="/usr/local/cuda/bin:$PATH"
 log() { echo "$*" | tee -a "$L"; }
 finish() {
-    rc=$?; log "== exit rc $rc at $(date -u +%FT%TZ)"; grep -hE '^(HYROW|HYSUM|A1H|A1HPH|A1HES|A1HG|FPEND)' "$L" > "$R/rows.tsv" 2>/dev/null
-    { echo "SUMMARY POD2 $(date -u +%FT%TZ) rc $rc"; grep -hE '^\[(hy|a1h)\] |^FPEND|KILL|ENC5|== ' "$L"; } > "$R/SUMMARY.txt" 2>/dev/null; touch "$R/DONE"
+    rc=$?; log "== exit rc $rc at $(date -u +%FT%TZ)"; grep -hE '^(HYROW|HYSUM|A1H|A1HPH|A1HES|A1HG|A1ROW|FPEND)' "$L" > "$R/rows.tsv" 2>/dev/null
+    { echo "SUMMARY POD2 $(date -u +%FT%TZ) rc $rc"; grep -hE '^\[(hy|a1h|a1)\] |^FPEND|KILL|ENC5|== ' "$L"; } > "$R/SUMMARY.txt" 2>/dev/null; touch "$R/DONE"
     if [ "${KEEP:-0}" = 1 ]; then log "KEEP=1: the pod stays"; return; fi
     for i in $(seq $((WAIT_MIN * 6))); do [ -f "$R/FETCHED" ] && break; sleep 10; done
     log "removing pod ($( [ -f "$R/FETCHED" ] && echo 'results fetched' || echo "results NOT fetched after $WAIT_MIN min"))"
@@ -47,6 +52,8 @@ HB="scripts/hybrid1.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp $W/api.o -
 nvcc -std=c++17 -O3 -arch=sm_90 -Isrc -I"$NV/include" -I"$Z/lib" $HB -o "$W/hybrid1" 2>"$R/nvcc1.err" && log "hybrid1 built" || { log "hybrid1 build failed: $(tail -3 "$R/nvcc1.err")"; exit 4; }
 nvcc -std=c++17 -O3 -arch=sm_90 -DACEAPEX_GPU_NVCOMP -Isrc -I"$NV/include" -I"$Z/lib" $HB -o "$W/hybrid1_nv" 2>"$R/nvcc2.err" && log "hybrid1_nv built (library with nvCOMP)" || { log "hybrid1_nv build failed: $(tail -3 "$R/nvcc2.err")"; exit 4; }
 nvcc -std=c++17 -O3 -arch=sm_90 -DAXW_PROF -Isrc scripts/gpu_a1h.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp -o "$W/gpu_a1h" 2>"$R/nvcc3.err" && log "gpu_a1h built" || { log "gpu_a1h build failed: $(tail -3 "$R/nvcc3.err")"; exit 4; }
+nvcc -std=c++17 -O3 -arch=sm_90 -Isrc -I"$NV/include" scripts/gpu_a1.cu src/aceapex_gpu_lib.cu src/aceapex_gpu_abi.cpp -L"$(dirname "$NVL")" -l:"$NVLIB" -lhts -lpthread \
+    -o "$W/gpu_a1" 2>"$R/nvcc5.err" && log "gpu_a1 built" || { log "gpu_a1 build failed: $(tail -3 "$R/nvcc5.err")"; exit 4; }
 nvcc -O3 -arch=sm_90 scripts/enc5_gpu_sa_prototype.cu -o "$W/gpu_sa" 2>"$R/nvcc4.err" && log "gpu_sa_prototype built (as it is, sha256 $(sha256sum < scripts/enc5_gpu_sa_prototype.cu | cut -c1-16))" || log "gpu_sa_prototype build failed: $(tail -3 "$R/nvcc4.err")"
 # corpora
 get() { local f=$W/$1 md5=$2 url=$3 gzmd5=${4:-}
@@ -57,16 +64,19 @@ get() { local f=$W/$1 md5=$2 url=$3 gzmd5=${4:-}
     [ "$(md5sum < "$f" | cut -c1-32)" = "$md5" ] && log "$1: $(stat -c%s "$f") B, md5 ok" || { log "$1 md5 mismatch"; return 1; }; }
 get chr1.fa 9465e0f0df6e2c6eb39729c39cee5465 https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr1.fa.gz || exit 4
 get t2t.fa cd1e52ce400c027ed0b7ab4b9d613f5a https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/009/914/755/GCA_009914755.4_T2T-CHM13v2.0/GCA_009914755.4_T2T-CHM13v2.0_genomic.fna.gz 9280657210e4161147cbe13b022225b9 || exit 4
+H2=/workspace/aceapex_store/hprc/HG00621.1.fa.gz
+[ "$(sha256sum < "$H2" | cut -c1-64)" = bb7d30232f423cabf8d2ebf7443d15aa42bdbfe826424e89ac5f0ee33b0bc780 ] && gunzip -c "$H2" > "$W/hg00621.fa" && log "hg00621.fa: gz sha256 ok" || { log "HG00621.1 mismatch"; exit 4; }
 H=/workspace/aceapex_store/hprc/HG00438.1.fa.gz
 [ "$(sha256sum < "$H" | cut -c1-64)" = a5840157a6995c5fbc08698e52b614fbdf6f57a7245db944edb328a0b3e23ff8 ] && gunzip -c "$H" > "$W/hg00438.fa" && log "hg00438.fa: gz sha256 ok" || { log "HG00438.1 mismatch"; exit 4; }
 cp /workspace/data/enwik9 "$W/enwik9" && [ "$(sha256sum < "$W/enwik9" | cut -c1-64)" = 159b85351e5f76e60cbe32e04c677847a9ecba3adc79addab6f4c6c7aa3744bc ] && log "enwik9: sha256 ok" || { log "enwik9 mismatch"; exit 4; }
 # archives (CPU round trip each); the open default block at --threads 20 = 1 MiB (the table's archives)
-mk() { local X=$1 tag=$2 bs=$3 prof=$4
-    env -i PATH="$PATH" ${prof:+AX_PROFILE=$prof} ${bs:+ACEAPEX_BS=$bs} ./aceapex c --in "$W/$X" --out "$W/$tag.aet" --threads 20 >/dev/null 2>&1 || { log "$tag: encode failed"; return 1; }
+mk() { local X=$1 tag=$2 bs=$3 prof=$4 fc=${5:-}
+    env -i PATH="$PATH" ${prof:+AX_PROFILE=$prof} ${bs:+ACEAPEX_BS=$bs} ${fc:+FSE_CHUNK=$fc} ./aceapex c --in "$W/$X" --out "$W/$tag.aet" --threads 20 >/dev/null 2>&1 || { log "$tag: encode failed"; return 1; }
     ./aceapex d --in "$W/$tag.aet" --out "$W/$tag.rt" >/dev/null 2>&1 && cmp -s "$W/$tag.rt" "$W/$X" && rm -f "$W/$tag.rt" || { log "$tag: round trip FAILED"; return 1; }
     log "$tag: $(stat -c%s "$W/$tag.aet") B (CPU round trip ok)"; }
 mk t2t.fa t2t.open "" open || exit 4; mk hg00438.fa hg00438.open "" open || exit 4; mk t2t.fa t2t.def "" "" || exit 4
-mk chr1.fa chr1.bs16k 16384 open || exit 4; mk t2t.fa t2t.bs16k 16384 open || exit 4
+mk chr1.fa chr1.bs16k 16384 open || exit 4
+for X in t2t hg00438 hg00621; do mk $X.fa $X.bs16k 16384 open || exit 4; mk $X.fa $X.bs16k.fc8k 16384 open 8192 || exit 4; mk $X.fa $X.bs16k.fc4k 16384 open 4096 || exit 4; done
 log "pinned sizes: t2t.open 830777231, hg00438.open 758943628, t2t.bs16k 853265321 (GPU-A1); t2t.def 806108652 was built with zstd 1.5.7 (FULLPOD-1)"
 st=0
 log "== A. HYBRID-1 repeat with region_mt (vCPU $T)"
@@ -78,6 +88,9 @@ log "== C. variant 1 base: full GPU decode in VRAM, default (nvCOMP zstd frames)
 "$W/hybrid1_nv" fullgpu "$W/t2t.open.aet" "$W/t2t.fa" 30 0 0 2>&1 | grep -E 'FPEND' | sed 's/^/open    /' | tee -a "$L"; [ "${PIPESTATUS[0]}" = 0 ] || st=5
 log "== D. ENC-5: gpu_sa_prototype as it is, 8 MiB"
 for X in chr1.fa enwik9; do timeout 600 "$W/gpu_sa" "$W/$X" 8388608 2>&1 | sed "s/^/ENC5 $X: /" | tail -20 | tee -a "$L"; log "ENC5 $X rc ${PIPESTATUS[0]}"; done
+log "== E. token chunk FSE_CHUNK 16384 / 8192 / 4096 at block 16 KiB, nvCOMP in the same process"
+for X in t2t hg00438 hg00621; do "$W/gpu_a1" "$W/$X.bs16k.aet=ace16k,$W/$X.bs16k.fc8k.aet=ace16k_fc8k,$W/$X.bs16k.fc4k.aet=ace16k_fc4k" "$W/$X.fa" - 10000 16384 20 "$T" 2>&1 | tee -a "$L"; [ "${PIPESTATUS[0]}" = 0 ] || st=5; done
+"$W/gpu_a1h" "$W/t2t.bs16k.fc4k.aet" "$W/t2t.fa" "t2t.bs16k.fc4k" 10000 16384 20 2>&1 | tee -a "$L"; [ "${PIPESTATUS[0]}" = 0 ] || st=5
 nvidia-smi --query-gpu=name,clocks.sm,clocks.mem,temperature.gpu,power.draw --format=csv | tee -a "$L"
 [ "$st" = 0 ] || log "KILL: an output differs (see above)"
 exit $st
