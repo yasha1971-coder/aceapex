@@ -127,10 +127,13 @@ AXF_INLINE uint32_t axf_block_len(const axf_arc_t* a, uint32_t b) {
     return (uint32_t)(a->orig - st < a->bs ? a->orig - st : a->bs);
 }
 
-/* 32-byte copy; memcpy of a constant size compiles to one vector move (AVX2), two (SSE2/NEON). RISC-V: rv64gc
-   builds are strict-align by default and gcc 14 calls memcpy for 32 bytes of unknown alignment (57 calls in the block
-   decoder of TurboBench 2026.11.24), so there four 8-byte copies, which it expands inline */
-#if defined(__riscv)
+/* 32-byte copy; memcpy of a constant size compiles to one vector move (AVX2), two (SSE2/NEON). RISC-V: the four 8-byte
+   copies are taken only where the compiler declares fast misaligned access (__riscv_misaligned_fast, gcc 14+), and
+   then they are 8-byte loads and stores. Without it (strict align: -march=rv64gc, the TurboBench build) gcc expands
+   each 8-byte memcpy of unknown alignment into bytes, so the 32-byte copy became 32 lbu + 32 sb and the block decoder
+   grew from 2 124 to 7 137 instructions (RV-DIAG-1, 26.11.2026; TH1520: fast 1 decode 214.70 -> 171.14 MB/s after
+   2.6.5); there the call to memcpy (word copies in glibc) of 2.6.4 is kept */
+#if defined(__riscv) && defined(__riscv_misaligned_fast)
 AXF_INLINE void axf_cp32(uint8_t* d, const uint8_t* s) {
     uint64_t a, b, c, e;
     memcpy(&a, s, 8); memcpy(&b, s + 8, 8); memcpy(&c, s + 16, 8); memcpy(&e, s + 24, 8);

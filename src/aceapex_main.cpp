@@ -651,7 +651,16 @@ static inline void ax_match_fast(uint8_t* d, uint32_t dist, uint32_t len) {
 // and their order are those of the checked zone, so a corrupt block stops at the same token with the same bytes.
 // out0 > 0 (AX_REFSEG prototype only): dst[0, out0) already holds the block's reference prefix, the block is written
 // after it and its matches may reach into it; the bounds checks stay (dist <= out, out + l <= dst_size).
-static void decompress_streams(
+// Returns true only when the block decoded to exactly dst_size bytes (SEC-DEC-2, 27.11: a bad token or a command
+// stream that ran out used to end the block silently - its tail was left unwritten and the call reported success, so the
+// output carried the old bytes of the caller's buffer or, through region / ranges, uninitialized heap; the C99 decoder
+// and the GPU match kernel already refused such a block). Every caller turns false into an error.
+#ifdef AX_SHORT_BLOCK_NO_CHECK   /* negative control of verify/repro/short_block only: a short block reported as whole */
+#define AX_BLOCK_DONE(ok) return true
+#else
+#define AX_BLOCK_DONE(ok) return (ok)
+#endif
+static bool decompress_streams(
     uint8_t* dst, size_t dst_size,
     const uint8_t* lit, size_t lit_sz,
     const uint8_t* off, size_t off_sz,
@@ -682,7 +691,7 @@ static void decompress_streams(
             l=lv+6; dist=read_varint(off,op,off_sz);
             rep[3]=rep[2];rep[2]=rep[1];rep[1]=rep[0];rep[0]=dist;
         }
-        if (!dist||dist>out||out+l>dst_size) return;
+        if (!dist||dist>out||out+l>dst_size) AX_BLOCK_DONE(false);
         if (out+l+SL<=dst_size) ax_match_fast(dst+out,dist,l); else copy_match(dst,out,dist,l);
         out+=l;
     }
@@ -716,6 +725,7 @@ static void decompress_streams(
             out+=l;
         }
     }
+    AX_BLOCK_DONE(out==dst_size);
 }
  
 
@@ -1105,15 +1115,15 @@ static inline void ax_block_out(uint8_t* dst, size_t bstart, size_t bsize, const
                                 const uint8_t* off, const uint8_t* len, const uint8_t* cmd, std::vector<uint8_t>& nbuf, bool ntok) {
 #ifdef ACEAPEX_ENV_TUNING
     if (g_ax_out_sink) { if (nbuf.size() < bsize + 64) nbuf.resize(bsize + 64);
-        decompress_streams(nbuf.data(), bsize, lit, bo.lit_sz, off + bo.off_off, bo.off_sz, len + bo.len_off, bo.len_sz, cmd + bo.cmd_off, bo.cmd_sz);
+        if (!decompress_streams(nbuf.data(), bsize, lit, bo.lit_sz, off + bo.off_off, bo.off_sz, len + bo.len_off, bo.len_sz, cmd + bo.cmd_off, bo.cmd_sz)) g_dec_err = 1;
         g_ax_out_sink(g_ax_out_ctx, bstart, nbuf.data(), bsize); return; }
 #endif
     if (ntok && (double)bo.lit_sz >= ax_nt().lit * (double)bsize) {
         if (nbuf.size() < bsize + 64) nbuf.resize(bsize + 64);
-        decompress_streams(nbuf.data(), bsize, lit, bo.lit_sz, off + bo.off_off, bo.off_sz, len + bo.len_off, bo.len_sz, cmd + bo.cmd_off, bo.cmd_sz);
+        if (!decompress_streams(nbuf.data(), bsize, lit, bo.lit_sz, off + bo.off_off, bo.off_sz, len + bo.len_off, bo.len_sz, cmd + bo.cmd_off, bo.cmd_sz)) g_dec_err = 1;
         ax_nt_copy(dst + bstart, nbuf.data(), bsize);
-    } else
-        decompress_streams(dst + bstart, bsize, lit, bo.lit_sz, off + bo.off_off, bo.off_sz, len + bo.len_off, bo.len_sz, cmd + bo.cmd_off, bo.cmd_sz);
+    } else if (!decompress_streams(dst + bstart, bsize, lit, bo.lit_sz, off + bo.off_off, bo.off_sz, len + bo.len_off, bo.len_sz, cmd + bo.cmd_off, bo.cmd_sz))
+        g_dec_err = 1;
 }
 
 static void* dec_worker(void* arg) {
@@ -1145,12 +1155,12 @@ static void* dec_worker(void* arg) {
                 a->len + bo.len_off, bo.len_sz,
                 a->cmd + bo.cmd_off, bo.cmd_sz, b);
 #endif
-            decompress_streams(
+            if (!decompress_streams(
                 a->dst + bstart, bsize,
                 a->lit + bo.lit_off, bo.lit_sz,
                 a->off + bo.off_off, bo.off_sz,
                 a->len + bo.len_off, bo.len_sz,
-                a->cmd + bo.cmd_off, bo.cmd_sz);
+                a->cmd + bo.cmd_off, bo.cmd_sz)) g_dec_err = 1;
         }
     }
     return nullptr;
@@ -1405,7 +1415,9 @@ static void fse_chunked_decomp(const uint8_t* src, size_t orig_sz, uint8_t* dst)
 // (4 KiB..512 KiB decoded), so the atomic counter costs nothing next to zstd.
 struct AxTokJob { const uint8_t* p; uint8_t* d; size_t raw; size_t z; uint64_t e; };
 struct FseStream { const uint8_t* s; size_t orig; uint8_t* d; };
-static void fse_multi_decomp(const FseStream* st, int n, int threads) {
+// lo / hi (optional, one pair per stream): decode only the chunks that overlap the decoded bytes [lo[k], hi[k]) of
+// stream k - the token slices of a block window (aceapex_decompress_region_mt, 2.6.6); the other chunks are skipped
+static void fse_multi_decomp(const FseStream* st, int n, int threads, const size_t* lo = nullptr, const size_t* hi = nullptr) {
     std::vector<AxTokJob> jobs;
     for (int k = 0; k < n; k++) {
         if (st[k].orig == 0) continue;
@@ -1416,7 +1428,9 @@ static void fse_multi_decomp(const FseStream* st, int n, int threads) {
             AxTokJob j; j.raw = std::min<size_t>(CHUNK, st[k].orig - i * CHUNK);
             j.p = st[k].s + p_off; j.d = st[k].d + i * CHUNK; j.e = cs[i];
             j.z = ax_ce_raw(cs[i]) ? j.raw : ax_ce_size(cs[i]);
-            p_off += j.z; jobs.push_back(j);
+            p_off += j.z;
+            if (lo && (lo[k] >= hi[k] || i * CHUNK + j.raw <= lo[k] || i * CHUNK >= hi[k])) continue;   // outside the window
+            jobs.push_back(j);
         }
     }
     if (jobs.empty()) return;
