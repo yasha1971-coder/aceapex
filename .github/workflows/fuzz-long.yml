@@ -1,0 +1,28 @@
+# 2.6.6 gate J4 (word of Yakiv 27.11 11:25): scripts/api_fuzz.cpp under ASan + UBSan for one hour on the release candidate
+# (this branch = release-2.6.x 6cad5c7 + this file only), plus its negative control. Never merged.
+name: fuzz-long
+on:
+  push:
+    branches: [fuzz-266]
+permissions:
+  contents: read
+jobs:
+  api-fuzz-1h:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+    - uses: actions/checkout@v5
+    - name: Dependencies
+      run: sudo apt-get update || true; sudo apt-get install -y build-essential libzstd-dev
+    - name: api_fuzz 3600 s (gate - verified-silent 0, bad rc 0, no sanitizer report)
+      env:
+        SAN: -O1 -g -std=c++17 -fsanitize=address,undefined -fno-sanitize-recover=all
+      run: |
+        g++ $SAN -Isrc scripts/api_fuzz.cpp src/aceapex_api.cpp -o api_fuzz -lzstd -lpthread
+        ./api_fuzz 3600 "$GITHUB_RUN_ID"
+    - name: Negative control (a short buffer must be reported)
+      env:
+        SAN: -O1 -g -std=c++17 -fsanitize=address,undefined -fno-sanitize-recover=all
+      run: |
+        if ./api_fuzz control > control.txt 2>&1; then cat control.txt; echo "negative control NOT caught"; exit 1; fi
+        grep -q 'ERROR: AddressSanitizer' control.txt && echo "negative control caught"
