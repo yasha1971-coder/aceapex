@@ -230,6 +230,19 @@ if ${CXX:-g++} -std=c++17 -O1 -Isrc -o $T/shx $SHD/stream_hdr_test.cpp -lzstd -l
   r=$($T/shx $SHD verify/fixtures/conf 2>/dev/null); sh="$sh | $(echo "$r" | cut -f1,2,3,4 | tr '\t' ' ')"; echo "$r" | grep -q "	pass	" || shf=1
 else sh="$sh | cpp build failed"; shf=1; fi
 printf 'head_stream_hdr_reject\t%s\t%s\n' "$([ $shf = 0 ] && echo pass || echo fail)" "${sh# | }"
+# 2.6.6 (J3-K): block b's slices start where block b-1's end (block 0's at 0) - the three archives of verify/repro/boffs_contig
+# are refused by C++ (decompress, mt 1/2, region, ranges, stream; region and ranges over the damaged block alone) and C99
+# (decompress, region, dec_open). Negative control -DAX_BOFFS_CONTIG_NO_CHECK (2.6.5): success with wrong bytes
+bc=""; bcf=0; BCD=verify/repro/boffs_contig
+for m in check control; do D=; [ $m = control ] && D=-DAX_BOFFS_CONTIG_NO_CHECK
+  if ${CXX:-g++} -std=c++17 -O1 $D -Isrc -o $T/bc_$m $BCD/boffs_contig_test.cpp -lzstd -lpthread 2>$T/bc.err; then
+    r=$($T/bc_$m $BCD verify/fixtures/conf 2>/dev/null); bc="$bc | $(echo "$r" | cut -f1,2,3,4 | tr '\t' ' ')"; echo "$r" | grep -q "	pass	" || bcf=1
+  else bc="$bc | cpp $m build failed"; bcf=1; fi
+  if ${CC:-gcc} -std=c99 -O2 $D -Ic -o $T/bcc_$m $BCD/boffs_contig_c99.c c/aceapex_decode.c -lzstd 2>$T/bc.err; then
+    r=$($T/bcc_$m $BCD verify/fixtures/conf 2>/dev/null); bc="$bc | $(echo "$r" | cut -f1,2,3,4 | tr '\t' ' ')"; echo "$r" | grep -q "	pass	" || bcf=1
+  else bc="$bc | c99 $m build failed"; bcf=1; fi
+done
+printf 'head_boffs_contig_reject\t%s\t%s\n' "$([ $bcf = 0 ] && echo pass || echo fail)" "${bc# | }"
 # 2.6.4 step 2: fuzz/fuzz_region.cpp (region, ranges, decode_streams) without libFuzzer, 20 s of mutants of the same seeds
 # + cpp_alloc under ASan+UBSan, allocations above 128 MiB abort; v2.6.3 aborts on the conformance fixtures alone
 FZR_SEEDS="$FZ_SEEDS $(ls verify/repro/cpp_alloc/*.aet)"
