@@ -42,4 +42,4 @@ jobs:
       run: make -j4 aceapex && ./aceapex --version | head -1
     - name: Shell check of the pod script
       run: |
-        bash -n scripts/run_gpu_a1.sh && bash -n scripts/run_gpu_a1h.sh && bash -n scripts/run_gpu_a1s.sh && bash -n scripts/run_hy1.sh && echo "pod scripts - syntax ok"
+        bash -n scripts/run_gpu_a1.sh && bash -n scripts/run_gpu_a1h.sh && bash -n scripts/run_gpu_a1s.sh && bash -n scripts/run_hy1.sh && bash -n scripts/run_fp0.sh && bash -n scripts/run_fp1.sh && echo "pod scripts - syntax ok"

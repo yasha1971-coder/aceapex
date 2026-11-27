@@ -229,7 +229,7 @@ __global__ void k_cmpwin(const uint8_t* got, const uint8_t* orig, const uint64_t
     const uint32_t i = blockIdx.x; const uint64_t o = off[i]; unsigned long long b = 0;
     for (uint32_t k = threadIdx.x; k < W; k += blockDim.x) b += got[(uint64_t)i * W + k] != orig[o + k];
     if (b) atomicAdd(bad, b); }
-static int job_fullgpu(const char* arcp, const char* origp, double secs) {
+static int job_fullgpu(const char* arcp, const char* origp, double secs, int d2h) {   // d2h 0: data and result stay in VRAM
     const std::vector<uint8_t> a = slurp(arcp), o = slurp(origp); const uint64_t orig = o.size(); const uint32_t n = 10000, W = 16384;
     aceapex_gpu_plan* pl = aceapex_gpu_plan_create(a.data(), a.size(), 0); if (!pl) { printf("FP\tfullgpu\tplan failed\n"); return 4; }
     uint8_t *d_in, *d_out, *d_tmp, *d_orig, *d_wout, *d_wtmp, *h_out; int *d_st, *d_wst; uint64_t* d_off; unsigned long long* d_bad;
@@ -245,13 +245,14 @@ static int job_fullgpu(const char* arcp, const char* origp, double secs) {
     const double t0 = now_s(); double last = t0; uint64_t ld = 0, lw = 0;
     while (now_s() - t0 < secs) {
         if (aceapex_gpu_decompress_async(pl, d_in, d_out, d_tmp, d_st, ACEAPEX_GPU_VERIFY_XXH3, sa)) { badst++; break; }
-        CK(cudaMemcpyAsync(h_out, d_out, orig, cudaMemcpyDeviceToHost, sa)); int st = 0; CK(cudaMemcpyAsync(&st, d_st, 4, cudaMemcpyDeviceToHost, sa)); CK(cudaStreamSynchronize(sa));
+        if (d2h) CK(cudaMemcpyAsync(h_out, d_out, orig, cudaMemcpyDeviceToHost, sa)); int st = 0; CK(cudaMemcpyAsync(&st, d_st, 4, cudaMemcpyDeviceToHost, sa)); CK(cudaStreamSynchronize(sa));
         if (st) badst++; dec += orig;
         const double t = now_s(); if (t - last >= 1.0) { const uint64_t d = dec, w = win;
-            printf("FP\tfullgpu\t%.1f\tdecode_GBps\t%.3f\twindows_per_s\t%.0f\n", t - t0, (d - ld) / (t - last) / 1e9, (w - lw) / (t - last)); ld = d; lw = w; last = t; } }
+            printf("FP\tfullgpu%s\t%.1f\tdecode_GBps\t%.3f\twindows_per_s\t%.0f\n", d2h ? "" : "_vram", t - t0, (d - ld) / (t - last) / 1e9, (w - lw) / (t - last)); ld = d; lw = w; last = t; } }
     stop = true; tb.join(); const double T = now_s() - t0; unsigned long long bad = 0; CK(cudaMemcpy(&bad, d_bad, 8, cudaMemcpyDeviceToHost));
+    if (!d2h) CK(cudaMemcpy(h_out, d_out, orig, cudaMemcpyDeviceToHost));   // VRAM mode: the last decode copied once, out of the window
     const bool hok = memcmp(h_out, o.data(), orig) == 0;   // the last full decode on the host
-    printf("FPEND\tfullgpu\t%.1f\tdecode_GBps\t%.3f\twindows_per_s\t%.0f\tstatus_bad\t%llu\twindow_bytes_bad\t%llu\tlast_host_copy\t%s\n", T, dec / T / 1e9, win / T,
+    printf("FPEND\tfullgpu%s\t%.1f\tdecode_GBps\t%.3f\twindows_per_s\t%.0f\tstatus_bad\t%llu\twindow_bytes_bad\t%llu\tlast_host_copy\t%s\n", d2h ? "" : "_vram", T, dec / T / 1e9, win / T,
            (unsigned long long)badst.load(), bad, hok ? "ok" : "DIFFERS");
     return (badst || bad || !hok) ? 5 : 0;
 }
@@ -287,9 +288,35 @@ static int job_cpudec(int thr, double secs, const char* arcp, const char* origp)
            bd > 0 ? dec / bd / 1e9 : 0, br > 0 ? rq / br : 0, (unsigned long long)bad); return bad ? 5 : 0;
 }
 
+// step 0 (word of Yakiv 06:52): PCIe H2D / D2H, pinned and pageable, 64 MiB - 1 GiB (median of 10 copies, events)
+static int mode_pcie() {
+    const size_t MX = (size_t)1 << 30; uint8_t *d, *hp, *hq; CK(cudaMalloc(&d, MX)); CK(cudaHostAlloc(&hp, MX, 0)); hq = (uint8_t*)malloc(MX); memset(hp, 1, MX); memset(hq, 1, MX);
+    cudaEvent_t a, b; CK(cudaEventCreate(&a)); CK(cudaEventCreate(&b));
+    for (size_t sz : {(size_t)64 << 20, (size_t)256 << 20, (size_t)1 << 30}) for (int pin = 1; pin >= 0; pin--) for (int dir = 0; dir < 2; dir++) {
+        uint8_t* h = pin ? hp : hq; std::vector<double> t;
+        for (int r = 0; r < 12; r++) { CK(cudaEventRecord(a)); if (dir == 0) CK(cudaMemcpy(d, h, sz, cudaMemcpyHostToDevice)); else CK(cudaMemcpy(h, d, sz, cudaMemcpyDeviceToHost));
+            CK(cudaEventRecord(b)); CK(cudaEventSynchronize(b)); float ms; CK(cudaEventElapsedTime(&ms, a, b)); if (r >= 2) t.push_back(ms / 1e3); }
+        printf("PCIE\t%s\t%s\t%zu MiB\t%.2f GB/s\n", dir ? "D2H" : "H2D", pin ? "pinned" : "pageable", sz >> 20, sz / med(t) / 1e9); }
+    cudaFree(d); cudaFreeHost(hp); free(hq); return 0;
+}
+// step 0: host memory copy, 1 GiB per thread pair of buffers, threads 1 / N/2 / N (median of 5)
+static int mode_memcpy(int N) {
+    const size_t SZ = (size_t)1 << 30;
+    for (int T : {1, std::max(1, N / 2), N}) {
+        std::vector<uint8_t*> src(T), dst(T); for (int i = 0; i < T; i++) { src[i] = (uint8_t*)malloc(SZ / T); dst[i] = (uint8_t*)malloc(SZ / T); memset(src[i], 1, SZ / T); memset(dst[i], 0, SZ / T); }
+        std::vector<double> t;
+        for (int r = 0; r < 6; r++) { const double a = now_s(); std::vector<std::thread> th; for (int i = 0; i < T; i++) th.emplace_back([&, i] { memcpy(dst[i], src[i], SZ / T); });
+            for (auto& x : th) x.join(); if (r) t.push_back(now_s() - a); }
+        printf("MEMCPY\tthreads %d\t%.2f GB/s (copied bytes / s; read + write = 2x)\n", T, SZ / med(t) / 1e9);
+        for (int i = 0; i < T; i++) { free(src[i]); free(dst[i]); } }
+    return 0;
+}
+
 int main(int argc, char** argv) {
     setvbuf(stdout, nullptr, _IONBF, 0);
-    if (argc >= 2 && !strcmp(argv[1], "fullgpu") && argc >= 5) return job_fullgpu(argv[2], argv[3], atof(argv[4]));
+    if (argc >= 2 && !strcmp(argv[1], "pcie")) return mode_pcie();
+    if (argc >= 3 && !strcmp(argv[1], "memcpy")) return mode_memcpy(atoi(argv[2]));
+    if (argc >= 2 && !strcmp(argv[1], "fullgpu") && argc >= 5) return job_fullgpu(argv[2], argv[3], atof(argv[4]), argc > 5 ? atoi(argv[5]) : 1);
     if (argc >= 2 && !strcmp(argv[1], "cpucomp") && argc >= 5) return job_cpucomp(atoi(argv[2]), atof(argv[3]), argc - 4, argv + 4);
     if (argc >= 2 && !strcmp(argv[1], "cpudec") && argc >= 6) return job_cpudec(atoi(argv[2]), atof(argv[3]), argv[4], argv[5]);
     if (argc < 5) { fprintf(stderr, "usage: %s hybrid <tag> <open.aet> <original> [vcpu] [R] [K blocks]\n       %s fullgpu|cpucomp|cpudec ...\n", argv[0], argv[0]); return 1; }
