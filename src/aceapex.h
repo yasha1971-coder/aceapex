@@ -69,6 +69,18 @@ int64_t aceapex_decompress_region(
     uint64_t    offset, uint64_t length
 );
 
+/* 2.6.6: the same bytes as aceapex_decompress_region, decoded on `threads` threads (0 = auto): the blocks covering the
+   range through the machinery of aceapex_decompress_mt - only their token chunks, their literal chunks next to them -
+   written straight into dst when offset and offset+length are block boundaries (or the end). For splitting one archive
+   between decoders (a CPU share of a CPU + GPU decode). Archives without the chunked literal layout take the region
+   path; the fast profile its threaded region path. */
+int64_t aceapex_decompress_region_mt(
+    const void* src, size_t src_size,
+    void*       dst, size_t dst_capacity,
+    uint64_t    offset, uint64_t length,
+    int         threads
+);
+
 /* Batch region read.
 
    One region read costs about the same whether it returns 16 KB or 1 KB, because the

@@ -95,12 +95,16 @@ static int64_t ax_compress_impl(
 struct AxStreams { uint8_t *l = nullptr, *o = nullptr, *n = nullptr, *c = nullptr; size_t ls = 0, os = 0, ns = 0, cs = 0;
                    std::vector<BlockOffsets> boffs; AetHeader hdr;
                    std::vector<AxLitChunk> lch; size_t lcsz = 0; bool tiled = false;   // tiled: literals not decoded yet (AX_LIT_TILE)
+                   bool win_untiled = false;   // a block window was asked for an archive without the tiled literal layout
                    AxStreams() = default; AxStreams(const AxStreams&) = delete; AxStreams& operator=(const AxStreams&) = delete;
                    ~AxStreams() { free(l); free(o); free(n); free(c); } };
 // AX_PHASE_TIMES=1: wall time of each decode phase on stderr (diagnostics; read once)
 static bool ax_pt(){ static const bool on = [] { const char* e = ax_getenv("AX_PHASE_TIMES"); return e && atoi(e); }(); return on; }
 static double ax_now(){ return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
-static int64_t ax_entropy_decode(const void* src, size_t src_size, int threads, AxStreams& S, bool tile = false)
+// wb1 > wb0: a block window [wb0, wb1) (aceapex_decompress_region_mt, 2.6.6): only the token chunks its blocks use are
+// decoded, the literals stay chunked for ax_decode_tiled; an archive without the tiled layout returns at once with
+// S.win_untiled (the caller takes the one-thread region path). Every check of the whole archive runs as before.
+static int64_t ax_entropy_decode(const void* src, size_t src_size, int threads, AxStreams& S, bool tile = false, uint32_t wb0 = 0, uint32_t wb1 = 0)
 {
     if (!src || src_size < sizeof(AetHeader)) return ACEAPEX_ERR_DATA;
     const uint8_t* p=(const uint8_t*)src;
@@ -154,7 +158,14 @@ static int64_t ax_entropy_decode(const void* src, size_t src_size, int threads, 
     // tile next to the blocks that use them (ax_decode_tiled). Streams without the chunked layout: the usual way.
     if (tile) { const int k = ax_lit_chunks(zl, hdr.zlit_sz, ls, S.lcsz, S.lch); if (k < 0) return ACEAPEX_ERR_DATA; S.tiled = k == 1 && S.lcsz > 0 && S.lcsz <= ((size_t)256 << 10);   // a tile of G chunks must stay in L2 (silesia default: 4 chunks of 20 MB)
                 if (ax_pt()) fprintf(stderr, "[phase] literal chunks: %zu of %zu B (%s)\n", S.lch.size(), S.lcsz, S.tiled ? "tiled" : "not tiled"); }
-    if (S.tiled) { fse_multi_decomp(fst,3,budget); l=(uint8_t*)malloc(1); }
+    const bool win = wb1 > wb0;
+    if (win && (!S.tiled || wb1 > hdr.num_blocks)) { S.win_untiled = true; return 0; }
+    if (win) { size_t lo[3] = {SIZE_MAX, SIZE_MAX, SIZE_MAX}, hi[3] = {0, 0, 0};   // the token slices of the window's blocks
+               for (uint32_t b = wb0; b < wb1; b++) { const BlockOffsets& e = S.boffs[b];
+                   const uint64_t a[3] = {e.off_off, e.len_off, e.cmd_off}, z[3] = {e.off_sz, e.len_sz, e.cmd_sz};
+                   for (int k = 0; k < 3; k++) if (z[k]) { lo[k] = std::min<size_t>(lo[k], (size_t)a[k]); hi[k] = std::max<size_t>(hi[k], (size_t)(a[k] + z[k])); } }
+               fse_multi_decomp(fst,3,budget,lo,hi); l=(uint8_t*)malloc(1); }
+    else if (S.tiled) { fse_multi_decomp(fst,3,budget); l=(uint8_t*)malloc(1); }
     else if (budget == 1) { litfn(&larg); fse_multi_decomp(fst,3,1); }
     else { AxThreads lt(1); lt.spawn(0,litfn,&larg);
            ax_guarded([&]{ fse_multi_decomp(fst,3,tok_t); }); lt.join(); }
@@ -174,13 +185,15 @@ static int64_t ax_entropy_decode(const void* src, size_t src_size, int threads, 
 // tile (<= ~0.5 MiB: stays in L2), then decodes the group's blocks from the tile straight into the output. The 3 GB
 // literal stream of T2T is never written to memory and read back. Blocks are independent (every match lies in its
 // block), so groups run in any order.
-static int64_t ax_decode_tiled(AxStreams& S, uint8_t* dst, int budget) {
-    const size_t CH = S.lcsz, nb = S.hdr.num_blocks, bs = S.hdr.block_size, osz = S.hdr.orig_size, NC = S.lch.size();
+// [wb0, wb1): the blocks to decode (default all); dst holds the window - block b at dst + (b - wb0) x block_size
+static int64_t ax_decode_tiled(AxStreams& S, uint8_t* dst, int budget, size_t wb0 = 0, size_t wb1 = SIZE_MAX) {
+    const size_t CH = S.lcsz, nb = std::min<size_t>(S.hdr.num_blocks, wb1), bs = S.hdr.block_size, osz = S.hdr.orig_size, NC = S.lch.size();
+    const size_t out0 = wb0 * bs;
     static const size_t G = [] { const char* e = ax_getenv("AX_TILE_CHUNKS"); size_t v = e ? strtoull(e, 0, 10) : 8; return v ? v : 1; }();
     struct Item { size_t b0, b1, k0, k1; };
     std::vector<Item> items;
     auto kof = [&](size_t off) { size_t k = off / CH; return k < NC ? k : (NC ? NC - 1 : 0); };
-    for (size_t b = 0; b < nb; ) {
+    for (size_t b = wb0; b < nb; ) {
         Item it{b, b, (size_t)-1, 0};
         while (b < nb) {
             const BlockOffsets& bo = S.boffs[b];
@@ -216,9 +229,9 @@ static int64_t ax_decode_tiled(AxStreams& S, uint8_t* dst, int budget) {
     }
     struct GT { uint32_t t; double s, e, lit; };
     std::vector<GT> gt(times_path ? items.size() : 0); std::vector<float> bt(times_path ? nb : 0); const double tc0 = ax_now();
-    struct Ctx { AxStreams* S; uint8_t* dst; const Item* items; size_t n; int T; size_t CH, bs, osz; bool nt; std::atomic<int> bad;
+    struct Ctx { AxStreams* S; uint8_t* dst; size_t out0; const Item* items; size_t n; int T; size_t CH, bs, osz; bool nt; std::atomic<int> bad;
                  const size_t* cut; const std::vector<std::vector<size_t>>* lists; GT* gt; float* bt; double tc0; };
-    Ctx cx{&S, dst, items.data(), items.size(), T, CH, bs, osz, ax_nt_for(budget, osz), {0}, cut.data(), &lists, gt.empty() ? nullptr : gt.data(), bt.empty() ? nullptr : bt.data(), tc0};
+    Ctx cx{&S, dst, out0, items.data(), items.size(), T, CH, bs, osz, ax_nt_for(budget, osz), {0}, cut.data(), &lists, gt.empty() ? nullptr : gt.data(), bt.empty() ? nullptr : bt.data(), tc0};
     struct Arg { Ctx* c; int t; };
     auto fn = [](void* v) -> void* {
         Arg* ar = (Arg*)v; Ctx* c = ar->c; std::vector<uint8_t> tile, nbuf;
@@ -244,7 +257,7 @@ static int64_t ax_decode_tiled(AxStreams& S, uint8_t* dst, int budget) {
                 const size_t bsize = c->osz > bstart ? std::min(c->bs, c->osz - bstart) : 0;
                 if (!bsize) continue;
                 if (bo.lit_sz && (bo.lit_off < t0 || bo.lit_off + bo.lit_sz > t0 + tsz)) { c->bad = 1; continue; }
-                ax_block_out(c->dst, bstart, bsize, bo, tile.data() + (bo.lit_sz ? bo.lit_off - t0 : 0), c->S->o, c->S->n, c->S->c, nbuf, c->nt);
+                ax_block_out(c->dst, bstart - c->out0, bsize, bo, tile.data() + (bo.lit_sz ? bo.lit_off - t0 : 0), c->S->o, c->S->n, c->S->c, nbuf, c->nt);
                 if (c->bt) { const double x = ax_now(); c->bt[b] = (float)((x - bl) * 1e9); bl = x; }
             }
             if (c->gt) c->gt[i] = {(uint32_t)ar->t, (gs - c->tc0) * 1e9, (ax_now() - c->tc0) * 1e9, (gl - gs) * 1e9};
@@ -261,7 +274,7 @@ static int64_t ax_decode_tiled(AxStreams& S, uint8_t* dst, int budget) {
                  for (size_t i = 0; i < items.size(); i++) { fprintf(f, "G\t%zu\t%u\t%.0f\t%.0f\t%.0f\t%zu\t%zu\n", i, gt[i].t, gt[i].s, gt[i].e, gt[i].lit, items[i].b0, items[i].b1); }
                  for (size_t b = 0; b < nb; b++) fprintf(f, "B\t%zu\t%.0f\t%llu\t%llu\t%llu\n", b, (double)bt[b], (unsigned long long)S.boffs[b].lit_sz, (unsigned long long)S.boffs[b].cmd_sz, (unsigned long long)S.boffs[b].off_sz);
                  fclose(f); } }
-    return cx.bad ? ACEAPEX_ERR_DATA : (int64_t)osz;
+    return cx.bad ? ACEAPEX_ERR_DATA : (int64_t)(std::min<size_t>(osz, nb * bs) - out0);
 }
 
 static int64_t ax_decompress_mt_impl(
@@ -853,6 +866,49 @@ int64_t aceapex_decompress(const void* src, size_t src_size, void* dst, size_t d
     return ax_api<int64_t>([&] { return ax_decompress_mt_impl(src, src_size, dst, dst_capacity, 0); }); }
 int64_t aceapex_decompress_mt(const void* src, size_t src_size, void* dst, size_t dst_capacity, int threads) {
     return ax_api<int64_t>([&] { return ax_decompress_mt_impl(src, src_size, dst, dst_capacity, threads); }); }
+// 2.6.6 (HYBRID-2): the bytes [offset, offset+length) decoded on `threads` threads - the window's blocks through the
+// machinery of decompress_mt (token chunks of the window only, literal tiles next to their blocks), written straight
+// into dst when the range is block-aligned, else through a buffer of the covering blocks. Archives without the tiled
+// literal layout and the fast profile: the region path (the fast one with its threads). Same result as
+// aceapex_decompress_region for every input.
+static int64_t ax_decompress_region_mt_impl(const void* src, size_t src_size, void* dst, size_t dst_capacity,
+                                            uint64_t offset, uint64_t length, int threads) {
+#ifdef ACEAPEX_ENV_TUNING
+    if (axlm::is(src, src_size)) return ax_decompress_region_impl(src, src_size, dst, dst_capacity, offset, length);
+#endif
+    if (!src || src_size < sizeof(AetHeader)) return ACEAPEX_ERR_DATA;
+    const uint8_t* p = (const uint8_t*)src;
+    if (axf_is_v3(p, src_size)) { axf_arc_t a; if (axf_open(p, src_size, &a) != 0 || !dst) return ACEAPEX_ERR_DATA;
+        return ax_fast_region(a, (uint8_t*)dst, dst_capacity, offset, length, threads); }
+    AetHeader hdr; memcpy(&hdr, p, sizeof(hdr));
+    if (memcmp(hdr.magic,"ACEPX2\0\0",8) != 0) return ACEAPEX_ERR_DATA;
+    if (hdr.num_blocks == 0) return (ax_is_empty_archive(hdr) && length == 0) ? 0 : ACEAPEX_ERR_DATA;
+    if (!ax_header_ok(hdr, src_size)) return ACEAPEX_ERR_DATA;
+    if (length == 0) return 0;
+    if (offset > hdr.orig_size || length > hdr.orig_size - offset) return ACEAPEX_ERR_DATA;
+    if (length > dst_capacity) return ACEAPEX_ERR_BUFFER;
+    if (!dst) return ACEAPEX_ERR_DATA;
+    const uint64_t bs = hdr.block_size, orig = hdr.orig_size, nbk = hdr.num_blocks;   // copies: AetHeader is packed (UBSan)
+    const uint64_t b0 = offset / bs, b1 = (offset + length - 1) / bs + 1;   // ax_header_ok: bs > 0
+    if (b1 > nbk) return ACEAPEX_ERR_DATA;
+    AxStreams S; const int64_t r = ax_entropy_decode(src, src_size, threads, S, true, (uint32_t)b0, (uint32_t)b1);
+    if (S.win_untiled) return ax_decompress_region_impl(src, src_size, dst, dst_capacity, offset, length);
+    if (r < 0) return r;
+    if (r == 0) return ACEAPEX_ERR_DATA;
+    const uint64_t w0 = b0 * bs, w1 = std::min<uint64_t>(b1 * bs, orig), wn = w1 - w0;
+    const int budget = ax_decode_budget(threads, wn);
+    int64_t q;
+    if (offset == w0 && length == wn) q = ax_decode_tiled(S, (uint8_t*)dst, budget, (size_t)b0, (size_t)b1);
+    else { uint8_t* span = ax_big_malloc((size_t)wn + 64); if (!span) return ACEAPEX_ERR_MEMORY;
+           q = ax_decode_tiled(S, span, budget, (size_t)b0, (size_t)b1);
+           if (q == (int64_t)wn) memcpy(dst, span + (offset - w0), (size_t)length);
+           free(span); }
+    if (q < 0) return q;
+    if (q != (int64_t)wn || g_dec_err) return ACEAPEX_ERR_DATA;
+    return (int64_t)length;
+}
+int64_t aceapex_decompress_region_mt(const void* src, size_t src_size, void* dst, size_t dst_capacity, uint64_t offset, uint64_t length, int threads) {
+    return ax_api<int64_t>([&] { return ax_decompress_region_mt_impl(src, src_size, dst, dst_capacity, offset, length, threads); }); }
 int64_t aceapex_decompress_region(const void* src, size_t src_size, void* dst, size_t dst_capacity, uint64_t offset, uint64_t length) {
     return ax_api<int64_t>([&] { return ax_decompress_region_impl(src, src_size, dst, dst_capacity, offset, length); }); }
 int64_t aceapex_decompress_ranges(const void* src, size_t src_size, aceapex_range_t* ranges, size_t count, int threads) {
