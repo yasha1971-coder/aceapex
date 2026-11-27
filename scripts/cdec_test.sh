@@ -204,6 +204,32 @@ for m in check control; do D=; [ $m = control ] && D=-DAX_HDR_VERSION_NO_CHECK
   else hv="$hv | $m build failed"; hvf=1; fi
 done
 printf 'head_hdr_version_reject\t%s\t%s\n' "$([ $hvf = 0 ] && echo pass || echo fail)" "${hv# | }"
+# 2.6.6 (J3-K of the 2.6.6 gates): a DNA pack (literal chunk mode 1) with exceptions but no gap or val frame is refused -
+# C++ on six entry points (dna_exc_test.cpp), C99 = the Python decoder on three (dna_exc_c99.c); before, C++ read the
+# exceptions from unwritten heap and C99 put zeros. Negative control -DAX_DNA_EXC_NO_CHECK: the damaged archive returns the full size
+de=""; def=0; DED=verify/repro/dna_exc
+for m in check control; do D=; [ $m = control ] && D=-DAX_DNA_EXC_NO_CHECK
+  if ${CXX:-g++} -std=c++17 -O1 $D -Isrc -o $T/de_$m $DED/dna_exc_test.cpp -lzstd -lpthread 2>$T/de.err; then
+    r=$($T/de_$m $DED 2>/dev/null); de="$de | $(echo "$r" | cut -f1,2,3,4 | tr '\t' ' ')"; echo "$r" | grep -q "	pass	" || def=1
+  else de="$de | cpp $m build failed"; def=1; fi
+  if ${CC:-gcc} -std=c99 -O2 $D -Ic -o $T/dec_$m $DED/dna_exc_c99.c c/aceapex_decode.c -lzstd 2>$T/de.err; then
+    r=$($T/dec_$m $DED 2>/dev/null); de="$de | $(echo "$r" | cut -f1,2,3,4 | tr '\t' ' ')"; echo "$r" | grep -q "	pass	" || def=1
+  else de="$de | c99 $m build failed"; def=1; fi
+done
+printf 'head_dna_exc_reject\t%s\t%s\n' "$([ $def = 0 ] && echo pass || echo fail)" "${de# | }"
+# 2.6.6 (J3-K): stream-header rules (token word bit 63, literal stored sizes with bit 63, tagged without chunked) - the
+# C99 decoder refuses the four archives of verify/repro/stream_hdr as the C++ decoder does. Negative control
+# -DAX_STREAM_HDR_NO_CHECK (the 2.6.5 C99 decoder): all four decode to the full size; the C++ part checks the two agree
+sh=""; shf=0; SHD=verify/repro/stream_hdr
+for m in check control; do D=; [ $m = control ] && D=-DAX_STREAM_HDR_NO_CHECK
+  if ${CC:-gcc} -std=c99 -O2 $D -Ic -o $T/sh_$m $SHD/stream_hdr_c99.c c/aceapex_decode.c -lzstd 2>$T/sh.err; then
+    r=$($T/sh_$m $SHD verify/fixtures/conf 2>/dev/null); sh="$sh | $(echo "$r" | cut -f1,2,3,4 | tr '\t' ' ')"; echo "$r" | grep -q "	pass	" || shf=1
+  else sh="$sh | c99 $m build failed"; shf=1; fi
+done
+if ${CXX:-g++} -std=c++17 -O1 -Isrc -o $T/shx $SHD/stream_hdr_test.cpp -lzstd -lpthread 2>$T/sh.err; then
+  r=$($T/shx $SHD verify/fixtures/conf 2>/dev/null); sh="$sh | $(echo "$r" | cut -f1,2,3,4 | tr '\t' ' ')"; echo "$r" | grep -q "	pass	" || shf=1
+else sh="$sh | cpp build failed"; shf=1; fi
+printf 'head_stream_hdr_reject\t%s\t%s\n' "$([ $shf = 0 ] && echo pass || echo fail)" "${sh# | }"
 # 2.6.4 step 2: fuzz/fuzz_region.cpp (region, ranges, decode_streams) without libFuzzer, 20 s of mutants of the same seeds
 # + cpp_alloc under ASan+UBSan, allocations above 128 MiB abort; v2.6.3 aborts on the conformance fixtures alone
 FZR_SEEDS="$FZ_SEEDS $(ls verify/repro/cpp_alloc/*.aet)"

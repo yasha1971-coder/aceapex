@@ -89,6 +89,8 @@ head_run_template_gate	always
 head_zstd_legacy_reject	always
 head_short_block_reject	always
 head_hdr_version_reject	always
+head_dna_exc_reject	always
+head_stream_hdr_reject	always
 head_alloc_encode_leak	always
 head_alloc_lit_ctx	always
 head_alloc_ranges_span	always
