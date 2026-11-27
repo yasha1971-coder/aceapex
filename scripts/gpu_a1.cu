@@ -69,7 +69,7 @@ template <class F> static bool timed(F fn, int R, double& p50a, double& p50b, do
 }
 
 // ------------------------------------------------------------------ (a) ACEAPEX GPU
-static bool path_ace(const char* arc, const std::vector<uint8_t>& o, const std::vector<uint64_t>& off, uint32_t n, uint32_t W, int R) {
+static bool path_ace(const char* arc, const char* label, const std::vector<uint8_t>& o, const std::vector<uint64_t>& off, uint32_t n, uint32_t W, int R) {
     const std::vector<uint8_t> a = slurp(arc); cudaStream_t s; CK(cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking));
     const double t0 = now_s(); aceapex_gpu_plan* pl = aceapex_gpu_plan_create(a.data(), a.size(), 0);
     if (!pl) { printf("[a1] ace plan_create failed: %d\n", aceapex_gpu_last_error()); return false; }
@@ -78,14 +78,15 @@ static bool path_ace(const char* arc, const std::vector<uint8_t>& o, const std::
     CK(cudaMalloc(&d_off, (size_t)n * 8)); CK(cudaMemcpy(d_off, off.data(), (size_t)n * 8, cudaMemcpyHostToDevice));
     CK(cudaMalloc(&d_out, (size_t)n * W)); CK(cudaMalloc(&d_tmp, tb)); CK(cudaMalloc(&d_tmp1, tb1)); CK(cudaMalloc(&d_st, 4));
     auto batch = [&] { if (aceapex_gpu_decompress_windows_async(pl, d_in, d_off, n, W, d_out, d_tmp, d_st, s)) return false; return cudaStreamSynchronize(s) == cudaSuccess; };
-    Row r{"ace", (uint64_t)a.size(), open_ms, 0, 0, 0, 0, false};
+    Row r{label, (uint64_t)a.size(), open_ms, 0, 0, 0, 0, false};
     if (!timed(batch, R, r.p50a, r.p50b, r.p99)) { printf("[a1] ace batch failed\n"); return false; }
     int st = -1; CK(cudaMemcpy(&st, d_st, 4, cudaMemcpyDeviceToHost));
     std::vector<uint8_t> h((size_t)n * W); CK(cudaMemcpy(h.data(), d_out, h.size(), cudaMemcpyDeviceToHost));
     r.ok = st == 0 && check_windows(h.data(), o, off, n, W);
     std::mt19937_64 g(777); std::vector<double> one; uint64_t* d_o1; CK(cudaMalloc(&d_o1, 8));
     for (int k = 0; k < 200; k++) { const uint64_t x = g() % (g_orig - W + 1); CK(cudaMemcpy(d_o1, &x, 8, cudaMemcpyHostToDevice)); const double t0b = now_s();
-        if (aceapex_gpu_decompress_windows_async(pl, d_in, d_o1, 1, W, d_out, d_tmp1, d_st, s)) { r.ok = false; break; } CK(cudaStreamSynchronize(s)); one.push_back(now_s() - t0b); }
+        if (aceapex_gpu_decompress_windows_async(pl, d_in, d_o1, 1, W, d_out, d_tmp1, d_st, s)) { r.ok = false; break; } CK(cudaStreamSynchronize(s)); one.push_back(now_s() - t0b);
+        CK(cudaMemcpy(h.data(), d_out, W, cudaMemcpyDeviceToHost)); CK(cudaMemcpy(&st, d_st, 4, cudaMemcpyDeviceToHost)); if (st != 0 || !check_windows(h.data(), o, {x}, 1, W)) r.ok = false; }   // every single window checked (GPU-A1 small block)
     r.one_us = pct(one, .5) * 1e6; report(r);
     cudaFree(d_in); cudaFree(d_off); cudaFree(d_out); cudaFree(d_tmp); cudaFree(d_tmp1); cudaFree(d_st); cudaFree(d_o1); aceapex_gpu_plan_destroy(pl); cudaStreamDestroy(s);
     return r.ok;
@@ -163,7 +164,8 @@ static bool path_nvcomp(Algo al, const std::vector<uint8_t>& o, const std::vecto
     std::vector<uint8_t> h((size_t)n * W); CK(cudaMemcpy(h.data(), d_out, h.size(), cudaMemcpyDeviceToHost));
     r.ok = stok && check_windows(h.data(), o, off, n, W);
     std::mt19937_64 g(777); std::vector<double> one;
-    for (int k = 0; k < 200; k++) { uint64_t x = g() % (g_orig - W + 1); CK(cudaMemcpy(d_off, &x, 8, cudaMemcpyHostToDevice)); const double t0b = now_s(); if (!batch(&x, 1)) { r.ok = false; break; } one.push_back(now_s() - t0b); }
+    for (int k = 0; k < 200; k++) { uint64_t x = g() % (g_orig - W + 1); CK(cudaMemcpy(d_off, &x, 8, cudaMemcpyHostToDevice)); const double t0b = now_s(); if (!batch(&x, 1)) { r.ok = false; break; } one.push_back(now_s() - t0b);
+        CK(cudaMemcpy(h.data(), d_out, W, cudaMemcpyDeviceToHost)); if (!check_windows(h.data(), o, {x}, 1, W)) r.ok = false; }   // every single window checked
     r.one_us = pct(one, .5) * 1e6; report(r);
     cudaFree(d_arch); cudaFree(d_dec); cudaFree(d_dtmp); cudaFree(d_out); cudaFree(d_jp); cudaFree(d_jo); cudaFree(d_jcs); cudaFree(d_jos); cudaFree(d_jact); cudaFree(d_jst); cudaFree(d_slot); cudaFree(d_off);
     cudaFreeHost(h_jp); cudaFreeHost(h_jo); cudaFreeHost(h_jcs); cudaFreeHost(h_jos); cudaFreeHost(h_slot); cudaStreamDestroy(s);
@@ -203,10 +205,13 @@ int main(int argc, char** argv) {
     cudaDeviceProp p; CK(cudaGetDeviceProperties(&p, 0));
     printf("[a1] %s: %.3f GB original, %u windows x %u B (seed 20261127), %d repeats x 2 blocks, CPU threads %d, GPU %s, ace gpu api %u\n",
            g_name, g_orig / 1e9, g_n, g_W, R, T, p.name, aceapex_gpu_version());
-    bool ok = path_ace(argv[1], o, off, g_n, g_W, R);
+    bool ok = true;   // argv[1]: one archive or a comma list of archive[=label] (GPU-A1 small block: 16 KiB / 64 KiB / 1 MiB in one process)
+    { std::string L = argv[1]; size_t p0 = 0; while (p0 <= L.size()) { size_t p1 = L.find(',', p0); if (p1 == std::string::npos) p1 = L.size();
+        std::string it = L.substr(p0, p1 - p0), lab = "ace"; const size_t e = it.find('='); if (e != std::string::npos) { lab = it.substr(e + 1); it = it.substr(0, e); }
+        if (!it.empty()) ok = path_ace(it.c_str(), strdup(lab.c_str()), o, off, g_n, g_W, R) && ok; p0 = p1 + 1; } }
     ok = path_nvcomp(ZSTD, o, off, g_n, g_W, R) && ok;
     ok = path_nvcomp(LZ4, o, off, g_n, g_W, R) && ok;
-    ok = path_bgzf(argv[3], o, off, g_n, g_W, R, T) && ok;
+    if (strcmp(argv[3], "-")) ok = path_bgzf(argv[3], o, off, g_n, g_W, R, T) && ok;   // "-": no BGZF path
     if (!ok) { printf("[a1] KILL: a window differs or a path failed - no table\n"); return 5; }
     printf("[a1] all paths: every window == original\n");
     return 0;
