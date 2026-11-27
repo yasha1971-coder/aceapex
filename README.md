@@ -43,7 +43,9 @@ Open in 2.6.5, fixed in 2.6.6 — security: the C++ library could return success
 decoded a damaged or crafted archive. Affected: the C++ library and what embeds it (lzbench, TurboBench), the CLI when it
 writes to stdout (`d --out -`). Not affected: the CLI writing a file (checked by the archive's XXH3), the C99 decoder, the
 Python package, the GPU library, the fast profile. Also fixed in 2.6.6: the C++ library read an archive with an unknown header
-version as the current one (the CLI and the C99 decoder refused it).
+version as the current one (the CLI and the C99 decoder refused it); a DNA pack declaring exceptions without their frames
+decoded to wrong bytes in the C++ library, the C99 decoder and the Python package (the CLI writing a file and the GPU
+library refused it); the C99 decoder and the Python package accepted stream headers that the C++ library refuses.
 
 Open in 2.6.4, fixed in 2.6.5 — security: a decoder built against a libzstd that has legacy-format support (the system
 libzstd of Debian and Ubuntu, likely Homebrew's) handed the bytes of a crafted archive to that library's legacy (v0.x)

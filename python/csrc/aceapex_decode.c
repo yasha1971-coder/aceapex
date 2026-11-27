@@ -103,7 +103,11 @@ static uint64_t fse_default_chunk(void){
 /* compressed size of chunk i (the table was checked by cur_open) */
 static size_t cur_csize(const Cur* c, size_t i){
     uint64_t e=rd64(c->tab+8*i);
+#ifdef AX_STREAM_HDR_NO_CHECK
     if(c->kind){ return (size_t)(e&~((uint64_t)1<<63)); }
+#else
+    if(c->kind){ return (size_t)e; }   /* 2.6.6: literal chunk sizes carry no flag (FORMAT 3.2); bit 63 was masked, now the size check refuses it */
+#endif
     if(e>>63){ uint64_t o=(uint64_t)i*c->chunk, raw=c->chunk; if(o>=c->size) raw=0; else if(o+raw>c->size) raw=c->size-o; return (size_t)raw; }
     return (size_t)(e&(((uint64_t)1<<48)-1));
 }
@@ -123,6 +127,14 @@ static int cur_open(Cur* c, const uint8_t* z, size_t zsz, int is_lit, int index)
     memset(c,0,sizeof *c); c->z=z; c->zsz=zsz; for(int k=0;k<4;k++) c->cc[k].idx=(size_t)-1;
     if(zsz<8){ c->size=0; c->nc=0; return ACEAPEX_OK; }   /* empty stream (tiny inputs) */
     uint64_t h=rd64(z);
+#ifndef AX_STREAM_HDR_NO_CHECK
+    /* 2.6.6 (J3-K of the 2.6.6 gates): the stream header rules of the C++ decoder (ax_fse_check, ax_lit_chunks; FORMAT 3.1:
+     * bit 63 = 0). Literal streams: tagged only with chunked; the legacy layout (bit 62 clear) carries no chunk field. Until
+     * 2.6.5 this decoder ignored these bits and decoded archives the C++ decoder refused (some to wrong bytes). */
+    if(h>>63) return ACEAPEX_ERR_DATA;
+    if(is_lit && (h&((uint64_t)1<<62)) && ((h>>60)&1) && !((h>>61)&1)) return ACEAPEX_ERR_DATA;
+    if(is_lit && !(h&((uint64_t)1<<62)) && ((h>>48)&0x7FFF)) return ACEAPEX_ERR_DATA;
+#endif
     if(is_lit && (h&((uint64_t)1<<62))){
         int chunked=(h>>61)&1; c->tagged=(h>>60)&1; c->kind=chunked?1:2;
         c->size=h&~(((uint64_t)1<<62)|((uint64_t)1<<61)|((uint64_t)1<<60));
@@ -150,7 +162,11 @@ static int cur_open(Cur* c, const uint8_t* z, size_t zsz, int is_lit, int index)
     } else {
         uint64_t sum=0;
         for(size_t t0=0;t0<c->nc;t0+=4096){ const size_t t1=c->nc-t0<4096?c->nc:t0+4096; uint64_t mx=0, s=0, bad=0;
+#ifdef AX_STREAM_HDR_NO_CHECK
             if(c->kind) for(size_t i=t0;i<t1;i++){ uint64_t n=rd64(c->tab+8*i)&~((uint64_t)1<<63); mx=n>mx?n:mx; s+=n; }
+#else
+            if(c->kind) for(size_t i=t0;i<t1;i++){ uint64_t n=rd64(c->tab+8*i); mx=n>mx?n:mx; s+=n; }   /* 2.6.6: unmasked, as the C++ lit_table_check */
+#endif
             else for(size_t i=t0;i<t1;i++){ uint64_t e=rd64(c->tab+8*i);
                 /* bits 48..61 reserved; raw (63) and rANS (62) exclusive */
                 bad|=((e>>48)&0x3FFF)|((e>>63)&(e>>62)&1);
@@ -174,6 +190,9 @@ static int dna_unpack(ZSTD_DCtx* x, const uint8_t* s, size_t n, uint8_t* dst, si
     uint32_t nexc=rd32(s),h1=rd32(s+4),h2=rd32(s+8),h3=rd32(s+12),h4=rd32(s+16);
     if(20+(uint64_t)h1+h2+h3+h4>n) return 0;
     if(nexc>raw) return 0;                     /* at most one exception per base (2.6.4: was unbounded - 16 + 4 GiB) */
+#ifndef AX_DNA_EXC_NO_CHECK
+    if(nexc && (!h3 || !h4)) return 0;         /* 2.6.6: exceptions need both their frames (FORMAT 3.3; was: zeros put in) */
+#endif
     size_t np=(raw+3)/4, nq=(raw+7)/8; const uint8_t* p=s+20; int ok=1;
     uint8_t* seq=(uint8_t*)malloc(np+1); uint8_t* cse=(uint8_t*)malloc(nq+1);
     uint32_t* gap=(uint32_t*)malloc((size_t)nexc*4+4); uint8_t* val=(uint8_t*)malloc((size_t)nexc+1);
