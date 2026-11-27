@@ -194,6 +194,17 @@ for m in check control; do D=; [ $m = control ] && D=-DAX_SHORT_BLOCK_NO_CHECK
   else sb="$sb | $m build failed"; sbf=1; fi
 done
 printf 'head_short_block_reject\t%s\t%s\n' "$([ $sbf = 0 ] && echo pass || echo fail)" "${sb# | }"
+# HYBRID-2 (2.6.6): aceapex_decompress_region_mt on every conformance fixture (both profiles, block 4 KiB .. 1 MiB, empty,
+# DNA and text) with 1 and 4 threads: the whole file, 10 block-aligned tails, 300 random ranges, the two refusals - each ==
+# decompress_mt and == aceapex_decompress_region. Negative control: a fixture checked against the wrong reference fails
+rmt=0; rmn=0; rmf=""
+if ${CXX:-g++} -std=c++17 -O1 -Isrc -o $T/rmt_test scripts/region_mt_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/rmt.err; then
+  for f in verify/fixtures/conf/*.aet; do for th in 1 4; do rmn=$((rmn+1))
+    RMT_RANGES=300 $T/rmt_test check "$f" - $th >/dev/null 2>&1 && rmt=$((rmt+1)) || rmf="$rmf $(basename $f)/t$th"; done; done
+  RMT_RANGES=10 $T/rmt_test check verify/fixtures/conf/dna_open_2MiB.aet verify/fixtures/conf/dna_mixed_300K.aet 4 >/dev/null 2>&1; nrc=$?
+  printf 'head_region_mt\t%s\t%d/%d fixture x thread checks == decompress_mt and == region%s; negative control (wrong reference) rc=%d\n' \
+    "$([ $rmt = $rmn ] && [ $rmn -gt 0 ] && [ $nrc != 0 ] && echo pass || echo fail)" $rmt $rmn "${rmf:+; failed:$rmf}" $nrc
+else printf 'head_region_mt\tfail\tbuild failed: %s\n' "$(head -c 150 $T/rmt.err | tr '\n\t' '  ')"; fi
 # 2.6.4 step 2: fuzz/fuzz_region.cpp (region, ranges, decode_streams) without libFuzzer, 20 s of mutants of the same seeds
 # + cpp_alloc under ASan+UBSan, allocations above 128 MiB abort; v2.6.3 aborts on the conformance fixtures alone
 FZR_SEEDS="$FZ_SEEDS $(ls verify/repro/cpp_alloc/*.aet)"

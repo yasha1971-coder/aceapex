@@ -4,6 +4,9 @@
 //   1) aceapex_decompress_mt into a heap buffer of exactly the size the header claims (<= 64 MiB): ASan sees any byte
 //      written past it; the result is an error, or the claimed size with the original bytes ("ok"), or the claimed
 //      size with other bytes ("silent": the plain API has no checksum, as lzbench calls it - counted, not a failure);
+//   1b) (2.6.6, HYBRID-2) a random range [off, off+len) of the claimed size through aceapex_decompress_region_mt (1-2
+//      threads) into a heap buffer of exactly len bytes, and through aceapex_decompress_region: region_mt returns an
+//      error or len; when both succeed the bytes must be equal ("region_mt differs" counts in the gate);
 //   2) aceapex_decompress_stream with ACEAPEX_STREAM_VERIFY (XXH3 of the output against the header): a success must
 //      hand out the original bytes - "verified silent" must be 0 (the gate).
 // Prints one judge line per profile and a summary; exit 1 on any verified-silent result or a return value that is
@@ -37,7 +40,7 @@ struct Src { const std::vector<uint8_t>* z; };
 static int64_t rd(void* c, uint64_t off, void* dst, size_t n) { const auto& z = *((Src*)c)->z; if (off >= z.size()) return 0; const size_t k = std::min<size_t>(n, z.size() - off); memcpy(dst, z.data() + off, k); return (int64_t)k; }
 struct Sink { const std::vector<uint8_t>* want; size_t pos; bool diff; };
 static int wr(void* c, const void* b, size_t n) { Sink* s = (Sink*)c; if (s->pos + n > s->want->size() || memcmp(s->want->data() + s->pos, b, n)) s->diff = true; s->pos += n; return 0; }
-struct Stat { long total = 0, err = 0, ok = 0, silent = 0, vok = 0, verr = 0, vsilent = 0, bad = 0; };
+struct Stat { long total = 0, err = 0, ok = 0, silent = 0, vok = 0, verr = 0, vsilent = 0, bad = 0, rerr = 0, rok = 0, rdiff = 0; };
 int main(int argc, char** argv) {
     static const int levels[] = {1, 2, 3, 11, 12, 13, 14, 15, 16, 17, 18};
     static const size_t sizes[] = {1, 7, 80, 300, 4096, 70000, 300000, 1048577, 2300000};
@@ -78,6 +81,21 @@ int main(int argc, char** argv) {
                 else if (r == (int64_t)claimed) { if (claimed == in.size() && (claimed == 0 || !memcmp(o, in.data(), in.size()))) s.ok++; else s.silent++; }
                 else s.bad++;
                 free(o);
+                if (claimed) { const uint64_t len = 1 + rnd() % claimed, off = rnd() % (claimed - len + 1);
+                    uint8_t* r1 = (uint8_t*)malloc((size_t)len); uint8_t* r2 = (uint8_t*)malloc((size_t)len);
+                    const int64_t q1 = aceapex_decompress_region_mt(b.data(), b.size(), r1, (size_t)len, off, len, 1 + (int)(rnd() % 2));
+                    const int64_t q2 = aceapex_decompress_region(b.data(), b.size(), r2, (size_t)len, off, len);
+                    if (q1 < 0) s.rerr++;
+                    else if (q1 != (int64_t)len) s.bad++;
+                    else if (q2 == (int64_t)len && memcmp(r1, r2, (size_t)len)) { s.rdiff++;
+                        if (getenv("AXF_DUMP_DIFF")) {   // diagnostics: the mutant, the range and which side equals decompress_mt
+                            std::vector<uint8_t> full(claimed ? (size_t)claimed : 1); const int64_t f = aceapex_decompress_mt(b.data(), b.size(), full.data(), (size_t)claimed, 1);
+                            const bool m1 = f == (int64_t)claimed && !memcmp(full.data() + off, r1, (size_t)len), m2 = f == (int64_t)claimed && !memcmp(full.data() + off, r2, (size_t)len);
+                            char fn[64]; snprintf(fn, sizeof fn, "rdiff_%ld.aet", s.rdiff); FILE* df = fopen(fn, "wb"); if (df) { fwrite(b.data(), 1, b.size(), df); fclose(df); }
+                            printf("rdiff %s: level %d n %zu op %d off %llu len %llu | mt rc %lld | region_mt==mt %d region==mt %d | orig==region_mt %d orig==region %d\n", fn, lv, n, op,
+                                   (unsigned long long)off, (unsigned long long)len, (long long)f, m1, m2, claimed == n && !memcmp(in.data() + off, r1, (size_t)len), claimed == n && !memcmp(in.data() + off, r2, (size_t)len)); } }
+                    else s.rok++;
+                    free(r1); free(r2); }
             } else s.err++;
             Src src{&b}; Sink sk{&in, 0, false};
             const int64_t v = aceapex_decompress_stream(rd, &src, wr, &sk, 1, ACEAPEX_STREAM_VERIFY);
@@ -87,9 +105,9 @@ int main(int argc, char** argv) {
         }
     }
     const char* nm[2] = {"default levels 1-3", "fast levels 11-18"}; long fail = 0;
-    for (int p = 0; p < 2; p++) { const Stat& s = st[p]; fail += s.vsilent + s.bad;
-        printf("api_fuzz %s: %ld mutants | decompress_mt: %ld errors, %ld ok, %ld SILENT (success + wrong bytes), %ld bad rc | stream+VERIFY: %ld errors, %ld ok, %ld verified-silent\n",
-               nm[p], s.total, s.err, s.ok, s.silent, s.bad, s.verr, s.vok, s.vsilent); }
-    printf("api_fuzz: %ld seed archives in %d s; gate (verified-silent 0, bad rc 0): %s\n", seeds, secs, fail ? "FAIL" : "pass");
+    for (int p = 0; p < 2; p++) { const Stat& s = st[p]; fail += s.vsilent + s.bad + s.rdiff;
+        printf("api_fuzz %s: %ld mutants | decompress_mt: %ld errors, %ld ok, %ld SILENT (success + wrong bytes), %ld bad rc | stream+VERIFY: %ld errors, %ld ok, %ld verified-silent | region_mt: %ld errors, %ld ok, %ld differ from region\n",
+               nm[p], s.total, s.err, s.ok, s.silent, s.bad, s.verr, s.vok, s.vsilent, s.rerr, s.rok, s.rdiff); }
+    printf("api_fuzz: %ld seed archives in %d s; gate (verified-silent 0, bad rc 0, region_mt == region 0 differ): %s\n", seeds, secs, fail ? "FAIL" : "pass");
     return fail ? 1 : 0;
 }

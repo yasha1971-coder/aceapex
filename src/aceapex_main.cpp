@@ -1415,7 +1415,9 @@ static void fse_chunked_decomp(const uint8_t* src, size_t orig_sz, uint8_t* dst)
 // (4 KiB..512 KiB decoded), so the atomic counter costs nothing next to zstd.
 struct AxTokJob { const uint8_t* p; uint8_t* d; size_t raw; size_t z; uint64_t e; };
 struct FseStream { const uint8_t* s; size_t orig; uint8_t* d; };
-static void fse_multi_decomp(const FseStream* st, int n, int threads) {
+// lo / hi (optional, one pair per stream): decode only the chunks that overlap the decoded bytes [lo[k], hi[k]) of
+// stream k - the token slices of a block window (aceapex_decompress_region_mt, 2.6.6); the other chunks are skipped
+static void fse_multi_decomp(const FseStream* st, int n, int threads, const size_t* lo = nullptr, const size_t* hi = nullptr) {
     std::vector<AxTokJob> jobs;
     for (int k = 0; k < n; k++) {
         if (st[k].orig == 0) continue;
@@ -1426,7 +1428,9 @@ static void fse_multi_decomp(const FseStream* st, int n, int threads) {
             AxTokJob j; j.raw = std::min<size_t>(CHUNK, st[k].orig - i * CHUNK);
             j.p = st[k].s + p_off; j.d = st[k].d + i * CHUNK; j.e = cs[i];
             j.z = ax_ce_raw(cs[i]) ? j.raw : ax_ce_size(cs[i]);
-            p_off += j.z; jobs.push_back(j);
+            p_off += j.z;
+            if (lo && (lo[k] >= hi[k] || i * CHUNK + j.raw <= lo[k] || i * CHUNK >= hi[k])) continue;   // outside the window
+            jobs.push_back(j);
         }
     }
     if (jobs.empty()) return;
