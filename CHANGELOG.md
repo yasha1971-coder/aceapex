@@ -4,6 +4,13 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
+## Unreleased (2.6.7)
+
+- GPU library (`libaceapex_gpu`): the host plan refuses an archive whose block slices do not follow each other, bit 63 of a
+  token stream's first word and a tagged literal stream without the chunked layout - the rules the CPU decoders follow since
+  2.6.6 (fixes 4 and 5; the Known issues of 2.6.6). It already refused a header version other than 2. Claim
+  `head_gpu_plan_266` (host only; negative control `-DAX_BOFFS_CONTIG_NO_CHECK -DAX_STREAM_HDR_NO_CHECK`).
+
 ## v2.6.6 — 2026-11-28
 
 Security (patch release: v2.6.5 + these five fixes only).

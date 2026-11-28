@@ -142,11 +142,23 @@ static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt
         if (lo[st] == ~0ull) { c0[st] = 1; c1[st] = 0; return; }
         c0[st] = lo[st] / ch; c1[st] = (hi[st] - 1) / ch; };
     auto inrange = [&](int st, uint64_t t) { return !part || (t >= c0[st] && t <= c1[st]); };
+#ifndef AX_BOFFS_CONTIG_NO_CHECK
+    /* 2.6.7 (PORT-266, = the CPU decoders since 2.6.6, FORMAT_ACEPX2 1.3): block b's slices start where block b-1's end,
+       block 0's at 0; the whole table, the archive is in host memory. Until then a damaged entry made a block decode another
+       block's slices with success. AX_BOFFS_CONTIG_NO_CHECK: negative control of head_gpu_plan_266 only. */
+    { uint64_t ex[4] = {0, 0, 0, 0};
+      for (uint32_t b = 0; b < P.nb; b++) { const uint8_t* e = a + 68 + 64ull * b;
+          for (int st = 0; st < 4; st++) { const uint64_t o = rd64(e + 8 * st), n = rd64(e + 32 + 8 * st);
+              if (o != ex[st]) return E_TABLE; ex[st] = o + n; } } }   /* unsigned sums: a damaged size wraps, then no offset equals it */
+#endif
     P.bo.assign(a + 68, a + 68 + 64ull * P.nb);
     /* token streams off/len/cmd */
     for (int st = 1; st < 4; st++) {
         const uint8_t* z = a + zoff[st]; if (zsz[st] < 8) continue;
         uint64_t w = rd64(z), osz = w & ((1ull << 48) - 1), ch = ((w >> 48) & 0x7fff) * 4096;
+#ifndef AX_STREAM_HDR_NO_CHECK
+        if (w >> 63) return E_STREAM;   /* 2.6.7 (PORT-266): FORMAT 3.1 bit 63 = 0, as the CPU decoders */
+#endif
         if (!ch) { const char* e = ax_getenv("FSE_CHUNK"); ch = e ? strtoull(e, 0, 10) : 524288; }
         if (!ch) return E_STREAM;
         P.ssz[st] = osz; P.chunk[st] = ch; uint64_t nc = (osz + ch - 1) / ch, pos = 8 + 8 * nc;
@@ -177,6 +189,9 @@ static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt
         else {
             uint64_t h = rd64(z); bool b62 = h & (1ull << 62), chunked = h & (1ull << 61), tagged = h & (1ull << 60);
             if (!b62 || (h >> 63)) return E_STREAM;
+#ifndef AX_STREAM_HDR_NO_CHECK
+            if (tagged && !chunked) return E_STREAM;   /* 2.6.7 (PORT-266): FORMAT 3.2 bit 60 only with bit 61, as the CPU decoders */
+#endif
             uint64_t sz = h & ((1ull << 60) - 1);
             uint64_t CH = chunked ? (zsz[0] >= 16 ? rd64(z + 8) : 0) : (sz + 3) / 4;
             if (chunked && !CH) return E_STREAM;

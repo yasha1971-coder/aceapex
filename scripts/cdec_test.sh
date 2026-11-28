@@ -243,6 +243,16 @@ for m in check control; do D=; [ $m = control ] && D=-DAX_BOFFS_CONTIG_NO_CHECK
   else bc="$bc | c99 $m build failed"; bcf=1; fi
 done
 printf 'head_boffs_contig_reject\t%s\t%s\n' "$([ $bcf = 0 ] && echo pass || echo fail)" "${bc# | }"
+# 2.6.7 (PORT-266): the GPU library's host plan refuses the 2.6.6 regression archives as the CPU decoders do (block slices
+# in order, token bit 63, tagged literal stream only chunked - new; header version, literal sizes, DNA pack - before);
+# host only. Negative control -DAX_BOFFS_CONTIG_NO_CHECK -DAX_STREAM_HDR_NO_CHECK (the plan of 2.6.6): the 5 new ones plan
+gp=""; gpf=0
+for m in check control; do D=; [ $m = control ] && D="-DAX_BOFFS_CONTIG_NO_CHECK -DAX_STREAM_HDR_NO_CHECK"
+  if ${CXX:-g++} -std=c++17 -O1 $D -Isrc -o $T/gp_$m verify/repro/gpu_plan_266/gpu_plan_266_test.cpp 2>$T/gp.err; then
+    r=$($T/gp_$m verify/repro verify/fixtures/conf 2>/dev/null); gp="$gp | $(echo "$r" | head -1 | cut -f2,3,4 | tr '\t' ' ')"; echo "$r" | head -1 | grep -q "	pass	" || gpf=1
+  else gp="$gp | $m build failed"; gpf=1; fi
+done
+printf 'head_gpu_plan_266\t%s\t%s\n' "$([ $gpf = 0 ] && echo pass || echo fail)" "${gp# | }"
 # 2.6.4 step 2: fuzz/fuzz_region.cpp (region, ranges, decode_streams) without libFuzzer, 20 s of mutants of the same seeds
 # + cpp_alloc under ASan+UBSan, allocations above 128 MiB abort; v2.6.3 aborts on the conformance fixtures alone
 FZR_SEEDS="$FZ_SEEDS $(ls verify/repro/cpp_alloc/*.aet)"
