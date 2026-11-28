@@ -510,6 +510,13 @@ static inline void copy_match(uint8_t* dst, size_t out_ptr, uint32_t dist, uint3
     if (done < len) memcpy(d + done, s, len - done);
 }
  
+// SPEC-VAL-1 (2.6.7, D9): FORMAT_ACEPX2 2 - a varint is at most 5 bytes, inside its slice, of at most 31 bits. A varint cut
+// by the slice end, longer than 5 bytes or above 31 bits reads as AX_VARINT_BAD: as a distance it is > out, as a length
+// (lv + 6, or 15 + lv + 6, no u32 wrap) it writes past the block (block_size <= 64 MiB) - the checks of the match loop
+// refuse the block. Until 2.6.6 the partial value was used (a cut varint) and lv + 6 could wrap to a short match. Only
+// the slow path changes: the 1- and 2-byte varints of the fast path are complete by construction. AX_VARINT_NO_CHECK:
+// negative control of verify/repro/varint only.
+#define AX_VARINT_BAD 0x7FFFFFFFu
 static inline uint32_t read_varint(const uint8_t* buf, size_t& ptr, size_t limit) {
     if (__builtin_expect(ptr < limit, 1)) {
         uint8_t b0 = buf[ptr];
@@ -524,10 +531,18 @@ static inline uint32_t read_varint(const uint8_t* buf, size_t& ptr, size_t limit
     }
     uint32_t val=0, shift=0;
     while (ptr<limit && shift<=28) {                 // a valid varint has <= 5 bytes; a corrupt one must not shift past 31 (UBSan)
-        uint8_t b=buf[ptr++]; val|=(uint32_t)(b&0x7F)<<shift;
+        uint8_t b=buf[ptr++];
+#ifndef AX_VARINT_NO_CHECK
+        if (shift==28 && (b&0xF8)) return AX_VARINT_BAD;   // a 5th byte with more than 3 value bits or a continuation
+#endif
+        val|=(uint32_t)(b&0x7F)<<shift;
         if (!(b&0x80)) return val; shift+=7;
     }
+#ifndef AX_VARINT_NO_CHECK
+    return AX_VARINT_BAD;                             // cut by the slice end (FORMAT 2: "reading past the slice end is an error")
+#else
     return val;
+#endif
 }
  
 
@@ -979,10 +994,6 @@ struct AetHeader {
 // num_blocks == 0, orig_size == 0, all four stream sizes 0, block_size nonzero
 // (encoders write 65536). Before this the API returned 0 bytes for an empty input,
 // which is "no archive" - a caller could not round-trip it (lzbench CI, tiny inputs).
-static inline bool ax_is_empty_archive(const AetHeader& h) {
-    return h.num_blocks == 0 && h.orig_size == 0 && h.block_size != 0 &&
-           h.zlit_sz == 0 && h.zoff_sz == 0 && h.zlen_sz == 0 && h.zcmd_sz == 0;
-}
 static inline void ax_empty_header(AetHeader& h) {
     // little-endian fields: the empty archive (written for an empty input at every level, fast ones included) is the
     // same bytes on every host (2.6.1); its zero fields read the same either way
@@ -1009,6 +1020,17 @@ static inline bool ax_version_ok(uint32_t v_le) {
 #else
     return axf_le32(v_le) == 2;
 #endif
+}
+// Empty archive (definition above ax_empty_header). SPEC-VAL-1 (2.6.7, D1, D2): it is a version-2 header too, and its
+// block_size has the bound of every other: until 2.6.6 the in-memory paths returned 0 for an empty archive of any version
+// (ax_header_ok was not reached) and with any block_size (the C99 decoder refused both). AX_EMPTY_HDR_NO_CHECK: negative
+// control of verify/repro/empty_hdr only.
+static inline bool ax_is_empty_archive(const AetHeader& h) {
+    return h.num_blocks == 0 && h.orig_size == 0 && h.block_size != 0 &&
+#ifndef AX_EMPTY_HDR_NO_CHECK
+           ax_version_ok(h.version) && ax_block_size_ok(h.block_size) &&
+#endif
+           h.zlit_sz == 0 && h.zoff_sz == 0 && h.zlen_sz == 0 && h.zcmd_sz == 0;
 }
 static bool ax_header_ok(const AetHeader& h, uint64_t src_size) {
     if (src_size < sizeof(AetHeader)) return false;
@@ -1558,6 +1580,11 @@ __attribute__((aligned(64))) static void dna_decompress(const uint8_t* src, size
 #ifndef AX_DNA_EXC_NO_CHECK
     if(h[0] && (!h[3] || !h[4])){ g_dec_err=1; return; }
 #endif
+#ifndef AX_DNA_NOEXC_NO_CHECK
+    // SPEC-VAL-1 (2.6.7, D18): FORMAT 3.3 - h3 = h4 = 0 when nexc = 0 (no encoder writes frames for no exceptions; until
+    // 2.6.6 no decoder refused them). AX_DNA_NOEXC_NO_CHECK: negative control of verify/repro/dna_noexc only.
+    if(!h[0] && (h[3] || h[4])){ g_dec_err=1; return; }
+#endif
     size_t nexc=h[0], np=(n+3)/4, nc=(n+7)/8;
     const uint8_t* p=src+20;
     uint8_t* seq=(uint8_t*)malloc(np?np:1);
@@ -1730,15 +1757,28 @@ static uint8_t* lit_compress(const uint8_t* src, size_t sz, size_t& out_sz) {
     for(int t=0;t<NW;t++){zsz[t]=zws[t].osz;memcpy(p,zws[t].out,zws[t].osz);p+=zws[t].osz;free(zws[t].out);}
     out_sz=totalsz; return res;
 }
+// SPEC-VAL-1 (2.6.7, D6, D7, D12): the chunked literal layout (FORMAT 3.2.2) - CH a multiple of 4096 and at least 65536,
+// at most 65535 chunks; every release encoder writes so (2 613 stored archives: 0 outside). Until 2.6.6 only the streaming
+// decoder refused CH % 4096 != 0, none refused a smaller CH or more chunks. AX_LITCH_NO_CHECK: negative control of
+// verify/repro/lit_chunk only.
+#define AX_LIT_NW_MAX 65535u
+static inline bool ax_lit_ch_ok(uint64_t ch) { return ch >= 65536 && ch % 4096 == 0; }
 // Literal chunk table (spec 3.2.1/3.2.2) checked against the stored stream before use: chunk
 // size > 0, table inside the stream, every chunk inside the stream. Returns NW, or -1.
 static long long lit_table_check(const uint8_t* src, size_t src_sz, bool chunked, uint64_t orig_sz, size_t& csz){
     const size_t hdr = chunked ? 16 : 8;
     if(src_sz < hdr) return -1;
-    if(chunked){ uint64_t c; memcpy(&c,src+8,8); if(!c) return -1; csz=(size_t)c; }
+    if(chunked){ uint64_t c; memcpy(&c,src+8,8); if(!c) return -1;
+#ifndef AX_LITCH_NO_CHECK
+        if(!ax_lit_ch_ok(c)) return -1;   // SPEC-VAL-1 (2.6.7, D6, D7): CH a multiple of 4096, >= 65536 (FORMAT 3.2.2)
+#endif
+        csz=(size_t)c; }
     else csz=(size_t)((orig_sz+3)/4);
     const uint64_t NW = chunked ? (csz ? (orig_sz+csz-1)/csz : 0) : 4;
     if(NW > (src_sz-hdr)/8) return -1;
+#ifndef AX_LITCH_NO_CHECK
+    if(NW > AX_LIT_NW_MAX) return -1;     // SPEC-VAL-1 (2.6.7, D12): encoders fall back to 4 parts above 65535 chunks
+#endif
     const uint64_t rest = src_sz-hdr-8*NW;
     // Every prefix of the chunk sizes must fit in `rest` <=> their sum does (no wrap): sizes checked <= rest and summed
     // in runs of 4096 (4096 * 2^48 < 2^64), the run total added to a checked running sum. A region call walks this table

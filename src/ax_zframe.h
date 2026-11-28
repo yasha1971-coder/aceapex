@@ -13,7 +13,8 @@
 #include <stddef.h>
 #include <zstd.h>
 
-/* 1 when src[0..n) is a sequence of zstd v1 frames, 0 otherwise. n == 0: no frame, 1 (decoding nothing gives 0 bytes) */
+/* 1 when src[0..n) is one zstd v1 frame (2.6.7; until 2.6.6 a sequence of them), 0 otherwise. n == 0: no frame, 1
+   (decoding nothing gives 0 bytes) */
 static inline int ax_zframes_ok(const void* src, size_t n) {
 #ifdef AX_ZFRAME_NO_CHECK   /* negative control of verify/repro/zstd_legacy only: no check, every frame reaches libzstd */
     (void)src; (void)n; return 1;
@@ -26,6 +27,12 @@ static inline int ax_zframes_ok(const void* src, size_t n) {
         sz = ZSTD_findFrameCompressedSize(p + pos, n - pos);
         if (ZSTD_isError(sz) || sz == 0 || sz > n - pos) return 0;
         pos += sz;
+#ifndef AX_ZFRAME_MULTI_NO_CHECK
+        /* SPEC-VAL-1 (2.6.7, D8): FORMAT_ACEPX2 3 - a chunk is a single zstd frame. Every release encoder writes one
+           (ZSTD_compress / ZSTD_compress2); until 2.6.6 the CPU decoders let libzstd decode a chain of v1 frames, the GPU
+           plan refused it. AX_ZFRAME_MULTI_NO_CHECK: negative control of verify/repro/zstd_multi only. */
+        if (pos < n) return 0;
+#endif
     }
     return 1;
 #endif

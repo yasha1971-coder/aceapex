@@ -94,6 +94,8 @@ head_stream_hdr_reject	always
 head_boffs_contig_reject	always
 head_gpu_plan_266	always
 head_api_verify	always
+head_spec_val	always
+head_gpu_plan_267	always
 head_alloc_encode_leak	always
 head_alloc_lit_ctx	always
 head_alloc_ranges_span	always

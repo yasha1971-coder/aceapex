@@ -6,6 +6,16 @@ Every number below is reproduced by `make test && ./verify.sh` on the tagged com
 
 ## Unreleased (2.6.7)
 
+- SPEC-VAL-1: the refusal rules of readers are one list, FORMAT_ACEPX2 8, and the C++ library, the C99 decoder (Python)
+  and the GPU host plan follow it. Changed: an empty archive is checked for version 2 and the block_size bound in the C++
+  in-memory paths (D1, D2); chunked literals need CH >= 65536, a multiple of 4096, at most 65535 chunks (D6, D7, D12); a zstd
+  chunk is exactly one frame (D8); a varint cut by its slice, of 6 bytes or above 31 bits is an error (D9: the partial
+  value was used); a DNA pack with no exceptions has no gap / value frames (D18); the C99 region read of 0 bytes checks the
+  archive (D13) and accepts a 4-part literal stream of 0 bytes (D5); the GPU plan has the bounds of the CPU decoders (D3)
+  and their LEGACY FSE_CHUNK rounding (D11). FORMAT also states: the literal FSE layout is LEGACY (no release wrote it)
+  and the streaming and GPU readers may refuse it; region readers check their span and its neighbours; bytes no block
+  slice references may stay unchecked. No archive of a release changes: 3 013 stored archives decode to the same bytes
+  before and after. Claims `head_spec_val`, `head_gpu_plan_267` (`verify/repro/spec_val`, negative controls).
 - API-CHK-1: `aceapex_decompress_ex(src, src_size, dst, dst_capacity, threads, flags)` - the whole decode with
   `ACEAPEX_VERIFY_XXH3`: the output is hashed and compared with the archive's XXH3-64 of the original, a mismatch returns
   `ACEAPEX_ERR_DATA`. In the C++ library and, with the same prototype (threads ignored), in the C99 decoder; the Python

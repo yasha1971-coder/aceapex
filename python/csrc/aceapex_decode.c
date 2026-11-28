@@ -149,10 +149,20 @@ static int cur_open(Cur* c, const uint8_t* z, size_t zsz, int is_lit, int index)
     if(is_lit && (h&((uint64_t)1<<62))){
         int chunked=(h>>61)&1; c->tagged=(h>>60)&1; c->kind=chunked?1:2;
         c->size=h&~(((uint64_t)1<<62)|((uint64_t)1<<61)|((uint64_t)1<<60));
-        if(chunked){ if(zsz<16) return ACEAPEX_ERR_DATA; c->chunk=rd64(z+8); c->tab=z+16; }
-        else { c->chunk=(c->size+3)/4; c->tab=z+8; }
+        if(chunked){ if(zsz<16) return ACEAPEX_ERR_DATA; c->chunk=rd64(z+8); c->tab=z+16;
+#ifndef AX_LITCH_NO_CHECK
+            /* SPEC-VAL-1 (2.6.7, D6, D7): CH a multiple of 4096 and >= 65536 (FORMAT 3.2.2), as the C++ decoder */
+            if(c->chunk<65536 || c->chunk%4096) return ACEAPEX_ERR_DATA;
+#endif
+        }
+        else { c->chunk=(c->size+3)/4; c->tab=z+8;
+            if(!c->size) c->chunk=1;   /* SPEC-VAL-1 (2.6.7, D5): 4 parts of a stream of 0 bytes - 4 empty parts, as C++ / GPU (was refused) */
+        }
         if(!c->chunk) return ACEAPEX_ERR_DATA;
         c->nc=chunked?(size_t)((c->size+c->chunk-1)/c->chunk):4;
+#ifndef AX_LITCH_NO_CHECK
+        if(chunked && c->nc>65535) return ACEAPEX_ERR_DATA;   /* SPEC-VAL-1 (2.6.7, D12): at most 65535 chunks */
+#endif
     } else {
         c->kind=0; c->size=h&(((uint64_t)1<<48)-1); uint64_t f=(h>>48)&0x7FFF;
         c->chunk=f?f<<12:fse_default_chunk(); c->tab=z+8;
@@ -203,6 +213,9 @@ static int dna_unpack(ZSTD_DCtx* x, const uint8_t* s, size_t n, uint8_t* dst, si
     if(nexc>raw) return 0;                     /* at most one exception per base (2.6.4: was unbounded - 16 + 4 GiB) */
 #ifndef AX_DNA_EXC_NO_CHECK
     if(nexc && (!h3 || !h4)) return 0;         /* 2.6.6: exceptions need both their frames (FORMAT 3.3; was: zeros put in) */
+#endif
+#ifndef AX_DNA_NOEXC_NO_CHECK
+    if(!nexc && (h3 || h4)) return 0;          /* SPEC-VAL-1 (2.6.7, D18): FORMAT 3.3, h3 = h4 = 0 when nexc = 0 */
 #endif
     size_t np=(raw+3)/4, nq=(raw+7)/8; const uint8_t* p=s+20; int ok=1;
     uint8_t* seq=(uint8_t*)malloc(np+1); uint8_t* cse=(uint8_t*)malloc(nq+1);
@@ -279,10 +292,19 @@ static const uint8_t* cur_get(Cur* c, uint64_t off, uint64_t sz, int* err){
 }
 
 /* ---- one block: literals + matches ----------------------------------------------- */
+/* SPEC-VAL-1 (2.6.7, D9), as the C++ read_varint: a varint cut by the slice end, longer than 5 bytes or above 31 bits reads
+   as AX_VARINT_BAD (0x7FFFFFFF) - as a distance > out, as a length past the block: decode_block refuses it. Until 2.6.6 the
+   partial value was used and lv + 6 could wrap. AX_VARINT_NO_CHECK: negative control of verify/repro/varint only. */
+#define AX_VARINT_BAD 0x7FFFFFFFu
 static uint32_t varint(const uint8_t* b, size_t* p, size_t lim){
     uint32_t v=0, sh=0;
+#ifndef AX_VARINT_NO_CHECK
+    while(*p<lim){ uint8_t x=b[(*p)++]; if(sh==28 && (x&0xF8)) return AX_VARINT_BAD; v|=(uint32_t)(x&0x7F)<<sh; if(!(x&0x80)) return v; sh+=7; }
+    return AX_VARINT_BAD;
+#else
     while(*p<lim){ uint8_t x=b[(*p)++]; v|=(uint32_t)(x&0x7F)<<sh; if(!(x&0x80)) break; sh+=7; if(sh>28) break; }
     return v;
+#endif
 }
 static void copy_match(uint8_t* d, size_t out, uint32_t dist, uint32_t len){
     uint8_t* t=d+out; const uint8_t* s=t-dist;
@@ -412,7 +434,13 @@ static int64_t serve(Dec* d, aceapex_range_t* rg, size_t count){
     free(order); free(blk); return okn;
 }
 int64_t aceapex_decompress_region(const void* src, size_t n, void* dst, size_t cap, uint64_t off, uint64_t len){
+#ifndef AX_REGION0_NO_CHECK
+    /* SPEC-VAL-1 (2.6.7, D13): a read of 0 bytes still checks the archive (FORMAT 1.2 / 4), as the C++ library; until
+       2.6.6 it returned 0 for any input. AX_REGION0_NO_CHECK: negative control of verify/repro/region0 only. */
+    if(len==0){ Arc a; return open_arc(src,n,&a) ? ACEAPEX_ERR_DATA : 0; }
+#else
     if(len==0) return 0;
+#endif
     if(cap<len) return ACEAPEX_ERR_BUFFER;
     Dec d; int r=dec_open(&d,src,n,0); if(r){ dec_close(&d); return r; }   /* one region: no chunk index */
     aceapex_range_t rg={off,len,dst,0}; int64_t k=serve(&d,&rg,1); dec_close(&d);

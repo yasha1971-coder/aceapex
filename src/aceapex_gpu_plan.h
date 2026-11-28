@@ -129,6 +129,13 @@ static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt
     P.in_bytes = in_bytes; P.orig = rd64(a + 12); P.xxh = rd64(a + 28); P.bs = rd32(a + 20); P.nb = rd32(a + 24);
     const uint64_t zsz[4] = {rd64(a + 36), rd64(a + 44), rd64(a + 52), rd64(a + 60)};
     if (P.nb == 0 || P.bs == 0 || (uint64_t)P.nb * P.bs < P.orig || (uint64_t)(P.nb - 1) * P.bs >= P.orig) return E_HEADER;
+#ifndef AX_GPU_BOUNDS_NO_CHECK
+    /* SPEC-VAL-1 (2.6.7, D3): the bounds of the CPU decoders (FORMAT 1.1, 3.1) - block_size <= 64 MiB here, token chunk
+       <= 16 MiB, token slice <= 4 bs + 4 KiB, decoded token stream <= 4 orig + 1 MiB, literal stream <= orig below. Until
+       2.6.6 the plan had none of them (its scratch followed the stream sizes the archive declares). AX_GPU_BOUNDS_NO_CHECK:
+       negative control of head_gpu_plan_267 only. */
+    if (P.bs > (64u << 20)) return E_HEADER;
+#endif
     uint64_t p = 68 + 64ull * P.nb, zoff[4];
     if (p > in_bytes) return E_HEADER;
     for (int i = 0; i < 4; i++) { zoff[i] = p; if (zsz[i] > in_bytes - p) return E_HEADER; p += zsz[i]; }
@@ -149,7 +156,11 @@ static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt
     { uint64_t ex[4] = {0, 0, 0, 0};
       for (uint32_t b = 0; b < P.nb; b++) { const uint8_t* e = a + 68 + 64ull * b;
           for (int st = 0; st < 4; st++) { const uint64_t o = rd64(e + 8 * st), n = rd64(e + 32 + 8 * st);
-              if (o != ex[st]) return E_TABLE; ex[st] = o + n; } } }   /* unsigned sums: a damaged size wraps, then no offset equals it */
+              if (o != ex[st]) return E_TABLE; ex[st] = o + n;
+#ifndef AX_GPU_BOUNDS_NO_CHECK
+              if (st && n > 4ull * P.bs + 4096) return E_TABLE;   /* SPEC-VAL-1 (2.6.7, D3): token slice bound */
+#endif
+          } } }   /* unsigned sums: a damaged size wraps, then no offset equals it */
 #endif
     P.bo.assign(a + 68, a + 68 + 64ull * P.nb);
     /* token streams off/len/cmd */
@@ -159,8 +170,14 @@ static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt
 #ifndef AX_STREAM_HDR_NO_CHECK
         if (w >> 63) return E_STREAM;   /* 2.6.7 (PORT-266): FORMAT 3.1 bit 63 = 0, as the CPU decoders */
 #endif
-        if (!ch) { const char* e = ax_getenv("FSE_CHUNK"); ch = e ? strtoull(e, 0, 10) : 524288; }
+        if (!ch) { const char* e = ax_getenv("FSE_CHUNK"); uint64_t v = e ? strtoull(e, 0, 10) : 0;
+            /* SPEC-VAL-1 (2.6.7, D11): LEGACY chunk field 0 (tuning builds) as the CPU decoders - FSE_CHUNK rounded down to
+               4096, at most 16 MiB, values below 4096 ignored (was: taken as it is) */
+            ch = v >= 4096 ? std::min<uint64_t>(v & ~4095ull, 16ull << 20) : 524288; }
         if (!ch) return E_STREAM;
+#ifndef AX_GPU_BOUNDS_NO_CHECK
+        if (ch > (16ull << 20) || osz > 4 * P.orig + (1ull << 20)) return E_STREAM;   /* SPEC-VAL-1 (2.6.7, D3) */
+#endif
         P.ssz[st] = osz; P.chunk[st] = ch; uint64_t nc = (osz + ch - 1) / ch, pos = 8 + 8 * nc;
         if (nc > (zsz[st] - 8) / 8 || pos > zsz[st]) return E_STREAM;
         crange(st, ch, osz); if (part && lo[st] != ~0ull && hi[st] > osz) return E_TABLE;
@@ -195,8 +212,17 @@ static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt
             uint64_t sz = h & ((1ull << 60) - 1);
             uint64_t CH = chunked ? (zsz[0] >= 16 ? rd64(z + 8) : 0) : (sz + 3) / 4;
             if (chunked && !CH) return E_STREAM;
+#ifndef AX_GPU_BOUNDS_NO_CHECK
+            if (sz > P.orig) return E_STREAM;                                        /* SPEC-VAL-1 (2.6.7, D3) */
+#endif
+#ifndef AX_LITCH_NO_CHECK
+            if (chunked && (CH < 65536 || CH % 4096)) return E_STREAM;               /* SPEC-VAL-1 (2.6.7, D6, D7) */
+#endif
             uint64_t NW = chunked ? (sz + CH - 1) / CH : 4, hd = chunked ? 16 : 8;
             if (NW > (zsz[0] - hd) / 8) return E_STREAM;
+#ifndef AX_LITCH_NO_CHECK
+            if (chunked && NW > 65535) return E_STREAM;                              /* SPEC-VAL-1 (2.6.7, D12) */
+#endif
             uint64_t pos = hd + 8 * NW; P.ssz[0] = sz; P.chunk[0] = CH ? CH : 1;
             if (pos > zsz[0]) return E_STREAM;
             crange(0, P.chunk[0], sz); if (part && lo[0] != ~0ull && hi[0] > sz) return E_TABLE;
@@ -235,6 +261,9 @@ static inline int build(const uint8_t* a, size_t in_bytes, Plan& P, NvTempFn nvt
                     if (h3) { d.gap = scr; P.nv.push_back({f, h3, (7ull << 56) | scr, (uint64_t)nexc * 4}); P.nv_key.push_back(key(0, t - c0[0])); scr += al((uint64_t)nexc * 4); } f += h3;
                     if (h4) { d.val = scr; P.nv.push_back({f, h4, (7ull << 56) | scr, (uint64_t)nexc}); P.nv_key.push_back(key(0, t - c0[0])); scr += al((uint64_t)nexc); }
                     if (nexc && (!h3 || !h4)) return E_STREAM;
+#ifndef AX_DNA_NOEXC_NO_CHECK
+                    if (!nexc && (h3 || h4)) return E_STREAM;   /* SPEC-VAL-1 (2.6.7, D18): FORMAT 3.3 */
+#endif
                     P.dna.push_back(d); P.dna_key.push_back(t - c0[0]); continue;
                 }
                 P.nv.push_back({tagged ? cpos + 1 : cpos, tagged ? csz - 1 : csz, dst0, raw}); P.nv_key.push_back(key(0, t - c0[0]));

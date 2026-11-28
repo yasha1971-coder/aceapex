@@ -759,10 +759,17 @@ static int64_t ax_decompress_stream_impl(aceapex_read_fn rd, void* rctx, aceapex
       const uint64_t lsz = h & ~((uint64_t(1) << 62) | (uint64_t(1) << 61) | (uint64_t(1) << 60));
       if (lsz > c.orig) return ACEAPEX_ERR_DATA;
       const uint64_t hb = chunked ? 16 : 8;
-      if (chunked) { if (zsz[0] < 16 || !cz || cz % 4096) return ACEAPEX_ERR_DATA; }
+      if (chunked) { if (zsz[0] < 16 || !cz || cz % 4096) return ACEAPEX_ERR_DATA;
+#ifndef AX_LITCH_NO_CHECK
+          if (!ax_lit_ch_ok(cz)) return ACEAPEX_ERR_DATA;   // SPEC-VAL-1 (2.6.7, D7): CH >= 65536, as every decoder
+#endif
+      }
       else { cz = (lsz + 3) / 4; c.four = true; }
       c.csz = (size_t)cz;
       const uint64_t NW = chunked ? (lsz + cz - 1) / cz : 4; if (NW > (zsz[0] - hb) / 8) return ACEAPEX_ERR_DATA;
+#ifndef AX_LITCH_NO_CHECK
+      if (NW > AX_LIT_NW_MAX) return ACEAPEX_ERR_DATA;      // SPEC-VAL-1 (2.6.7, D12)
+#endif
       std::vector<uint8_t> tb(NW * 8); if (NW && !st_read(c, c.zoff[0] + hb, tb.data(), tb.size())) return ACEAPEX_ERR_DATA;
       uint64_t q = c.zoff[0] + hb + 8 * NW, end = c.zoff[0] + zsz[0]; c.lch.resize(NW);
       for (uint64_t t = 0; t < NW; t++) { uint64_t z; memcpy(&z, tb.data() + 8 * t, 8); if (z > end - q) return ACEAPEX_ERR_DATA;

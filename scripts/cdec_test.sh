@@ -270,6 +270,26 @@ for m in check control; do D=; [ $m = control ] && D=-DAX_VERIFY_NO_CHECK
   else av="$av | py $m build failed"; avf=1; fi
 done
 printf 'head_api_verify\t%s\t%s\n' "$([ $avf = 0 ] && echo pass || echo fail)" "${av# | }"
+# 2.6.7 (SPEC-VAL-1, FORMAT_ACEPX2 8): the reader rules made one rule - verify/repro/spec_val, one archive per rule, refused by
+# every C++ entry point and the C99 decoder; negative controls (the readers of 2.6.6) decode them with the original bytes
+sv=""; svf=0; SVD=verify/repro/spec_val
+for m in check control; do D=; E=; [ $m = control ] && { D="-DAX_EMPTY_HDR_NO_CHECK -DAX_LITCH_NO_CHECK -DAX_ZFRAME_MULTI_NO_CHECK -DAX_VARINT_NO_CHECK -DAX_DNA_NOEXC_NO_CHECK"; E="-DAX_LITCH_NO_CHECK -DAX_ZFRAME_MULTI_NO_CHECK -DAX_VARINT_NO_CHECK -DAX_DNA_NOEXC_NO_CHECK -DAX_REGION0_NO_CHECK"; }
+  if ${CXX:-g++} -std=c++17 -O1 $D -Isrc -o $T/svx_$m $SVD/spec_val_test.cpp -lzstd -lpthread 2>$T/sv.err; then
+    r=$($T/svx_$m $SVD verify/fixtures/conf 2>/dev/null); sv="$sv | $(echo "$r" | cut -f1,2,3,4 | tr '\t' ' ')"; echo "$r" | grep -q "	pass	" || svf=1
+  else sv="$sv | cpp $m build failed"; svf=1; fi
+  if ${CC:-gcc} -std=c99 -O2 $E -Ic -o $T/svc_$m $SVD/spec_val_c99.c c/aceapex_decode.c -lzstd 2>$T/sv.err; then
+    r=$($T/svc_$m $SVD verify/fixtures/conf 2>/dev/null); sv="$sv | $(echo "$r" | cut -f1,2,3,4 | tr '\t' ' ')"; echo "$r" | grep -q "	pass	" || svf=1
+  else sv="$sv | c99 $m build failed"; svf=1; fi
+done
+printf 'head_spec_val\t%s\t%s\n' "$([ $svf = 0 ] && echo pass || echo fail)" "${sv# | }"
+# 2.6.7 (SPEC-VAL-1): the GPU host plan - the CPU bounds (D3), chunked literal CH (D6, D7), DNA pack frames for no exceptions (D18)
+g7=""; g7f=0
+for m in check control; do D=; [ $m = control ] && D="-DAX_GPU_BOUNDS_NO_CHECK -DAX_LITCH_NO_CHECK -DAX_DNA_NOEXC_NO_CHECK"
+  if ${CXX:-g++} -std=c++17 -O1 $D -Isrc -o $T/g7_$m $SVD/gpu_plan_267_test.cpp 2>$T/g7.err; then
+    r=$($T/g7_$m $SVD verify/fixtures/conf 2>/dev/null); g7="$g7 | $(echo "$r" | cut -f2,3,4 | tr '\t' ' ')"; echo "$r" | grep -q "	pass	" || g7f=1
+  else g7="$g7 | $m build failed"; g7f=1; fi
+done
+printf 'head_gpu_plan_267\t%s\t%s\n' "$([ $g7f = 0 ] && echo pass || echo fail)" "${g7# | }"
 # 2.6.4 step 2: fuzz/fuzz_region.cpp (region, ranges, decode_streams) without libFuzzer, 20 s of mutants of the same seeds
 # + cpp_alloc under ASan+UBSan, allocations above 128 MiB abort; v2.6.3 aborts on the conformance fixtures alone
 FZR_SEEDS="$FZ_SEEDS $(ls verify/repro/cpp_alloc/*.aet)"
