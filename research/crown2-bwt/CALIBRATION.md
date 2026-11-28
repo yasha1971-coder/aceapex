@@ -186,3 +186,19 @@ Codec code review is performed by the executor before each code commit.
 Fact: NOT RUN. No VM, correctness probe, instruction probe or timer has run for
 this task before this registration. Subsequent facts are appended with their
 actual source and evidence commits; these pre-run forecasts stay unchanged.
+
+### Pre-run buffer-scope clarification
+
+Before either phase timer, prepare an equally sized mutable output buffer from
+the retained BWT bytes. The public bsc inverse is in-place and normally receives
+entropy output in this buffer. Its reference timer calls that in-place inverse,
+not a const-image wrapper that would add an artificial full-BWT copy. Own decode
+reuses the same prepared output size. Histogram/permutation workspace allocation,
+construction, traversal and workspace release stay inside the complete inverse
+timer on both sides. Container parsing, buffer preparation and byte comparison
+are outside both timers. No probe has executed before this clarification.
+Each host phase cell first performs one untimed, byte-verified inverse warmup on
+that same representation before the fixed-byte timed repeats. This initializes
+the reference library in that process and applies the same warmup to our code.
+H2.1 compares inverses of the raw DEV-2 pieces, without claiming the same work
+volume as bsc's complete filtered/entropy-coded archive pipeline.

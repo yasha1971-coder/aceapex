@@ -1,0 +1,69 @@
+{
+  "schema": "crown2-bwt-input-dependency-lock-v1",
+  "preregistration_commit": "5a3d21d6b9765dc8cf7f00090e135f71a6324b8d",
+  "selection_set": {
+    "name": "DEV-2 TRINITY",
+    "directory": "/home/ubuntu/ACE_TRINITY_EVO/LAB/DEV2/blocks",
+    "read_only": true,
+    "total_bytes": 41943040,
+    "authoritative_lock": {
+      "path": "/home/ubuntu/ACE_TRINITY_EVO/LAB/XQBPB/repo/dev2/LOCK.md",
+      "sha256": "adba22c33dd65bdc30bb59eb7659113f543813cba803d9682f69e2c330350590"
+    },
+    "blocks_checksum_file": {
+      "path": "/home/ubuntu/ACE_TRINITY_EVO/LAB/DEV2/blocks_sha256.txt",
+      "sha256": "82173dd593ad5b3468762b7271a26ffe0da8204a4cd2b88f4784815fa349055c"
+    },
+    "inputs": {
+      "d2_text_en": {
+        "bytes": 8388608,
+        "sha256": "046f85db05c0edd1febd35efc2da541dfe2df301463c0e2b157953228e733b86"
+      },
+      "d2_text_src": {
+        "bytes": 8388608,
+        "sha256": "b736b80247d5ff42850ab4f739743577eec3a132355ec7fccaac801aa7fe875a"
+      },
+      "d2_x86": {
+        "bytes": 8388608,
+        "sha256": "0524f1ff5dff38664a8d49ee34fb3be6062ef96b5c865ac197a9573c188b83fe"
+      },
+      "d2_table_sdf": {
+        "bytes": 4194304,
+        "sha256": "95f2fed1bbb4cc09e1d15d64273696c34196c48780d7045fabb27cde0b44f1e2"
+      },
+      "d2_table_db": {
+        "bytes": 4194304,
+        "sha256": "555aff149ccec419bdfd5479f86f49cab853a59349be33d776e3fd25f16c6de1"
+      },
+      "d2_image": {
+        "bytes": 4194304,
+        "sha256": "45375150a801b0562e1ee934f71c16e70374b990ec3a0c526a9aff626f92d49b"
+      },
+      "d2_xml": {
+        "bytes": 4194304,
+        "sha256": "45b8a5ad4442c4ad5fd70f38fafcf27bf9ba31e5be6f75fdfbe68afd347b2d46"
+      }
+    },
+    "hash_provenance": "Recorded from the authoritative LOCK and blocks checksum file; actual corpus bytes must be checked before use. No source URL replaces these frozen hashes.",
+    "scope": "Use the frozen DEV-2 bytes for CROWN-2 selection, with the CROWN-2 CALIBRATION criteria; the original LOCK's separate evolve-fast/kanzi acceptance rule is not imported."
+  },
+  "dependencies": {
+    "libbsc": {
+      "repository": "https://github.com/IlyaGrebnov/libbsc.git",
+      "commit": "6542faafd0c235975e77e219c77f8227f770fe91",
+      "source_url": "https://github.com/IlyaGrebnov/libbsc/tree/6542faafd0c235975e77e219c77f8227f770fe91",
+      "license": "Apache-2.0",
+      "license_url": "https://github.com/IlyaGrebnov/libbsc/blob/6542faafd0c235975e77e219c77f8227f770fe91/LICENSE",
+      "role": "Unmodified separately isolated BWT reference, including its own embedded libsais; public API calls only."
+    },
+    "libsais": {
+      "repository": "https://github.com/IlyaGrebnov/libsais.git",
+      "commit": "b1aa1fde090e00a4e2030b9fb54198698b84e463",
+      "version": "2.12.2",
+      "source_url": "https://github.com/IlyaGrebnov/libsais/tree/b1aa1fde090e00a4e2030b9fb54198698b84e463",
+      "license": "Apache-2.0",
+      "license_url": "https://github.com/IlyaGrebnov/libsais/blob/b1aa1fde090e00a4e2030b9fb54198698b84e463/LICENSE",
+      "role": "Standalone single-thread forward transform library for our independently implemented inverse."
+    }
+  }
+}
