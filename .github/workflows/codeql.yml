@@ -3,9 +3,11 @@ name: "CodeQL"
 
 on:
   push:
-    branches: [ "dev", "release" ]
+    branches: [ "dev", "release", "main" ]
   pull_request:
-    branches: [ "dev", "release" ]
+    # main: its protection requires the three Analyze checks, and a release PR into main has a head that is not on dev
+    # (2.6.6: PR #56, head release-2.6.x 7556cf3 - no CodeQL had run on it, the PR stayed blocked)
+    branches: [ "dev", "release", "main" ]
   schedule:
     - cron: '27 3 * * 1'
 
