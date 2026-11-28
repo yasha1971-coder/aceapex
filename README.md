@@ -39,6 +39,18 @@ GPU: [`aceapex_gpu.cu`](aceapex_gpu.cu) reads the same archive on the device thr
 
 ## Known issues
 
+Open in 2.6.5, fixed in 2.6.6 — security: the C++ library could return success with part of a block not written when it
+decoded a damaged or crafted archive. Affected: the C++ library and what embeds it (lzbench, TurboBench), the CLI when it
+writes to stdout (`d --out -`). Not affected: the CLI writing a file (checked by the archive's XXH3), the C99 decoder, the
+Python package, the GPU library, the fast profile. Also fixed in 2.6.6: the C++ library read an archive with an unknown header
+version as the current one (the CLI and the C99 decoder refused it); a DNA pack declaring exceptions without their frames
+decoded to wrong bytes in the C++ library, the C99 decoder and the Python package (the CLI writing a file and the GPU
+library refused it); the C99 decoder and the Python package accepted stream headers that the C++ library refuses; a
+damaged block table could make a block decode another block's literals with success (all CPU decoders; the CLI writing a
+file refused it by XXH3). Open in 2.6.6: the GPU decoder does not yet check that block slices follow each other
+or two stream-header rules (it refuses an unknown header version); fixed in the next release (until then:
+`ACEAPEX_GPU_VERIFY_XXH3`).
+
 Open in 2.6.4, fixed in 2.6.5 — security: a decoder built against a libzstd that has legacy-format support (the system
 libzstd of Debian and Ubuntu, likely Homebrew's) handed the bytes of a crafted archive to that library's legacy (v0.x)
 decoders. Affected: the C99 decoder, the Python package and the CLI or library built with `make` on such a libzstd. Not

@@ -4,6 +4,75 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
+## v2.6.6 — 2026-11-28
+
+Security (patch release: v2.6.5 + these five fixes only).
+
+1. A block whose tokens end before its size is an error on every C++ entry point. The C++ match decoder (`decompress_streams`) stopped silently on a bad token or on a command stream that ran out: the
+block's tail stayed unwritten and the call returned the full size, so the output carried the old bytes of the caller's buffer
+or, through `region` / `ranges` and the streaming decoder, uninitialized heap. In every release from v2.0 to v2.6.5 (checked
+on the tags). Affected: the C++ library (`aceapex_decompress`, `_mt`, `_region`, `_ranges`, `_stream`) and what embeds it
+(lzbench, TurboBench); the CLI `aceapex d --out -` (streaming to stdout) handed out the block's bytes before it reported the
+error. Not affected: the CLI writing a file (its XXH3 check of the whole output writes no file on a mismatch), the C99 decoder
+(`axdec`, `libaceapex_decode.so`) and the Python package (they already refused such a block), the GPU library (status
+`_MATCH`), the fast profile. Only damaged or crafted archives reach this path; intact archives decode to the same bytes, and
+the archives written are byte for byte those of 2.6.5.
+
+2. The C++ library refuses a header version it does not read. Until 2.6.5 it read any version other than 3 (the fast profile)
+as version 2, so an archive of a later format version, or one with a damaged version field, was decoded silently; the CLI
+and the C99 decoder already refused it. Now `ax_header_ok` and the streaming decoder accept version 2 only on that path.
+Regression `verify/repro/hdr_version` (claim `head_hdr_version_reject`): two conformance fixtures with versions 0, 1, 4 and
+0xCE02 refused on decompress, mt, region, ranges, stream and decode_streams; the negative control decodes them.
+
+3. A DNA pack (literal chunk mode 1) that declares exceptions but carries no exception frames is refused (FORMAT_ACEPX2 3.3:
+the gap and value frames are empty only when there are no exceptions). Until 2.6.5 the C++ decoder took the exception
+positions and bytes from a heap buffer it never wrote, the C99 decoder (and the Python package) put zeros - both returned
+success with bytes different from the original and from each other. Affected: the C++ library, the C99 decoder, the Python
+package; not affected: the CLI writing a file (XXH3), the GPU library (it refused it already). Found by the J3-K gate of
+2.6.6 (C++ against C99 on fuzz mutants). Regression `verify/repro/dna_exc` (claim `head_dna_exc_reject`): refused by six
+C++ and three C99 entry points; the negative control `-DAX_DNA_EXC_NO_CHECK` returns the full size.
+
+4. The C99 decoder and the Python package check the stream headers as the C++ decoder does: bit 63 of a token stream's
+first word must be 0, a literal stored size carries no flag bit (bit 63 was masked off), and a literal stream may be tagged
+only in the chunked layout. Until 2.6.5 they decoded such archives, which the C++ library refused, in the fuzz mutants to
+wrong bytes. Affected: the C99 decoder and the Python package only. Regression `verify/repro/stream_hdr` (claim
+`head_stream_hdr_reject`): four archives refused by three C99 and six C++ entry points; the negative control
+`-DAX_STREAM_HDR_NO_CHECK` decodes all four.
+
+5. Block slices must follow each other: block b's slices start where block b-1's end, block 0's at 0 (the running sums
+every encoder writes; 2 485 stored archives of all versions, 3.69 M blocks, all of them so). Until 2.6.5 a damaged
+BlockOffsets entry whose slices stayed inside their streams made a block decode another block's literals: success with
+wrong bytes. Affected: the C++ library (`decompress`, `_mt`, `_stream`; `_region` / `_ranges` when the damaged block was
+inside the span), the CLI `d --out -`, the C99 decoder and the Python package; not affected: the CLI writing a file (XXH3).
+All J3-K silent outputs on candidate 18e6da5 were of this kind. The C++ whole-archive paths and the C99 decoder check the
+whole table; C++ region and ranges check the span and its two neighbours. FORMAT_ACEPX2 §1.3 states the rule (readers
+MUST reject any other table). Regression `verify/repro/boffs_contig` (claim `head_boffs_contig_reject`); negative control
+`-DAX_BOFFS_CONTIG_NO_CHECK` (2.6.5): the wrong bytes come back with success. Not yet in the GPU library (Known issues).
+
+- CLI streaming: `aceapex d --out -` checks the archive's XXH3 at the end of the stream - by then the bytes have been handed
+  out; a mismatch gives exit code 1 after the output. To get only verified bytes, decode to a file (written only on a match).
+- Regression `verify/repro/short_block` (claim `head_short_block_reject`): four archives found by `scripts/api_fuzz.cpp`,
+  refused by decompress, mt (1 and 2 threads), region, ranges and stream; with the check compiled out
+  (`-DAX_SHORT_BLOCK_NO_CHECK`, the negative control) all 24 calls return the full size.
+- What the format checks: one XXH3-64 of the whole original, in the header. The CLI checks it by default (before writing a
+  file; at the end when streaming). The C++ API checks it only in `aceapex_decompress_stream` with `ACEAPEX_STREAM_VERIFY`,
+  the GPU library with `ACEAPEX_GPU_VERIFY_XXH3`; `decompress`, `_mt`, `region`, `ranges`, GPU ranges and windows and the
+  C99 / Python decoders do not (a range cannot: the hash covers the whole file). For archives from others, decode with the
+  CLI to a file or with `stream + VERIFY`.
+- zstd: zstd 1.6.0 (2026-11-23) fixes CVE-2026-124851 in streaming decompression; ACEAPEX calls only the one-shot
+  `ZSTD_decompress` / `ZSTD_decompressDCtx`. Builds on a system libzstd should still use libzstd >= 1.6.0; the release
+  binaries link zstd 1.6.0 statically (since 2.6.5).
+
+Performance (2.6.6 against 2.6.5, same build, ace-core EPYC 4344P, 1 thread pinned, paired runs; gate J5): decompression of
+silesia at level 2 with 1 thread -0.5...-0.8 % (the block integrity check of fix 1, SEC-DEC-2); chr1 at level 2 +2 %
+(fix 3, 18e6da5); the fast profile and 16 threads unchanged within 1 %. Archives are byte for byte those of 2.6.5.
+
+Known issues: the GPU decoder (`libaceapex_gpu`) does not yet check that block slices follow each other (fix 5), nor two
+stream-header rules of fix 4 (bit 63 of a token stream's first word; a tagged literal stream without the chunked layout); a
+damaged archive of these kinds can decode there with success. It already refuses a header version other than 2 (its host
+plan, checked on `verify/repro/hdr_version`). Fixed in the next release. Until then, decode archives from others on the GPU
+with `ACEAPEX_GPU_VERIFY_XXH3`, or with the CLI to a file.
+
 ## v2.6.5 — 2026-11-26
 
 Security: only zstd v1 frames reach libzstd. `ZSTD_decompress` / `ZSTD_decompressDCtx` decode every concatenated frame,
