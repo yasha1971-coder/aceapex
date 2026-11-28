@@ -24,13 +24,16 @@ keywords:
   - compressed-resident
   - random access
   - genomics
-version: 2.6.5
-date-released: '2026-11-26'
-doi: 10.5281/zenodo.24554186
+version: 2.6.6
+date-released: '2026-11-28'
+doi: 10.5281/zenodo.24624720
 identifiers:
   - type: doi
     value: 10.5281/zenodo.20440964
     description: Concept DOI (all versions)
+  - type: doi
+    value: 10.5281/zenodo.24624720
+    description: Software release v2.6.6
   - type: doi
     value: 10.5281/zenodo.24554186
     description: Software release v2.6.5
