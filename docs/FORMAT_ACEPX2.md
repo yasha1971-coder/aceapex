@@ -70,6 +70,7 @@ Offsets address the streams after entropy decoding (§3–4), not their stored f
 Block `b` reproduces original bytes `[b*block_size, min((b+1)*block_size, orig_size))`
 from its four slices and from nothing else: no block reads another block's output.
 This is the property that makes any block decodable alone, on a CPU or a GPU.
+Slices follow each other (2.6.6): in each stream block 0's slice starts at 0 and block b's where block b-1's ends (`lit_off[b] = lit_off[b-1] + lit_sz[b-1]`, the same for off, len and cmd); a reader MUST reject any other table.
 
 ## 2. Block decoding (the match layer)
 
