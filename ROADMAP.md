@@ -141,7 +141,7 @@ lzbench_sync ax_zframe.h. Пакет static zstd 1.6.0 (sha256 cbfb5e73…c809),
 STATIC=1, lzbench); тег v2.6.6 = 7556cf3 (Яков), release 37b6a69 «release: 2.6.6 (tree == v2.6.6)»; GitHub Release
 https://github.com/yasha1971-coder/aceapex/releases/tag/v2.6.6, Zenodo 10.5281/zenodo.24624720. main остаётся на 2.6.5 (PR #56
 закрыт: защита main требует CodeQL, а на релизном PR он не запускался; с #58 CodeQL идёт и на main). Исправления 2.6.6 и
-проверки плана GPU — в dev (PORT-266, #55). Следующий выпуск — 2.6.7 около 10.12.
+проверки плана GPU — в dev (PORT-266, #55). Следующий выпуск — 2.6.7: проверка XXH3 через API (API-CHK-1) и SPEC-VAL-1; дата — после прогноза.
 26.11 2.6.5 выпущен (исключение по безопасности, слово Якова): SEC-ZSTD-1 — только кадры zstd v1 доходят до libzstd (PR #45,
 цена chr1 +2…2.7 % принята); пакет со статическим zstd 1.6.0 (sha256 5899edaa…5e53), байты всех уровней = 2.6.4. Ворота на
 rel-265 daa8e44 (судья 98/0, CI, TurboBench master make / STATIC=1, lzbench x86-64 / x86-32 / ARM32, clang -m32 C99); dev 17e84e2
