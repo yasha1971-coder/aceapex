@@ -651,7 +651,16 @@ static inline void ax_match_fast(uint8_t* d, uint32_t dist, uint32_t len) {
 // and their order are those of the checked zone, so a corrupt block stops at the same token with the same bytes.
 // out0 > 0 (AX_REFSEG prototype only): dst[0, out0) already holds the block's reference prefix, the block is written
 // after it and its matches may reach into it; the bounds checks stay (dist <= out, out + l <= dst_size).
-static void decompress_streams(
+// Returns true only when the block decoded to exactly dst_size bytes (SEC-DEC-2, 27.11: a bad token or a command
+// stream that ran out used to end the block silently - its tail was left unwritten and the call reported success, so the
+// output carried the old bytes of the caller's buffer or, through region / ranges, uninitialized heap; the C99 decoder
+// and the GPU match kernel already refused such a block). Every caller turns false into an error.
+#ifdef AX_SHORT_BLOCK_NO_CHECK   /* negative control of verify/repro/short_block only: a short block reported as whole */
+#define AX_BLOCK_DONE(ok) return true
+#else
+#define AX_BLOCK_DONE(ok) return (ok)
+#endif
+static bool decompress_streams(
     uint8_t* dst, size_t dst_size,
     const uint8_t* lit, size_t lit_sz,
     const uint8_t* off, size_t off_sz,
@@ -682,7 +691,7 @@ static void decompress_streams(
             l=lv+6; dist=read_varint(off,op,off_sz);
             rep[3]=rep[2];rep[2]=rep[1];rep[1]=rep[0];rep[0]=dist;
         }
-        if (!dist||dist>out||out+l>dst_size) return;
+        if (!dist||dist>out||out+l>dst_size) AX_BLOCK_DONE(false);
         if (out+l+SL<=dst_size) ax_match_fast(dst+out,dist,l); else copy_match(dst,out,dist,l);
         out+=l;
     }
@@ -716,6 +725,7 @@ static void decompress_streams(
             out+=l;
         }
     }
+    AX_BLOCK_DONE(out==dst_size);
 }
  
 
@@ -990,8 +1000,19 @@ static inline bool ax_block_size_ok(uint64_t bs) { return bs != 0 && (!ACEAPEX_M
 // The one header check of a version-2 archive of src_size bytes (2.6.4: every decode path; until 2.6.3 region, ranges
 // and the CLI summed the four u64 stream sizes, which a crafted archive made wrap): the blocks cover orig_size exactly
 // (the last one not empty), block_size within the bound, header + table + each stream size against the bytes left.
+// Header version (2.6.6, J3 of the 2.6.6 gates): this path reads version 2 only - the fast profile (version 3) is taken
+// before it, and a version the library does not know is refused, as the CLI and the C99 decoder do (until 2.6.5 the C++
+// library read any version other than 3 as version 2). AX_HDR_VERSION_NO_CHECK: negative control of verify/repro/hdr_version.
+static inline bool ax_version_ok(uint32_t v_le) {
+#ifdef AX_HDR_VERSION_NO_CHECK
+    (void)v_le; return true;
+#else
+    return axf_le32(v_le) == 2;
+#endif
+}
 static bool ax_header_ok(const AetHeader& h, uint64_t src_size) {
     if (src_size < sizeof(AetHeader)) return false;
+    if (!ax_version_ok(h.version)) return false;
     if (h.num_blocks == 0) return ax_is_empty_archive(h);
     if (!ax_block_size_ok(h.block_size)) return false;
     if ((uint64_t)h.num_blocks * h.block_size < h.orig_size || (uint64_t)(h.num_blocks - 1) * h.block_size >= h.orig_size) return false;
@@ -1007,8 +1028,20 @@ static bool ax_header_ok(const AetHeader& h, uint64_t src_size) {
 // decoder's memory then follows block_size, not the stream sizes an archive declares (a 33.5 KB archive took 2.1 GB).
 #define AX_TOK_CHUNK_MAX ((size_t)16 << 20)
 static inline bool ax_tok_slice_ok(uint64_t sz, uint64_t bs) { return sz <= 4 * bs + 4096; }
+// 2.6.6 (J3-K of the 2.6.6 gates): block b's slices start where block b-1's end, block 0's at 0 - every encoder writes
+// the running sums (encode_file). Until 2.6.5 a damaged offset (one entry zeroed) made a block decode another block's
+// slices: success with wrong bytes on decompress / mt / stream / CLI --out -. AX_BOFFS_CONTIG_NO_CHECK: negative control
+// of verify/repro/boffs_contig only. Region and ranges check the span and its two neighbours (ax_span_ok).
+static inline bool ax_bo_next(const BlockOffsets& o, uint64_t ex[4]) {
+#ifndef AX_BOFFS_CONTIG_NO_CHECK
+    if (o.lit_off != ex[0] || o.off_off != ex[1] || o.len_off != ex[2] || o.cmd_off != ex[3]) return false;
+#endif
+    ex[0] = o.lit_off + o.lit_sz; ex[1] = o.off_off + o.off_sz; ex[2] = o.len_off + o.len_sz; ex[3] = o.cmd_off + o.cmd_sz;
+    return true;
+}
 static bool ax_boffs_ok(const BlockOffsets* b, uint64_t nb,
                         uint64_t ls, uint64_t os, uint64_t ns, uint64_t cs, uint64_t bs) {
+    uint64_t ex[4] = {0, 0, 0, 0};
     for (uint64_t i = 0; i < nb; i++) {
         const BlockOffsets& o = b[i];
         if (!ax_tok_slice_ok(o.off_sz, bs) || !ax_tok_slice_ok(o.len_sz, bs) || !ax_tok_slice_ok(o.cmd_sz, bs)) return false;
@@ -1016,6 +1049,7 @@ static bool ax_boffs_ok(const BlockOffsets* b, uint64_t nb,
         if (o.off_off > os || o.off_sz > os - o.off_off) return false;
         if (o.len_off > ns || o.len_sz > ns - o.len_off) return false;
         if (o.cmd_off > cs || o.cmd_sz > cs - o.cmd_off) return false;
+        if (!ax_bo_next(o, ex)) return false;   // after the bounds: the sums cannot wrap
     }
     return true;
 }
@@ -1105,15 +1139,15 @@ static inline void ax_block_out(uint8_t* dst, size_t bstart, size_t bsize, const
                                 const uint8_t* off, const uint8_t* len, const uint8_t* cmd, std::vector<uint8_t>& nbuf, bool ntok) {
 #ifdef ACEAPEX_ENV_TUNING
     if (g_ax_out_sink) { if (nbuf.size() < bsize + 64) nbuf.resize(bsize + 64);
-        decompress_streams(nbuf.data(), bsize, lit, bo.lit_sz, off + bo.off_off, bo.off_sz, len + bo.len_off, bo.len_sz, cmd + bo.cmd_off, bo.cmd_sz);
+        if (!decompress_streams(nbuf.data(), bsize, lit, bo.lit_sz, off + bo.off_off, bo.off_sz, len + bo.len_off, bo.len_sz, cmd + bo.cmd_off, bo.cmd_sz)) g_dec_err = 1;
         g_ax_out_sink(g_ax_out_ctx, bstart, nbuf.data(), bsize); return; }
 #endif
     if (ntok && (double)bo.lit_sz >= ax_nt().lit * (double)bsize) {
         if (nbuf.size() < bsize + 64) nbuf.resize(bsize + 64);
-        decompress_streams(nbuf.data(), bsize, lit, bo.lit_sz, off + bo.off_off, bo.off_sz, len + bo.len_off, bo.len_sz, cmd + bo.cmd_off, bo.cmd_sz);
+        if (!decompress_streams(nbuf.data(), bsize, lit, bo.lit_sz, off + bo.off_off, bo.off_sz, len + bo.len_off, bo.len_sz, cmd + bo.cmd_off, bo.cmd_sz)) g_dec_err = 1;
         ax_nt_copy(dst + bstart, nbuf.data(), bsize);
-    } else
-        decompress_streams(dst + bstart, bsize, lit, bo.lit_sz, off + bo.off_off, bo.off_sz, len + bo.len_off, bo.len_sz, cmd + bo.cmd_off, bo.cmd_sz);
+    } else if (!decompress_streams(dst + bstart, bsize, lit, bo.lit_sz, off + bo.off_off, bo.off_sz, len + bo.len_off, bo.len_sz, cmd + bo.cmd_off, bo.cmd_sz))
+        g_dec_err = 1;
 }
 
 static void* dec_worker(void* arg) {
@@ -1145,12 +1179,12 @@ static void* dec_worker(void* arg) {
                 a->len + bo.len_off, bo.len_sz,
                 a->cmd + bo.cmd_off, bo.cmd_sz, b);
 #endif
-            decompress_streams(
+            if (!decompress_streams(
                 a->dst + bstart, bsize,
                 a->lit + bo.lit_off, bo.lit_sz,
                 a->off + bo.off_off, bo.off_sz,
                 a->len + bo.len_off, bo.len_sz,
-                a->cmd + bo.cmd_off, bo.cmd_sz);
+                a->cmd + bo.cmd_off, bo.cmd_sz)) g_dec_err = 1;
         }
     }
     return nullptr;
@@ -1518,6 +1552,12 @@ __attribute__((aligned(64))) static void dna_decompress(const uint8_t* src, size
     if(src_sz<20){ g_dec_err=1; return; }
     uint32_t h[5]; memcpy(h,src,20);
     if((uint64_t)20+h[1]+h[2]+h[3]+h[4]>src_sz || h[0]>n){ g_dec_err=1; return; }
+    // 2.6.6 (J3-K of the 2.6.6 gates): exceptions need both their frames (FORMAT_ACEPX2 3.3: h3 = h4 = 0 only when nexc = 0;
+    // the GPU plan already refused it). Until 2.6.5 nexc > 0 with h3 or h4 = 0 left gap / val unwritten: exception positions
+    // and bytes came from uninitialized heap. AX_DNA_EXC_NO_CHECK: negative control of verify/repro/dna_exc only.
+#ifndef AX_DNA_EXC_NO_CHECK
+    if(h[0] && (!h[3] || !h[4])){ g_dec_err=1; return; }
+#endif
     size_t nexc=h[0], np=(n+3)/4, nc=(n+7)/8;
     const uint8_t* p=src+20;
     uint8_t* seq=(uint8_t*)malloc(np?np:1);

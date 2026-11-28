@@ -184,6 +184,65 @@ for m in check control; do D=; [ $m = control ] && D=-DAX_ZFRAME_NO_CHECK
   else zl="$zl | py $m build failed"; zlf=1; fi
 done
 printf 'head_zstd_legacy_reject\t%s\t%s (control on libzstd with legacy frames: %s)\n' "$([ $zlf = 0 ] && echo pass || echo fail)" "${zl# | }" "$([ "${LG:-0}" = 1 ] && echo yes || echo no)"
+# SEC-DEC-2 (27.11): a block whose tokens end before its size is an error on every C++ entry point (decompress, mt 1/2,
+# region, ranges, stream) - the four archives of verify/repro/short_block, every call in a child process. Negative control
+# -DAX_SHORT_BLOCK_NO_CHECK (the decoder before the fix): every call must return the full size, or the archives do not test it
+sb=""; sbf=0; SBD=verify/repro/short_block
+for m in check control; do D=; [ $m = control ] && D=-DAX_SHORT_BLOCK_NO_CHECK
+  if ${CXX:-g++} -std=c++17 -O1 $D -Isrc -o $T/sb_$m $SBD/short_block_test.cpp -lzstd -lpthread 2>$T/sb.err; then
+    r=$($T/sb_$m $SBD 2>/dev/null); sb="$sb | $(echo "$r" | cut -f2,3,4 | tr '\t' ' ')"; echo "$r" | grep -q "	pass	" || sbf=1
+  else sb="$sb | $m build failed"; sbf=1; fi
+done
+printf 'head_short_block_reject\t%s\t%s\n' "$([ $sbf = 0 ] && echo pass || echo fail)" "${sb# | }"
+# 2.6.6 (J3 of the 2.6.6 gates): a header version other than 2 (3 = the fast profile) is refused by every C++ entry point -
+# verify/repro/hdr_version (gen.py: two fixtures with versions 0, 1, 4, 0xCE02), each call in a child process; the fixtures
+# themselves decode. Negative control -DAX_HDR_VERSION_NO_CHECK (the library before 2.6.6): the eight decode to the fixtures' bytes
+hv=""; hvf=0; HVD=verify/repro/hdr_version
+for m in check control; do D=; [ $m = control ] && D=-DAX_HDR_VERSION_NO_CHECK
+  if ${CXX:-g++} -std=c++17 -O1 $D -Isrc -o $T/hv_$m $HVD/hdr_version_test.cpp -lzstd -lpthread 2>$T/hv.err; then
+    r=$($T/hv_$m $HVD verify/fixtures/conf 2>/dev/null); hv="$hv | $(echo "$r" | cut -f2,3,4 | tr '\t' ' ')"; echo "$r" | grep -q "	pass	" || hvf=1
+  else hv="$hv | $m build failed"; hvf=1; fi
+done
+printf 'head_hdr_version_reject\t%s\t%s\n' "$([ $hvf = 0 ] && echo pass || echo fail)" "${hv# | }"
+# 2.6.6 (J3-K of the 2.6.6 gates): a DNA pack (literal chunk mode 1) with exceptions but no gap or val frame is refused -
+# C++ on six entry points (dna_exc_test.cpp), C99 = the Python decoder on three (dna_exc_c99.c); before, C++ read the
+# exceptions from unwritten heap and C99 put zeros. Negative control -DAX_DNA_EXC_NO_CHECK: the damaged archive returns the full size
+de=""; def=0; DED=verify/repro/dna_exc
+for m in check control; do D=; [ $m = control ] && D=-DAX_DNA_EXC_NO_CHECK
+  if ${CXX:-g++} -std=c++17 -O1 $D -Isrc -o $T/de_$m $DED/dna_exc_test.cpp -lzstd -lpthread 2>$T/de.err; then
+    r=$($T/de_$m $DED 2>/dev/null); de="$de | $(echo "$r" | cut -f1,2,3,4 | tr '\t' ' ')"; echo "$r" | grep -q "	pass	" || def=1
+  else de="$de | cpp $m build failed"; def=1; fi
+  if ${CC:-gcc} -std=c99 -O2 $D -Ic -o $T/dec_$m $DED/dna_exc_c99.c c/aceapex_decode.c -lzstd 2>$T/de.err; then
+    r=$($T/dec_$m $DED 2>/dev/null); de="$de | $(echo "$r" | cut -f1,2,3,4 | tr '\t' ' ')"; echo "$r" | grep -q "	pass	" || def=1
+  else de="$de | c99 $m build failed"; def=1; fi
+done
+printf 'head_dna_exc_reject\t%s\t%s\n' "$([ $def = 0 ] && echo pass || echo fail)" "${de# | }"
+# 2.6.6 (J3-K): stream-header rules (token word bit 63, literal stored sizes with bit 63, tagged without chunked) - the
+# C99 decoder refuses the four archives of verify/repro/stream_hdr as the C++ decoder does. Negative control
+# -DAX_STREAM_HDR_NO_CHECK (the 2.6.5 C99 decoder): all four decode to the full size; the C++ part checks the two agree
+sh=""; shf=0; SHD=verify/repro/stream_hdr
+for m in check control; do D=; [ $m = control ] && D=-DAX_STREAM_HDR_NO_CHECK
+  if ${CC:-gcc} -std=c99 -O2 $D -Ic -o $T/sh_$m $SHD/stream_hdr_c99.c c/aceapex_decode.c -lzstd 2>$T/sh.err; then
+    r=$($T/sh_$m $SHD verify/fixtures/conf 2>/dev/null); sh="$sh | $(echo "$r" | cut -f1,2,3,4 | tr '\t' ' ')"; echo "$r" | grep -q "	pass	" || shf=1
+  else sh="$sh | c99 $m build failed"; shf=1; fi
+done
+if ${CXX:-g++} -std=c++17 -O1 -Isrc -o $T/shx $SHD/stream_hdr_test.cpp -lzstd -lpthread 2>$T/sh.err; then
+  r=$($T/shx $SHD verify/fixtures/conf 2>/dev/null); sh="$sh | $(echo "$r" | cut -f1,2,3,4 | tr '\t' ' ')"; echo "$r" | grep -q "	pass	" || shf=1
+else sh="$sh | cpp build failed"; shf=1; fi
+printf 'head_stream_hdr_reject\t%s\t%s\n' "$([ $shf = 0 ] && echo pass || echo fail)" "${sh# | }"
+# 2.6.6 (J3-K): block b's slices start where block b-1's end (block 0's at 0) - the three archives of verify/repro/boffs_contig
+# are refused by C++ (decompress, mt 1/2, region, ranges, stream; region and ranges over the damaged block alone) and C99
+# (decompress, region, dec_open). Negative control -DAX_BOFFS_CONTIG_NO_CHECK (2.6.5): success with wrong bytes
+bc=""; bcf=0; BCD=verify/repro/boffs_contig
+for m in check control; do D=; [ $m = control ] && D=-DAX_BOFFS_CONTIG_NO_CHECK
+  if ${CXX:-g++} -std=c++17 -O1 $D -Isrc -o $T/bc_$m $BCD/boffs_contig_test.cpp -lzstd -lpthread 2>$T/bc.err; then
+    r=$($T/bc_$m $BCD verify/fixtures/conf 2>/dev/null); bc="$bc | $(echo "$r" | cut -f1,2,3,4 | tr '\t' ' ')"; echo "$r" | grep -q "	pass	" || bcf=1
+  else bc="$bc | cpp $m build failed"; bcf=1; fi
+  if ${CC:-gcc} -std=c99 -O2 $D -Ic -o $T/bcc_$m $BCD/boffs_contig_c99.c c/aceapex_decode.c -lzstd 2>$T/bc.err; then
+    r=$($T/bcc_$m $BCD verify/fixtures/conf 2>/dev/null); bc="$bc | $(echo "$r" | cut -f1,2,3,4 | tr '\t' ' ')"; echo "$r" | grep -q "	pass	" || bcf=1
+  else bc="$bc | c99 $m build failed"; bcf=1; fi
+done
+printf 'head_boffs_contig_reject\t%s\t%s\n' "$([ $bcf = 0 ] && echo pass || echo fail)" "${bc# | }"
 # 2.6.4 step 2: fuzz/fuzz_region.cpp (region, ranges, decode_streams) without libFuzzer, 20 s of mutants of the same seeds
 # + cpp_alloc under ASan+UBSan, allocations above 128 MiB abort; v2.6.3 aborts on the conformance fixtures alone
 FZR_SEEDS="$FZ_SEEDS $(ls verify/repro/cpp_alloc/*.aet)"
