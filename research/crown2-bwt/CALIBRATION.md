@@ -202,3 +202,24 @@ that same representation before the fixed-byte timed repeats. This initializes
 the reference library in that process and applies the same warmup to our code.
 H2.1 compares inverses of the raw DEV-2 pieces, without claiming the same work
 volume as bsc's complete filtered/entropy-coded archive pipeline.
+
+### Pre-probe cloud placement amendment
+
+The first create request (source `abd6bee1b1feef59ec2d27f829bcb725eef8c74a`,
+2026-11-28 17:41 UTC) failed before allocating a VM or running code:
+`CPUS_PER_VM_FAMILY`, C4 limit 24 in europe-west4, already occupied by another
+session's 24-CPU VM. Both requested VM and boot disk were confirmed absent.
+The failed operation and all controller receipts are retained under
+`evidence/h21/cloud-create-01*`. This is an infrastructure refusal, not a
+correctness or performance observation.
+
+The next create request uses europe-west1-b, same C4-standard-4 SPOT, pinned
+Ubuntu 22.04 image, two-hour DELETE limit, auto-deleting 30 GiB boot disk and
+US$2 envelope. Its published compute rate is $0.078375/hour (Belgium), retrieved
+2026-11-28T17:44:53.667489Z from the official Spot pricing page; HTML SHA256
+`9e4cb1f82f0f1ab7e72de57102f5e9a6b70287361967a51621176ad6297793d6`.
+Global CPU availability was checked; per-family regional quota is not exposed
+by the enabled APIs, so only provisioning will confirm this placement. No
+other session's VM is stopped. All inputs, hypotheses, forecasts, controls and
+acceptance thresholds remain unchanged. No codec probe has run before this
+amendment.

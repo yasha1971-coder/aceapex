@@ -21,7 +21,7 @@ import time
 
 
 PROJECT = "aceapex-bench"
-ZONE = "europe-west4-b"
+ZONE = "europe-west1-b"
 MACHINE = "c4-standard-4"
 GCLOUD = "/home/aeterna/google-cloud-sdk/bin/gcloud"
 CONFIG = "/home/ubuntu/.config/gcloud"
@@ -29,19 +29,20 @@ IMAGE_FAMILY = "ubuntu-2204-lts"
 IMAGE_PIN = "ubuntu-2204-jammy-v20261124"
 TTL_SECONDS = 7200
 PRICE = {
-    "compute_usd_per_hour": "0.094635",
-    "region": "europe-west4",
+    "compute_usd_per_hour": "0.078375",
+    "region": "europe-west1",
     "machine": MACHINE,
     "source": "https://cloud.google.com/spot-vms/pricing?hl=en",
-    "retrieved_utc": "2026-11-28T17:26:33.998291Z",
-    "source_html_sha256": "67e86103d64e52497ab236c240eb8e65aabbea02a9b5af899e8430b66b868b88",
+    "retrieved_utc": "2026-11-28T17:44:53.667489Z",
+    "source_html_sha256": "9e4cb1f82f0f1ab7e72de57102f5e9a6b70287361967a51621176ad6297793d6",
     "kind": "public-list-price estimate, not actual invoice",
     "extras_included": False,
     "extras": ["30 GiB Hyperdisk Balanced", "ephemeral IPv4", "network transfer", "tax"],
     "disk_usd_per_gib_hour": "0.000115068",
     "disk_gib": 30,
     "spot_ipv4_usd_per_hour": "0.0025",
-    "compute_disk_ipv4_usd_per_hour": "0.10058704",
+    "compute_disk_ipv4_usd_per_hour": "0.08432704",
+    "disk_rate_scope": "Netherlands quote retained as conservative planning allowance; not a verified Belgium invoice rate",
     "disk_price_source": "https://cloud.google.com/compute/disks-image-pricing?hl=en",
     "disk_price_retrieved_utc": "2026-11-28T17:37:26.285368Z",
     "disk_price_html_sha256": "62936373eb21ff701f30eedfc46a2d0b2f32d1dcb782040c0d5e321333812284",
@@ -96,10 +97,17 @@ class Controller:
         env = dict(os.environ, CLOUDSDK_CONFIG=CONFIG,
                    CLOUDSDK_CORE_DISABLE_PROMPTS="1", CLOUDSDK_PAGER="")
         result = subprocess.run(argv, capture_output=True, text=True, env=env, timeout=300)
+        # Keep unprinted SDK diagnostics in this private ignored attempt. They
+        # are not publication evidence and must never be committed wholesale.
+        diagnostic = self.log.parent / ("sdk-private-" + str(time.time_ns()) + ".stderr")
+        fd = os.open(diagnostic, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(result.stderr.encode()); stream.flush(); os.fsync(stream.fileno())
         # Never put auth errors/raw SDK diagnostics or startup-script contents in logs.
         absent_result = (absent is not None and result.returncode != 0
                          and absent in result.stderr and "was not found" in result.stderr)
         self.emit("command_end", returncode=result.returncode, absent=absent_result,
+                  private_diagnostic_path=str(diagnostic),
                   stderr_sha256=hashlib.sha256(result.stderr.encode()).hexdigest(),
                   error_categories=[e for e in ("PERMISSION_DENIED", "QUOTA_EXCEEDED",
                       "ZONE_RESOURCE_POOL_EXHAUSTED", "UNAUTHENTICATED", "SERVICE_DISABLED")
@@ -217,7 +225,7 @@ class Controller:
         labels = dict(self.labels, **{"source-sha": source_sha})
         self.emit("create_intent", source_sha=source_sha,
                   startup_script_sha256=hashlib.sha256(startup_script.read_bytes()).hexdigest(),
-                  max_hours=2, max_compute_usd_estimate=0.189270, authorized_estimated_total_usd=2,
+                  max_hours=2, max_compute_usd_estimate=0.156750, authorized_estimated_total_usd=2,
                   price=PRICE)
         try:
             self.run(["compute", "instances", "create", self.name, "--zone=" + ZONE,
