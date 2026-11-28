@@ -374,4 +374,7 @@ fi
 # GUARD-1: run_template.sh starts a run only with a committed CALIBRATION line carrying the prediction fields, the killer
 # criterion and the counting rule (scratch git repository, 8 cases; the previous template passes 0 of them)
 bash scripts/run_template_test.sh 2>/dev/null || true
+# RT-PG-1 (28.11.2026): the watchdog of run_template.sh ends the command's whole process group (a grandchild included);
+# negative control RT_NO_PGROUP=1 (the template before) leaves the grandchild alive
+bash scripts/run_template_pg_test.sh 2>/dev/null || true
 rm -rf $T
