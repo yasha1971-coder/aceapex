@@ -124,7 +124,7 @@ static int prepare(const fs::path& inputdir,const fs::path& outputdir) {
     for(const char* name:{"d2_text_en","d2_text_src","d2_x86","d2_table_sdf","d2_table_db","d2_image","d2_xml"}) {
         auto input=read(inputdir/name);auto dir=outputdir/name;fs::create_directory(dir);
         write(dir/"original.bin",input);
-        auto ref=reference(input);write(dir/"bsc.restored.bin",verify(input,ref));write(dir/"bsc.packet",pack(ref));
+        auto ref=reference(input);write(dir/"bsc.restored.bin",verify(input,ref));need(pack(ref)==pack(reference(input)),"nondeterministic reference representation");write(dir/"bsc.packet",pack(ref));
         for(unsigned k:Ks){auto p=own(input,k);auto stem="own-k"+std::to_string(k);write(dir/(stem+".restored.bin"),verify(input,p));need(pack(p)==pack(own(input,k)),"nondeterministic DEV-2 representation");write(dir/(stem+".packet"),pack(p));}
         std::cout<<"{\"event\":\"piece_prepared\",\"piece\":\""<<name<<"\",\"bytes\":"<<input.size()<<",\"roundtrip\":true,\"negative_controls\":true}\n"<<std::flush;
     }return 0;
