@@ -52,7 +52,7 @@ PRICE = {
     "disk_baseline_included": {"iops": 3000, "throughput_mib_s": 140},
 }
 VM_FIELDS = ("id,name,status,zone,machineType,creationTimestamp,labels,scheduling,"
-             "disks,networkInterfaces,lastStartTimestamp,lastStopTimestamp")
+             "disks,networkInterfaces,lastStartTimestamp,lastStopTimestamp,serviceAccounts")
 DISK_FIELDS = "id,name,zone,type,sizeGb,users,status,creationTimestamp,sourceImage,provisionedIops,provisionedThroughput"
 
 
@@ -151,6 +151,8 @@ class Controller:
     def validate(self, vm, disk, source_sha=None):
         self.owned(vm)
         self.boot(vm, disk)
+        if vm.get("serviceAccounts"):
+            raise ValueError("the probe VM must not have a service account")
         schedule = vm.get("scheduling", {})
         duration = schedule.get("maxRunDuration", {})
         seconds = int(duration.get("seconds", 0)) if isinstance(duration, dict) else 0
@@ -232,6 +234,7 @@ class Controller:
                       "--machine-type=" + MACHINE, "--provisioning-model=SPOT",
                       "--instance-termination-action=DELETE", "--max-run-duration=2h",
                       "--maintenance-policy=TERMINATE", "--no-restart-on-failure",
+                  "--no-service-account", "--no-scopes",
                       "--image-project=ubuntu-os-cloud", "--image=" + IMAGE_PIN,
                       "--network-interface=network=default,nic-type=GVNIC",
                       "--boot-disk-type=hyperdisk-balanced", "--boot-disk-size=30GB",

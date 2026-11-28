@@ -223,3 +223,13 @@ by the enabled APIs, so only provisioning will confirm this placement. No
 other session's VM is stopped. All inputs, hypotheses, forecasts, controls and
 acceptance thresholds remain unchanged. No codec probe has run before this
 amendment.
+
+The second create request (`24c22b504aa9e4ed3af2eb808ca16ad85b242934`,
+17:47 UTC, europe-west1-b) was refused because the active controller principal
+cannot attach the project's default compute service account. No VM or boot disk
+remained and no probe ran; receipts are retained under `cloud-create-02*`.
+The VM only needs public package/source downloads and per-instance SSH, so the
+next request explicitly uses NO VM service account and NO OAuth scopes. Validate
+that the resulting instance has no serviceAccounts before any probe. No IAM role,
+project account, API enablement, firewall or other session's resource is changed.
+This narrows privileges; all scientific forecasts/criteria remain unchanged.
