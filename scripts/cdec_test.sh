@@ -52,8 +52,9 @@ if cmp -s c/aceapex_decode.c python/csrc/aceapex_decode.c && cmp -s c/aceapex_de
    && cmp -s src/ax_rans.h c/ax_rans.h && cmp -s src/ax_rans.h python/csrc/ax_rans.h \
    && cmp -s src/ax_lit_open.h c/ax_lit_open.h && cmp -s src/ax_lit_open.h python/csrc/ax_lit_open.h \
    && cmp -s src/ax_fast.h c/ax_fast.h && cmp -s src/ax_fast.h python/csrc/ax_fast.h \
-   && cmp -s src/ax_zframe.h c/ax_zframe.h && cmp -s src/ax_zframe.h python/csrc/ax_zframe.h; then r=pass; else r=fail; fi
-printf 'head_python_csrc_in_sync\t%s\tpython/csrc == c/ (aceapex_decode.c, .h); ax_rans.h, ax_lit_open.h, ax_fast.h and ax_zframe.h identical in src/, c/, python/csrc/\n' "$r"
+   && cmp -s src/ax_zframe.h c/ax_zframe.h && cmp -s src/ax_zframe.h python/csrc/ax_zframe.h \
+   && cmp -s src/xxhash.h c/xxhash.h && cmp -s src/xxhash.h python/csrc/xxhash.h; then r=pass; else r=fail; fi
+printf 'head_python_csrc_in_sync\t%s\tpython/csrc == c/ (aceapex_decode.c, .h); ax_rans.h, ax_lit_open.h, ax_fast.h, ax_zframe.h and xxhash.h identical in src/, c/, python/csrc/\n' "$r"
 # the GPU rANS chunk decoder (k_rans, per-lane steps in src/ax_rans_warp.h) run on the CPU
 # lane by lane against axr_decode: round-trips, the conformance rANS chunks, mutations
 if ${CXX:-g++} -std=c++17 -O2 -Isrc -o $T/rans_emu scripts/rans_warp_emu.cpp 2>$T/emu.err; then
@@ -253,6 +254,22 @@ for m in check control; do D=; [ $m = control ] && D="-DAX_BOFFS_CONTIG_NO_CHECK
   else gp="$gp | $m build failed"; gpf=1; fi
 done
 printf 'head_gpu_plan_266\t%s\t%s\n' "$([ $gpf = 0 ] && echo pass || echo fail)" "${gp# | }"
+# 2.6.7 (API-CHK-1): aceapex_decompress_ex with ACEAPEX_VERIFY_XXH3 - C++, C99 and Python - refuses the three archives of
+# verify/repro/api_verify (one flipped bit: the unchecked calls return success with wrong bytes) and verifies every
+# conformance fixture. Negative control -DAX_VERIFY_NO_CHECK: the flag ignored, the wrong bytes come back with success
+av=""; avf=0; AVD=verify/repro/api_verify
+for m in check control; do D=; [ $m = control ] && D=-DAX_VERIFY_NO_CHECK
+  if ${CXX:-g++} -std=c++17 -O1 $D -Isrc -o $T/av_$m $AVD/api_verify_test.cpp src/aceapex_api.cpp -lzstd -lpthread 2>$T/av.err; then
+    r=$($T/av_$m $AVD verify/fixtures/conf 2>/dev/null); av="$av | $(echo "$r" | tail -1 | cut -f1,2,3,4 | tr '\t' ' ')"; echo "$r" | tail -1 | grep -q "	pass	" || avf=1
+  else av="$av | cpp $m build failed"; avf=1; fi
+  if ${CC:-gcc} -std=c99 -O2 $D -Ic -o $T/avc_$m $AVD/api_verify_c99.c c/aceapex_decode.c -lzstd 2>$T/av.err; then
+    r=$($T/avc_$m $AVD verify/fixtures/conf 2>/dev/null); av="$av | $(echo "$r" | tail -1 | cut -f1,2,3,4 | tr '\t' ' ')"; echo "$r" | tail -1 | grep -q "	pass	" || avf=1
+  else av="$av | c99 $m build failed"; avf=1; fi
+  if ${CC:-gcc} -std=c99 -O2 -fPIC -shared $D -Ic -o $T/libav_$m.so c/aceapex_decode.c -lzstd 2>$T/av.err; then
+    r=$(ACEAPEX_DECODE_SO=$T/libav_$m.so PYTHONPATH=python python3 $AVD/api_verify_py.py $AVD verify/fixtures/conf $m 2>/dev/null); av="$av | $(echo "$r" | cut -f1,2,3,4 | tr '\t' ' ')"; echo "$r" | grep -q "	pass	" || avf=1
+  else av="$av | py $m build failed"; avf=1; fi
+done
+printf 'head_api_verify\t%s\t%s\n' "$([ $avf = 0 ] && echo pass || echo fail)" "${av# | }"
 # 2.6.4 step 2: fuzz/fuzz_region.cpp (region, ranges, decode_streams) without libFuzzer, 20 s of mutants of the same seeds
 # + cpp_alloc under ASan+UBSan, allocations above 128 MiB abort; v2.6.3 aborts on the conformance fixtures alone
 FZR_SEEDS="$FZ_SEEDS $(ls verify/repro/cpp_alloc/*.aet)"

@@ -26,6 +26,8 @@ def _load():
     lib.aceapex_decoded_size.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
     lib.aceapex_decompress.restype = ctypes.c_int64
     lib.aceapex_decompress.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_void_p, ctypes.c_size_t]
+    lib.aceapex_decompress_ex.restype = ctypes.c_int64
+    lib.aceapex_decompress_ex.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int, ctypes.c_uint]
     lib.aceapex_decompress_region.restype = ctypes.c_int64
     lib.aceapex_decompress_region.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint64, ctypes.c_uint64]
     lib.aceapex_decompress_ranges.restype = ctypes.c_int64
@@ -94,9 +96,12 @@ class Archive:
             res.append(bufs[i].raw[:w])
         return res
 
-    def decompress(self):
+    def decompress(self, verify=False):
+        """The whole original. verify=True (2.6.7): the output is checked against the archive's XXH3-64 and a mismatch
+        raises DecodeError - use it for archives from untrusted sources (without it, a damaged archive can decode to
+        wrong bytes)."""
         out = ctypes.create_string_buffer(max(self.size, 1))
-        n = _check(_l().aceapex_decompress(self._ptr(), self._n, out, self.size))
+        n = _check(_l().aceapex_decompress_ex(self._ptr(), self._n, out, self.size, 0, 1 if verify else 0))
         return out.raw[:n]
 
     def close(self):

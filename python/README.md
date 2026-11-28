@@ -10,6 +10,8 @@ use the `aceapex` CLI.
 
     a.ranges([(0, 16384), (2_000_000, 4096)])   # -> list of bytes, each block decoded once
     a.decompress()                              # -> whole input as bytes
+    a.decompress(verify=True)                   # -> the same, checked against the archive's XXH3-64 (2.6.7):
+                                                #    use it for archives from untrusted sources
 
 Every call fails closed: a corrupted archive raises `aceapex.DecodeError`, never returns
 partial bytes. The same fixtures that judge the C decoder (`verify/fixtures/`) run under

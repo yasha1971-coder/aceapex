@@ -870,6 +870,22 @@ int64_t aceapex_decompress(const void* src, size_t src_size, void* dst, size_t d
     return ax_api<int64_t>([&] { return ax_decompress_mt_impl(src, src_size, dst, dst_capacity, 0); }); }
 int64_t aceapex_decompress_mt(const void* src, size_t src_size, void* dst, size_t dst_capacity, int threads) {
     return ax_api<int64_t>([&] { return ax_decompress_mt_impl(src, src_size, dst, dst_capacity, threads); }); }
+// 2.6.7 (API-CHK-1): the whole decode, then XXH3-64 of the output against the header (offset 28 in both profiles: the
+// AetHeader layout is shared). AX_VERIFY_NO_CHECK: negative control of verify/repro/api_verify only (the flag is accepted
+// and ignored, as a caller that forgot it).
+static int64_t ax_decompress_ex_impl(const void* src, size_t src_size, void* dst, size_t dst_capacity, int threads, unsigned flags) {
+    if (flags & ~ACEAPEX_VERIFY_XXH3) return ACEAPEX_ERR_BUFFER;
+    const int64_t r = ax_decompress_mt_impl(src, src_size, dst, dst_capacity, threads);
+    if (r < 0 || !(flags & ACEAPEX_VERIFY_XXH3)) return r;
+#ifndef AX_VERIFY_NO_CHECK
+    if (!src || src_size < 36) return ACEAPEX_ERR_DATA;   // unreachable after a successful decode; kept as the bound of the read below
+    uint64_t want; memcpy(&want, (const uint8_t*)src + 28, 8);
+    if (XXH3_64bits(dst, (size_t)r) != axf_le64(want)) return ACEAPEX_ERR_DATA;
+#endif
+    return r;
+}
+int64_t aceapex_decompress_ex(const void* src, size_t src_size, void* dst, size_t dst_capacity, int threads, unsigned flags) {
+    return ax_api<int64_t>([&] { return ax_decompress_ex_impl(src, src_size, dst, dst_capacity, threads, flags); }); }
 int64_t aceapex_decompress_region(const void* src, size_t src_size, void* dst, size_t dst_capacity, uint64_t offset, uint64_t length) {
     return ax_api<int64_t>([&] { return ax_decompress_region_impl(src, src_size, dst, dst_capacity, offset, length); }); }
 int64_t aceapex_decompress_ranges(const void* src, size_t src_size, aceapex_range_t* ranges, size_t count, int threads) {

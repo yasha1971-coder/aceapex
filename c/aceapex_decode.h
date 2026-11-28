@@ -26,6 +26,13 @@ int64_t aceapex_decoded_size(const void* src, size_t src_size);
 
 /* Whole archive -> dst. Returns bytes written or a negative error code. */
 int64_t aceapex_decompress(const void* src, size_t src_size, void* dst, size_t dst_capacity);
+/* 2.6.7 (API-CHK-1): the whole decode with an optional check of the archive's XXH3-64 of the original - the same function
+   as in the C++ library (src/aceapex.h); threads is ignored (this decoder is single-threaded). For archives from untrusted
+   sources use ACEAPEX_VERIFY_XXH3: aceapex_decompress does not hash the output, so a damaged archive can decode with
+   success to wrong bytes. With the flag, a mismatch returns ACEAPEX_ERR_DATA (dst then holds unverified bytes).
+   flags = 0 is aceapex_decompress; other flag bits: ACEAPEX_ERR_BUFFER. */
+#define ACEAPEX_VERIFY_XXH3 1u
+int64_t aceapex_decompress_ex(const void* src, size_t src_size, void* dst, size_t dst_capacity, int threads, unsigned flags);
 
 /* Bytes [offset, offset+length) of the original input, touching only the blocks that
  * cover the range and, in each stream, only the compressed chunks those blocks use. */

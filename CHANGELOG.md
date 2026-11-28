@@ -6,6 +6,13 @@ Every number below is reproduced by `make test && ./verify.sh` on the tagged com
 
 ## Unreleased (2.6.7)
 
+- API-CHK-1: `aceapex_decompress_ex(src, src_size, dst, dst_capacity, threads, flags)` - the whole decode with
+  `ACEAPEX_VERIFY_XXH3`: the output is hashed and compared with the archive's XXH3-64 of the original, a mismatch returns
+  `ACEAPEX_ERR_DATA`. In the C++ library and, with the same prototype (threads ignored), in the C99 decoder; the Python
+  package: `Archive.decompress(verify=True)`. For untrusted data use the checked call: `aceapex_decompress` / `_mt` do not
+  hash their output and are unchanged. Claim `head_api_verify` (`verify/repro/api_verify`: one flipped bit that both
+  decoders return as success with wrong bytes; negative control `-DAX_VERIFY_NO_CHECK`). xxhash.h is now also in `c/` and
+  `python/csrc/` (private to the decoder: no global XXH* symbols).
 - GPU library (`libaceapex_gpu`): the host plan refuses an archive whose block slices do not follow each other, bit 63 of a
   token stream's first word and a tagged literal stream without the chunked layout - the rules the CPU decoders follow since
   2.6.6 (fixes 4 and 5; the Known issues of 2.6.6). It already refused a header version other than 2. Claim

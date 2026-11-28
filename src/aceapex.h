@@ -39,6 +39,21 @@ int64_t aceapex_decompress_mt(
     int         threads
 );
 
+/* Whole decode with an optional check of the archive's content hash (2.6.7, API-CHK-1). For archives from untrusted
+   sources, use this function with ACEAPEX_VERIFY_XXH3: a damaged archive can decode with success to wrong bytes through
+   aceapex_decompress / _mt, which do not hash the output (the archive's only content checksum is the XXH3-64 of the
+   whole original, in the header). threads as aceapex_decompress_mt (0 = auto). Flags:
+   ACEAPEX_VERIFY_XXH3: after decoding, the output is hashed and compared with the header; a mismatch returns
+   ACEAPEX_ERR_DATA, and dst then holds unverified bytes that must not be used.
+   flags = 0 is aceapex_decompress_mt. Other flag bits: ACEAPEX_ERR_BUFFER. Both profiles (header versions 2 and 3).
+   The same function, with threads ignored, is in the C99 decoder (c/aceapex_decode.h). */
+#define ACEAPEX_VERIFY_XXH3 1u
+int64_t aceapex_decompress_ex(
+    const void* src, size_t src_size,
+    void*       dst, size_t dst_capacity,
+    int         threads, unsigned flags
+);
+
 /* Streaming decode (2.3): the archive is read through rd (pread semantics: bytes at `offset`, return the count
    read or < 0), the original is handed to wr in order, group by group (a few blocks, <= about 1 MiB), the
    call returns the original size or a negative error. Memory is bounded by threads x (a literal tile of ~0.5 MiB,

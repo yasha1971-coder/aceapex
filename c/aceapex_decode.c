@@ -25,6 +25,8 @@
  *   off, reps shift. Distances never leave the block (that is the whole point).
  */
 #include "aceapex_decode.h"
+#define XXH_INLINE_ALL   /* 2.6.7: XXH3 for aceapex_decompress_ex, private to this file */
+#include "xxhash.h"
 #include "ax_env.h"      /* ax_getenv: FSE_CHUNK of legacy archives only with ACEAPEX_ENV_TUNING */
 #include "ax_rans.h"   /* rANS token chunks (entry bit 62); identical copy of src/ax_rans.h */
 #include "ax_lit_open.h" /* zstd-free literal chunks, modes 2/3; identical copy of src/ax_lit_open.h */
@@ -358,6 +360,21 @@ int64_t aceapex_decompress(const void* src, size_t n, void* dst, size_t cap){
     if(cap<d.a.orig){ dec_close(&d); return ACEAPEX_ERR_BUFFER; }
     for(size_t b=0;b<d.a.nb && !r;b++) r=dec_block(&d,b,(uint8_t*)dst+(size_t)b*d.a.bs);
     dec_close(&d); return r?r:(int64_t)d.a.orig;
+}
+
+/* 2.6.7 (API-CHK-1): the whole decode, then XXH3-64 of the output against the header (offset 28 in both profiles).
+   xxHash is included private to this file (XXH_INLINE_ALL: static, no global XXH* symbols). AX_VERIFY_NO_CHECK: negative
+   control of verify/repro/api_verify only (the flag accepted and ignored). */
+int64_t aceapex_decompress_ex(const void* src, size_t n, void* dst, size_t cap, int threads, unsigned flags){
+    (void)threads;
+    if(flags & ~ACEAPEX_VERIFY_XXH3) return ACEAPEX_ERR_BUFFER;
+    const int64_t r=aceapex_decompress(src,n,dst,cap);
+    if(r<0 || !(flags & ACEAPEX_VERIFY_XXH3)) return r;
+#ifndef AX_VERIFY_NO_CHECK
+    if(n<36) return ACEAPEX_ERR_DATA;   /* unreachable after a successful decode: the bound of the read below */
+    if(XXH3_64bits(dst,(size_t)r)!=rd64((const uint8_t*)src+28)) return ACEAPEX_ERR_DATA;
+#endif
+    return r;
 }
 
 /* ranges are served from a block cache: each distinct block decoded once */

@@ -274,9 +274,14 @@ Two guarantees, kept apart:
   literal stream; for untrusted archives, limit the memory of the process (see [Known issues](#known-issues)). It
   does **not** check the content: it does not hash its output, so a damaged archive can decode to the declared size with
   other bytes.
-- **The checked paths** - the CLI `aceapex d`, `aceapex_decompress_stream` with `ACEAPEX_STREAM_VERIFY`, and
-  `decompress()` of the aceapex-fast Python binding - compare the XXH3-64 of the output with the archive header and
-  report a mismatch (CLI: exit 1; stream: `ACEAPEX_ERR_DATA` after the bytes were handed out). Zero wrong bytes accepted.
+- **The checked paths** - the CLI `aceapex d`, `aceapex_decompress_ex` with `ACEAPEX_VERIFY_XXH3` (C++ library and C99
+  decoder, 2.6.7), `aceapex_decompress_stream` with `ACEAPEX_STREAM_VERIFY`, `Archive.decompress(verify=True)` of the
+  Python package and `decompress()` of the aceapex-fast Python binding - compare the XXH3-64 of the output with the
+  archive header and report a mismatch (CLI: exit 1; `_ex`: `ACEAPEX_ERR_DATA`, dst not to be used; stream:
+  `ACEAPEX_ERR_DATA` after the bytes were handed out). Zero wrong bytes accepted.
+- **For untrusted data, use a function with the check**: `aceapex_decompress_ex(..., ACEAPEX_VERIFY_XXH3)` or the CLI.
+  `aceapex_decompress` / `_mt` stay unchecked (and unchanged, for benchmarks and trusted data); region and range reads
+  cannot be checked (the hash covers the whole original).
 - `aceapex d --out FILE` decodes into a temporary file next to FILE and renames it to FILE only when the XXH3 matches:
   on a corrupt archive FILE is not created (an existing FILE is left as it was) and the exit status is 1 (claim
   `head_cli_atomic`). `--out -` (stdout) streams as before: the bytes go out first, the exit status is the verdict.

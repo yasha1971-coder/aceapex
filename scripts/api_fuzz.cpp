@@ -37,7 +37,7 @@ struct Src { const std::vector<uint8_t>* z; };
 static int64_t rd(void* c, uint64_t off, void* dst, size_t n) { const auto& z = *((Src*)c)->z; if (off >= z.size()) return 0; const size_t k = std::min<size_t>(n, z.size() - off); memcpy(dst, z.data() + off, k); return (int64_t)k; }
 struct Sink { const std::vector<uint8_t>* want; size_t pos; bool diff; };
 static int wr(void* c, const void* b, size_t n) { Sink* s = (Sink*)c; if (s->pos + n > s->want->size() || memcmp(s->want->data() + s->pos, b, n)) s->diff = true; s->pos += n; return 0; }
-struct Stat { long total = 0, err = 0, ok = 0, silent = 0, vok = 0, verr = 0, vsilent = 0, bad = 0; };
+struct Stat { long total = 0, err = 0, ok = 0, silent = 0, vok = 0, verr = 0, vsilent = 0, bad = 0, xok = 0, xerr = 0, xsilent = 0; };
 int main(int argc, char** argv) {
     static const int levels[] = {1, 2, 3, 11, 12, 13, 14, 15, 16, 17, 18};
     static const size_t sizes[] = {1, 7, 80, 300, 4096, 70000, 300000, 1048577, 2300000};
@@ -77,8 +77,14 @@ int main(int argc, char** argv) {
                 if (r < 0) s.err++;
                 else if (r == (int64_t)claimed) { if (claimed == in.size() && (claimed == 0 || !memcmp(o, in.data(), in.size()))) s.ok++; else s.silent++; }
                 else s.bad++;
+                // 2.6.7 (API-CHK-1): the same mutant through aceapex_decompress_ex + ACEAPEX_VERIFY_XXH3 - success must mean
+                // the original bytes ("ex-verified silent" is part of the gate)
+                const int64_t x = aceapex_decompress_ex(b.data(), b.size(), o, (size_t)claimed, 1 + (int)(rnd() % 2), ACEAPEX_VERIFY_XXH3);
+                if (x < 0) s.xerr++;
+                else if (x == (int64_t)in.size() && claimed == in.size() && (claimed == 0 || !memcmp(o, in.data(), in.size()))) s.xok++;
+                else s.xsilent++;
                 free(o);
-            } else s.err++;
+            } else { s.err++; s.xerr++; }
             Src src{&b}; Sink sk{&in, 0, false};
             const int64_t v = aceapex_decompress_stream(rd, &src, wr, &sk, 1, ACEAPEX_STREAM_VERIFY);
             if (v < 0) s.verr++;
@@ -87,9 +93,9 @@ int main(int argc, char** argv) {
         }
     }
     const char* nm[2] = {"default levels 1-3", "fast levels 11-18"}; long fail = 0;
-    for (int p = 0; p < 2; p++) { const Stat& s = st[p]; fail += s.vsilent + s.bad;
-        printf("api_fuzz %s: %ld mutants | decompress_mt: %ld errors, %ld ok, %ld SILENT (success + wrong bytes), %ld bad rc | stream+VERIFY: %ld errors, %ld ok, %ld verified-silent\n",
-               nm[p], s.total, s.err, s.ok, s.silent, s.bad, s.verr, s.vok, s.vsilent); }
-    printf("api_fuzz: %ld seed archives in %d s; gate (verified-silent 0, bad rc 0): %s\n", seeds, secs, fail ? "FAIL" : "pass");
+    for (int p = 0; p < 2; p++) { const Stat& s = st[p]; fail += s.vsilent + s.bad + s.xsilent;
+        printf("api_fuzz %s: %ld mutants | decompress_mt: %ld errors, %ld ok, %ld SILENT (success + wrong bytes), %ld bad rc | stream+VERIFY: %ld errors, %ld ok, %ld verified-silent | ex+VERIFY_XXH3: %ld errors, %ld ok, %ld ex-verified-silent\n",
+               nm[p], s.total, s.err, s.ok, s.silent, s.bad, s.verr, s.vok, s.vsilent, s.xerr, s.xok, s.xsilent); }
+    printf("api_fuzz: %ld seed archives in %d s; gate (verified-silent 0, ex-verified-silent 0, bad rc 0): %s\n", seeds, secs, fail ? "FAIL" : "pass");
     return fail ? 1 : 0;
 }
