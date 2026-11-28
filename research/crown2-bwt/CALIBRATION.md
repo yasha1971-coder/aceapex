@@ -224,6 +224,16 @@ other session's VM is stopped. All inputs, hypotheses, forecasts, controls and
 acceptance thresholds remain unchanged. No codec probe has run before this
 amendment.
 
+### Hosting branch-name resolution
+
+GitHub already has a branch named `research`; Git rejects the requested remote
+`research/crown2-bwt` with a directory/file namespace conflict. Preserve that
+existing branch. The requested local working branch remains
+`research/crown2-bwt`; publish it under the equivalent remote alias
+`research-crown2-bwt`, draft PR to `dev`. This changes no source, measurement,
+forecast, criterion, existing branch or release. The owner was informed of the
+namespace conflict before publication; no deletion/rename of `research` is used.
+
 The second create request (`24c22b504aa9e4ed3af2eb808ca16ad85b242934`,
 17:47 UTC, europe-west1-b) was refused because the active controller principal
 cannot attach the project's default compute service account. No VM or boot disk
