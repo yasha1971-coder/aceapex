@@ -67,9 +67,11 @@ Performance (2.6.6 against 2.6.5, same build, ace-core EPYC 4344P, 1 thread pinn
 silesia at level 2 with 1 thread -0.5...-0.8 % (the block integrity check of fix 1, SEC-DEC-2); chr1 at level 2 +2 %
 (fix 3, 18e6da5); the fast profile and 16 threads unchanged within 1 %. Archives are byte for byte those of 2.6.5.
 
-Known issues: the GPU decoder (`libaceapex_gpu`) does not yet check the header version (fix 2) or that block slices follow
-each other (fix 5); a damaged archive of either kind can decode there with success. Fixed in the next release. Until then,
-decode archives from others on the GPU with `ACEAPEX_GPU_VERIFY_XXH3`, or with the CLI to a file.
+Known issues: the GPU decoder (`libaceapex_gpu`) does not yet check that block slices follow each other (fix 5), nor two
+stream-header rules of fix 4 (bit 63 of a token stream's first word; a tagged literal stream without the chunked layout); a
+damaged archive of these kinds can decode there with success. It already refuses a header version other than 2 (its host
+plan, checked on `verify/repro/hdr_version`). Fixed in the next release. Until then, decode archives from others on the GPU
+with `ACEAPEX_GPU_VERIFY_XXH3`, or with the CLI to a file.
 
 ## v2.6.5 — 2026-11-26
 
