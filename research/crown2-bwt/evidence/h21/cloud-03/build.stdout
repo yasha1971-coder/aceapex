@@ -1,0 +1,29 @@
+[  4%] Building C object _deps/crown2_libsais-build/CMakeFiles/libsais.dir/src/libsais.c.o
+[  8%] Building C object _deps/crown2_libsais-build/CMakeFiles/libsais.dir/src/libsais16.c.o
+[ 16%] Building C object _deps/crown2_libsais-build/CMakeFiles/libsais.dir/src/libsais16x64.c.o
+[ 16%] Building CXX object CMakeFiles/libbsc.dir/_deps/crown2_libbsc-src/libbsc/adler32/adler32.cpp.o
+[ 20%] Building CXX object CMakeFiles/libbsc.dir/_deps/crown2_libbsc-src/libbsc/bwt/bwt.cpp.o
+[ 25%] Building C object CMakeFiles/libbsc.dir/_deps/crown2_libbsc-src/libbsc/bwt/libsais/libsais.c.o
+[ 29%] Building CXX object CMakeFiles/libbsc.dir/_deps/crown2_libbsc-src/libbsc/coder/coder.cpp.o
+[ 33%] Building CXX object CMakeFiles/libbsc.dir/_deps/crown2_libbsc-src/libbsc/coder/qlfc/qlfc.cpp.o
+[ 37%] Building C object _deps/crown2_libsais-build/CMakeFiles/libsais.dir/src/libsais64.c.o
+[ 41%] Building CXX object CMakeFiles/libbsc.dir/_deps/crown2_libbsc-src/libbsc/coder/qlfc/qlfc_model.cpp.o
+[ 45%] Building CXX object CMakeFiles/libbsc.dir/_deps/crown2_libbsc-src/libbsc/filters/detectors.cpp.o
+[ 50%] Building CXX object CMakeFiles/libbsc.dir/_deps/crown2_libbsc-src/libbsc/filters/preprocessing.cpp.o
+[ 54%] Building CXX object CMakeFiles/libbsc.dir/_deps/crown2_libbsc-src/libbsc/libbsc/libbsc.cpp.o
+[ 58%] Building CXX object CMakeFiles/libbsc.dir/_deps/crown2_libbsc-src/libbsc/lzp/lzp.cpp.o
+[ 62%] Building CXX object CMakeFiles/libbsc.dir/_deps/crown2_libbsc-src/libbsc/platform/platform.cpp.o
+[ 66%] Building CXX object CMakeFiles/libbsc.dir/_deps/crown2_libbsc-src/libbsc/st/st.cpp.o
+[ 70%] Linking CXX static library liblibbsc.a
+[ 70%] Built target libbsc
+[ 75%] Building CXX object CMakeFiles/crown2_baseline.dir/baseline.cpp.o
+[ 79%] Linking C static library libsais.a
+[ 79%] Built target libsais
+[ 83%] Building CXX object CMakeFiles/crown2_core.dir/core.cpp.o
+[ 87%] Linking CXX shared library libcrown2_baseline.so
+[ 87%] Built target crown2_baseline
+[ 91%] Linking CXX static library libcrown2_core.a
+[ 91%] Built target crown2_core
+[ 95%] Building CXX object CMakeFiles/crown2_probe.dir/cli.cpp.o
+[100%] Linking CXX executable crown2_probe
+[100%] Built target crown2_probe

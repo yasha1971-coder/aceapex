@@ -233,3 +233,25 @@ next request explicitly uses NO VM service account and NO OAuth scopes. Validate
 that the resulting instance has no serviceAccounts before any probe. No IAM role,
 project account, API enablement, firewall or other session's resource is changed.
 This narrows privileges; all scientific forecasts/criteria remain unchanged.
+
+### Cloud method fact, before host timings
+
+Source `408ddee4ca4f8777eef1c95c5d39e3312e85c28d` passed on the registered
+C4-standard-4 SPOT VM. Own deterministic/round-trip/negative controls: 65 small
+cases; complete DEV-2 preparation: 42 reference/own representations, all with
+actual restored SHA256 equal to the locked original. Baseline symbol isolation
+and sibling-DSO lookup passed. The optional whole-selftest instructions counter
+was available; it is not a per-phase instruction result. Raw logs and binary
+hashes are retained in `evidence/h21/cloud-03/`.
+
+The 200,041,764-byte artifact was copied to ace-core before deleting the VM;
+SHA256 `eec497816ef2535812ad432c430d75b89a9d6314f59e3bf98fa1dd3750b4cdfb`.
+Own VM and its boot disk were confirmed absent at 17:54:09.791540 UTC. Resource
+allocation was 247.238540 seconds. The detailed cost estimate records actual disk
+performance and artifact egress; initial disk allowance was region-unverified
+and is superseded by the actual regional estimate, not treated as an invoice.
+
+The independently reviewed host controller is committed before its first timer.
+It checks at least 30 GB free space, records RAM/swap metadata, runs known-answer
+and seven A/A controls before the fixed grid, and retains all attempts. No
+H2.1 performance datum exists at this checkpoint. Forecasts unchanged.

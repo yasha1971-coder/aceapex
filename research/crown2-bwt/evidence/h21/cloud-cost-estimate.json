@@ -1,0 +1,102 @@
+{
+  "schema": "crown2-cloud-cost-estimate-v1",
+  "status": "ESTIMATE_NOT_INVOICE",
+  "source_sha": "408ddee4ca4f8777eef1c95c5d39e3312e85c28d",
+  "project": "aceapex-bench",
+  "zone": "europe-west1-b",
+  "machine": "c4-standard-4",
+  "instance": "crown2-bwt-h21-5ca68afc-1128175000",
+  "instance_id": "900852213514414757",
+  "boot_disk_id": "2106013744644926117",
+  "lifecycle": {
+    "creation_utc": "2026-11-28T17:50:02.553000Z",
+    "absence_verified_utc": "2026-11-28T17:54:09.791540Z",
+    "allocation_window_seconds": "247.23854",
+    "allocation_window_hours": "0.068677372222222222222222222222222222222222222222222",
+    "vm_absent": true,
+    "boot_disk_absent": true,
+    "remote_controller_log": "/home/ubuntu/hw-crown2-bwt/research/crown2-bwt/_local/crown2-bwt-h21-5ca68afc-1128175000/cloud.jsonl",
+    "controller_log_sha256_at_retrieval": "38e77219ee49608fd34ef67fd9a241b015ed510bb516a882e81d0b0ca50f7467"
+  },
+  "currency": "USD",
+  "arithmetic": "Decimal at precision50; quoted rates retained as exact decimal strings",
+  "disk": {
+    "gib": 30,
+    "provisioned_iops": 3180,
+    "baseline_iops_included": 3000,
+    "extra_billable_iops": 180,
+    "provisioned_throughput_mib_s": 185,
+    "baseline_throughput_mib_s_included": 140,
+    "extra_billable_throughput_mib_s": 45
+  },
+  "components": {
+    "compute": {
+      "quantity": 1,
+      "usd_per_quantity_hour": "0.078375",
+      "usd_estimate": "0.0053825890479166666666666666666666666666666666666666"
+    },
+    "disk_gib": {
+      "quantity": 30,
+      "usd_per_quantity_hour": "0.000120548",
+      "usd_estimate": "0.00024836759599933333333333333333333333333333333333333"
+    },
+    "disk_extra_iops": {
+      "quantity": 180,
+      "usd_per_quantity_hour": "0.000008219",
+      "usd_estimate": "0.00010160267801300000000000000000000000000000000000000"
+    },
+    "disk_extra_throughput": {
+      "quantity": 45,
+      "usd_per_quantity_hour": "0.000060274",
+      "usd_estimate": "0.00018627569699950000000000000000000000000000000000000"
+    },
+    "spot_ipv4": {
+      "quantity": 1,
+      "usd_per_quantity_hour": "0.0025",
+      "usd_estimate": "0.00017169343055555555555555555555555555555555555555556"
+    }
+  },
+  "infrastructure_usd_estimate": "0.0060905284494840555555555555555555555555555555555555",
+  "artifact_egress": {
+    "bytes": 200041764,
+    "gib": "0.1863034106791019439697265625",
+    "destination": "ace-core, Europe",
+    "tier": "Premium",
+    "usd_per_gib_assuming_no_remaining_free_tier": "0.12",
+    "usd_payload_estimate": "0.022356409281492233276367187500",
+    "full_network_tx_bytes_measured": false
+  },
+  "infrastructure_plus_artifact_payload_usd_estimate": "0.028446937730976288831922743055555555555555555555556",
+  "price_sources": {
+    "compute": {
+      "url": "https://cloud.google.com/spot-vms/pricing?hl=en",
+      "region_label": "Belgium (europe-west1)",
+      "retrieved_utc": "2026-11-28T17:44:53.667489Z",
+      "html_sha256": "9e4cb1f82f0f1ab7e72de57102f5e9a6b70287361967a51621176ad6297793d6"
+    },
+    "disk": {
+      "url": "https://cloud.google.com/compute/disks-image-pricing?hl=en",
+      "region_label": "Belgium (europe-west1)",
+      "retrieved_utc": "2026-11-28T17:55:20.507344Z",
+      "html_sha256": "7a031296da5cef82cddf2866b93273bdc387d206ae70f575db6112cf80c6378f",
+      "rows": [
+        "Hyperdisk Balanced provisioned space",
+        "Hyperdisk Balanced provisioned IOPS",
+        "Hyperdisk Balanced provisioned throughput"
+      ],
+      "excluded_other_rows": "Asynchronous Replication Protection prices are not these disk prices"
+    },
+    "network": {
+      "url": "https://cloud.google.com/vpc/network-pricing?hl=en",
+      "retrieved_utc": "2026-11-28T17:37:25.291090Z",
+      "html_sha256": "ff69801aa0553c0c776a388ab9d71dfc1aa622173d86c7a6a7dc125d66e69b5d"
+    }
+  },
+  "limitations": [
+    "Public list-price estimate, not a Cloud Billing invoice or contract-specific rate.",
+    "Uses VM creation through confirmed absence as a common allocation window; exact individual SKU metering timestamps are unavailable.",
+    "Artifact egress counts the 200041764-byte artifact only, not SSH/TCP overhead, apt/control traffic, retries or all VM network traffic.",
+    "No free tier, credits, negotiated discounts or tax applied.",
+    "Disk performance charges above 3000 IOPS and140 MiB/s are included; the earlier base-only controller estimate omitted these extras."
+  ]
+}
