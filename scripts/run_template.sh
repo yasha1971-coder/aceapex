@@ -9,6 +9,8 @@
 # HEAD of the git repository holding CALIBRATION (a prediction edited after the run cannot pass as
 # one written before it). The commit that introduced the line is logged in STATUS.
 # Negative controls: scripts/run_template_test.sh (each missing field and an uncommitted line STOP).
+# Watchdog (RT-PG-1, 28.11.2026): the command runs under setsid and the watchdog ends its whole process group (TERM, then
+# KILL after 10 s); leftovers of the group are ended when the command exits. Test: scripts/run_template_pg_test.sh.
 #
 # Usage: run_template.sh <task-name-as-in-CALIBRATION> [-- <command...>]
 #   CALIB=<file>    override CALIBRATION path (default ~/yasha-context/ACEAPEX/CALIBRATION.md)
@@ -70,11 +72,19 @@ silesia_gate
 
 # --- hang watchdog + PID wait + explicit STOP ---
 log "START '$TASK': $*"
-"$@" & CHILD=$!
+# RT-PG-1 (28.11.2026): the command runs in its own session and process group (setsid; a background job of this
+# non-interactive shell is not a group leader, so setsid does not fork: PGID = CHILD) and the watchdog ends the whole
+# group - TERM, then KILL after 10 s. Until then it signalled CHILD only: on LZB-266 a qemu-arm grandchild outlived the
+# watchdog by 33 min. Processes the command leaves behind in its group are ended when it exits (logged).
+if [ "${RT_NO_PGROUP:-0}" = 1 ]; then "$@" & CHILD=$!; else setsid "$@" & CHILD=$!; fi   # RT_NO_PGROUP=1: negative control of run_template_pg_test.sh only (the template before RT-PG-1)
 # the watchdog's sleep is killed with it and it writes only to STATUS: until 20.11 its sleep outlived `kill $WD` for up to
 # WATCHDOG seconds and held stdout, so `run_template.sh ... | tail` waited for the whole watchdog time
 ( exec >/dev/null 2>&1; trap 'kill "$S" 2>/dev/null; exit 0' TERM; sleep "$WATCHDOG" & S=$!; wait "$S" || true
-  if kill -0 "$CHILD" 2>/dev/null; then echo "[$(date -u +%FT%TZ)] [watchdog] ${WATCHDOG}s elapsed, terminating $CHILD" >> "$STATUS"; kill -TERM "$CHILD" 2>/dev/null || true; fi ) & WD=$!
+  if kill -0 "$CHILD" 2>/dev/null; then echo "[$(date -u +%FT%TZ)] [watchdog] ${WATCHDOG}s elapsed, terminating process group $CHILD" >> "$STATUS"
+    if [ "${RT_NO_PGROUP:-0}" = 1 ]; then kill -TERM "$CHILD" 2>/dev/null || true
+    else kill -TERM -- "-$CHILD" 2>/dev/null || true; sleep 10 & S=$!; wait "$S" || true; kill -KILL -- "-$CHILD" 2>/dev/null || true; fi; fi ) & WD=$!
 rc=0; wait "$CHILD" || rc=$?
 kill "$WD" 2>/dev/null || true
+if [ "${RT_NO_PGROUP:-0}" != 1 ] && pgrep -g "$CHILD" >/dev/null 2>&1; then log "process group $CHILD: $(pgrep -g "$CHILD" | wc -l) processes left after the command - terminating"
+  kill -TERM -- "-$CHILD" 2>/dev/null || true; sleep 1; kill -KILL -- "-$CHILD" 2>/dev/null || true; fi
 [ "$rc" -eq 0 ] && log "DONE '$TASK' rc=0" || die "'$TASK' exited rc=$rc"
