@@ -1,0 +1,11 @@
+{
+  "attempt": "crown2-bwt-h21-ac5989f7-1128174725",
+  "boot_disk_absent": true,
+  "diagnostic_redacted": "ERROR: (gcloud.compute.instances.create) Could not fetch resource:\n - The user does not have access to service account '[service-account identity redacted]'.  User: '[service-account identity redacted]'. Ask a project owner to grant you the iam.serviceAccountUser role on the service account.\n\n",
+  "probes_run": false,
+  "resolution": "Request no VM service account and no OAuth scopes; no IAM changes.",
+  "source_sha": "24c22b504aa9e4ed3af2eb808ca16ad85b242934",
+  "stderr_sha256": "b2afabd0862909ae463b9bbbf7827d1ef77ea1611809bff0485838441bc81f6c",
+  "vm_absent": true,
+  "zone": "europe-west1-b"
+}

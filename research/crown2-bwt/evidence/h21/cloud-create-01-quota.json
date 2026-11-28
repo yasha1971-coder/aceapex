@@ -1,0 +1,47 @@
+{
+  "schema": "crown2-cloud-create-failure-v1",
+  "source_sha": "abd6bee1b1feef59ec2d27f829bcb725eef8c74a",
+  "project": "aceapex-bench",
+  "instance": "crown2-bwt-h21-c79134f2-1128174123",
+  "zone": "europe-west4-b",
+  "create_started_utc": "2026-11-28T17:41:24.073054Z",
+  "create_command_returned_utc": "2026-11-28T17:41:35.666264Z",
+  "create_returncode": 1,
+  "create_stderr_sha256": "5dd7c34371e52af1a73358591845f4d1ebaa9ff51144594ccb3be0ff83fc3865",
+  "raw_create_stderr_retained": false,
+  "diagnosis_source": "read-only gcloud compute operations list filtered to the exact instance name",
+  "operation": {
+    "name": "operation-1795887685048-66159af86194e-b56165fb-8f318fbc",
+    "operationType": "insert",
+    "status": "DONE",
+    "insertTime": "2026-11-28T09:41:25.734-08:00",
+    "targetLink": "https://www.googleapis.com/compute/v1/projects/aceapex-bench/zones/europe-west4-b/instances/crown2-bwt-h21-c79134f2-1128174123",
+    "error": {
+      "code": "QUOTA_EXCEEDED",
+      "message": "Quota 'CPUS_PER_VM_FAMILY' exceeded.  Limit: 24.0 in region europe-west4.",
+      "quotaInfo": {
+        "dimensions": {
+          "region": "europe-west4",
+          "vm_family": "C4"
+        },
+        "limit": 24,
+        "limitName": "CPUS-PER-VM-FAMILY-per-project-region",
+        "metricName": "compute.googleapis.com/cpus_per_vm_family"
+      }
+    }
+  },
+  "controller_absence_receipt": {
+    "event": "deleted_verified",
+    "utc": "2026-11-28T17:41:37.559926Z",
+    "end_utc": "2026-11-28T17:41:37.559918Z",
+    "vm_absent": true,
+    "boot_disk_absent": true,
+    "creation_utc": null,
+    "elapsed_allocation_hours": null,
+    "compute_usd_estimate": null
+  },
+  "codec_probes_started": false,
+  "measurements_started": false,
+  "retry_performed_by_diagnosis": false,
+  "interpretation": "Regional C4-family quota rejection before any codec probe. Changing zones within europe-west4 does not change this region-scoped limit. No other session's VM is stopped or deleted."
+}

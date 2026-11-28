@@ -1,0 +1,7 @@
+{"event":"piece_prepared","piece":"d2_text_en","bytes":8388608,"roundtrip":true,"negative_controls":true}
+{"event":"piece_prepared","piece":"d2_text_src","bytes":8388608,"roundtrip":true,"negative_controls":true}
+{"event":"piece_prepared","piece":"d2_x86","bytes":8388608,"roundtrip":true,"negative_controls":true}
+{"event":"piece_prepared","piece":"d2_table_sdf","bytes":4194304,"roundtrip":true,"negative_controls":true}
+{"event":"piece_prepared","piece":"d2_table_db","bytes":4194304,"roundtrip":true,"negative_controls":true}
+{"event":"piece_prepared","piece":"d2_image","bytes":4194304,"roundtrip":true,"negative_controls":true}
+{"event":"piece_prepared","piece":"d2_xml","bytes":4194304,"roundtrip":true,"negative_controls":true}
