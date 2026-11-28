@@ -4,7 +4,7 @@ Software releases are tagged `vX.Y.Z` and follow `ACEAPEX_VERSION_*` in `src/ace
 Tags `v2.0`, `v3.0`, `v4.0` and `paperN-v1` are paper artifacts, frozen (ADR-005, ADR-013).
 Every number below is reproduced by `make test && ./verify.sh` on the tagged commit.
 
-## v2.6.6 — 2026-11-2X
+## v2.6.6 — 2026-11-28
 
 Security (patch release: v2.6.5 + these five fixes only).
 
@@ -62,6 +62,10 @@ MUST reject any other table). Regression `verify/repro/boffs_contig` (claim `hea
 - zstd: zstd 1.6.0 (2026-11-23) fixes CVE-2026-124851 in streaming decompression; ACEAPEX calls only the one-shot
   `ZSTD_decompress` / `ZSTD_decompressDCtx`. Builds on a system libzstd should still use libzstd >= 1.6.0; the release
   binaries link zstd 1.6.0 statically (since 2.6.5).
+
+Performance (2.6.6 against 2.6.5, same build, ace-core EPYC 4344P, 1 thread pinned, paired runs; gate J5): decompression of
+silesia at level 2 with 1 thread -0.5...-0.8 % (the block integrity check of fix 1, SEC-DEC-2); chr1 at level 2 +2 %
+(fix 3, 18e6da5); the fast profile and 16 threads unchanged within 1 %. Archives are byte for byte those of 2.6.5.
 
 Known issues: the GPU decoder (`libaceapex_gpu`) does not yet check the header version (fix 2) or that block slices follow
 each other (fix 5); a damaged archive of either kind can decode there with success. Fixed in the next release. Until then,
